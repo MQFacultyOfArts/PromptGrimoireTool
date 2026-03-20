@@ -82,7 +82,11 @@ class ClaudeClient:
         )
 
         # Build messages array
-        messages = build_messages(session.turns)
+        messages = build_messages(
+            session.turns,
+            session.character,
+            user_name=session.user_name,
+        )
 
         # Call Claude API (async)
         response = await self._client.messages.create(
@@ -136,7 +140,11 @@ class ClaudeClient:
             user_name=session.user_name,
             lorebook_budget=self.lorebook_budget,
         )
-        messages = build_messages(session.turns)
+        messages = build_messages(
+            session.turns,
+            session.character,
+            user_name=session.user_name,
+        )
 
         # Stream response (async)
         full_response = ""
@@ -214,7 +222,11 @@ class ClaudeClient:
             user_name=session.user_name,
             lorebook_budget=self.lorebook_budget,
         )
-        messages = build_messages(session.turns)
+        messages = build_messages(
+            session.turns,
+            session.character,
+            user_name=session.user_name,
+        )
         activated_names = [e.comment or ", ".join(e.keys[:3]) for e in activated]
         api_params = self._build_api_params(system_prompt, messages)
 

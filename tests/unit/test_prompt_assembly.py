@@ -135,36 +135,214 @@ class TestBuildSystemPrompt:
         # "Becky Bennett was injured" should appear
         assert "Becky Bennett was injured" in prompt
 
+    def test_slot_order_ac23(self) -> None:
+        """AC2.3: System prompt has correct slot order.
+
+        system_prompt < description < personality < scenario < mes_example.
+        """
+        character = Character(
+            name="Test",
+            system_prompt="SLOT_MAIN",
+            description="SLOT_DESC",
+            personality="SLOT_PERS",
+            scenario="SLOT_SCEN",
+            mes_example="SLOT_EXAMPLE",
+        )
+
+        prompt = build_system_prompt(character, [], user_name="User")
+
+        main_pos = prompt.index("SLOT_MAIN")
+        desc_pos = prompt.index("SLOT_DESC")
+        pers_pos = prompt.index("SLOT_PERS")
+        scen_pos = prompt.index("SLOT_SCEN")
+        example_pos = prompt.index("SLOT_EXAMPLE")
+
+        assert main_pos < desc_pos, "system_prompt must appear before description"
+        assert desc_pos < pers_pos, "description must appear before personality"
+        assert pers_pos < scen_pos, "personality must appear before scenario"
+        assert scen_pos < example_pos, "scenario must appear before mes_example"
+
+    def test_before_char_between_main_and_description_ac24(self) -> None:
+        """AC2.4: before_char entries appear between system_prompt and description."""
+        character = Character(
+            name="Test",
+            system_prompt="SLOT_MAIN",
+            description="SLOT_DESC",
+            scenario="SLOT_SCEN",
+            mes_example="SLOT_EXAMPLE",
+        )
+        entries = [
+            LorebookEntry(
+                keys=["test"],
+                content="LORE_BEFORE",
+                insertion_order=100,
+                position="before_char",
+            ),
+        ]
+
+        prompt = build_system_prompt(character, entries, user_name="User")
+
+        main_pos = prompt.index("SLOT_MAIN")
+        lore_pos = prompt.index("LORE_BEFORE")
+        desc_pos = prompt.index("SLOT_DESC")
+
+        assert main_pos < lore_pos, "before_char must appear after system_prompt"
+        assert lore_pos < desc_pos, "before_char must appear before description"
+
+    def test_after_char_between_scenario_and_example_ac24(self) -> None:
+        """AC2.4: after_char entries appear between scenario and mes_example."""
+        character = Character(
+            name="Test",
+            system_prompt="SLOT_MAIN",
+            description="SLOT_DESC",
+            scenario="SLOT_SCEN",
+            mes_example="SLOT_EXAMPLE",
+        )
+        entries = [
+            LorebookEntry(
+                keys=["test"],
+                content="LORE_AFTER",
+                insertion_order=100,
+                position="after_char",
+            ),
+        ]
+
+        prompt = build_system_prompt(character, entries, user_name="User")
+
+        scen_pos = prompt.index("SLOT_SCEN")
+        lore_pos = prompt.index("LORE_AFTER")
+        example_pos = prompt.index("SLOT_EXAMPLE")
+
+        assert scen_pos < lore_pos, "after_char must appear after scenario"
+        assert lore_pos < example_pos, "after_char must appear before mes_example"
+
+    def test_all_before_char_by_default_ac24(self) -> None:
+        """AC2.4: All entries before_char by default (no after_char).
+
+        When all entries have position='before_char', all lorebook content
+        appears between system_prompt and description.
+        """
+        character = Character(
+            name="Test",
+            system_prompt="SLOT_MAIN",
+            description="SLOT_DESC",
+        )
+        entries = [
+            LorebookEntry(
+                keys=["a"],
+                content="LORE_A",
+                insertion_order=100,
+                position="before_char",
+            ),
+            LorebookEntry(
+                keys=["b"],
+                content="LORE_B",
+                insertion_order=90,
+                position="before_char",
+            ),
+        ]
+
+        prompt = build_system_prompt(character, entries, user_name="User")
+
+        main_pos = prompt.index("SLOT_MAIN")
+        lore_a_pos = prompt.index("LORE_A")
+        lore_b_pos = prompt.index("LORE_B")
+        desc_pos = prompt.index("SLOT_DESC")
+
+        assert main_pos < lore_a_pos < desc_pos
+        assert main_pos < lore_b_pos < desc_pos
+
+    def test_budget_sharing_before_exhausts_after_ac24(self) -> None:
+        """AC2.4: Budget sharing — before_char entries consume the full budget.
+
+        When before_char entries exhaust the lorebook token budget, after_char
+        entries are excluded because the shared budget is fully consumed.
+        """
+        character = Character(
+            name="Test",
+            system_prompt="SLOT_MAIN",
+            description="SLOT_DESC",
+            scenario="SLOT_SCEN",
+        )
+        # Each entry is ~25 tokens (100 chars / 4)
+        entries = [
+            LorebookEntry(
+                keys=["before"],
+                content="B" * 100,
+                insertion_order=100,
+                position="before_char",
+            ),
+            LorebookEntry(
+                keys=["after"],
+                content="AFTER_CONTENT",
+                insertion_order=100,
+                position="after_char",
+            ),
+        ]
+
+        # Budget of 25 tokens: before_char entry (~25 tokens) exactly fills it,
+        # after_char entry cannot fit because budget is fully consumed
+        prompt = build_system_prompt(
+            character, entries, user_name="User", lorebook_budget=25
+        )
+
+        assert "B" * 100 in prompt, "before_char entry should be included"
+        assert "AFTER_CONTENT" not in prompt, (
+            "after_char entry should be excluded — budget exhausted by before_char"
+        )
+
+    def test_placeholder_substitution_in_mes_example_ac26(self) -> None:
+        """AC2.6: Placeholder substitution applied to mes_example content."""
+        character = Character(
+            name="Becky",
+            mes_example=(
+                "<START>\n{{user}}: Hello {{char}}.\n"
+                "{{char}}: Nice to meet you, {{user}}."
+            ),
+        )
+
+        prompt = build_system_prompt(character, [], user_name="Jordan")
+
+        assert "{{char}}" not in prompt
+        assert "{{user}}" not in prompt
+        assert "Jordan: Hello Becky." in prompt
+        assert "Becky: Nice to meet you, Jordan." in prompt
+
 
 class TestBuildMessages:
     """Tests for building the messages array from turns."""
 
-    def test_empty_turns_returns_empty(self) -> None:
+    @pytest.fixture
+    def character(self) -> Character:
+        """Minimal character for build_messages tests."""
+        return Character(name="Test")
+
+    def test_empty_turns_returns_empty(self, character: Character) -> None:
         """Empty turn list returns empty messages."""
-        messages = build_messages([])
+        messages = build_messages([], character, user_name="User")
         assert messages == []
 
-    def test_user_turn_is_user_role(self) -> None:
+    def test_user_turn_is_user_role(self, character: Character) -> None:
         """User turns become 'user' role messages."""
         turns = [Turn(name="Jordan", content="Hello", is_user=True)]
 
-        messages = build_messages(turns)
+        messages = build_messages(turns, character, user_name="Jordan")
 
         assert len(messages) == 1
         assert messages[0]["role"] == "user"
         assert messages[0]["content"] == "Hello"
 
-    def test_character_turn_is_assistant_role(self) -> None:
+    def test_character_turn_is_assistant_role(self, character: Character) -> None:
         """Character turns become 'assistant' role messages."""
         turns = [Turn(name="Becky Bennett", content="Hi there", is_user=False)]
 
-        messages = build_messages(turns)
+        messages = build_messages(turns, character, user_name="Jordan")
 
         assert len(messages) == 1
         assert messages[0]["role"] == "assistant"
         assert messages[0]["content"] == "Hi there"
 
-    def test_alternating_conversation(self) -> None:
+    def test_alternating_conversation(self, character: Character) -> None:
         """Alternating turns create proper message sequence."""
         turns = [
             Turn(name="Jordan", content="Hello", is_user=True),
@@ -172,10 +350,71 @@ class TestBuildMessages:
             Turn(name="Jordan", content="How are you?", is_user=True),
         ]
 
-        messages = build_messages(turns)
+        messages = build_messages(turns, character, user_name="Jordan")
 
         assert len(messages) == 3
         assert [m["role"] for m in messages] == ["user", "assistant", "user"]
+
+    def test_post_history_instructions_appended_ac25(self) -> None:
+        """AC2.5: post_history_instructions appended as final user message."""
+        character = Character(
+            name="Becky",
+            post_history_instructions="Stay in character as {{char}}.",
+        )
+        turns = [
+            Turn(name="Jordan", content="Hello", is_user=True),
+            Turn(name="Becky", content="Hi there", is_user=False),
+        ]
+
+        messages = build_messages(turns, character, user_name="Jordan")
+
+        assert len(messages) == 3
+        assert messages[-1]["role"] == "user"
+        assert messages[-1]["content"] == "Stay in character as Becky."
+
+    def test_empty_post_history_instructions_no_extra_message_ac25(self) -> None:
+        """AC2.5: Empty post_history_instructions produces no extra message."""
+        character = Character(name="Becky", post_history_instructions="")
+        turns = [
+            Turn(name="Jordan", content="Hello", is_user=True),
+            Turn(name="Becky", content="Hi there", is_user=False),
+        ]
+
+        messages = build_messages(turns, character, user_name="Jordan")
+
+        assert len(messages) == 2
+
+    def test_whitespace_only_post_history_instructions_no_extra_message(self) -> None:
+        """Whitespace-only post_history_instructions produces no extra message."""
+        character = Character(name="Becky", post_history_instructions="   \n  ")
+        turns = [
+            Turn(name="Jordan", content="Hello", is_user=True),
+        ]
+
+        messages = build_messages(turns, character, user_name="Jordan")
+
+        assert len(messages) == 1
+
+    def test_post_history_instructions_placeholder_substitution_ac26(self) -> None:
+        """AC2.6: Placeholder substitution applied to post_history_instructions."""
+        character = Character(
+            name="Becky",
+            post_history_instructions="Remember: {{char}} is talking to {{user}}.",
+        )
+        turns = [
+            Turn(name="Jordan", content="Hello", is_user=True),
+        ]
+
+        messages = build_messages(turns, character, user_name="Jordan")
+
+        assert len(messages) == 2
+        phi_message = messages[-1]
+        assert phi_message["role"] == "user"
+        assert "{{char}}" not in phi_message["content"]
+        assert "{{user}}" not in phi_message["content"]
+        assert "Becky" in phi_message["content"]
+        assert "Jordan" in phi_message["content"]
+        assert phi_message["content"] == "Remember: Becky is talking to Jordan."
 
 
 class TestTokenEstimation:

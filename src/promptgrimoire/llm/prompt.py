@@ -168,11 +168,21 @@ def build_system_prompt(
     )
 
 
-def build_messages(turns: list[Turn]) -> list[MessageParam]:
+def build_messages(
+    turns: list[Turn],
+    character: Character,
+    *,
+    user_name: str,
+) -> list[MessageParam]:
     """Build the messages array from conversation turns.
+
+    If the character has non-empty ``post_history_instructions``, they are
+    appended as a final ``user``-role message with placeholder substitution.
 
     Args:
         turns: Conversation history.
+        character: The character being roleplayed.
+        user_name: The user's persona name for placeholder substitution.
 
     Returns:
         List of message dicts with 'role' and 'content' keys.
@@ -182,6 +192,16 @@ def build_messages(turns: list[Turn]) -> list[MessageParam]:
     for turn in turns:
         role: Literal["user", "assistant"] = "user" if turn.is_user else "assistant"
         messages.append({"role": role, "content": turn.content})
+
+    # Append post_history_instructions as final user message
+    phi = character.post_history_instructions.strip()
+    if phi:
+        phi = substitute_placeholders(
+            phi,
+            char_name=character.name,
+            user_name=user_name,
+        )
+        messages.append({"role": "user", "content": phi})
 
     # Cast to MessageParam for type compatibility with Anthropic SDK
     return messages  # type: ignore[return-value]

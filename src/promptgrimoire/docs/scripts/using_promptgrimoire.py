@@ -1413,6 +1413,89 @@ def _entry_drag_organise(guide: Guide) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Client Interview (Roleplay)
+# ---------------------------------------------------------------------------
+
+
+def _entry_roleplay_layout(guide: Guide) -> None:
+    """What is the client interview page layout?"""
+    with guide.step(
+        "What is the client interview page layout?", level=3, text_only=True
+    ) as g:
+        g.note(
+            "The client interview page has a central chat area where you "
+            "exchange messages with the simulated client. On wide screens, "
+            "a **character info panel** appears to the left of the chat "
+            "showing the character's portrait and name."
+        )
+        g.note(
+            "On narrower screens the character panel is hidden automatically "
+            "to give the chat area more space. The chat header always shows "
+            "the character's name regardless of viewport width."
+        )
+
+
+def _entry_roleplay_management_panel(guide: Guide) -> None:
+    """How do I access upload, export, and settings?"""
+    with guide.step(
+        "How do I access upload, export, and settings?", level=3, text_only=True
+    ) as g:
+        g.note(
+            "Click the **gear icon** in the chat header to open the "
+            "management panel on the right side of the screen. This panel "
+            "contains character upload, conversation export, and session "
+            "settings."
+        )
+        g.note(
+            "The management panel slides in as a drawer and can be closed "
+            "by clicking the gear icon again or clicking outside the panel."
+        )
+
+
+def _entry_roleplay_finish_interview(guide: Guide) -> None:
+    """I want to end the interview early."""
+    with guide.step("I want to end the interview early", level=3, text_only=True) as g:
+        g.note(
+            "Click the **Finish Interview** button in the input area "
+            "below the chat. A confirmation dialog asks whether you want "
+            "to end the interview -- click **End Interview** to confirm "
+            "or **Cancel** to continue the conversation."
+        )
+        g.note(
+            "Once confirmed, the conversation is locked (no further "
+            "messages can be sent) and automatically exported to an "
+            "annotation workspace where you can review and annotate it."
+        )
+
+
+def _entry_roleplay_completion(guide: Guide) -> None:
+    """What happens when the interview ends?"""
+    with guide.step(
+        "What happens when the interview ends?", level=3, text_only=True
+    ) as g:
+        g.note(
+            "When the interview ends -- either because the simulated "
+            "client concludes the conversation naturally or because you "
+            "clicked **Finish Interview** -- three things happen:"
+        )
+        g.note(
+            "1. **Input locks.** The message input and send button are "
+            "disabled. No further messages can be sent.\n"
+            "2. **Automatic export.** The full conversation is exported "
+            "to a new annotation workspace as an ``ai_conversation`` "
+            "document.\n"
+            "3. **Completion banner.** A banner appears at the bottom of "
+            "the chat with a link to your annotation workspace. Click "
+            "the link to review and annotate the conversation."
+        )
+        g.note(
+            "If you navigate back to the interview page after the "
+            "conversation has ended, a fresh session starts -- the "
+            "previous locked session is not resumed."
+        )
+
+
+# ---------------------------------------------------------------------------
 # Main entry point
 # ---------------------------------------------------------------------------
 
@@ -1498,6 +1581,12 @@ def _run_management_sections(
     guide.section("Content Input")
     _entry_upload_document(guide)
     _entry_paste_sources(guide)
+
+    guide.section("Client Interview (Roleplay)")
+    _entry_roleplay_layout(guide)
+    _entry_roleplay_management_panel(guide)
+    _entry_roleplay_finish_interview(guide)
+    _entry_roleplay_completion(guide)
 
 
 def run_using_promptgrimoire_guide(page: Page, base_url: str) -> None:

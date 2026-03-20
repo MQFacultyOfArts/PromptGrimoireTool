@@ -1,42 +1,61 @@
-# Investigation: NiceGUI Slot Deletion Race (#369)
+# Causal Analysis: NiceGUI Slot Deletion Race (#369)
 
-*Investigation date: 2026-03-20. Investigator: Claude (with Brian Ballsun-Stanton).*
-*Status: Root cause confirmed for Category 3. Category 2 mechanism demonstrated but not proven as production path. Categories 1 and 4 unexplained.*
-*Codebase: commit `1e2a1df1` (branch `debug/369-slot-deletion-race`), NiceGUI 3.8.0.*
+Date: 2026-03-20
+Investigator: Claude (Opus 4.6)
+Status: Awaiting peer review
+Codebase: commit `1e2a1df1` (branch `debug/369-slot-deletion-race`), NiceGUI 3.8.0.
 
 ## Summary
 
-1,006 JSONL error events across 8 of 14 production epochs (Mar 15-19). 1,000 are from `Slot._parent` weakref invalidation; 6 from `Element._parent_slot`. Journal traceback classification identifies four trigger sites in our code (550 distinct error-seconds, 96 call chain variants).
+1,006 JSONL error events across 8 of 14 production epochs (Mar 15-19), caused by NiceGUI weakref invalidation. Two contributing mechanisms identified: a dialog canary destruction path (plausible for Category 3, 73 error-seconds) and a concurrent-clear race (plausible for Category 2, 78 error-seconds). Category 1 (145 error-seconds) has no identified mechanism. A fix has been implemented for Category 3 (reorder `ui.notify()` before `render_tag_list()`).
 
-**Two mechanisms discovered:**
+## Causal Chain
 
-1. **Dialog canary** (`dialog.py:30-35`): NiceGUI's `Dialog` creates a hidden canary element in the caller's slot context. When the caller's container is cleared, the canary is garbage-collected, its `weakref.finalize` callback deletes the dialog, and the dialog's slot context goes stale. Reproduced in tests. **Confirmed as the production mechanism for Category 3** (tag management, 73 error-seconds by file aggregation).
+### Mechanism A: Dialog canary (plausible for Category 3)
 
-2. **Element.delete() + reference drop**: Calling `element.delete()` removes the element from `Client.elements`. Once all local strong references are dropped, the element is GC'd and `Slot._parent` goes stale. Reproduced in tests. **However, the production Category 2 callback (`_delete_highlight`) keeps a strong reference to the card alive while it continues `_update_highlight_css()` and `broadcast_update()` after `card.delete()`.** The test only reproduces by explicitly dropping local references, which the production code does not do at the point of failure. This mechanism is therefore demonstrated in NiceGUI but not proven as the production Category 2 path.
+NiceGUI's `Dialog.__init__` creates a hidden canary element in the caller's slot context (`dialog.py:30-35`). When the caller's container is cleared, the canary is garbage-collected, its `weakref.finalize` callback deletes the dialog, and the dialog's slot context goes stale. Code executing inside NiceGUI's event dispatch wrapper (`events.py:452 with parent_slot:`) then fails when accessing `context.client` (`context.py:41`), which dereferences the stale `Slot._parent` weakref (`slot.py:29-31`).
 
-**What is not explained:** Category 1 (145 error-seconds, top chain) uses neither `ui.dialog()` nor `element.delete()`. Category 4 (38 error-seconds, top chain) is not investigated in detail. Because the four categories use mixed counting methods and their chains overlap, no valid "remaining uncategorised" figure can be computed by subtraction.
+**Verification path through NiceGUI source:**
 
-## Data Sources
+| Step | File:Line | What happens |
+|------|-----------|-------------|
+| Event dispatch | `events.py:440` | `parent_slot = arguments.sender.parent_slot` |
+| Async wrapper | `events.py:452` | `with parent_slot:` pushes onto `Slot.stacks` |
+| Handler runs | `events.py:454` | `await result` — handler code executes |
+| Container clear | `element.py:456` | `self.client.remove_elements(self.descendants())` |
+| Canary freed | `dialog.py:33-34` | `weakref.finalize` fires `self.delete()` on dialog |
+| Dialog deleted | `client.py:388-391` | `element._deleted = True`, removed from `Client.elements` |
+| UI operation | `context.py:41` | `context.client` -> `self.slot.parent.client` |
+| Weakref stale | `slot.py:29-31` | `self._parent()` returns `None` -> `RuntimeError` |
 
-| Source | Path | Window | Reproducibility |
-|--------|------|--------|-----------------|
-| Incident DB | `incident.db` (local, gitignored) | Mar 15 00:00 - Mar 19 21:30 AEDT | Not checked in. See Appendix A for re-creation. |
-| Journal tracebacks | `journal_events` table in above | Same | Full Rich tracebacks with locals |
-| JSONL events | `jsonl_events` table in above | Same | Structured log events (no tracebacks for this error class) |
-| NiceGUI source | `.venv/.../nicegui/` | nicegui==3.8.0 | `slot.py`, `element.py`, `events.py`, `dialog.py`, `context.py` |
-| Reproduction tests | `tests/integration/test_slot_deletion_race_369.py` | N/A | See Reproduction Tests section |
+**Where dialogs are created:** Code search for `ui.dialog()` in the annotation package finds it only in `tag_management_rows.py:414` and `tag_management.py:271`. It does **not** appear in `cards.py`, `highlights.py`, `workspace.py`, or `css.py`.
 
-**Note on units:** "JSONL events" are rows in `jsonl_events` (one per structured log emission). "Journal error-seconds" are distinct seconds in `journal_events` containing the error string. The two counts measure different things and are not expected to match.
+### Mechanism B: Concurrent clear + card.delete() (plausible for Category 2)
 
-**Note on category counts:** This document uses two counting methods from the classifier (`scripts/classify_slot_errors.py`):
-- **Top-chain count**: the number of error-seconds whose exact frame chain matches a specific pattern. Used for Categories 1, 2, 4.
-- **File aggregation** (`--aggregate`): the number of error-seconds where ANY frame references a given file. Used for Category 3 because its chains span multiple `tag_management.py` line numbers. File-aggregate counts are always >= top-chain counts because one error-second can reference multiple files.
+Production traceback at `2026-03-16T00:08:57Z` shows a `ValueError: list.remove(x): x not in list` at `element.py:504` inside `card.delete()`. This proves a concurrent `container.clear()` already removed the card from its parent slot's children list before `card.delete()` ran. The `RuntimeError` is secondary — it fires during NiceGUI's exception handling (`events.py:456 handle_exception`) which accesses `context.client` through the now-stale slot.
 
-These two methods are not directly comparable. Category counts do not sum to 550 because chains overlap between categories, some chains are uncategorised, and 30 error-seconds are NiceGUI-internal-only.
+**Production traceback chain (from journal_events at `2026-03-16T00:08:57Z`):**
+1. `events.py:454` — `await result` (do_delete handler)
+2. `cards.py:404` — `await _delete_highlight(state, hid, c)`
+3. `highlights.py:172` — `card.delete()`
+4. `element.py:504` — `parent_slot.children.remove(element)` → **`ValueError: list.remove(x): x not in list`**
+5. `events.py:456` — `core.app.handle_exception(e)` → secondary `RuntimeError` from stale slot
 
-## Production Error Rate
+### What `container.clear()` does NOT do
 
-**Source:** `jsonl_events` table in `incident.db`.
+`container.clear()` removes the container's **children**, not the container itself (`element.py:454-460`). A button directly inside a container retains a valid `parent_slot` after clear — the slot's parent (the container) is still alive. Without a dialog canary or an `element.delete()` or a concurrent clear race, `container.clear()` alone does not stale the weakref.
+
+## Evidence Grading
+
+| # | Finding | Grade | Positive border | Negative border | Production path | Upgrade path |
+|---|---------|-------|----------------|-----------------|-----------------|--------------|
+| 1 | Dialog canary mechanism triggers `RuntimeError` | **Plausible** | `test_dialog_canary_triggers_slot_deletion`: clear container → canary GC → dialog delete → stale slot → `RuntimeError` | `test_notify_before_rebuild_succeeds`: accessing `context.client` before the clear succeeds | Tests use synthetic setup matching production structure, not actual `_on_tag_deleted` code path | Test the actual production function with a workspace fixture |
+| 2 | Concurrent clear causes `ValueError` on `card.delete()` | **Plausible** | `test_card_delete_after_concurrent_clear`: `container.clear()` then `card.delete()` raises `ValueError: list.remove(x)` | Not tested | Test matches production traceback: same `ValueError`, same call chain (`card.delete()` → `element.py:504`) | Test the guard (`if not card.is_deleted:`) prevents the error |
+| 3 | Category 1 (`cards.py:558`) mechanism | **Speculative** | Not identified | — | No dialog, no delete in code path | Investigate what stales the weakref for `toggle_detail` |
+
+## Trigger Site Classification
+
+**Source:** `journal_events` table in `incident.db` (local, gitignored — see Appendix A for re-creation).
 
 **Error string breakdown:**
 ```sql
@@ -47,6 +66,62 @@ SELECT count(*) FROM jsonl_events WHERE event LIKE '%parent slot of the element%
 -- Result: 6 (Element._parent_slot)
 ```
 
+**Distinct error-seconds:**
+```sql
+SELECT count(DISTINCT substr(ts_utc, 1, 19)) FROM journal_events
+WHERE message LIKE '%parent element this slot%'
+   OR message LIKE '%parent slot of the element%'
+-- Result: 550
+```
+
+**Reproduction:** `uv run scripts/classify_slot_errors.py --db incident.db` (individual chains) or `--aggregate` (file-level).
+
+**Note on category counts:** This document uses two counting methods:
+- **Top-chain count**: error-seconds whose exact frame chain matches a specific pattern.
+- **File aggregation** (`--aggregate`): error-seconds where ANY frame references a given file.
+
+These are not directly comparable. Category counts do not sum to 550 because chains overlap between categories, some are uncategorised, and 30 error-seconds are NiceGUI-internal-only.
+
+**Important caveat on line numbers:** Journal tracebacks were emitted by production deploys at various commits (primarily `7f53808f`), not from current HEAD (`1e2a1df1`).
+
+### Category 1: Card toggle after rebuild (145 error-seconds, top chain)
+
+**Classifier output:** `cards.py:558` (145x as top chain).
+**Code:** `toggle_detail()` calls `await ui.run_javascript(...)`. No dialog. No `element.delete()`.
+**Mechanism:** Unknown. Evidence grade: **speculative**.
+**Existing mitigation:** `cards.py:580-584` wraps the rebuild in `with state.annotations_container:`.
+
+### Category 2: Highlight deletion (78 error-seconds, top chain)
+
+**Classifier output:** `cards.py:404` -> `highlights.py:172` (78x as top chain).
+**Code:** `do_delete()` → `_delete_highlight()` → `card.delete()`.
+**Mechanism:** Concurrent `container.clear()` removes the card before `card.delete()` runs, causing `ValueError` at `element.py:504`. Production traceback directly shows this `ValueError`.
+**Evidence grade:** **Plausible.** Positive border reproduced. Production traceback matches. Negative border (guard prevents error) not tested.
+
+### Category 3: Tag management callback (73 error-seconds, file aggregation)
+
+**Classifier output:** `uv run scripts/classify_slot_errors.py --db incident.db --aggregate` reports 73 error-seconds for `tag_management.py`. Individual chains: `tag_management.py:53` (48x), `tag_management.py:51` (23x), plus 2 others (1x each).
+**Code (`tag_management.py:532-535`):**
+```python
+async def _on_tag_deleted(tag_name: str) -> None:
+    await _refresh_tag_state(state, reload_crdt=True)
+    await render_tag_list()
+    ui.notify(f"Tag '{tag_name}' deleted", type="positive")
+```
+**Journal evidence:** Full traceback at `2026-03-19T08:46:38Z` shows `_open_confirm_delete.<locals>._do_delete` as the handler. The confirm-delete dialog is created in `tag_management_rows.py:414`.
+**Mechanism:** Dialog canary (Mechanism A). The confirm-delete dialog's canary lives in the tag list container. `render_tag_list()` clears the container → canary GC → `dialog.delete()` → stale slot → `ui.notify()` fails.
+**Evidence grade:** **Plausible.** Both borders shown on synthetic test matching production structure. Production traceback corroborates the call chain. Not tested on the actual production function.
+
+### Category 4: CSS/workspace highlight rebuild (38 error-seconds, top chain)
+
+**Classifier output:** `css.py:377` -> `workspace.py:453` -> `highlights.py:283` (38x). No dialog in these files.
+**Mechanism:** Not investigated.
+**Evidence grade:** **Speculative.**
+
+## Production Error Rate
+
+**Source:** `jsonl_events` table in `incident.db`.
+
 **Per-epoch query (E9 as example):**
 ```sql
 SELECT count(*) FROM jsonl_events
@@ -54,7 +129,6 @@ WHERE (event LIKE '%parent element this slot%'
    OR event LIKE '%parent slot of the element%')
 AND ts_utc >= '2026-03-16T04:02:31.284100Z'
 AND ts_utc <= '2026-03-17T09:23:49.569869Z'
--- Epoch bounds from: extract_epochs(conn) in scripts/incident/analysis.py
 ```
 
 | Epoch | Commit | HAProxy Requests | JSONL Events | % of requests | Pool |
@@ -69,51 +143,6 @@ AND ts_utc <= '2026-03-17T09:23:49.569869Z'
 | E13 | 7f53808f | 61,240 | 104 | 0.17% | 80+15 |
 | **Total** | | | **1,006** | | |
 
-## Discovered Mechanisms
-
-### Mechanism A: Dialog canary (applies to Category 3)
-
-NiceGUI 3.8.0 `Dialog.__init__` (`dialog.py:27-35`):
-
-```python
-with context.client.layout:
-    super().__init__(value=value, on_value_change=None)
-
-# create a canary element in the current context to trigger
-# the deletion of the dialog when its parent is deleted
-canary = Element()
-canary.visible = False
-weakref.finalize(
-    canary,
-    lambda: self.delete() if not self.is_deleted
-            and self._parent_slot and self._parent_slot() else None
-)
-```
-
-The dialog itself is created in `context.client.layout` (line 27), but the canary is created in the **caller's current slot context** (line 31). When the caller's container is later cleared:
-
-1. `container.clear()` removes all children including the canary (`element.py:454-460`)
-2. `client.remove_elements(descendants)` pops elements from `Client.elements` (`client.py:391`)
-3. Canary has no more strong references; `gc.collect()` frees it
-4. `weakref.finalize` callback fires `dialog.delete()`
-5. The dialog's `default_slot._parent` weakref now points to a deleted element
-6. Any code still in `with parent_slot:` (from `events.py:452`) that calls `context.client` (`context.py:41`) triggers `self.slot.parent.client` -- stale weakref
-7. `RuntimeError`
-
-**Where dialogs are created in this codebase:** A code search for `ui.dialog()` in the annotation package finds it only in `tag_management_rows.py:414` and `tag_management.py:271`. It does **not** appear in `cards.py`, `highlights.py`, `workspace.py`, or `css.py`.
-
-### Mechanism B: element.delete() + reference drop (demonstrated, not proven for production Category 2)
-
-`element.delete()` removes the element from `Client.elements` and marks `_deleted=True` (`client.py:388-391`). If all remaining strong references to the element are dropped, `gc.collect()` frees it and the weakref in `Slot._parent` goes stale.
-
-**Test evidence:** `test_card_delete_stales_child_slot` reproduces the error by calling `card.delete()`, then explicitly deleting local variables (`del card; del btn`), then `gc.collect()`. The weakref goes stale and `context.client` raises `RuntimeError`.
-
-**Gap between test and production:** The production `_delete_highlight` callback (`highlights.py:155-178`) keeps `card` alive as a parameter while it continues with `_update_highlight_css()` and `broadcast_update()` after `card.delete()`. The test only reproduces by dropping references that the production code still holds at the point of failure. This means the test demonstrates that the mechanism *exists* in NiceGUI, but does not prove it is what fires in production. The production Category 2 error may require an additional condition (client disconnection, GC pressure, or a different reference-drop path).
-
-### What `container.clear()` does NOT do
-
-`container.clear()` removes the container's **children**, not the container itself. A button directly inside a container retains a valid `parent_slot` after clear -- the slot's parent (the container) is still alive. Without a dialog canary or an `element.delete()`, `container.clear()` alone does not stale the weakref.
-
 ## Existing Mitigation
 
 At `cards.py:580-584` (current HEAD):
@@ -127,71 +156,7 @@ with state.annotations_container:
     state.annotations_container.clear()
 ```
 
-This wraps the rebuild in the container's slot context. The comment describes a mechanism where the caller's slot is destroyed -- but as established above, `container.clear()` alone does not destroy the container (the slot's parent). The mitigation may address a condition not yet reproduced in tests.
-
-## Trigger Site Classification
-
-**Source:** `journal_events` table in `incident.db`.
-
-**Distinct error-seconds query:**
-```sql
-SELECT count(DISTINCT substr(ts_utc, 1, 19)) FROM journal_events
-WHERE message LIKE '%parent element this slot%'
-   OR message LIKE '%parent slot of the element%'
--- Result: 550
-```
-
-**Reproduction:**
-- Individual chains: `uv run scripts/classify_slot_errors.py --db incident.db`
-- File aggregation: `uv run scripts/classify_slot_errors.py --db incident.db --aggregate`
-
-**Important caveat on line numbers:** Journal tracebacks were emitted by production deploys at various commits. Line numbers are from those deploys, not from current HEAD (`1e2a1df1`).
-
-### Category 1: Card toggle after rebuild (145 error-seconds, top chain)
-
-**Classifier output:** `cards.py:558` (145x as top chain).
-
-**Code:** `toggle_detail()` calls `await ui.run_javascript(...)`. No dialog is created in this code path. No `element.delete()` call.
-
-**Mechanism:** Unknown. Neither Mechanism A (no dialog) nor Mechanism B (no delete) applies.
-
-**Confidence:** Low. Trigger site confirmed, mechanism not identified.
-
-### Category 2: Highlight deletion (78 error-seconds, top chain)
-
-**Classifier output:** `cards.py:404` -> `highlights.py:172` (78x as top chain).
-
-**Code:** `do_delete()` calls `_delete_highlight()` which calls `card.delete()` then `_update_highlight_css()` and `broadcast_update()`. No dialog in this path.
-
-**Mechanism:** Mechanism B (element.delete() + reference drop) is demonstrated in tests but not proven for this production path. The production callback keeps `card` alive as a function parameter during the post-delete work. See "Gap between test and production" under Mechanism B above.
-
-**Confidence:** Corroborated. The delete mechanism works in NiceGUI (test proves this). Whether the production Category 2 errors fire via this mechanism or via an additional condition is unresolved.
-
-### Category 3: Tag management callback (73 error-seconds, file aggregation)
-
-**Classifier output:** `uv run scripts/classify_slot_errors.py --db incident.db --aggregate` reports 73 error-seconds for `tag_management.py`. Individual chains: `tag_management.py:53` (48x), `tag_management.py:51` (23x), plus 2 chains at other depths (1x each).
-
-**Code (`tag_management.py:532-535`):**
-```python
-async def _on_tag_deleted(tag_name: str) -> None:
-    await _refresh_tag_state(state, reload_crdt=True)
-    await render_tag_list()
-    ui.notify(f"Tag '{tag_name}' deleted", type="positive")
-```
-
-**Journal evidence:** Full traceback at `2026-03-19T08:46:38Z` shows `_open_confirm_delete.<locals>._do_delete` as the handler. The confirm-delete dialog is created in `tag_management_rows.py:414`.
-
-**Mechanism:** Confirmed as Mechanism A (dialog canary). The confirm-delete dialog's canary lives in the tag list container. `render_tag_list()` clears the container, destroying the canary, triggering `dialog.delete()` via `weakref.finalize`. The `with parent_slot:` wrapper from `events.py:452` holds the dialog button's stale slot. `ui.notify()` dereferences it.
-
-**Confidence:** Confirmed. Reproduced in `test_dialog_canary_triggers_slot_deletion`.
-
-### Category 4: CSS/workspace highlight rebuild (38 error-seconds, top chain)
-
-**Classifier output:** `css.py:377` -> `workspace.py:453` -> `highlights.py:283` (38x). No dialog in these files.
-
-**Mechanism:** Unknown. Not investigated in detail.
-
-**Confidence:** Low. Trigger site confirmed, mechanism not identified.
+This wraps the rebuild in the container's slot context. The comment describes a mechanism where the caller's slot is destroyed, but `container.clear()` alone does not destroy the container (the slot's parent). The mitigation may address a condition not reproduced in tests.
 
 ## Reproduction Tests
 
@@ -199,52 +164,48 @@ async def _on_tag_deleted(tag_name: str) -> None:
 
 | Test | What it tests | Result |
 |------|---------------|--------|
-| `test_dialog_canary_triggers_slot_deletion` | Mechanism A: dialog canary in container; clear container; access `context.client` from dialog button's slot | **Passes: RuntimeError raised** |
-| `test_dialog_canary_during_card_rebuild` | Mechanism A in an annotations-like container (synthetic -- no dialog in actual Category 1 path) | **Passes: RuntimeError raised** |
-| `test_card_delete_stales_child_slot` | Mechanism B: `card.delete()` + drop local refs + `gc.collect()`; access `context.client` | **Passes: RuntimeError raised** |
+| `test_dialog_canary_triggers_slot_deletion` | Mechanism A: clear container with dialog canary, access `context.client` inside `with parent_slot:` | **FAIL (red)**: `RuntimeError` raised |
+| `test_notify_before_rebuild_succeeds` | Fix verification: access `context.client` before clear | **PASS (green)**: no error |
+| `test_dialog_canary_during_card_rebuild` | Mechanism A in annotations-like container (synthetic — no dialog in actual Category 1 path) | **FAIL (red)**: `RuntimeError` raised |
+| `test_card_delete_after_concurrent_clear` | Mechanism B: `container.clear()` then `card.delete()` | **PASS**: `pytest.raises(ValueError)` catches the expected error |
 
-**Note on `test_dialog_canary_during_card_rebuild`:** This test proves Mechanism A works in a container resembling `annotations_container`, but the actual Category 1 production path (`cards.py:558`) does not create dialogs. This test demonstrates a NiceGUI framework behaviour, not a reproduction of the Category 1 production bug. It is labelled "synthetic" to make this explicit.
+**Note on `test_dialog_canary_during_card_rebuild`:** This test demonstrates Mechanism A works in a container resembling `annotations_container`, but the actual Category 1 production path (`cards.py:558`) does not create dialogs. It demonstrates a NiceGUI framework behaviour, not a reproduction of the Category 1 production bug.
 
-**Note on `test_card_delete_stales_child_slot`:** This test explicitly drops local references (`del card; del btn`) before `gc.collect()`. The production `_delete_highlight` callback does NOT drop the `card` reference at the point where subsequent code executes. The test demonstrates that Mechanism B exists in NiceGUI, but does not match the production reference-lifetime pattern. An earlier version of this test (before adding `del card`) kept the reference alive, preventing GC and producing an inconclusive result -- that was a test artifact.
+**Note on `test_card_delete_after_concurrent_clear`:** This test uses `pytest.raises(ValueError)` to assert the production-observed error occurs. It demonstrates the race mechanism. It does not yet test the fix (guarding with `is_deleted`).
 
-### Epistemic boundary
+## Implemented Fix
 
-**Confirmed (mechanism proven and matches production path):**
-- Category 3 (73 error-seconds, file aggregation): Mechanism A (dialog canary). Production traceback shows the confirm-delete dialog path. Test reproduces with matching structure.
+**Category 3:** `tag_management.py:532-538` — moved `ui.notify()` before `render_tag_list()`. The notification does not depend on the rebuilt tag list. This avoids executing `context.client` after the canary has been destroyed.
 
-**Corroborated (mechanism demonstrated but production path not fully matched):**
-- Category 2 (78 error-seconds, top chain): Mechanism B works in NiceGUI when references are dropped. Production callback keeps references alive during post-delete work. The error may fire later when the callback returns and locals go out of scope, or via an additional condition.
+**Category 2:** Not yet implemented. Proposed: guard `card.delete()` with `if not card.is_deleted:` in `_delete_highlight`.
 
-**Not explained (trigger site known, mechanism unknown):**
-- Category 1 (145 error-seconds, top chain): no dialog, no delete in code path
-- Category 4 (38 error-seconds, top chain): not investigated in detail
-- 30 error-seconds are NiceGUI-internal-only (no our-code frames); other chains not assigned to a category
+## Epistemic Boundary
 
-**Not tested:**
-- Whether NiceGUI 3.9.0 changes the canary or delete behaviour
-- The mechanism for Category 1
-- What concrete dereference path triggers Category 2 in production, given that the callback keeps `card` alive through post-delete work
+**Plausible (one or both borders shown, production-like but not production path):**
+- Category 3: dialog canary mechanism. Both borders shown on synthetic test. Production traceback corroborates call chain. Fix implemented (reorder notify before clear).
+- Category 2: concurrent clear + `card.delete()` race. Positive border shown (test reproduces `ValueError` matching production traceback). Negative border not tested.
 
-## Proposed Fixes
+**Speculative (untested):**
+- Category 1 (145 error-seconds): no mechanism identified. No dialog, no delete in code path.
+- Category 4 (38 error-seconds): not investigated.
+- Whether NiceGUI 3.9.0 changes the canary or delete behaviour.
 
-**Category 3 (confirmed, can fix now):**
+**Corrected during investigation:**
+- Initial tests called handlers as bare functions, bypassing NiceGUI's `events.py:452` `with parent_slot:` wrapper. All tests failed to reproduce. The wrapper is necessary to put the stale slot on `Slot.stacks`.
+- Category 2 was initially hypothesised as a `card.delete()` + reference-drop mechanism. Production traceback analysis revealed the primary error is `ValueError` from concurrent `container.clear()`, not `RuntimeError` from stale weakref. The `RuntimeError` is secondary (exception handling path).
+- An earlier test for Category 2 kept a local `card` variable alive, preventing GC and producing an inconclusive result. This was a test artifact.
+- The classifier groups all our-code frames from all journal lines within one second. This conflates separate tracebacks that occur in the same second. The distance check (>30 lines between frames) was used to verify that Category 2 tracebacks do contain both `cards.py:404` and `highlights.py:172` in the same traceback (they do — the large `PageState` locals dump spans ~150 lines).
 
-1. Move `ui.notify()` before `render_tag_list()` in `_on_tag_deleted`. The notification does not depend on the rebuilt tag list.
-2. Or: create the confirm-delete dialog in `context.client.layout` instead of in the tag list container's context, so the canary is not a child of the container that gets cleared.
+## Proposed Next Steps
 
-**Category 2 (corroborated, fix is low-risk):**
-
-3. In `_delete_highlight()`, do all UI work (`_update_highlight_css`, `broadcast_update`) before `card.delete()`. This reorders to avoid operating in a potentially stale context. Even though the production mechanism is not fully proven, this reordering has no functional downside.
-
-**Categories 1 and 4 (mechanism unknown):**
-
-4. Investigate Category 1's production path for indirect dialog creation or other mechanisms.
-5. File an upstream NiceGUI issue with the canary and delete findings.
+1. **Category 2 fix:** Guard `card.delete()` with `if not card.is_deleted:` in `_delete_highlight`. Write green test.
+2. **Category 1 investigation:** Search for what stales the weakref for `toggle_detail` when no dialog or delete is involved. Candidates: client disconnection, NiceGUI internal cleanup, indirect dialog creation.
+3. **Upstream:** File NiceGUI issue with the canary finding.
 
 ## References
 
-- NiceGUI source: `dialog.py:27-35`, `slot.py:22,31`, `element.py:454-460`, `context.py:41`, `events.py:440-458`, `client.py:383-391`
-- Production traceback: `journal_events` at `2026-03-19T08:46:38Z`
+- NiceGUI source: `dialog.py:27-35`, `slot.py:22,31`, `element.py:454-460,504,507-511`, `context.py:41`, `events.py:440-458`, `client.py:383-391`
+- Production tracebacks: `journal_events` at `2026-03-19T08:46:38Z` (Category 3) and `2026-03-16T00:08:57Z` (Category 2)
 - Existing mitigation: `cards.py:580-584` (current HEAD)
 - Reproduction tests: `tests/integration/test_slot_deletion_race_369.py`
 - Classification script: `scripts/classify_slot_errors.py`
@@ -287,17 +248,18 @@ sqlite3 incident.db "SELECT count(DISTINCT substr(ts_utc, 1, 19)) FROM journal_e
 # 6. Reproduce trigger-site classification (individual chains)
 uv run scripts/classify_slot_errors.py --db incident.db
 # Expected: 550 distinct error-seconds, 96 distinct call chains
-# Top 3 individual chains:
-#   cards.py:558 (145x)
-#   cards.py:404 -> highlights.py:172 (78x, with chain repetition)
-#   tag_management.py:53 (48x)
+# Top 3: cards.py:558 (145x), cards.py:404->highlights.py:172 (78x),
+#         tag_management.py:53 (48x)
 
 # 7. Reproduce file-level aggregation
 uv run scripts/classify_slot_errors.py --db incident.db --aggregate
 # Expected: 550 distinct error-seconds, 24 files referenced
-# Key files:
-#   cards.py (360x), highlights.py (276x), css.py (93x),
-#   workspace.py (75x), tag_management.py (73x)
+# Key files: cards.py (360x), highlights.py (276x), css.py (93x),
+#            workspace.py (75x), tag_management.py (73x)
 ```
 
 **Note:** The tarball is not checked in (387 MB). If unavailable, re-collect from the server.
+
+## Peer Review
+
+*To be populated by Phase 3d subagent audit.*

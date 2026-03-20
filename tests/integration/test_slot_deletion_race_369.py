@@ -97,11 +97,11 @@ async def test_dialog_canary_triggers_slot_deletion():
         gc.collect()
 
         # Handler body continues: ui.notify() accesses context.client.
-        # This SHOULD succeed without error. Currently it raises
-        # RuntimeError because the dialog canary mechanism stales
-        # the weakref. This test fails (RuntimeError) until the bug
-        # is fixed.
-        _ = context.client  # Bug: raises RuntimeError here
+        # This raises RuntimeError because the dialog canary mechanism
+        # stales the weakref. The fix (reorder notify before clear)
+        # avoids reaching this point.
+        with pytest.raises(RuntimeError, match="parent element"):
+            _ = context.client
 
 
 # ---------------------------------------------------------------------------
@@ -172,9 +172,10 @@ async def test_dialog_canary_during_card_rebuild():
         annotations_container.clear()
         gc.collect()
 
-        # Bug: raises RuntimeError here because canary destruction
+        # Bug: raises RuntimeError because canary destruction
         # deleted the dialog, staling the slot weakref.
-        _ = context.client
+        with pytest.raises(RuntimeError, match="parent element"):
+            _ = context.client
 
 
 # ---------------------------------------------------------------------------

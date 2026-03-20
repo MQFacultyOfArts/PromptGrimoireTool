@@ -136,6 +136,8 @@ class Session:
         user_name: The user's persona name for this session.
         turns: List of conversation turns.
         created_at: When the session started.
+        ended: Whether the conversation has concluded
+            (endofconversation detected or user finished early).
     """
 
     character: Character
@@ -143,6 +145,7 @@ class Session:
     id: UUID = field(default_factory=uuid4)
     turns: list[Turn] = field(default_factory=list)
     created_at: datetime = field(default_factory=datetime.now)
+    ended: bool = False
 
     def add_turn(
         self,

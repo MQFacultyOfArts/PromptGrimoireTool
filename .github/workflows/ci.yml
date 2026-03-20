@@ -77,6 +77,7 @@ jobs:
           fi
           sudo apt-get update -y
           sudo apt-get install -y \
+            bats \
             mecab libmecab-dev \
             pandoc \
             poppler-utils \

@@ -482,6 +482,38 @@ class TestLorebookBudget:
         assert "B" * 100 not in prompt
         assert "C" * 100 not in prompt
 
+    def test_end_of_conversation_instruction_present(self) -> None:
+        """System prompt includes end-of-conversation instruction with marker."""
+        character = Character(
+            name="Test",
+            system_prompt="SLOT_MAIN",
+            description="SLOT_DESC",
+        )
+
+        prompt = build_system_prompt(character, [], user_name="User")
+
+        assert "<endofconversation>" in prompt
+        assert "natural conclusion" in prompt
+
+    def test_end_of_conversation_instruction_after_all_slots(self) -> None:
+        """End-of-conversation instruction appears after mes_example content."""
+        character = Character(
+            name="Test",
+            system_prompt="SLOT_MAIN",
+            description="SLOT_DESC",
+            personality="SLOT_PERS",
+            scenario="SLOT_SCEN",
+            mes_example="SLOT_EXAMPLE",
+        )
+
+        prompt = build_system_prompt(character, [], user_name="User")
+
+        example_pos = prompt.index("SLOT_EXAMPLE")
+        instruction_pos = prompt.index("<endofconversation>")
+        assert instruction_pos > example_pos, (
+            "end-of-conversation instruction must appear after mes_example"
+        )
+
     def test_budget_respects_insertion_order(self, character: Character) -> None:
         """Higher priority entries are included first when budget limited."""
         entries = [

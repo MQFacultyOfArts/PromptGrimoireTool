@@ -270,17 +270,20 @@ class ClaudeClient:
             metadata["error"] = str(error)
         return metadata
 
-    async def stream_message_only(self, session: Session) -> AsyncIterator[str]:
+    async def stream_message_only(self, session: Session) -> AsyncIterator[StreamChunk]:
         """Stream response without adding user turn to session.
 
         Use when the UI has already added the user turn before calling.
         Reasoning is captured in metadata but NOT yielded (hidden from students).
 
+        Yields ``StreamChunk`` objects. The final chunk has ``ended=True``
+        when the ``<endofconversation>`` marker was detected.
+
         Args:
             session: The current roleplay session (user turn already added).
 
         Yields:
-            Text chunks as they arrive (response only, not thinking).
+            StreamChunk objects with text and end-of-conversation signal.
         """
         activated = activate_entries(session.character.lorebook_entries, session.turns)
         system_prompt = build_system_prompt(
@@ -302,15 +305,21 @@ class ClaudeClient:
         thinking_content = ""
         error_occurred: Exception | None = None
 
-        try:
+        async def _raw_text_stream() -> AsyncIterator[str]:
+            """Inner generator yielding raw text chunks from the API."""
+            nonlocal thinking_content
             async with self._client.messages.stream(**api_params) as stream:
                 async for event in stream:
                     if event.type == "thinking":
                         thinking_content += getattr(event, "thinking", "")
                     elif event.type == "text":
                         text: str = getattr(event, "text", "")
-                        full_response += text
                         yield text
+
+        try:
+            async for chunk in detect_end_of_conversation(_raw_text_stream()):
+                full_response += chunk.text
+                yield chunk
         except Exception as e:
             error_occurred = e
             logger.error(

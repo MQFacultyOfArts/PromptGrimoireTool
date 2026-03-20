@@ -140,9 +140,15 @@ async def _handle_send(
                 spinner.visible = False
                 thinking_label.visible = False
                 first_chunk = False
-            full_response += chunk
+            full_response += chunk.text
             streaming_label.text = full_response
             scroll_area.scroll_to(percent=1.0)
+            if chunk.ended:
+                logger.info(
+                    "end_of_conversation_detected",
+                    character=session.character.name,
+                    turn_count=len(session.turns),
+                )
     except Exception as e:
         logger.exception("stream_response_failed", operation="stream_response")
         ui.notify(f"Error: {e}", type="negative")

@@ -11,6 +11,14 @@ if TYPE_CHECKING:
     from promptgrimoire.models import Character, LorebookEntry, Turn
 
 
+_END_OF_CONVERSATION_INSTRUCTION = (
+    "\n\nWhen the conversation reaches a natural conclusion — the client "
+    "has said goodbye, all topics are addressed, or the interview is clearly "
+    "over — emit the marker <endofconversation> at the very end of your "
+    "final response. Do not explain the marker; it is invisible to the user."
+)
+
+
 class MessageDict(TypedDict):
     """Message format compatible with Claude API."""
 
@@ -161,8 +169,10 @@ def build_system_prompt(
     if character.mes_example.strip():
         parts.append(character.mes_example.strip())
 
-    # Join and substitute placeholders
-    full_prompt = "\n\n".join(parts)
+    # 8. End-of-conversation instruction (after all ST-parity slots)
+    # Join first, then append instruction (it carries its own leading newlines)
+    full_prompt = "\n\n".join(parts) + _END_OF_CONVERSATION_INSTRUCTION
+
     return substitute_placeholders(
         full_prompt, char_name=character.name, user_name=user_name
     )

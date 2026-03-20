@@ -259,6 +259,30 @@ _EXPORT_BTN_INITIAL_DISABLED = True
 _MAX_UPLOAD_SIZE = 100 * 1024 * 1024  # 100 MB (CRIT-6)
 
 
+async def _export_to_workspace(session: Session, user_id: UUID) -> str:
+    """Export session to annotation workspace, return the URL path.
+
+    Creates a loose workspace, adds the session HTML as an ai_conversation
+    document, grants owner permission, and returns the annotation URL.
+    """
+    html_content = session_to_html(session)
+
+    workspace = await create_workspace()
+    bind_contextvars(workspace_id=str(workspace.id))
+    title = f"Roleplay: {session.character.name}"
+    await update_workspace_title(workspace.id, title)
+    await add_document(
+        workspace_id=workspace.id,
+        type="ai_conversation",
+        content=html_content,
+        source_type="html",
+        title=title,
+    )
+    await grant_permission(workspace.id, user_id, "owner")
+
+    return f"/annotation?{urlencode({'workspace_id': str(workspace.id)})}"
+
+
 async def _handle_export(state: dict) -> None:
     """Export the current roleplay session to an annotation workspace.
 
@@ -278,23 +302,8 @@ async def _handle_export(state: dict) -> None:
             return
 
         user_id = UUID(auth_user["user_id"])
-        html_content = session_to_html(session)
-
-        workspace = await create_workspace()
-        bind_contextvars(workspace_id=str(workspace.id))
-        title = f"Roleplay: {session.character.name}"
-        await update_workspace_title(workspace.id, title)
-        await add_document(
-            workspace_id=workspace.id,
-            type="ai_conversation",
-            content=html_content,
-            source_type="html",
-            title=title,
-        )
-        await grant_permission(workspace.id, user_id, "owner")
-
-        url = f"/annotation?{urlencode({'workspace_id': str(workspace.id)})}"
-        ui.navigate.to(url)
+        workspace_url = await _export_to_workspace(session, user_id)
+        ui.navigate.to(workspace_url)
     except Exception:
         logger.exception("Failed to export roleplay session")
         ui.notify("Export failed. Please try again.", type="negative")

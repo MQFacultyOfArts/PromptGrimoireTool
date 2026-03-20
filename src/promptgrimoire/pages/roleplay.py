@@ -491,13 +491,10 @@ async def roleplay_page() -> None:
 
         # Centre a constrained-width column
         with (
-            ui.column().classes("w-full items-center"),
             ui.column()
-            .classes("roleplay-column")
-            .style(
-                "max-width: 1000px; width: 100%; padding: 0 16px; "
-                "flex: 1; min-height: 0; display: flex; flex-direction: column;"
-            ),
+            .classes("w-full items-center")
+            .style("display: flex; flex-direction: column; flex: 1; min-height: 0;"),
+            ui.column().classes("roleplay-column").style("padding: 0 16px;"),
         ):
             # Chat section — transparent card over dark background
             with (

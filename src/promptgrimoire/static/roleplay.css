@@ -19,6 +19,10 @@
     max-width: 1000px !important;
     width: 100% !important;
     align-self: center !important;
+    flex: 1 !important;
+    min-height: 0 !important;
+    display: flex !important;
+    flex-direction: column !important;
 }
 
 /* ── Dark semi-transparent card (override Quasar q-card white) ──── */

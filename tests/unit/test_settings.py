@@ -24,6 +24,7 @@ from promptgrimoire.config import (
     DevConfig,
     FeaturesConfig,
     LlmConfig,
+    RoleplayConfig,
     Settings,
     StytchConfig,
     _branch_db_suffix,
@@ -543,3 +544,36 @@ class TestEnsureDatabaseExists:
 
         with pytest.raises(ValueError, match="Invalid database name"):
             ensure_database_exists("postgresql://u:p@h/my-invalid-db!")
+
+
+# ---------------------------------------------------------------------------
+# RoleplayConfig sub-model
+# ---------------------------------------------------------------------------
+class TestRoleplayConfig:
+    """RoleplayConfig sub-model defaults and env var override."""
+
+    def test_default_audit_log_false(self) -> None:
+        """audit_log defaults to False."""
+        s = Settings(
+            _env_file=None,  # type: ignore[call-arg]
+            dev=DevConfig(branch_db_suffix=False),
+        )
+        assert s.roleplay.audit_log is False
+
+    def test_audit_log_from_env(self) -> None:
+        """ROLEPLAY__AUDIT_LOG env var enables audit logging."""
+        with patch.dict(os.environ, {"ROLEPLAY__AUDIT_LOG": "true"}):
+            s = Settings(
+                _env_file=None,  # type: ignore[call-arg]
+                dev=DevConfig(branch_db_suffix=False),
+            )
+        assert s.roleplay.audit_log is True
+
+    def test_explicit_roleplay_config(self) -> None:
+        """Explicit RoleplayConfig construction."""
+        s = Settings(
+            _env_file=None,  # type: ignore[call-arg]
+            roleplay=RoleplayConfig(audit_log=True),
+            dev=DevConfig(branch_db_suffix=False),
+        )
+        assert s.roleplay.audit_log is True

@@ -134,6 +134,12 @@ class BrowserstackConfig(BaseModel):
     access_key: SecretStr = SecretStr("")
 
 
+class RoleplayConfig(BaseModel):
+    """Configuration for roleplay simulation features."""
+
+    audit_log: bool = False
+
+
 class DevConfig(BaseModel):
     """Development and testing toggles."""
 
@@ -314,6 +320,7 @@ class Settings(BaseSettings):
     i18n: I18nConfig = I18nConfig()
     browserstack: BrowserstackConfig = BrowserstackConfig()
     help: HelpConfig = HelpConfig()
+    roleplay: RoleplayConfig = RoleplayConfig()
 
     @model_validator(mode="after")
     def _apply_branch_db_suffix(self) -> Settings:

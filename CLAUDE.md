@@ -134,7 +134,7 @@ uv run grimoire e2e run
 # Run E2E tests in serial mode (single server)
 uv run grimoire e2e run --serial
 
-# Run all 8 lanes: js, unit, integration, playwright, nicegui, smoke, blns+slow
+# Run all 8 lanes: js, bats, unit, integration, playwright, nicegui, smoke, blns+extra
 uv run grimoire e2e all
 
 # Run E2E tests (smart selection based on changes)

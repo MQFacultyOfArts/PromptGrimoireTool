@@ -214,6 +214,23 @@ def _setup_session(
     return session, client, log_path
 
 
+def _build_char_panel(widgets: dict) -> None:
+    """Build the character info panel (left sidebar)."""
+    with (
+        ui.column()
+        .classes("roleplay-char-panel")
+        .props('data-testid="roleplay-char-panel"')
+    ):
+        char_portrait = (
+            ui.image(_AI_AVATAR)
+            .classes("roleplay-char-portrait")
+            .props('data-testid="roleplay-char-portrait"')
+        )
+        widgets["char_portrait"] = char_portrait
+        panel_char_name = ui.label("").classes("text-h5 roleplay-char-name")
+        widgets["panel_char_name"] = panel_char_name
+
+
 _EXPORT_BTN_INITIAL_DISABLED = True
 
 _MAX_UPLOAD_SIZE = 100 * 1024 * 1024  # 100 MB (CRIT-6)
@@ -278,6 +295,7 @@ def _auto_load_character(state: dict, widgets: dict) -> None:
         state["log_path"] = log_path
 
         widgets["char_name_label"].text = character.name
+        widgets["panel_char_name"].text = character.name
         widgets["scenario_label"].text = substitute_placeholders(
             character.scenario or "No scenario",
             char_name=character.name,
@@ -324,6 +342,7 @@ async def _handle_upload(e, *, state: dict, widgets: dict) -> None:
         widgets["management_drawer"].value = False  # close the drawer
 
         widgets["char_name_label"].text = character.name
+        widgets["panel_char_name"].text = character.name
         widgets["scenario_label"].text = substitute_placeholders(
             character.scenario or "No scenario",
             char_name=character.name,
@@ -496,84 +515,91 @@ async def roleplay_page() -> None:
             .style("display: flex; flex-direction: column; flex: 1; min-height: 0;"),
             ui.column().classes("roleplay-column").style("padding: 0 16px;"),
         ):
-            # Chat section — transparent card over dark background
             with (
-                ui.card()
-                .classes("w-full roleplay-card")
-                .style(
-                    "background: rgba(23, 23, 23, 0.75) !important;"
-                    " box-shadow: 0 4px 16px rgba(0,0,0,0.4) !important;"
-                    " border: 1px solid rgba(220,220,210,0.1) !important;"
-                    " border-radius: 12px !important;"
-                )
-                .props('data-testid="roleplay-chat-card"') as chat_card
+                ui.row()
+                .classes("roleplay-main-row w-full")
+                .style("flex: 1; min-height: 0;")
             ):
-                widgets["chat_card"] = chat_card
+                _build_char_panel(widgets)
 
-                with ui.row().classes("w-full items-center justify-between"):
-                    char_name_label = (
-                        ui.label("")
-                        .classes("text-h5")
-                        .style("color: rgb(220, 220, 210);")
-                    )
-                    widgets["char_name_label"] = char_name_label
-
-                    settings_btn = ui.button(icon="settings").props(
-                        'flat round data-testid="roleplay-settings-btn"'
-                    )
-                    settings_btn.on("click", management_drawer.toggle)
-
-                # Scenario hidden — raw placeholder text is not user-facing
-                scenario_label = ui.label("")
-                scenario_label.visible = False
-                widgets["scenario_label"] = scenario_label
-
+                # Chat section — transparent card over dark background
                 with (
-                    ui.scroll_area()
-                    .classes("w-full border rounded p-4 roleplay-chat")
-                    .props('data-testid="roleplay-chat-area"') as scroll_area
+                    ui.card()
+                    .classes("w-full roleplay-card")
+                    .style(
+                        "background: rgba(23, 23, 23, 0.75) !important;"
+                        " box-shadow: 0 4px 16px rgba(0,0,0,0.4) !important;"
+                        " border: 1px solid rgba(220,220,210,0.1) !important;"
+                        " border-radius: 12px !important;"
+                    )
+                    .props('data-testid="roleplay-chat-card"') as chat_card
                 ):
-                    chat_container = ui.column().classes("w-full gap-3")
-                widgets["scroll_area"] = scroll_area
-                widgets["chat_container"] = chat_container
+                    widgets["chat_card"] = chat_card
 
-                with ui.row().classes("w-full mt-4"):
-                    message_input = (
-                        ui.input(placeholder="Type your message...")
-                        .classes("flex-grow")
-                        .props('outlined data-testid="roleplay-message-input"')
-                        .style("color: rgb(220, 220, 210) !important;")
-                    )
+                    with ui.row().classes("w-full items-center justify-between"):
+                        char_name_label = (
+                            ui.label("")
+                            .classes("text-h5")
+                            .style("color: rgb(220, 220, 210);")
+                        )
+                        widgets["char_name_label"] = char_name_label
 
-                    async def on_send(text: str) -> None:
-                        if state["session"]:
-                            await _handle_send(
-                                text,
-                                state["session"],
-                                state["client"],
-                                message_input,
-                                state["log_path"],
-                                chat_container,
-                                scroll_area,
-                                send_button,
-                            )
+                        settings_btn = ui.button(icon="settings").props(
+                            'flat round data-testid="roleplay-settings-btn"'
+                        )
+                        settings_btn.on("click", management_drawer.toggle)
 
-                    send_button = (
-                        ui.button("Send")
-                        .classes("ml-2")
-                        .props('data-testid="roleplay-send-btn"')
-                    )
-                    on_submit_with_value(
-                        send_button,
-                        message_input,
-                        on_send,
-                    )
-                    on_submit_with_value(
-                        message_input,
-                        message_input,
-                        on_send,
-                        event="keydown.enter",
-                    )
+                    # Scenario hidden — raw placeholder text is not user-facing
+                    scenario_label = ui.label("")
+                    scenario_label.visible = False
+                    widgets["scenario_label"] = scenario_label
+
+                    with (
+                        ui.scroll_area()
+                        .classes("w-full border rounded p-4 roleplay-chat")
+                        .props('data-testid="roleplay-chat-area"') as scroll_area
+                    ):
+                        chat_container = ui.column().classes("w-full gap-3")
+                    widgets["scroll_area"] = scroll_area
+                    widgets["chat_container"] = chat_container
+
+                    with ui.row().classes("w-full mt-4"):
+                        message_input = (
+                            ui.input(placeholder="Type your message...")
+                            .classes("flex-grow")
+                            .props('outlined data-testid="roleplay-message-input"')
+                            .style("color: rgb(220, 220, 210) !important;")
+                        )
+
+                        async def on_send(text: str) -> None:
+                            if state["session"]:
+                                await _handle_send(
+                                    text,
+                                    state["session"],
+                                    state["client"],
+                                    message_input,
+                                    state["log_path"],
+                                    chat_container,
+                                    scroll_area,
+                                    send_button,
+                                )
+
+                        send_button = (
+                            ui.button("Send")
+                            .classes("ml-2")
+                            .props('data-testid="roleplay-send-btn"')
+                        )
+                        on_submit_with_value(
+                            send_button,
+                            message_input,
+                            on_send,
+                        )
+                        on_submit_with_value(
+                            message_input,
+                            message_input,
+                            on_send,
+                            event="keydown.enter",
+                        )
 
             # Auto-load bundled Becky Bennett character card
             _auto_load_character(state, widgets)

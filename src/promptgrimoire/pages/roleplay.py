@@ -33,6 +33,7 @@ from promptgrimoire.parsers.sillytavern import parse_character_card
 from promptgrimoire.ui_helpers import on_submit_with_value
 
 if TYPE_CHECKING:
+    from nicegui.elements.drawer import RightDrawer
     from nicegui.elements.input import Input
     from nicegui.elements.scroll_area import ScrollArea
 
@@ -231,7 +232,9 @@ def _build_char_panel(widgets: dict) -> None:
         widgets["panel_char_name"] = panel_char_name
 
 
-def _build_chat_header(widgets: dict, management_drawer) -> None:
+def _build_chat_header(
+    widgets: dict[str, object], management_drawer: RightDrawer
+) -> None:
     """Build the chat card header row with avatar, name, and settings button."""
     with ui.row().classes("w-full items-center justify-between"):
         with (
@@ -316,6 +319,8 @@ def _auto_load_character(state: dict, widgets: dict) -> None:
 
         widgets["char_name_label"].text = character.name
         widgets["panel_char_name"].text = character.name
+        # Portrait update deferred — parser does not yet extract embedded images
+        # from chara_card_v3
         widgets["scenario_label"].text = substitute_placeholders(
             character.scenario or "No scenario",
             char_name=character.name,
@@ -363,6 +368,8 @@ async def _handle_upload(e, *, state: dict, widgets: dict) -> None:
 
         widgets["char_name_label"].text = character.name
         widgets["panel_char_name"].text = character.name
+        # Portrait update deferred — parser does not yet extract embedded images
+        # from chara_card_v3
         widgets["scenario_label"].text = substitute_placeholders(
             character.scenario or "No scenario",
             char_name=character.name,

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 import anthropic
@@ -17,6 +18,50 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from promptgrimoire.models import Session
+
+
+@dataclass(frozen=True)
+class StreamChunk:
+    """A chunk of streamed text with end-of-conversation signal."""
+
+    text: str
+    ended: bool = False
+    thinking: str | None = None
+
+
+_END_MARKER = "<endofconversation>"
+
+
+async def detect_end_of_conversation(
+    chunks: AsyncIterator[str],
+) -> AsyncIterator[StreamChunk]:
+    """Detect <endofconversation> marker in a stream of text chunks.
+
+    Buffers up to len(marker)-1 characters to handle marker spanning
+    chunk boundaries. Case-sensitive exact match only.
+    """
+    buffer = ""
+    marker_len = len(_END_MARKER)
+    max_buffer = marker_len - 1
+
+    async for chunk in chunks:
+        buffer += chunk
+        marker_pos = buffer.find(_END_MARKER)
+        if marker_pos != -1:
+            # Found marker — yield text before it and stop
+            before = buffer[:marker_pos]
+            yield StreamChunk(text=before, ended=True)
+            return
+
+        # Yield everything except the trailing max_buffer chars
+        if len(buffer) > max_buffer:
+            safe = buffer[:-max_buffer]
+            buffer = buffer[-max_buffer:]
+            yield StreamChunk(text=safe)
+
+    # Stream exhausted — flush remaining buffer
+    if buffer:
+        yield StreamChunk(text=buffer)
 
 
 class ClaudeClient:

@@ -289,7 +289,7 @@ def _auto_load_character(state: dict, widgets: dict) -> None:
     except Exception:
         logger.exception("Failed to auto-load bundled character card")
         ui.notify("Could not auto-load character card", type="negative")
-        widgets["upload_expansion"].value = True
+        widgets["management_drawer"].value = True
 
 
 async def _handle_upload(e, *, state: dict, widgets: dict) -> None:
@@ -321,7 +321,7 @@ async def _handle_upload(e, *, state: dict, widgets: dict) -> None:
         state["client"] = client
         state["log_path"] = log_path
 
-        widgets["upload_expansion"].value = False  # collapse the expansion panel
+        widgets["management_drawer"].value = False  # close the drawer
 
         widgets["char_name_label"].text = character.name
         widgets["scenario_label"].text = substitute_placeholders(
@@ -431,8 +431,63 @@ async def roleplay_page() -> None:
                 border: 1px solid rgba(220, 220, 210, 0.1) !important;
                 opacity: 1 !important;
             }
+            /* Right drawer dark theme */
+            .roleplay-management-drawer {
+                background: rgba(30, 30, 30, 0.95) !important;
+                border-left: 1px solid rgba(220, 220, 210, 0.1) !important;
+                color: rgb(220, 220, 210) !important;
+            }
         </style>""")
         ui.query("body").classes("roleplay-bg")
+
+        # Management panel — right drawer, initially closed
+        with (
+            ui.right_drawer(value=False)
+            .classes("roleplay-management-drawer")
+            .props('data-testid="roleplay-management-drawer"') as management_drawer
+        ):
+            widgets["management_drawer"] = management_drawer
+
+            ui.label("Management").classes("text-h6 q-mb-md").style(
+                "color: rgb(220, 220, 210);"
+            )
+
+            # Export to workspace
+            export_button = (
+                ui.button(
+                    "Export to Workspace",
+                    icon="upload",
+                    on_click=lambda: _handle_export(state),
+                )
+                .classes("w-full mb-4")
+                .props('data-testid="roleplay-export-btn"')
+            )
+            if _EXPORT_BTN_INITIAL_DISABLED:
+                export_button.disable()
+            widgets["export_button"] = export_button
+
+            ui.separator().style("border-color: rgba(220,220,210,0.2);")
+
+            # Load different character
+            ui.label("Load Different Character").classes("text-subtitle1 mt-2").style(
+                "color: rgb(220, 220, 210);"
+            )
+            user_name_input = ui.input(
+                label="Your name (used as {{user}})",
+                value=_get_default_user_name(),
+            ).classes("w-64 mb-2")
+            widgets["user_name_input"] = user_name_input
+
+            ui.upload(
+                label="Drop character card JSON here",
+                on_upload=lambda e: _handle_upload(e, state=state, widgets=widgets),
+                auto_upload=True,
+            ).classes("w-full").props('accept=".json"')
+
+            ui.separator().style("border-color: rgba(220,220,210,0.2);")
+            ui.label("Log files are saved to: logs/sessions/").style(
+                "color: rgba(220,220,210,0.6); font-size: 12px;"
+            )
 
         # Centre a constrained-width column
         with (
@@ -444,51 +499,6 @@ async def roleplay_page() -> None:
                 "flex: 1; min-height: 0; display: flex; flex-direction: column;"
             ),
         ):
-            # Management panel (collapsed — Becky Bennett auto-loads below)
-            with (
-                ui.expansion("Management", icon="settings")
-                .classes("w-full mb-4 roleplay-upload")
-                .props('data-testid="roleplay-upload-card"') as upload_expansion
-            ):
-                widgets["upload_expansion"] = upload_expansion
-
-                # Export to workspace
-                export_button = (
-                    ui.button(
-                        "Export to Workspace",
-                        icon="upload",
-                        on_click=lambda: _handle_export(state),
-                    )
-                    .classes("w-full mb-4")
-                    .props('data-testid="roleplay-export-btn"')
-                )
-                if _EXPORT_BTN_INITIAL_DISABLED:
-                    export_button.disable()
-                widgets["export_button"] = export_button
-
-                ui.separator().style("border-color: rgba(220,220,210,0.2);")
-
-                # Load different character
-                ui.label("Load Different Character").classes(
-                    "text-subtitle1 mt-2"
-                ).style("color: rgb(220, 220, 210);")
-                user_name_input = ui.input(
-                    label="Your name (used as {{user}})",
-                    value=_get_default_user_name(),
-                ).classes("w-64 mb-2")
-                widgets["user_name_input"] = user_name_input
-
-                ui.upload(
-                    label="Drop character card JSON here",
-                    on_upload=lambda e: _handle_upload(e, state=state, widgets=widgets),
-                    auto_upload=True,
-                ).classes("w-full").props('accept=".json"')
-
-                ui.separator().style("border-color: rgba(220,220,210,0.2);")
-                ui.label("Log files are saved to: logs/sessions/").style(
-                    "color: rgba(220,220,210,0.6); font-size: 12px;"
-                )
-
             # Chat section — transparent card over dark background
             with (
                 ui.card()
@@ -503,10 +513,18 @@ async def roleplay_page() -> None:
             ):
                 widgets["chat_card"] = chat_card
 
-                char_name_label = (
-                    ui.label("").classes("text-h5").style("color: rgb(220, 220, 210);")
-                )
-                widgets["char_name_label"] = char_name_label
+                with ui.row().classes("w-full items-center justify-between"):
+                    char_name_label = (
+                        ui.label("")
+                        .classes("text-h5")
+                        .style("color: rgb(220, 220, 210);")
+                    )
+                    widgets["char_name_label"] = char_name_label
+
+                    settings_btn = ui.button(icon="settings").props(
+                        'flat round data-testid="roleplay-settings-btn"'
+                    )
+                    settings_btn.on("click", management_drawer.toggle)
 
                 # Scenario hidden — raw placeholder text is not user-facing
                 scenario_label = ui.label("")

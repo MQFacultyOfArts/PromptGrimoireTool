@@ -112,6 +112,47 @@ class TestCreateTag:
         assert tag.created_at is not None
 
     @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "bad_color",
+        [
+            "#",  # bare hash — the production incident trigger
+            "",  # empty string
+            "red",  # named colour, not hex
+            "#GGG000",  # invalid hex digits
+            "#1f77b",  # 5 hex digits (too short)
+            "#1f77b4a",  # 7 hex digits (too long)
+            "1f77b4",  # missing hash prefix
+        ],
+        ids=[
+            "bare-hash",
+            "empty",
+            "named-colour",
+            "invalid-hex-digits",
+            "too-short",
+            "too-long",
+            "missing-hash",
+        ],
+    )
+    async def test_create_tag_rejects_invalid_color(self, bad_color: str) -> None:
+        """create_tag() must reject colours not matching ^#[0-9a-fA-F]{6}$.
+
+        Regression test for 2026-03-20 production incident: a tag with
+        color='#' hit the DB check constraint (ck_tag_color_hex) and
+        raised IntegrityError instead of a clean BusinessLogicError.
+
+        The fix should validate at the application layer so the error
+        is raised as a ValueError (or BusinessLogicError subclass),
+        logged at WARNING, and never reaches the DB constraint.
+        """
+        from promptgrimoire.db.tags import create_tag
+
+        _, activity = await _make_course_week_activity()
+        ws_id = activity.template_workspace_id
+
+        with pytest.raises(ValueError, match=r"[Cc]olor"):
+            await create_tag(ws_id, name="Bad Colour", color=bad_color)
+
+    @pytest.mark.asyncio
     async def test_create_tag_with_only_required_fields(self) -> None:
         """Create a tag with only name and color.
 

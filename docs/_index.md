@@ -123,6 +123,7 @@ library references during development.
 - [Proposed Incident Analysis Tools](postmortems/2026-03-16-proposed-analysis-tools.md)
 - [Investigation: Firefox E2E CI Failures](postmortems/2026-03-18-firefox-e2e-failures.md)
 - [Investigation: #377 Page Load Latency](postmortems/2026-03-18-page-load-latency-377.md)
+- [Causal Analysis: NiceGUI Slot Deletion Race (#369)](postmortems/2026-03-20-slot-deletion-investigation-369.md)
 - [Post-Mortem: 2026-03-21 PDF Export Failure + Journal PII Leak](postmortems/2026-03-21-export-failure-pii-leak.md)
 - [PromptGrimoire Incident Analysis Playbook](postmortems/incident-analysis-playbook.md)
 

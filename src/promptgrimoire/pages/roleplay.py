@@ -33,9 +33,12 @@ from promptgrimoire.parsers.sillytavern import parse_character_card
 from promptgrimoire.ui_helpers import on_submit_with_value
 
 if TYPE_CHECKING:
+    from nicegui.elements.chat_message import ChatMessage
     from nicegui.elements.drawer import RightDrawer
     from nicegui.elements.input import Input
+    from nicegui.elements.label import Label
     from nicegui.elements.scroll_area import ScrollArea
+    from nicegui.elements.spinner import Spinner
 
 logger = structlog.get_logger()
 
@@ -90,9 +93,96 @@ def _render_messages(session: Session, chat_container, scroll_area: ScrollArea) 
     scroll_area.scroll_to(percent=1.0)
 
 
+async def _complete_conversation(
+    state: dict,
+    input_field: Input,
+    send_button,
+    chat_container,
+    *,
+    finish_btn=None,
+) -> None:
+    """Lock the UI, export the conversation, and show a completion banner.
+
+    Called when the AI emits ``<endofconversation>`` or when the user
+    clicks "Finish Interview".  ``finish_btn`` is optional — Task 3
+    adds the button, Task 2 calls this without it.
+    """
+    input_field.disable()
+    send_button.disable()
+    if finish_btn is not None:
+        finish_btn.disable()
+
+    session = state["session"]
+    auth_user = app.storage.user.get("auth_user")
+    if auth_user is None:
+        ui.notify("Session expired. Please refresh the page.", type="negative")
+        return
+    user_id = UUID(auth_user["user_id"])
+    workspace_url = await _export_to_workspace(session, user_id)
+
+    with (
+        chat_container,
+        ui.card()
+        .classes("w-full q-pa-md")
+        .props('data-testid="roleplay-completion-banner"'),
+    ):
+        ui.label("The activity is complete.").classes("text-h6")
+        ui.link(
+            "Review your conversation in the annotation workspace",
+            workspace_url,
+        ).props('data-testid="roleplay-workspace-link"')
+
+
+def _show_thinking_indicator(
+    chat_container, character_name: str
+) -> tuple[ChatMessage, Spinner, Label, Label]:
+    """Show a thinking indicator in the chat and return widget handles.
+
+    Returns (thinking_msg, spinner, thinking_label, streaming_label).
+    """
+    with chat_container:
+        thinking_msg = ui.chat_message(
+            name=character_name, sent=False, avatar=_AI_AVATAR
+        )
+        with thinking_msg:
+            with ui.row().classes("items-center gap-2"):
+                spinner = ui.spinner("dots", size="sm")
+                thinking_label = ui.label("Thinking...").classes("text-gray-500 italic")
+            streaming_label = ui.label("")
+    return thinking_msg, spinner, thinking_label, streaming_label
+
+
+async def _stream_response(
+    client: ClaudeClient,
+    session: Session,
+    spinner: Spinner,
+    thinking_label: Label,
+    streaming_label: Label,
+    scroll_area: ScrollArea,
+) -> tuple[str, bool]:
+    """Stream the AI response, updating widgets as chunks arrive.
+
+    Returns (full_response_text, conversation_ended).
+    """
+    full_response = ""
+    first_chunk = True
+    conversation_ended = False
+    async for chunk in client.stream_message_only(session):
+        if first_chunk:
+            spinner.visible = False
+            thinking_label.visible = False
+            first_chunk = False
+        full_response += chunk.text
+        streaming_label.text = full_response
+        scroll_area.scroll_to(percent=1.0)
+        if chunk.ended:
+            conversation_ended = True
+    return full_response, conversation_ended
+
+
 async def _handle_send(
     user_message: str,
-    session: Session,
+    state: dict,
     client: ClaudeClient,
     input_field: Input,
     log_path: Path,
@@ -106,6 +196,10 @@ async def _handle_send(
     to avoid the server-side value race.  See value-capture-hardening
     design doc.
     """
+    session = state["session"]
+    if session and session.ended:
+        return  # AC3.7: no messages after conversation end
+
     if not user_message or not user_message.strip():
         return
 
@@ -121,36 +215,16 @@ async def _handle_send(
     scroll_area.scroll_to(percent=1.0)
 
     # Show thinking indicator
-    with chat_container:
-        thinking_msg = ui.chat_message(
-            name=session.character.name, sent=False, avatar=_AI_AVATAR
-        )
-        with thinking_msg:
-            with ui.row().classes("items-center gap-2"):
-                spinner = ui.spinner("dots", size="sm")
-                thinking_label = ui.label("Thinking...").classes("text-gray-500 italic")
-            streaming_label = ui.label("")
+    thinking_msg, spinner, thinking_label, streaming_label = _show_thinking_indicator(
+        chat_container, session.character.name
+    )
     scroll_area.scroll_to(percent=1.0)
 
     # Stream response
-    full_response = ""
-    first_chunk = True
     try:
-        async for chunk in client.stream_message_only(session):
-            if first_chunk:
-                spinner.visible = False
-                thinking_label.visible = False
-                first_chunk = False
-            full_response += chunk.text
-            streaming_label.text = full_response
-            scroll_area.scroll_to(percent=1.0)
-            if chunk.ended:
-                session.ended = True
-                logger.info(
-                    "end_of_conversation_detected",
-                    character=session.character.name,
-                    turn_count=len(session.turns),
-                )
+        full_response, conversation_ended = await _stream_response(
+            client, session, spinner, thinking_label, streaming_label, scroll_area
+        )
     except Exception as e:
         logger.exception("stream_response_failed", operation="stream_response")
         ui.notify(f"Error: {e}", type="negative")
@@ -165,7 +239,16 @@ async def _handle_send(
         )
     scroll_area.scroll_to(percent=1.0)
 
-    send_button.enable()
+    if conversation_ended:
+        session.ended = True
+        logger.info(
+            "end_of_conversation_detected",
+            character=session.character.name,
+            turn_count=len(session.turns),
+        )
+        await _complete_conversation(state, input_field, send_button, chat_container)
+    else:
+        send_button.enable()
 
     # Log turns
     with log_path.open("a") as f:
@@ -600,7 +683,7 @@ async def roleplay_page() -> None:
                             if state["session"]:
                                 await _handle_send(
                                     text,
-                                    state["session"],
+                                    state,
                                     state["client"],
                                     message_input,
                                     state["log_path"],

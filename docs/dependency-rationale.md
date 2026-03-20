@@ -1,18 +1,18 @@
 # Dependency Rationale
 
-Last reviewed: 2026-03-17
+Last reviewed: 2026-03-20
 
 Each dependency lists: what it does, why it's here (not a stdlib/transitive alternative), and where the evidence is.
 
 ## Production Dependencies
 
-### nicegui == 3.8.0
+### nicegui == 3.9.0
 
 **Claim:** Web UI framework. The entire frontend is built on NiceGUI's component model, server-sent events, and WebSocket integration.
 
 **Evidence:** 13 files across `src/promptgrimoire/pages/` and `src/promptgrimoire/__init__.py` import from nicegui. Every page route, dialog, and UI component depends on it. Also provides the app server (`ui.run`), static file serving, client-side JS execution (`ui.run_javascript`), and the WebSocket-based client–server communication layer.
 
-**Pin rationale:** Pinned to 3.8.0 which includes our upstream fixes (#5805 element re-render regression, #5806 Outbox.stop wake, #5749 SPA script injection). The 3.7.x destroy+recreate regression from `docs/design-plans/2026-02-10-nicegui-3.7.x-regression.md` is resolved. The `Outbox.stop()` monkey-patch in `cli.py` was removed as the fix is now upstream.
+**Pin rationale:** Pinned to 3.9.0 which includes GHSA-w5g8-5849-vj76 (media streaming memory exhaustion security fix) and all prior upstream fixes (#5805, #5806, #5749). No breaking changes from 3.8.0. **Last reviewed:** 2026-03-20.
 
 **Why not alternatives:** NiceGUI was chosen for Python-native UI without a JS frontend build step. The project is deeply coupled to NiceGUI's component API, page routing, and storage system.
 

@@ -7,6 +7,7 @@ Tags are per-workspace annotation categories; TagGroups visually group them.
 from __future__ import annotations
 
 import logging
+import re
 from typing import TYPE_CHECKING
 
 import structlog
@@ -32,6 +33,23 @@ if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
 
     from promptgrimoire.crdt.annotation_doc import AnnotationDocument
+
+
+_HEX_COLOR_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
+
+
+def _validate_hex_color(color: str, *, nullable: bool = False) -> None:
+    """Validate a hex colour string matches ^#[0-9a-fA-F]{6}$.
+
+    Raises ValueError for invalid colours so the error surfaces as a
+    clean application-level rejection rather than a DB IntegrityError
+    from the ck_tag_color_hex / ck_tag_group_color_hex constraints.
+    """
+    if nullable and color is None:
+        return
+    if not isinstance(color, str) or not _HEX_COLOR_RE.match(color):
+        msg = f"Color must be a 7-character hex string (e.g. '#1f77b4'), got {color!r}"
+        raise ValueError(msg)
 
 
 async def _check_tag_creation_permission(workspace_id: UUID) -> None:
@@ -184,6 +202,9 @@ async def update_tag_group(
     Raises:
         DuplicateNameError: If *name* conflicts with an existing group name.
     """
+    if color is not _UNSET and color is not None:
+        _validate_hex_color(str(color))
+
     async with get_session() as session:
         group = await session.get(TagGroup, group_id)
         if not group:
@@ -298,6 +319,7 @@ async def create_tag(
     Tag
         The created Tag.
     """
+    _validate_hex_color(color)
     await _check_tag_creation_permission(workspace_id)
 
     async with get_session() as session:
@@ -439,6 +461,9 @@ async def update_tag(
 
     Pass ``bypass_lock=True`` to allow instructors to edit locked tags.
     """
+    if color is not ... and color is not None:
+        _validate_hex_color(color)
+
     async with get_session() as session:
         tag = await session.get(Tag, tag_id)
         if not tag:

@@ -1,5 +1,6 @@
 """Tests for SillyTavern chara_card_v3 parser."""
 
+import json
 from pathlib import Path
 
 import pytest
@@ -146,3 +147,115 @@ class TestParseCharacterCard:
 
         with pytest.raises(ValueError, match="name"):
             parse_character_card(incomplete)
+
+    def test_becky_bennett_mes_example_is_empty(self, becky_bennett_path: Path) -> None:
+        """Becky Bennett card has empty mes_example."""
+        character, _ = parse_character_card(becky_bennett_path)
+
+        assert character.mes_example == ""
+
+    def test_becky_bennett_post_history_instructions_is_empty(
+        self, becky_bennett_path: Path
+    ) -> None:
+        """Becky Bennett card has empty post_history_instructions."""
+        character, _ = parse_character_card(becky_bennett_path)
+
+        assert character.post_history_instructions == ""
+
+    def test_becky_bennett_lorebook_positions_are_before_char(
+        self, becky_bennett_path: Path
+    ) -> None:
+        """All 5 Becky Bennett lorebook entries have position 'before_char'."""
+        _, entries = parse_character_card(becky_bennett_path)
+
+        assert len(entries) == 5
+        for entry in entries:
+            assert entry.position == "before_char"
+
+    def test_mes_example_extracted(self, tmp_path: Path) -> None:
+        """Non-empty mes_example is extracted from the data block."""
+        card = tmp_path / "card.json"
+        card.write_text(
+            json.dumps(
+                {
+                    "name": "Test",
+                    "data": {"mes_example": "<START>\n{{char}}: Hello there!"},
+                }
+            )
+        )
+
+        character, _ = parse_character_card(card)
+
+        assert character.mes_example == "<START>\n{{char}}: Hello there!"
+
+    def test_post_history_instructions_extracted(self, tmp_path: Path) -> None:
+        """Non-empty post_history_instructions is extracted from the data block."""
+        card = tmp_path / "card.json"
+        card.write_text(
+            json.dumps(
+                {
+                    "name": "Test",
+                    "data": {
+                        "post_history_instructions": "Remember to stay in character."
+                    },
+                }
+            )
+        )
+
+        character, _ = parse_character_card(card)
+
+        assert character.post_history_instructions == "Remember to stay in character."
+
+    def test_lorebook_position_after_char(self, tmp_path: Path) -> None:
+        """Lorebook entry with extensions.position 1 produces 'after_char'."""
+        card = tmp_path / "card.json"
+        card.write_text(
+            json.dumps(
+                {
+                    "name": "Test",
+                    "data": {
+                        "character_book": {
+                            "entries": [
+                                {
+                                    "keys": ["test"],
+                                    "content": "Test content",
+                                    "extensions": {"position": 1},
+                                }
+                            ]
+                        }
+                    },
+                }
+            )
+        )
+
+        _, entries = parse_character_card(card)
+
+        assert len(entries) == 1
+        assert entries[0].position == "after_char"
+
+    def test_lorebook_position_defaults_to_before_char(self, tmp_path: Path) -> None:
+        """Lorebook entry with no extensions.position defaults to 'before_char'."""
+        card = tmp_path / "card.json"
+        card.write_text(
+            json.dumps(
+                {
+                    "name": "Test",
+                    "data": {
+                        "character_book": {
+                            "entries": [
+                                {
+                                    "keys": ["test"],
+                                    "content": "Test content",
+                                    "extensions": {},
+                                }
+                            ]
+                        }
+                    },
+                }
+            )
+        )
+
+        _, entries = parse_character_card(card)
+
+        assert len(entries) == 1
+        assert entries[0].position == "before_char"

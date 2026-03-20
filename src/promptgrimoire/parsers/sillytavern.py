@@ -57,6 +57,10 @@ def parse_character_card(path: Path) -> tuple[Character, list[LorebookEntry]]:
         first_mes=_clean_text(raw.get("first_mes", "")),
         system_prompt=_clean_text(data.get("system_prompt", "")),
         user_persona_name=_extract_user_persona(),
+        mes_example=_clean_text(data.get("mes_example", "")),
+        post_history_instructions=_clean_text(
+            data.get("post_history_instructions", "")
+        ),
     )
 
     # Parse embedded lorebook
@@ -102,10 +106,27 @@ def _parse_lorebook_entries(book: dict[str, Any]) -> list[LorebookEntry]:
             or False,
             match_whole_words=raw_entry.get("extensions", {}).get("match_whole_words")
             or False,
+            position=_map_lorebook_position(
+                raw_entry.get("extensions", {}).get("position")
+            ),
         )
         entries.append(entry)
 
     return entries
+
+
+_POSITION_MAP: dict[int, str] = {0: "before_char", 1: "after_char"}
+
+
+def _map_lorebook_position(value: int | None) -> str:
+    """Map numeric lorebook position to string identifier.
+
+    SillyTavern stores position as: 0 = before_char, 1 = after_char.
+    Unknown or missing values default to "before_char".
+    """
+    if value is None:
+        return "before_char"
+    return _POSITION_MAP.get(value, "before_char")
 
 
 def _get_scan_depth(entry: dict[str, Any]) -> int:

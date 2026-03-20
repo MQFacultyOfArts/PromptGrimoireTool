@@ -54,7 +54,7 @@ See [docs/testing.md](docs/testing.md) for full testing guidelines including E2E
 
 ### Test Lane Model
 
-The test suite is organised into 7 lanes: 1 BATS lane for shell scripts and 6 pytest lanes. `uv run grimoire test all` runs BATS + unit tests (fast). `uv run grimoire e2e all` runs all 7 lanes sequentially: bats, unit, integration, playwright, nicegui, smoke, blns+slow.
+The test suite is organised into 7 lanes: 1 BATS lane for shell scripts and 6 pytest lanes. `uv run grimoire test all` runs BATS + unit tests (fast). `uv run grimoire e2e all` runs all 7 lanes sequentially: bats, unit, integration, playwright, nicegui, smoke, blns+extra. `uv run grimoire e2e slow` is a superset of `e2e all` that additionally runs Playwright with latexmk enabled and compiled-PDF validation.
 
 - **BATS** (`deploy/tests/`, serial) -- shell script unit tests via bats-core (system dependency: `sudo apt install bats`)
 - **Unit** (`tests/unit/`, xdist) -- excludes `e2e`, `nicegui_ui`, `latexmk_full`, `smoke` markers
@@ -62,7 +62,7 @@ The test suite is organised into 7 lanes: 1 BATS lane for shell scripts and 6 py
 - **Playwright** (`tests/e2e/`, parallel per-file isolation with cloned databases)
 - **NiceGUI** (serial, `nicegui_ui` marker)
 - **Smoke** (serial, `smoke` marker -- external toolchain tests: pandoc, lualatex, tlmgr)
-- **BLNS+Slow** (serial, `blns` or `slow` markers)
+- **BLNS+Extra** (serial, `blns` or `slow` markers)
 
 Playwright's event loop contaminates xdist workers, so E2E tests must never run in the unit/integration lanes. See [docs/testing.md](docs/testing.md).
 

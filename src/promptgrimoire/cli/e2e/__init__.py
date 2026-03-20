@@ -132,21 +132,24 @@ def _print_all_lanes_summary(
         console.print("[green]All lanes passed.[/]")
 
 
-def run_all_lanes(user_args: list[str]) -> int:
-    """Run all 6 test lanes sequentially."""
+def _run_all_lane_steps(user_args: list[str]) -> list[LaneResult]:
+    """Execute all 7 standard lanes and return their results (no summary)."""
     from promptgrimoire.cli.testing import (
         _NON_UI_MARKER_EXPRESSION,
         _TEST_ALL_MARKER_EXPRESSION,
+        _run_bats,
         _run_pytest,
         _xdist_worker_count,
     )
-    from promptgrimoire.config import get_current_branch
 
     _clear_lastfailed_cache()
 
-    branch = get_current_branch() or "unknown"
-    cwd = Path.cwd()
     lane_results: list[LaneResult] = []
+
+    # --- Lane 0: BATS (shell script tests) ---
+    console.print("[blue]Running BATS lane...[/]")
+    bats_exit = _run_bats()
+    lane_results.append(LaneResult("bats", bats_exit))
 
     # --- Lane 1: Unit (narrowed to tests/unit, excludes smoke) ---
     unit_log = Path("test-unit.log")
@@ -216,12 +219,12 @@ def run_all_lanes(user_args: list[str]) -> int:
     )
     lane_results.append(LaneResult("smoke", smoke_exit, log_path=smoke_log))
 
-    # --- Lane 6: BLNS+Slow (serial, clears addopts) ---
-    slow_log = Path("test-slow.log")
-    console.print(f"[blue]Running blns+slow lane...[/]  log: {slow_log}")
-    slow_exit = _run_pytest(
-        title="BLNS + Slow Tests (serial)",
-        log_path=slow_log,
+    # --- Lane 6: BLNS+Extra (serial, clears addopts) ---
+    extra_log = Path("test-blns-extra.log")
+    console.print(f"[blue]Running blns+extra lane...[/]  log: {extra_log}")
+    extra_exit = _run_pytest(
+        title="BLNS + Extra Tests (serial)",
+        log_path=extra_log,
         default_args=[
             "-m",
             "blns or slow",
@@ -233,11 +236,21 @@ def run_all_lanes(user_args: list[str]) -> int:
         extra_args=user_args,
     )
     # Exit code 5 = no tests collected — legitimate for optional lanes
-    if slow_exit == 5:
-        slow_exit = 0
-    lane_results.append(LaneResult("blns+slow", slow_exit, log_path=slow_log))
+    if extra_exit == 5:
+        extra_exit = 0
+    lane_results.append(LaneResult("blns+extra", extra_exit, log_path=extra_log))
 
-    # --- Summary ---
+    return lane_results
+
+
+def run_all_lanes(user_args: list[str]) -> int:
+    """Run all 7 test lanes sequentially: BATS + 6 pytest lanes."""
+    from promptgrimoire.config import get_current_branch
+
+    branch = get_current_branch() or "unknown"
+    cwd = Path.cwd()
+    lane_results = _run_all_lane_steps(user_args)
+
     _print_all_lanes_summary(cwd, branch, lane_results)
 
     return 0 if all(lr.exit_code == 0 for lr in lane_results) else 1
@@ -259,12 +272,33 @@ def _run_latexmk_full_suite(user_args: list[str]) -> int:
 
 
 def run_slow_lanes(user_args: list[str]) -> int:
-    """Run Playwright slow lane, then compiled-PDF suites when applicable."""
+    """Run all standard lanes, then latexmk-specific suites.
+
+    Superset of ``e2e all``: runs every lane that ``_run_all_lane_steps``
+    does, then appends Playwright with latexmk enabled and the compiled-PDF
+    validation suite.  The Playwright E2E tests run twice — once inside
+    the standard lanes (with ``GRIMOIRE_TEST_SKIP_LATEXMK=1``) and once
+    here with latexmk enabled — which exercises slightly different code
+    paths.  One unified summary grid is printed at the end.
+    """
+    from promptgrimoire.config import get_current_branch
+
+    branch = get_current_branch() or "unknown"
+    cwd = Path.cwd()
+
+    # --- Phase 1: everything that `e2e all` runs ---
+    lane_results = _run_all_lane_steps(user_args)
+
+    if _has_test_path(user_args):
+        _print_all_lanes_summary(cwd, branch, lane_results)
+        return 0 if all(lr.exit_code == 0 for lr in lane_results) else 1
+
+    # --- Phase 2: latexmk-specific lanes ---
     previous_skip_latexmk = os.environ.get("E2E_SKIP_LATEXMK")
     os.environ["E2E_SKIP_LATEXMK"] = "0"
     try:
-        console.print("[blue]Running Playwright slow lane...[/]")
-        playwright_exit = _normalise_optional_lane_exit(
+        console.print("[blue]Running Playwright slow lane (latexmk enabled)...[/]")
+        pw_latexmk_exit = _normalise_optional_lane_exit(
             _run_serial_playwright_e2e(
                 user_args,
                 use_pyspy=False,
@@ -278,17 +312,22 @@ def run_slow_lanes(user_args: list[str]) -> int:
             os.environ.pop("E2E_SKIP_LATEXMK", None)
         else:
             os.environ["E2E_SKIP_LATEXMK"] = previous_skip_latexmk
-
-    if _has_test_path(user_args):
-        return playwright_exit
+    lane_results.append(LaneResult("playwright-latexmk", pw_latexmk_exit))
 
     console.print("[blue]Running LuaLaTeX compile lane...[/]")
+    latexmk_log = Path("test-latexmk-full.log")
     latexmk_exit = _normalise_optional_lane_exit(
         _run_latexmk_full_suite(user_args),
         user_args,
     )
+    lane_results.append(
+        LaneResult("latexmk-compile", latexmk_exit, log_path=latexmk_log)
+    )
 
-    return 0 if playwright_exit == 0 and latexmk_exit == 0 else 1
+    # --- Unified summary ---
+    _print_all_lanes_summary(cwd, branch, lane_results)
+
+    return 0 if all(lr.exit_code == 0 for lr in lane_results) else 1
 
 
 @e2e_app.command(
@@ -564,7 +603,7 @@ def slow(
         None, "-k", "--filter", help="Pytest keyword filter expression"
     ),
 ) -> None:
-    """Run Playwright slow E2E plus serial compiled-PDF validation suites."""
+    """Run all lanes (superset of `e2e all`), then latexmk + compiled-PDF suites."""
     sys.exit(run_slow_lanes(_prepend_filter(ctx.args, filter_expr)))
 
 

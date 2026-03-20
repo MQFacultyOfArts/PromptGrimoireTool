@@ -42,6 +42,9 @@ class LorebookEntry:
         enabled: Whether this entry is active.
         case_sensitive: Whether keyword matching is case-sensitive.
         match_whole_words: Whether to use word boundaries for matching.
+        position: Prompt insertion position — "before_char" (before character
+                  description) or "after_char" (after scenario).
+                  Defaults to "before_char".
     """
 
     keys: list[str]
@@ -56,6 +59,7 @@ class LorebookEntry:
     enabled: bool = True
     case_sensitive: bool = False
     match_whole_words: bool = False
+    position: str = "before_char"
 
 
 @dataclass
@@ -71,6 +75,9 @@ class Character:
         system_prompt: Full system instructions for the AI.
         lorebook_entries: Embedded world-info entries.
         user_persona_name: Default name for the user in this scenario.
+        mes_example: Example dialogue demonstrating how the character speaks.
+        post_history_instructions: Reminder injected as final user message
+                                   after chat history.
     """
 
     name: str
@@ -81,6 +88,8 @@ class Character:
     system_prompt: str = ""
     lorebook_entries: list[LorebookEntry] = field(default_factory=list)
     user_persona_name: str = "User"
+    mes_example: str = ""
+    post_history_instructions: str = ""
 
 
 @dataclass

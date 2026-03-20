@@ -181,94 +181,44 @@ async def test_dialog_canary_during_card_rebuild():
 # Category 2: Highlight deletion
 # Production: cards.py:404 -> highlights.py:172
 #
-# The delete button is inside a card. The handler calls card.delete()
-# then _update_highlight_css and broadcast_update. The card parameter
-# stays alive throughout the handler.
+# Production traceback (2026-03-16T00:08:57Z) shows:
+#   1. events.py:454 await result (do_delete)
+#   2. cards.py:404 await _delete_highlight(state, hid, c)
+#   3. highlights.py:172 card.delete()
+#   4. element.py:504 parent_slot.children.remove(element)
+#   5. ValueError: list.remove(x): x not in list
+#   6. During exception handling: RuntimeError (stale slot)
+#
+# The ValueError proves container.clear() ran BEFORE card.delete(),
+# removing the card from its parent slot's children list. Then
+# card.delete() fails at list.remove() because the card is gone.
+# The RuntimeError is secondary (exception handling path).
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.nicegui_ui
-async def test_card_delete_refs_dropped():
-    """Category 2, post-handler GC path.
+async def test_card_delete_after_concurrent_clear():
+    """Category 2: card.delete() after concurrent container.clear().
 
-    card.delete() + dropping all local references stales the weakref.
-    This matches what happens AFTER the handler returns and Python
-    frees locals. It does NOT match the mid-handler failure path
-    (production keeps card alive during post-delete work).
+    Production traceback shows ValueError: list.remove(x) at
+    element.py:504, proving container.clear() already removed the
+    card before card.delete() ran. This test reproduces that
+    specific race: clear the container first, then card.delete().
     """
     container = ui.column()
 
     with container:
         card = ui.card()
         with card:
-            btn = ui.button("Delete highlight")
+            ui.button("Delete highlight")
 
-    parent_slot = btn.parent_slot
-    assert parent_slot is not None
-
-    card.delete()
-    del card
-    del btn
+    # Step 1: concurrent CRDT broadcast clears the container.
+    container.clear()
     gc.collect()
 
-    with parent_slot:
-        _ = context.client  # RuntimeError if weakref stale
-
-
-@pytest.mark.nicegui_ui
-async def test_card_delete_refs_held():
-    """Category 2, production mid-handler pattern.
-
-    Matches _delete_highlight (highlights.py:155-178):
-      card.delete()                  # line 172
-      _update_highlight_css(state)   # line 175, card still in scope
-      await state.broadcast_update() # line 178, card still in scope
-
-    If this PASSES (no error), the production error requires a
-    condition beyond card.delete() with refs held -- most likely
-    a concurrent CRDT broadcast clearing the container.
-    """
-    container = ui.column()
-
-    with container:
-        card = ui.card()
-        with card:
-            btn = ui.button("Delete highlight")
-
-    parent_slot = btn.parent_slot
-    assert parent_slot is not None
-
-    with parent_slot:
+    # Step 2: the delete handler calls card.delete().
+    # element.delete() -> parent_slot.parent.remove(self)
+    # -> parent_slot.children.remove(element)
+    # Card already removed from children -> ValueError.
+    with pytest.raises(ValueError, match="not in list"):
         card.delete()
-        gc.collect()
-        # card is still in local scope -- keeps weakref target alive
-        _ = context.client  # Passes if card keeps parent alive
-
-
-@pytest.mark.nicegui_ui
-async def test_card_delete_concurrent_container_clear():
-    """Category 2, concurrent rebuild hypothesis.
-
-    A CRDT broadcast triggers container.clear() while the delete
-    handler is inside events.py:452's ``with parent_slot:``.
-    container.clear() removes the card from Client.elements.
-    The button's parent_slot references the card's default_slot,
-    whose parent is the card. The card is now removed and GC'd.
-    context.client -> slot.parent -> stale weakref.
-    """
-    container = ui.column()
-
-    with container:
-        card = ui.card()
-        with card:
-            btn = ui.button("Delete highlight")
-
-    parent_slot = btn.parent_slot
-    assert parent_slot is not None
-
-    with parent_slot:
-        # Concurrent CRDT broadcast clears the container
-        container.clear()
-        gc.collect()
-        # card local still exists but element was removed by clear()
-        _ = context.client  # RuntimeError?

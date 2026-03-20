@@ -107,12 +107,15 @@ async def _complete_conversation(
     clicks "Finish Interview".  ``finish_btn`` is optional — Task 3
     adds the button, Task 2 calls this without it.
     """
+    session = state["session"]
+    if session.ended:
+        return  # Already completing — prevent duplicate export
+    session.ended = True
+
     input_field.disable()
     send_button.disable()
     if finish_btn is not None:
         finish_btn.disable()
-
-    session = state["session"]
     auth_user = app.storage.user.get("auth_user")
     if auth_user is None:
         ui.notify("Session expired. Please refresh the page.", type="negative")
@@ -141,7 +144,10 @@ async def _handle_finish(
     chat_container,
 ) -> None:
     """Show confirmation dialog; on confirm, lock and export the conversation."""
-    with ui.dialog() as dialog, ui.card().classes("w-96"):
+    with (
+        ui.dialog() as dialog,
+        ui.card().classes("w-96").props('data-testid="roleplay-finish-dialog"'),
+    ):
         ui.label("End this interview?").classes("text-h6")
         ui.label(
             "This will lock the conversation and export it "
@@ -158,7 +164,6 @@ async def _handle_finish(
     confirmed = await dialog
 
     if confirmed:
-        state["session"].ended = True
         await _complete_conversation(
             state, input_field, send_button, chat_container, finish_btn=finish_btn
         )
@@ -273,7 +278,6 @@ async def _handle_send(
     scroll_area.scroll_to(percent=1.0)
 
     if conversation_ended:
-        session.ended = True
         logger.info(
             "end_of_conversation_detected",
             character=session.character.name,

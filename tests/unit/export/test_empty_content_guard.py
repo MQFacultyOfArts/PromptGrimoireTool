@@ -79,7 +79,7 @@ async def _load_cleaned(name: str) -> str:
 
 
 def _make_synthetic_highlights(
-    total_chars: int,
+    chars: list[str],
     *,
     span: int = 10,
 ) -> list[dict[str, object]]:
@@ -89,7 +89,11 @@ def _make_synthetic_highlights(
     to avoid boundary edge cases tested separately in
     test_insert_markers.py. Starts after first 10% and ends
     before the last character.
+
+    Nudges start positions away from ``\\n`` characters produced by
+    ``<br>`` tags — these have no text node for marker anchoring (#273).
     """
+    total_chars = len(chars)
     if total_chars < 4:
         return []
 
@@ -102,7 +106,11 @@ def _make_synthetic_highlights(
         safe_start + 3 * (safe_end - safe_start) // 4,
     ]
     highlights: list[dict[str, object]] = []
-    for i, start in enumerate(positions):
+    for i, pos in enumerate(positions):
+        # Nudge past \n chars from <br> tags (no text node to anchor in)
+        start = pos
+        while start < safe_end and chars[start] == "\n":
+            start += 1
         end = min(start + span, safe_end)
         if end > start:
             highlights.append(
@@ -255,7 +263,7 @@ class TestFixtureMarkerInsertion:
         html = await _load_cleaned(fixture_name)
         chars = extract_text_from_html(html)
 
-        highlights = _make_synthetic_highlights(len(chars))
+        highlights = _make_synthetic_highlights(chars)
         if not highlights:
             pytest.skip(f"{fixture_name}: fewer than 4 characters")
 

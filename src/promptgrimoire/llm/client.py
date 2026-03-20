@@ -255,7 +255,7 @@ class ClaudeClient:
         self,
         activated_names: list[str],
         thinking_content: str,
-        error: Exception | None,
+        error: BaseException | None,
     ) -> dict:
         """Build metadata dict for the response turn."""
         metadata: dict = {
@@ -303,7 +303,7 @@ class ClaudeClient:
 
         full_response = ""
         thinking_content = ""
-        error_occurred: Exception | None = None
+        error_occurred: BaseException | None = None
 
         async def _raw_text_stream() -> AsyncIterator[str]:
             """Inner generator yielding raw text chunks from the API."""
@@ -320,7 +320,7 @@ class ClaudeClient:
             async for chunk in detect_end_of_conversation(_raw_text_stream()):
                 full_response += chunk.text
                 yield chunk
-        except Exception as e:
+        except BaseException as e:
             error_occurred = e
             logger.error(
                 "Stream error after %d chars: %s",

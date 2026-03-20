@@ -84,8 +84,8 @@ async def test_marker_spanning_three_chunks() -> None:
     ):
         results.append(chunk)
 
-    # Should have ended=True on final chunk
-    assert any(c.ended for c in results)
+    # Should have ended=True on terminal chunk specifically
+    assert results[-1].ended is True
     # No marker text in output
     combined = "".join(c.text for c in results)
     assert "<endofconversation>" not in combined

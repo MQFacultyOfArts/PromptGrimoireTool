@@ -144,6 +144,7 @@ async def _handle_send(
             streaming_label.text = full_response
             scroll_area.scroll_to(percent=1.0)
             if chunk.ended:
+                session.ended = True
                 logger.info(
                     "end_of_conversation_detected",
                     character=session.character.name,

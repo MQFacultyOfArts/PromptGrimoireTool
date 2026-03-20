@@ -580,6 +580,12 @@ def changed_tests(
 
 def _run_bats() -> int:
     """Run BATS shell script tests and return exit code."""
+    import shutil
+
+    if not shutil.which("bats"):
+        console.print("[yellow]bats not installed, skipping (sudo apt install bats)[/]")
+        return 0
+
     bats_dir = Path("deploy/tests")
     if not bats_dir.exists():
         console.print("[yellow]No BATS test directory found, skipping[/]")

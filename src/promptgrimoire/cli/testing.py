@@ -578,6 +578,31 @@ def changed_tests(
     )
 
 
+def _run_bats() -> int:
+    """Run BATS shell script tests and return exit code."""
+    bats_dir = Path("deploy/tests")
+    if not bats_dir.exists():
+        console.print("[yellow]No BATS test directory found, skipping[/]")
+        return 0
+
+    bats_files = sorted(bats_dir.glob("*.bats"))
+    if not bats_files:
+        console.print("[yellow]No .bats files found, skipping[/]")
+        return 0
+
+    result = subprocess.run(
+        ["bats", *[str(f) for f in bats_files]],
+        check=False,
+    )
+    return result.returncode
+
+
+@test_app.command("bats")
+def bats_tests() -> None:
+    """Run BATS shell script tests (deploy/tests/*.bats)."""
+    sys.exit(_run_bats())
+
+
 @test_app.command(
     "all",
     context_settings={"allow_extra_args": True, "allow_interspersed_args": False},
@@ -597,7 +622,7 @@ def all_tests(
         False, "--co", "--collect-only", help="Only collect tests, don't run them"
     ),
 ) -> None:
-    """Run unit tests under xdist parallel execution."""
+    """Run BATS + unit tests under xdist parallel execution."""
     from promptgrimoire.cli._shared import _prepend_filter
 
     default_args = [
@@ -617,23 +642,29 @@ def all_tests(
             )
         )
 
+    # Run BATS first, then unit tests
+    console.print("[blue]Running BATS lane...[/]")
+    bats_exit = _run_bats()
+    if bats_exit != 0:
+        console.print("[red]BATS failed — continuing to unit tests[/]")
+
     args = _prepend_pytest_flags(args, exit_first=exit_first, failed_first=failed_first)
 
-    sys.exit(
-        _run_pytest(
-            title="Unit Tests (excludes smoke, E2E, NiceGUI UI, latexmk)",
-            log_path=Path("test-all.log"),
-            default_args=[
-                *default_args,
-                "-n",
-                _xdist_worker_count(),
-                "--dist=worksteal",
-                "-v",
-            ],
-            extra_args=args,
-            extra_env={_SKIP_LATEXMK_ENV_VAR: "1"},
-        )
+    unit_exit = _run_pytest(
+        title="Unit Tests (excludes smoke, E2E, NiceGUI UI, latexmk)",
+        log_path=Path("test-all.log"),
+        default_args=[
+            *default_args,
+            "-n",
+            _xdist_worker_count(),
+            "--dist=worksteal",
+            "-v",
+        ],
+        extra_args=args,
+        extra_env={_SKIP_LATEXMK_ENV_VAR: "1"},
     )
+
+    sys.exit(1 if bats_exit != 0 or unit_exit != 0 else 0)
 
 
 @test_app.command(

@@ -178,21 +178,23 @@ async def test_dialog_canary_during_card_rebuild():
 
 
 # ---------------------------------------------------------------------------
-# Category 2: Highlight deletion (self-delete)
-# No dialog involved here -- the button is directly in a card.
-# The error path is card.delete() then further UI work.
-# This may require a different mechanism (no canary).
+# Category 2: Highlight deletion
+# Production: cards.py:404 -> highlights.py:172
+#
+# The delete button is inside a card. The handler calls card.delete()
+# then _update_highlight_css and broadcast_update. The card parameter
+# stays alive throughout the handler.
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.nicegui_ui
-async def test_card_delete_stales_child_slot():
-    """Category 2: card.delete() stales child button's slot.
+async def test_card_delete_refs_dropped():
+    """Category 2, post-handler GC path.
 
-    No dialog canary here. The button is directly in the card.
-    card.delete() removes the card from Client.elements.
-    We then drop all local references and force GC to test
-    whether the weakref in parent_slot goes stale.
+    card.delete() + dropping all local references stales the weakref.
+    This matches what happens AFTER the handler returns and Python
+    frees locals. It does NOT match the mid-handler failure path
+    (production keeps card alive during post-delete work).
     """
     container = ui.column()
 
@@ -204,16 +206,69 @@ async def test_card_delete_stales_child_slot():
     parent_slot = btn.parent_slot
     assert parent_slot is not None
 
-    # Delete the card (as highlights.py:172 does)
     card.delete()
-    # Drop all local strong references to the card so GC can collect it.
-    # Without this, the test variable `card` keeps the weakref target alive,
-    # making the test inconclusive.
     del card
     del btn
     gc.collect()
 
     with parent_slot:
-        # Bug: raises RuntimeError here because card.delete() + GC
-        # staled the slot weakref.
-        _ = context.client
+        _ = context.client  # RuntimeError if weakref stale
+
+
+@pytest.mark.nicegui_ui
+async def test_card_delete_refs_held():
+    """Category 2, production mid-handler pattern.
+
+    Matches _delete_highlight (highlights.py:155-178):
+      card.delete()                  # line 172
+      _update_highlight_css(state)   # line 175, card still in scope
+      await state.broadcast_update() # line 178, card still in scope
+
+    If this PASSES (no error), the production error requires a
+    condition beyond card.delete() with refs held -- most likely
+    a concurrent CRDT broadcast clearing the container.
+    """
+    container = ui.column()
+
+    with container:
+        card = ui.card()
+        with card:
+            btn = ui.button("Delete highlight")
+
+    parent_slot = btn.parent_slot
+    assert parent_slot is not None
+
+    with parent_slot:
+        card.delete()
+        gc.collect()
+        # card is still in local scope -- keeps weakref target alive
+        _ = context.client  # Passes if card keeps parent alive
+
+
+@pytest.mark.nicegui_ui
+async def test_card_delete_concurrent_container_clear():
+    """Category 2, concurrent rebuild hypothesis.
+
+    A CRDT broadcast triggers container.clear() while the delete
+    handler is inside events.py:452's ``with parent_slot:``.
+    container.clear() removes the card from Client.elements.
+    The button's parent_slot references the card's default_slot,
+    whose parent is the card. The card is now removed and GC'd.
+    context.client -> slot.parent -> stale weakref.
+    """
+    container = ui.column()
+
+    with container:
+        card = ui.card()
+        with card:
+            btn = ui.button("Delete highlight")
+
+    parent_slot = btn.parent_slot
+    assert parent_slot is not None
+
+    with parent_slot:
+        # Concurrent CRDT broadcast clears the container
+        container.clear()
+        gc.collect()
+        # card local still exists but element was removed by clear()
+        _ = context.client  # RuntimeError?

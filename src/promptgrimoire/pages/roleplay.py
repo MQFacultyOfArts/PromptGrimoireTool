@@ -133,6 +133,37 @@ async def _complete_conversation(
         ).props('data-testid="roleplay-workspace-link"')
 
 
+async def _handle_finish(
+    state: dict,
+    input_field: Input,
+    send_button,
+    finish_btn,
+    chat_container,
+) -> None:
+    """Show confirmation dialog; on confirm, lock and export the conversation."""
+    with ui.dialog() as dialog, ui.card().classes("w-96"):
+        ui.label("End this interview?").classes("text-h6")
+        ui.label(
+            "This will lock the conversation and export it "
+            "to your annotation workspace."
+        )
+        with ui.row().classes("w-full justify-end gap-2"):
+            ui.button("Cancel", on_click=lambda: dialog.submit(False)).props("flat")
+            ui.button(
+                "End Interview",
+                on_click=lambda: dialog.submit(True),
+            ).props("color=negative")
+
+    dialog.open()
+    confirmed = await dialog
+
+    if confirmed:
+        state["session"].ended = True
+        await _complete_conversation(
+            state, input_field, send_button, chat_container, finish_btn=finish_btn
+        )
+
+
 def _show_thinking_indicator(
     chat_container, character_name: str
 ) -> tuple[ChatMessage, Spinner, Label, Label]:
@@ -189,6 +220,8 @@ async def _handle_send(
     chat_container,
     scroll_area: ScrollArea,
     send_button,
+    *,
+    finish_btn=None,
 ) -> None:
     """Handle sending a message and streaming the response.
 
@@ -246,7 +279,9 @@ async def _handle_send(
             character=session.character.name,
             turn_count=len(session.turns),
         )
-        await _complete_conversation(state, input_field, send_button, chat_container)
+        await _complete_conversation(
+            state, input_field, send_button, chat_container, finish_btn=finish_btn
+        )
     else:
         send_button.enable()
 
@@ -690,6 +725,7 @@ async def roleplay_page() -> None:
                                     chat_container,
                                     scroll_area,
                                     send_button,
+                                    finish_btn=widgets.get("finish_btn"),
                                 )
 
                         send_button = (
@@ -707,6 +743,23 @@ async def roleplay_page() -> None:
                             message_input,
                             on_send,
                             event="keydown.enter",
+                        )
+
+                        finish_btn = (
+                            ui.button("Finish Interview", icon="stop")
+                            .props('outline data-testid="roleplay-finish-btn"')
+                            .classes("ml-2")
+                        )
+                        widgets["finish_btn"] = finish_btn
+                        finish_btn.on(
+                            "click",
+                            lambda: _handle_finish(
+                                state,
+                                message_input,
+                                send_button,
+                                finish_btn,
+                                chat_container,
+                            ),
                         )
 
             # Auto-load bundled Becky Bennett character card

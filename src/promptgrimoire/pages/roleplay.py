@@ -192,11 +192,17 @@ def _setup_session(
         for turn in session.turns:
             jsonl_log.write_turn(turn)
 
+    audit_path = (
+        log_path.with_name(log_path.stem + "_audit.json")
+        if settings.roleplay.audit_log
+        else None
+    )
     client = ClaudeClient(
         api_key=settings.llm.api_key.get_secret_value(),
         model=settings.llm.model,
         thinking_budget=settings.llm.thinking_budget,
         lorebook_budget=settings.llm.lorebook_token_budget,
+        audit_log_path=audit_path,
     )
     return session, client, log_path
 

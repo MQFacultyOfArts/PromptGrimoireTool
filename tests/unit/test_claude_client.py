@@ -1,11 +1,18 @@
 """Tests for Claude API client."""
 
-from unittest.mock import MagicMock, patch
+from __future__ import annotations
+
+import json
+from typing import TYPE_CHECKING
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from promptgrimoire.llm.client import ClaudeClient
 from promptgrimoire.models import Character, Session
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 @pytest.fixture
@@ -146,3 +153,94 @@ class TestStreamingResponse:
         # This would test actual streaming behavior
         # For now, placeholder test
         pass
+
+
+def _make_stream_mock() -> MagicMock:
+    """Create a mock for client.messages.stream that yields text events."""
+    text_event = MagicMock()
+    text_event.type = "text"
+    text_event.text = "Hello there"
+
+    stream_obj = MagicMock()
+    stream_obj.__aiter__ = lambda _self: _self
+    _events = iter([text_event])
+
+    async def _anext(_self):
+        try:
+            return next(_events)
+        except StopIteration:
+            raise StopAsyncIteration from None
+
+    stream_obj.__anext__ = _anext
+
+    ctx = AsyncMock()
+    ctx.__aenter__ = AsyncMock(return_value=stream_obj)
+    ctx.__aexit__ = AsyncMock(return_value=False)
+    return ctx
+
+
+@pytest.mark.usefixtures("_mock_streaming_anthropic")
+class TestAuditLog:
+    """Tests for audit log writing (AC2.7)."""
+
+    @pytest.fixture
+    def _mock_streaming_anthropic(self):
+        """Mock anthropic client with streaming support."""
+        with patch("promptgrimoire.llm.client.anthropic") as mock:
+            mock.AsyncAnthropic.return_value.messages.stream = MagicMock(
+                return_value=_make_stream_mock()
+            )
+            yield mock
+
+    @pytest.mark.asyncio
+    async def test_audit_log_written_when_path_set(
+        self, session: Session, tmp_path: Path
+    ) -> None:
+        """When audit_log_path is set, a JSON file is written with API params."""
+        audit_path = tmp_path / "audit.json"
+        client = ClaudeClient(api_key="test-key", audit_log_path=audit_path)
+
+        chunks = []
+        async for chunk in client.stream_message_only(session):
+            chunks.append(chunk)
+
+        assert audit_path.exists()
+        data = json.loads(audit_path.read_text(encoding="utf-8"))
+        assert "system" in data
+        assert "messages" in data
+        assert "model" in data
+        assert "max_tokens" in data
+
+    @pytest.mark.asyncio
+    async def test_no_audit_log_when_path_none(
+        self, session: Session, tmp_path: Path
+    ) -> None:
+        """When audit_log_path is None, no file is written."""
+        client = ClaudeClient(api_key="test-key", audit_log_path=None)
+
+        async for _chunk in client.stream_message_only(session):
+            pass
+
+        # No JSON files should exist in tmp_path
+        assert list(tmp_path.glob("*.json")) == []
+
+    @pytest.mark.asyncio
+    async def test_audit_log_schema_validation(
+        self, session: Session, tmp_path: Path
+    ) -> None:
+        """Audit log JSON has correct types for all fields."""
+        audit_path = tmp_path / "sub" / "audit.json"
+        client = ClaudeClient(api_key="test-key", audit_log_path=audit_path)
+
+        async for _chunk in client.stream_message_only(session):
+            pass
+
+        data = json.loads(audit_path.read_text(encoding="utf-8"))
+        assert isinstance(data["system"], str)
+        assert isinstance(data["messages"], list)
+        for msg in data["messages"]:
+            assert isinstance(msg, dict)
+            assert "role" in msg
+            assert "content" in msg
+        assert isinstance(data["model"], str)
+        assert isinstance(data["max_tokens"], int)

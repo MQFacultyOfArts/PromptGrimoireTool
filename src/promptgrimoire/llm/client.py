@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+import json
+from typing import TYPE_CHECKING, Any
 
 import anthropic
 import structlog
@@ -13,6 +14,7 @@ from promptgrimoire.llm.prompt import build_messages, build_system_prompt
 logger = structlog.get_logger()
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
+    from pathlib import Path
 
     from promptgrimoire.models import Session
 
@@ -29,6 +31,7 @@ class ClaudeClient:
         model: str = "claude-sonnet-4-20250514",
         thinking_budget: int = 0,
         lorebook_budget: int = 0,
+        audit_log_path: Path | None = None,
     ) -> None:
         """Initialize the Claude client.
 
@@ -37,6 +40,8 @@ class ClaudeClient:
             model: Model identifier to use.
             thinking_budget: Token budget for extended thinking. 0 disables thinking.
             lorebook_budget: Max tokens for lorebook entries. 0 = unlimited.
+            audit_log_path: Write API request payload as JSON for
+                audit comparison. None disables.
 
         Raises:
             ValueError: If api_key is empty.
@@ -52,7 +57,18 @@ class ClaudeClient:
         self.model = model
         self.thinking_budget = thinking_budget
         self.lorebook_budget = lorebook_budget
+        self._audit_log_path = audit_log_path
         self._client = anthropic.AsyncAnthropic(api_key=self.api_key)
+
+    def _write_audit_log(self, params: dict[str, Any]) -> None:
+        """Write API request payload as JSON for audit comparison."""
+        if self._audit_log_path is None:
+            return
+        self._audit_log_path.parent.mkdir(parents=True, exist_ok=True)
+        self._audit_log_path.write_text(
+            json.dumps(params, indent=2, ensure_ascii=False),
+            encoding="utf-8",
+        )
 
     async def send_message(self, session: Session, user_message: str) -> str:
         """Send a message and get a response.
@@ -229,6 +245,7 @@ class ClaudeClient:
         )
         activated_names = [e.comment or ", ".join(e.keys[:3]) for e in activated]
         api_params = self._build_api_params(system_prompt, messages)
+        self._write_audit_log(api_params)
 
         full_response = ""
         thinking_content = ""

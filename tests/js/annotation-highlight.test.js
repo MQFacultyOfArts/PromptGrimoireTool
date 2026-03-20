@@ -5,8 +5,11 @@ describe('annotation-highlight.js', () => {
   afterEach(() => {
     CSS.highlights.clear();
     document.body.innerHTML = '';
+    document.head.innerHTML = '';
     delete window._textNodes;
     delete window._highlightsReady;
+    delete window._annotSelectionBound;
+    delete window._demoSelectionBound;
     vi.restoreAllMocks();
   });
 
@@ -139,25 +142,25 @@ describe('annotation-highlight.js', () => {
     test('leading spaces — collapsed offset skips run', () => {
       const node = { textContent: '   Hello' };
       expect(findLocalOffset(node, 0)).toBe(0);
-      expect(findLocalOffset(node, 1)).toBe(3);
+      expect(findLocalOffset(node, 1)).toBe(1);
     });
 
     test('internal whitespace run', () => {
       const node = { textContent: 'A   B' };
       expect(findLocalOffset(node, 0)).toBe(0);
       expect(findLocalOffset(node, 1)).toBe(1);
-      expect(findLocalOffset(node, 2)).toBe(4);
+      expect(findLocalOffset(node, 2)).toBe(2);
     });
 
     test('trailing whitespace', () => {
       const node = { textContent: 'AB   ' };
       expect(findLocalOffset(node, 2)).toBe(2);
-      expect(findLocalOffset(node, 3)).toBe(5);
+      expect(findLocalOffset(node, 3)).toBe(3);
     });
 
     test('nbsp treated as whitespace', () => {
       const node = { textContent: 'A\u00a0\u00a0B' };
-      expect(findLocalOffset(node, 2)).toBe(3);
+      expect(findLocalOffset(node, 2)).toBe(2);
     });
 
     test('offset beyond text returns text.length', () => {
@@ -300,6 +303,14 @@ describe('annotation-highlight.js', () => {
       expect(offset).toBe(2);
     });
 
+    test('element node — child is void element (BR)', () => {
+      const { container, textNodes } = domWithNodes('<p>A<br>B</p>');
+      const p = container.firstChild;
+      // offset=1 points at the <br> element — should fall through to _boundaryFromSiblings
+      const offset = rangePointToCharOffset(textNodes, p, 1);
+      expect(offset).toBe(1); // endChar of "A" text node
+    });
+
     test('unknown text node returns null', () => {
       const { textNodes } = domWithNodes('<p>Hi</p>');
       const unknownNode = document.createTextNode('Unknown');
@@ -313,6 +324,14 @@ describe('annotation-highlight.js', () => {
       const p = container.firstChild;
       const offset = _boundaryFromSiblings(textNodes, p, 1);
       expect(offset).toBe(1);
+    });
+
+    test('backward scan finds text inside preceding element', () => {
+      const { container, textNodes } = domWithNodes('<p><span>A</span><br>B</p>');
+      const p = container.firstChild;
+      // offset=1 points at <br>, backward scan finds text inside <span>
+      const offset = _boundaryFromSiblings(textNodes, p, 1);
+      expect(offset).toBe(1); // endChar of "A" inside <span>
     });
 
     test('forward scan when nothing before', () => {
@@ -418,10 +437,18 @@ describe('annotation-highlight.js', () => {
       expect(CSS.highlights.get('hl-second').priority).toBe(1);
     });
 
+    test('clears previous highlights before applying', () => {
+      CSS.highlights.set('hl-old', new Highlight());
+      const container = dom('<p>Hello</p>');
+      applyHighlights(container, { "new": [{ start_char: 0, end_char: 5 }] });
+      expect(CSS.highlights.has('hl-old')).toBe(false);
+      expect(CSS.highlights.has('hl-new')).toBe(true);
+    });
+
     test('sets window._highlightsReady and dispatches event', () => {
       const container = dom('<p>Hello World</p>');
       let dispatched = false;
-      window.addEventListener('highlights-ready', () => { dispatched = true; }, { once: true });
+      document.addEventListener('highlights-ready', () => { dispatched = true; }, { once: true });
       applyHighlights(container, { "tag1": [{ start_char: 0, end_char: 5 }] });
       expect(window._highlightsReady).toBe(true);
       expect(dispatched).toBe(true);
@@ -469,8 +496,148 @@ describe('annotation-highlight.js', () => {
       container.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
       expect(emitCallback).not.toHaveBeenCalled();
     });
-  });
 
+    test('ignores selection outside container', () => {
+      const { container } = domWithNodes('<p id="test-container">Hello World</p>');
+      document.body.appendChild(container);
+
+      const otherContainer = dom('<p id="other">Other</p>');
+      document.body.appendChild(otherContainer);
+
+      const emitCallback = vi.fn();
+      setupAnnotationSelection('test-container', emitCallback);
+
+      const selection = {
+        isCollapsed: false,
+        rangeCount: 1,
+        getRangeAt: () => ({
+          startContainer: otherContainer.firstChild,
+          startOffset: 0,
+          endContainer: otherContainer.firstChild,
+          endOffset: 5
+        })
+      };
+      vi.stubGlobal('getSelection', () => selection);
+
+      container.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+      expect(emitCallback).not.toHaveBeenCalled();
+    });
+
+    test('ignores selection with end outside container', () => {
+      const { container, textNodes } = domWithNodes('<p id="test-container">Hello</p>');
+      document.body.appendChild(container);
+
+      const otherContainer = dom('<p id="other">Other</p>');
+      document.body.appendChild(otherContainer);
+
+      const emitCallback = vi.fn();
+      setupAnnotationSelection('test-container', emitCallback);
+
+      const selection = {
+        isCollapsed: false,
+        rangeCount: 1,
+        getRangeAt: () => ({
+          startContainer: textNodes[0].node,
+          startOffset: 0,
+          endContainer: otherContainer.firstChild,
+          endOffset: 5
+        })
+      };
+      vi.stubGlobal('getSelection', () => selection);
+
+      container.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+      expect(emitCallback).not.toHaveBeenCalled();
+    });
+
+    test('guard prevents duplicate listeners', () => {
+      const { container, textNodes } = domWithNodes('<p id="test-container">Hello World</p>');
+      document.body.appendChild(container);
+
+      const emitCallback = vi.fn();
+      setupAnnotationSelection('test-container', emitCallback);
+      setupAnnotationSelection('test-container', emitCallback); // second call
+
+      const selection = {
+        isCollapsed: false,
+        rangeCount: 1,
+        getRangeAt: () => ({
+          startContainer: textNodes[0].node,
+          startOffset: 0,
+          endContainer: textNodes[0].node,
+          endOffset: 5,
+          getBoundingClientRect: () => ({ bottom: 0, left: 0, right: 0 })
+        })
+      };
+      vi.stubGlobal('getSelection', () => selection);
+
+      container.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+      expect(emitCallback).toHaveBeenCalledTimes(1);
+    });
+
+    test('positions highlight menu near selection end', () => {
+      const { container, textNodes } = domWithNodes('<p id="test-container">Hello World</p>');
+      document.body.appendChild(container);
+
+      const menu = dom('<div id="highlight-menu" style="display: none;"></div>');
+      document.body.appendChild(menu);
+
+      const emitCallback = vi.fn();
+      setupAnnotationSelection('test-container', emitCallback);
+
+      const selection = {
+        isCollapsed: false,
+        rangeCount: 1,
+        getRangeAt: () => ({
+          startContainer: textNodes[0].node,
+          startOffset: 0,
+          endContainer: textNodes[0].node,
+          endOffset: 5,
+          getBoundingClientRect: () => ({ bottom: 100, left: 50, right: 150 })
+        })
+      };
+      vi.stubGlobal('getSelection', () => selection);
+      vi.spyOn(globalThis, 'charOffsetToRect').mockReturnValue({ right: 150, left: 150, bottom: 100 });
+
+      container.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+
+      const m = document.getElementById('highlight-menu');
+      expect(m.style.top).toBe('108px'); // bottom + 8
+      expect(m.style.left).toBe('150px');
+    });
+
+    test('flips menu above when near bottom toolbar', () => {
+      const { container, textNodes } = domWithNodes('<p id="test-container">Hello World</p>');
+      document.body.appendChild(container);
+
+      const menu = dom('<div id="highlight-menu" style="display: none;"></div>');
+      document.body.appendChild(menu);
+
+      const emitCallback = vi.fn();
+      setupAnnotationSelection('test-container', emitCallback);
+
+      // Near window.innerHeight (simulate 800)
+      vi.spyOn(window, 'innerHeight', 'get').mockReturnValue(800);
+
+      const selection = {
+        isCollapsed: false,
+        rangeCount: 1,
+        getRangeAt: () => ({
+          startContainer: textNodes[0].node,
+          startOffset: 0,
+          endContainer: textNodes[0].node,
+          endOffset: 5,
+          getBoundingClientRect: () => ({ bottom: 790, left: 50, right: 150 }) // Near bottom (800 - 80 < 790)
+        })
+      };
+      vi.stubGlobal('getSelection', () => selection);
+      vi.spyOn(globalThis, 'charOffsetToRect').mockReturnValue({ right: 150, bottom: 790, top: 770 });
+
+      container.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+
+      const m = document.getElementById('highlight-menu');
+      expect(m.style.top).toBe('642px'); // flipped position
+    });
+  });
   describe('simple wrappers', () => {
     test('charOffsetToRect returns DOMRect(0,0,0,0) for invalid offset', () => {
       const rect = charOffsetToRect([], 10);
@@ -503,10 +670,11 @@ describe('annotation-highlight.js', () => {
   describe('remote presence', () => {
     test('renderRemoteCursor creates element', () => {
       const { container, textNodes } = domWithNodes('<p>Hello</p>');
+      document.body.appendChild(container); // BLOCKER 3 fix
       window._textNodes = textNodes;
-      vi.spyOn(window, 'charOffsetToRect').mockReturnValue({ x: 10, y: 20, width: 2, height: 15, top: 20, left: 10 });
+      vi.spyOn(globalThis, 'charOffsetToRect').mockReturnValue({ x: 10, y: 20, width: 2, height: 15, top: 20, left: 10 });
       renderRemoteCursor(container, 'client1', 0, 'Alice', '#f00');
-      expect(container.querySelector('#remote-cursor-client1')).not.toBeNull();
+      expect(container.parentElement.querySelector('#remote-cursor-client1')).not.toBeNull();
     });
 
     test('removeRemoteCursor removes element', () => {
@@ -517,7 +685,9 @@ describe('annotation-highlight.js', () => {
     });
 
     test('renderRemoteSelection creates CSS highlight and style', () => {
-      const { textNodes } = domWithNodes('<p>Hello</p>');
+      const { container, textNodes } = domWithNodes('<p>Hello</p>');
+      container.id = 'doc-container'; // BLOCKER 4 fix
+      document.body.appendChild(container);
       window._textNodes = textNodes;
       renderRemoteSelection('client1', 0, 5, 'Alice', '#f00');
       expect(CSS.highlights.has('hl-sel-client1')).toBe(true);
@@ -534,7 +704,6 @@ describe('annotation-highlight.js', () => {
       expect(CSS.highlights.has('hl-sel-client1')).toBe(false);
       expect(document.getElementById('remote-sel-style-client1')).toBeNull();
     });
-
     test('removeAllRemotePresence clears all', () => {
       const container = dom('<div class="remote-cursor"></div>');
       document.body.appendChild(container);

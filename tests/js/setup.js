@@ -52,3 +52,21 @@ globalThis.Quasar = {
     create: () => {}
   }
 };
+
+// Explicitly bind evaluated global functions to globalThis so vi.spyOn works on them
+const functionNames = [
+  'setupCardPositioning', 'initToolbarObserver', 'setupCopyProtection',
+  'walkTextNodes', 'clearHighlights', 'applyHighlights', 'charOffsetToRange',
+  'findLocalOffset', 'charOffsetToRect', 'scrollToCharOffset', 'showHoverHighlight',
+  'clearHoverHighlight', 'throbHighlight', 'setupSelection', 'setupAnnotationSelection',
+  'rangePointToCharOffset', '_boundaryFromSiblings', 'countCollapsed',
+  'renderRemoteCursor', 'removeRemoteCursor', 'updateRemoteCursorPositions',
+  'renderRemoteSelection', 'removeRemoteSelection', 'removeAllRemotePresence'
+];
+
+for (const name of functionNames) {
+  if (typeof globalThis[name] === 'undefined') {
+    // We must evaluate them to access the dynamically created function declaration
+    globalThis[name] = eval(name);
+  }
+}

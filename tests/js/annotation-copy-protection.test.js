@@ -68,14 +68,15 @@ describe('annotation-copy-protection.js', () => {
     });
 
     test('blocks paste in milkdown editor', () => {
-      const container = dom('<div id="milkdown-respond-editor"></div>');
+      const container = dom('<div id="milkdown-respond-editor"><p>Inner</p></div>');
       document.body.appendChild(container);
       setupCopyProtection('.protected');
 
       const event = new Event('paste', { bubbles: true, cancelable: true });
       const preventSpy = vi.spyOn(event, 'preventDefault');
       const stopSpy = vi.spyOn(event, 'stopImmediatePropagation');
-      container.dispatchEvent(event);
+
+      container.querySelector('p').dispatchEvent(event);
 
       expect(preventSpy).toHaveBeenCalled();
       expect(stopSpy).toHaveBeenCalled();

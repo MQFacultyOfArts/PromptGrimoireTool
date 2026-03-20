@@ -88,6 +88,9 @@ scripts/smoke_data/*.md
 !scripts/smoke_data/*.md.example
 scripts/smoke_data/*.log
 
+# Incident analysis SQLite databases (per-incident, ephemeral)
+*.db
+
 # Runtime logs
 log/
 

@@ -216,14 +216,21 @@ describe('annotation-highlight.js', () => {
       const collapsed = countCollapsed(text, text.length);
       expect(endChar).toBe(collapsed);
 
+      // Verify monotonicity and round-trip properties.
+      // NOTE: The round-trip is intentionally tested with toBeLessThanOrEqual
+      // rather than strict equality because findLocalOffset has a known
+      // imprecision within whitespace runs (#399). It returns a raw offset
+      // pointing into the run rather than past it. This is visually correct
+      // under CSS whitespace collapsing but mathematically imprecise.
       for (let i = 0; i <= text.length; i++) {
         const c = countCollapsed(text, i);
         if (i > 0) {
           expect(c).toBeGreaterThanOrEqual(countCollapsed(text, i - 1));
         }
         const back = findLocalOffset({ textContent: text }, c);
-        // It should either round trip or find the start of a whitespace run
-        expect(typeof back).toBe('number');
+        expect(back).toBeLessThanOrEqual(i);
+        expect(back).toBeGreaterThanOrEqual(0);
+        expect(countCollapsed(text, back)).toBeLessThanOrEqual(c);
       }
     });
   });

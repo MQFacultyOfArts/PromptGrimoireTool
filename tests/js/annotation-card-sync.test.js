@@ -1,6 +1,12 @@
 import { describe, test, expect, afterEach, vi } from 'vitest';
 import { dom, domWithNodes, mockRect } from './helpers.js';
 
+// LIMITATION: setupCardPositioning registers permanent listeners (scroll,
+// mouseover, highlights-ready) on document/window with no teardown mechanism.
+// Each test that calls it stacks listeners. This doesn't cause failures because
+// tests use fresh DOM and mocked globals, but it means listener count grows
+// across the file. If this becomes a problem, refactor setupCardPositioning
+// to return a cleanup function.
 describe('annotation-card-sync.js', () => {
   afterEach(() => {
     document.body.innerHTML = '';
@@ -83,6 +89,10 @@ describe('annotation-card-sync.js', () => {
         </div>
       `;
       setupCardPositioning('doc', 'sidebar', 10);
+      // Stub textNodes: tn() needs a non-empty array whose first node is
+      // contained in the doc container.  The actual node content doesn't
+      // matter because charOffsetToRect is mocked — this just passes
+      // the tn() guard check (dc.contains(t[0].node)).
       window._textNodes = [{ node: document.getElementById('doc') }];
 
       vi.spyOn(globalThis, 'charOffsetToRect').mockReturnValue({ width: 0 }); // invalid

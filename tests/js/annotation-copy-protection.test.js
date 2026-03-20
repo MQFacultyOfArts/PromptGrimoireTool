@@ -1,6 +1,9 @@
 import { describe, test, expect, afterEach, vi } from 'vitest';
 import { dom } from './helpers.js';
 
+// LIMITATION: setupCopyProtection registers capture-phase listeners on
+// document with no teardown. Each test that calls it stacks listeners.
+// Not currently causing failures because each test uses fresh DOM targets.
 describe('annotation-copy-protection.js', () => {
   afterEach(() => {
     document.body.innerHTML = '';

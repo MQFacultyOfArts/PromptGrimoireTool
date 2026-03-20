@@ -64,11 +64,17 @@ class ClaudeClient:
         """Write API request payload as JSON for audit comparison."""
         if self._audit_log_path is None:
             return
-        self._audit_log_path.parent.mkdir(parents=True, exist_ok=True)
-        self._audit_log_path.write_text(
-            json.dumps(params, indent=2, ensure_ascii=False),
-            encoding="utf-8",
-        )
+        try:
+            self._audit_log_path.parent.mkdir(parents=True, exist_ok=True)
+            self._audit_log_path.write_text(
+                json.dumps(params, indent=2, ensure_ascii=False),
+                encoding="utf-8",
+            )
+        except OSError:
+            logger.warning(
+                "audit_log_write_failed",
+                path=str(self._audit_log_path),
+            )
 
     async def send_message(self, session: Session, user_message: str) -> str:
         """Send a message and get a response.

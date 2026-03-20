@@ -204,4 +204,4 @@ def build_messages(
         messages.append({"role": "user", "content": phi})
 
     # Cast to MessageParam for type compatibility with Anthropic SDK
-    return messages  # type: ignore[return-value]
+    return messages  # type: ignore[return-value]  # MessageDict is structurally compatible with MessageParam but not nominally identical

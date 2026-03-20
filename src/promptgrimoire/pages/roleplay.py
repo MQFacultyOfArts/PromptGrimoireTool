@@ -439,7 +439,10 @@ async def roleplay_page() -> None:
             ui.column().classes("w-full items-center"),
             ui.column()
             .classes("roleplay-column")
-            .style("max-width: 1000px; width: 100%; padding: 0 16px;"),
+            .style(
+                "max-width: 1000px; width: 100%; padding: 0 16px; "
+                "flex: 1; min-height: 0; display: flex; flex-direction: column;"
+            ),
         ):
             # Management panel (collapsed — Becky Bennett auto-loads below)
             with (
@@ -513,7 +516,6 @@ async def roleplay_page() -> None:
                 with (
                     ui.scroll_area()
                     .classes("w-full border rounded p-4 roleplay-chat")
-                    .style("height: 60vh;")
                     .props('data-testid="roleplay-chat-area"') as scroll_area
                 ):
                     chat_container = ui.column().classes("w-full gap-3")

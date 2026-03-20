@@ -77,13 +77,7 @@ All interactable UI elements must have `data-testid` attributes. E2E tests must 
 
 ### E2E Race-Condition Patterns
 
-Three patterns prevent NiceGUI-specific race conditions:
-
-- **Value-capture** (`ui_helpers.on_submit_with_value`): Reads the input DOM value client-side at click time, preventing `python-socketio` async task reordering from delivering stale values. All submit buttons bound to text inputs must use this helper.
-- **Rebuild epoch** (`cards_epoch` on `PageState`): After `container.clear()` rebuilds, the server increments a monotonic counter broadcast to `window.__annotationCardsEpoch`. Tests capture the old epoch, trigger the action, then `wait_for_function` until the epoch advances before reacquiring locators.
-- **Lightweight peer-left callback** (`_RemotePresence.on_peer_left`): CLIENT_DELETE events (peer disconnection) must NOT trigger a full `refresh_annotations()` rebuild. They change zero CRDT state, but a full rebuild races with in-flight user interactions (fill + click), destroying input values and button handlers mid-action. `_RemotePresence` carries a separate `on_peer_left` callback that only updates the user count display.
-
-Details and examples in [docs/testing.md](docs/testing.md) § Common E2E Pitfalls.
+Three mandatory patterns: value-capture, rebuild epoch, and lightweight peer-left callback. See [docs/testing.md](docs/testing.md) § Common E2E Pitfalls for details and examples.
 
 ### Code Quality Hooks
 
@@ -140,7 +134,7 @@ uv run grimoire e2e run
 # Run E2E tests in serial mode (single server)
 uv run grimoire e2e run --serial
 
-# Run all 7 lanes: bats, unit, integration, playwright, nicegui, smoke, blns+slow
+# Run all 8 lanes: js, unit, integration, playwright, nicegui, smoke, blns+slow
 uv run grimoire e2e all
 
 # Run E2E tests (smart selection based on changes)
@@ -196,14 +190,8 @@ uv run grimoire docs build
 # Run the app
 uv run run.py
 
-# Incident analysis (standalone SQLite tooling, not part of main app)
-uv run scripts/incident_db.py ingest <tarball.tar.gz> --db incident.db
-uv run scripts/incident_db.py sources --db incident.db
-uv run scripts/incident_db.py timeline --start "2026-03-16 16:05" --end "2026-03-16 16:14"
-uv run scripts/incident_db.py breakdown --db incident.db
-uv run scripts/incident_db.py beszel --start "2026-03-16 16:05" --end "2026-03-16 16:14" --hub http://localhost:8090
-uv run scripts/incident_db.py github --start "2026-03-15 00:00" --end "2026-03-18 20:37" --db incident.db
-uv run scripts/incident_db.py review --db incident.db --counts-json counts.json --output report.md
+# Incident analysis (standalone SQLite tooling — see scripts/incident_db.py --help)
+uv run scripts/incident_db.py --help
 ```
 
 ## Project Structure
@@ -265,6 +253,7 @@ deploy/
 └── tests/               # BATS shell script tests
 
 tests/
+├── js/                  # Vitest JS unit tests (annotation static JS)
 ├── unit/                # Unit tests
 ├── integration/         # Integration tests
 └── e2e/                 # Playwright E2E tests (excluded from test-all)
@@ -295,107 +284,16 @@ The `cache-docs` skill automatically saves fetched documentation to `docs/`. Eve
 
 ## Database
 
-PostgreSQL with SQLModel. Schema migrations via Alembic. Full schema and design decisions in [docs/database.md](docs/database.md).
+PostgreSQL with SQLModel. Schema migrations via Alembic. Full schema, wargame tables, ACL polymorphism, FTS indexes, ban system, and exception taxonomy in [docs/database.md](docs/database.md).
 
 15 SQLModel classes: User, Course, CourseEnrollment, Week, Activity, Workspace, WorkspaceDocument, TagGroup, Tag, Permission, CourseRoleRef, ACLEntry, WargameConfig, WargameTeam, WargameMessage.
 
-### Activity Type Discriminator
-
-Activity has a `type` field (`"annotation"` or `"wargame"`) enforced by CHECK constraints. Annotation activities require `template_workspace_id`; wargame activities must not set it. Composite FK `(id, type)` lets child tables (WargameConfig, WargameTeam) enforce type-safe references via discriminator-enforcing foreign keys.
-
-### Wargame Schema (Activity Extension)
-
-Three new tables extend the Activity model for wargame scenarios:
-
-- **WargameConfig** -- PK-as-FK one-to-one on Activity. Holds `system_prompt`, `scenario_bootstrap`, and exactly one timer mode (`timer_delta` XOR `timer_wall_clock`).
-- **WargameTeam** -- Teams within a wargame activity. Codename unique per activity. Tracks `current_round`, `round_state`, `current_deadline`, `game_state_text`, `student_summary_text`.
-- **WargameMessage** -- Per-team message log. Ordered by `sequence_no` (not timestamps). Supports in-place edits (`edited_at`, `thinking`, `metadata_json`).
-
-### Permission `can_edit` Classifier
-
-`Permission.can_edit` (boolean, default FALSE) marks which permission levels grant editorial capability. The wargame team ACL zero-editor invariant queries this flag directly instead of hardcoding permission-name lists. Seed data: `owner` and `editor` have `can_edit=TRUE`; `peer` and `viewer` have `can_edit=FALSE`.
-
-### Wargame Team Management API
-
-`db/wargames.py` provides the full team lifecycle: `create_team`, `create_teams`, `get_team`, `list_teams`, `rename_team`, `delete_team`. Team ACL: `grant_team_permission` (upsert), `revoke_team_permission`, `update_team_permission`, `remove_team_member`, `resolve_team_permission`, `list_team_members`. Roster ingestion: `ingest_roster` (atomic CSV import with two modes -- named-team and auto-assign).
-
-**Zero-editor invariant:** `ZeroEditorError` (in `db/exceptions.py`) is raised when a grant downgrade or revoke would leave a team with no `can_edit=TRUE` member. Enforced via `SELECT FOR UPDATE` row locking.
-
-**Roster ingestion modes:** Named-team mode uses explicit team names from CSV. Auto-assign mode distributes members round-robin across `team_count` buckets, mapping to real teams by `created_at` order. Re-imports are additive (existing ACL rows preserved, changed roles updated). Editor-first grant ordering prevents false zero-editor violations during handoff swaps.
-
-Pure-domain helpers live in `wargame/` (codename generation, roster CSV parsing, auto-assign). DB orchestration lives in `db/wargames.py`.
-
-### Wargame Turn Cycle Engine (Seam 3)
-
-`db/wargames.py` provides turn cycle orchestration: `start_game()`, `lock_round()`, `run_preprocessing()`, `publish_all()`, `on_deadline_fired()`. These follow the functional core / imperative shell pattern -- pure domain logic in `wargame/turn_cycle.py` and `wargame/agents.py`, DB orchestration in `db/wargames.py`.
-
-**State machine:** Teams cycle through `drafting` (students submit moves) -> `locked` (hard-deadline fired or GM locks) -> AI preprocessing -> `published` (GM publishes results) -> back to `drafting` with incremented round. `start_game()` bootstraps round 1 with scenario expansion and initial AI response.
-
-**One-response invariant:** Each round produces exactly one assistant message per team (AC8). Enforced by sequence number checks -- preprocessing rejects if the expected sequence already exists.
-
-**LLM pattern divergence:** Wargame uses PydanticAI agents (structured output validation) instead of the direct `ClaudeClient` used for roleplay. Two agents: `turn_agent` (draft response + game state artifact) and `summary_agent` (student-facing summaries). Both use `anthropic:claude-sonnet-4-6`. Tests override via `agent.override(model=TestModel())`.
-
-**Schema additions:** `WargameTeam.move_buffer_crdt` and `WargameTeam.notes_crdt` (bytea), `WargameConfig.summary_system_prompt` (Text). Migration `0405a9085ccf`.
-
-**Deadline enforcement:** Background polling worker (`deadline_worker.py`, same pattern as `search_worker.py`). Queries for teams with `current_deadline <= now()` and `round_state = 'drafting'`, fires `on_deadline_fired()`. Adaptive sleep shortens poll interval when a deadline is imminent. Misfire recovery: stale deadlines fire on next poll cycle after restart.
-
-### ACL Target Polymorphism
-
-ACLEntry supports two target types: `workspace_id` or `team_id`. Exactly one must be set (enforced by CHECK constraint `ck_acl_entry_exactly_one_target` and model validator). Partial unique indexes enforce `(workspace_id, user_id)` and `(team_id, user_id)` uniqueness independently. ACL queries filter on `workspace_id IS NOT NULL` to avoid NULL poisoning from team-target rows.
-
-### Full-Text Search (FTS)
-
-`workspace.search_text` stores materialised CRDT content (highlights, tags, comments, notes) for FTS. `workspace.search_dirty` is a boolean queue flag set on every CRDT save, cleared by the background `search_worker`. Two GIN expression indexes (`idx_workspace_document_fts`, `idx_workspace_search_text_fts`) power `search_navigator()` in `db/navigator.py`. See [docs/database.md](docs/database.md) for index naming convention.
-
-**Three-leg UNION ALL search:** `search_navigator()` runs FTS across three sources in a single query: (1) `workspace_document.content` (HTML-stripped), (2) `workspace.search_text` (materialised CRDT), (3) metadata (owner display name, workspace title, activity title, week title, course code/name). The metadata leg joins through `acl_entry` (owner), `activity`, `week`, and `course` tables. Course codes are split via `regexp_replace` for partial matching (e.g. searching "LAWS" matches "LAWS1100"). No GIN index on metadata yet (sequential scan on visible workspaces).
-
-**Prefix matching:** All FTS uses `to_tsquery` with `:*` suffix tokens (not `websearch_to_tsquery`). `_build_prefix_query()` sanitises user input, splits on whitespace, removes non-word characters, and AND-joins tokens with `:*` suffixes. This enables type-ahead search ("tort" matches "tortfeasor").
-
-**Labelled metadata snippets:** Metadata hits return snippets with field labels ("Title: ... | Author: ... | Activity: ... | Week: ... | Unit: ...") via a separate `_META_DISPLAY` string distinct from the `_META_MATCH` string used for FTS matching.
-
-### User Ban System
-
-**Schema:** `User.is_banned` (boolean, default false) and `User.banned_at` (timestamptz, nullable). Migration `7abc07630af3`.
-
-**DB API** (`db/users.py`): `set_banned(user_id, is_banned)` toggles ban status and timestamps. `is_user_banned(user_id)` is a lightweight boolean query used by the page-route guard. `get_banned_users()` returns all banned users for the CLI list command.
-
-**Page-route ban guard** (`pages/registry.py`): The `page_route` decorator checks `is_user_banned()` on every page load for any authenticated user (regardless of `requires_auth` flag), redirecting banned users to `/banned`. The `/banned` page (`pages/banned.py`) uses `@ui.page` directly (not `page_route`) to avoid redirect loops.
-
-**Client registry** (`auth/client_registry.py`): Module-level `dict[UUID, set[Client]]` mapping users to their connected NiceGUI clients. `page_route` registers each client on page load via `client_registry.register()`. `disconnect_user(user_id)` redirects all of a user's active clients to `/banned` via `run_javascript`. Auto-deregisters on `client.on_delete`.
-
-**Kick endpoint** (`POST /api/admin/kick`): Starlette route registered in `__init__.py`. Authenticated via `ADMIN__ADMIN_API_SECRET` bearer token (constant-time HMAC comparison). Calls `disconnect_user()` to force-redirect a banned user's active browser sessions. Returns 503 if secret not configured.
-
-**Auth protocol** (`auth/protocol.py`): `revoke_member_sessions(member_id)` method added to `AuthClientProtocol`. Revokes all Stytch sessions for a member during ban. Implemented in `auth/client.py` (production) and `auth/mock.py` (test).
-
-**CLI commands** (`cli/admin.py`): `admin ban <email>` orchestrates: DB flag, Stytch metadata update, session revocation, kick endpoint call. `admin unban <email>` reverses all steps. `admin ban --list` displays tabular list of banned users.
-
-**Config** (`config.py`): `AdminConfig` sub-model with `admin_api_secret: SecretStr`. Env var: `ADMIN__ADMIN_API_SECRET`. Generate with `python -c "import secrets; print(secrets.token_urlsafe(32))"`.
-
-### Business Exception Taxonomy
-
-All domain exceptions live in `db/exceptions.py` under a single base class `BusinessLogicError`. This enables `get_session()` to triage log levels: `BusinessLogicError` subclasses are expected rejections (logged at WARNING, no Discord alert); all other exceptions are unexpected failures (logged at ERROR, trigger Discord alert).
-
-**Hierarchy:**
-
-- `BusinessLogicError` -- base class for expected business logic rejections
-  - `SharePermissionError` -- sharing policy violation (non-owner share, sharing disabled, owner-grant)
-  - `OwnershipError` -- non-owner attempted owner-only operation (delete workspace/document)
-  - `TagCreationDeniedError` -- tag creation denied by placement context policy
-  - `DeletionBlockedError` -- force=False and student workspaces exist (carries `student_workspace_count`)
-  - `ProtectedDocumentError` -- attempted deletion of template-cloned document (carries `document_id`, `source_document_id`)
-  - `DuplicateNameError` -- tag/tag group name collision (pre-empts `IntegrityError`)
-  - `TagLockedError` -- tag/group modification denied because locked
-  - `DuplicateCodenameError` -- team codename collision within activity (carries `activity_id`, `codename`)
-  - `ZeroEditorError` -- grant/revoke would leave team with no `can_edit` member (carries `team_id`, `user_id`, permissions)
-  - `DuplicateEnrollmentError` -- user already enrolled (carries `course_id`, `user_id`)
-  - `StudentIdConflictError` -- roster import student ID mismatch (carries `conflicts` list)
-
-**Contract:** DB functions must raise `BusinessLogicError` subclasses for all anticipated user-facing error conditions. Raw `PermissionError`, `ValueError`, or `IntegrityError` must not leak through `get_session()` for business logic cases. UI `except` blocks should catch specific subclasses (not the base class) and display user-friendly messages.
 ### Key Rules
 
 1. **Alembic is the ONLY way to create/modify schema** - Never use `SQLModel.metadata.create_all()` except in Alembic migrations
 2. **All models must be imported before schema operations** - Import `promptgrimoire.db.models` to register tables
 3. **Pages requiring DB must check availability** - Use `get_settings().database.url`
+4. **BusinessLogicError subclasses for all business rejections** - See exception taxonomy in [docs/database.md](docs/database.md)
 
 ## Authentication & Access Control
 
@@ -411,20 +309,7 @@ Stytch handles magic link login, passkey authentication, RBAC, and class invitat
 
 Structured JSON logging via structlog. Full details in [docs/logging.md](docs/logging.md).
 
-**Logger convention:** `logger = structlog.get_logger()` at module level. All modules use structlog, not stdlib logging directly.
-
-**Exception handling rule:** Every `except` block must call `logger.exception()` (unexpected errors) or `logger.warning()` (expected business logic). No silent exception swallowing. `get_session()` enforces this automatically: `BusinessLogicError` subclasses are logged at WARNING; all other exceptions at ERROR (which triggers Discord alerting).
-
-**Context propagation:** The `page_route` decorator auto-binds `user_id` and `request_path` via `structlog.contextvars`. Workspace handlers bind `workspace_id` via `bind_contextvars(workspace_id=...)`.
-
-**Log levels by module category:**
-
-| Category | Level | Examples |
-|----------|-------|---------|
-| Database, CRDT | WARNING | `db/engine`, `db/wargames`, `crdt/` |
-| Everything else | INFO | pages, export, auth, workers, config |
-
-**Print guard:** No `print()` calls in `src/promptgrimoire/` except `cli/`. Guard test (`tests/unit/test_print_usage_guard.py`) enforces this.
+**Key rules:** `logger = structlog.get_logger()` at module level. Every `except` block must call `logger.exception()` or `logger.warning()` — no silent swallowing. No `print()` calls in `src/promptgrimoire/` except `cli/` (guard test enforces this).
 
 ## Conventions
 

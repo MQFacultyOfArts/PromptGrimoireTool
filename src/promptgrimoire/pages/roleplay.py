@@ -231,6 +231,26 @@ def _build_char_panel(widgets: dict) -> None:
         widgets["panel_char_name"] = panel_char_name
 
 
+def _build_chat_header(widgets: dict, management_drawer) -> None:
+    """Build the chat card header row with avatar, name, and settings button."""
+    with ui.row().classes("w-full items-center justify-between"):
+        with (
+            ui.row()
+            .classes("items-center gap-3")
+            .props('data-testid="roleplay-chat-header"')
+        ):
+            ui.avatar(_AI_AVATAR, size="40px").classes("roleplay-chat-header-avatar")
+            char_name_label = (
+                ui.label("").classes("text-h5").style("color: rgb(220, 220, 210);")
+            )
+        widgets["char_name_label"] = char_name_label
+
+        settings_btn = ui.button(icon="settings").props(
+            'flat round data-testid="roleplay-settings-btn"'
+        )
+        settings_btn.on("click", management_drawer.toggle)
+
+
 _EXPORT_BTN_INITIAL_DISABLED = True
 
 _MAX_UPLOAD_SIZE = 100 * 1024 * 1024  # 100 MB (CRIT-6)
@@ -536,18 +556,7 @@ async def roleplay_page() -> None:
                 ):
                     widgets["chat_card"] = chat_card
 
-                    with ui.row().classes("w-full items-center justify-between"):
-                        char_name_label = (
-                            ui.label("")
-                            .classes("text-h5")
-                            .style("color: rgb(220, 220, 210);")
-                        )
-                        widgets["char_name_label"] = char_name_label
-
-                        settings_btn = ui.button(icon="settings").props(
-                            'flat round data-testid="roleplay-settings-btn"'
-                        )
-                        settings_btn.on("click", management_drawer.toggle)
+                    _build_chat_header(widgets, management_drawer)
 
                     # Scenario hidden — raw placeholder text is not user-facing
                     scenario_label = ui.label("")

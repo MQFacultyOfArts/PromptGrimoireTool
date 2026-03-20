@@ -185,3 +185,10 @@
 .roleplay-upload .q-icon {
     color: rgb(220, 220, 210) !important;
 }
+
+/* ── Responsive collapse — hide sidebar on narrow viewports ──────── */
+@media (max-width: 1024px) {
+    .roleplay-char-panel {
+        display: none !important;
+    }
+}

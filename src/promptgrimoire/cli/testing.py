@@ -656,6 +656,16 @@ def all_tests(
 
     args = _prepend_pytest_flags(args, exit_first=exit_first, failed_first=failed_first)
 
+    # --- JS (vitest) ---
+    console.print("\n[bold blue]Running JS unit tests...[/]")
+    js_exit = subprocess.run(
+        ["npx", "vitest", "run"],
+        check=False,
+    ).returncode
+
+    if js_exit != 0 and exit_first:
+        sys.exit(js_exit)
+
     unit_exit = _run_pytest(
         title="Unit Tests (excludes smoke, E2E, NiceGUI UI, latexmk)",
         log_path=Path("test-all.log"),
@@ -670,7 +680,7 @@ def all_tests(
         extra_env={_SKIP_LATEXMK_ENV_VAR: "1"},
     )
 
-    sys.exit(1 if bats_exit != 0 or unit_exit != 0 else 0)
+    sys.exit(1 if bats_exit != 0 or js_exit != 0 or unit_exit != 0 else 0)
 
 
 @test_app.command(
@@ -717,6 +727,16 @@ def smoke_tests(
             extra_args=args,
         )
     )
+
+
+@test_app.command("js")
+def js_tests() -> None:
+    """Run JS unit tests (vitest)."""
+    result = subprocess.run(
+        ["npx", "vitest", "run", "--reporter=verbose"],
+        check=False,
+    )
+    sys.exit(result.returncode)
 
 
 @test_app.command("smoke-export")

@@ -54,8 +54,9 @@ See [docs/testing.md](docs/testing.md) for full testing guidelines including E2E
 
 ### Test Lane Model
 
-The test suite is organised into 7 lanes: 1 BATS lane for shell scripts and 6 pytest lanes. `uv run grimoire test all` runs BATS + unit tests (fast). `uv run grimoire e2e all` runs all 7 lanes sequentially: bats, unit, integration, playwright, nicegui, smoke, blns+extra. `uv run grimoire e2e slow` is a superset of `e2e all` that additionally runs Playwright with latexmk enabled and compiled-PDF validation.
+The test suite is organised into 8 lanes: 1 JS lane, 1 BATS lane for shell scripts, and 6 pytest lanes. `uv run grimoire test all` runs BATS + JS + unit tests (fast). `uv run grimoire e2e all` runs all 8 lanes sequentially: js, bats, unit, integration, playwright, nicegui, smoke, blns+extra. `uv run grimoire e2e slow` is a superset of `e2e all` that additionally runs Playwright with latexmk enabled and compiled-PDF validation.
 
+- **JS** (`tests/js/`, vitest) -- unit tests for static Javascript via happy-dom (system dependency: `npm i vitest happy-dom`)
 - **BATS** (`deploy/tests/`, serial) -- shell script unit tests via bats-core (system dependency: `sudo apt install bats`)
 - **Unit** (`tests/unit/`, xdist) -- excludes `e2e`, `nicegui_ui`, `latexmk_full`, `smoke` markers
 - **Integration** (`tests/integration/`, xdist) -- excludes `e2e`, `nicegui_ui`, `smoke`
@@ -110,8 +111,11 @@ uv run grimoire test run <path>::<test>
 # Run tests affected by changes (AST dependency analysis)
 uv run grimoire test changed
 
-# Run BATS + unit tests (fast, excludes smoke/E2E/integration)
+# Run BATS + JS + unit tests (fast, excludes smoke/E2E/integration)
 uv run grimoire test all
+
+# Run JS unit tests only
+uv run grimoire test js
 
 # Run BATS shell script tests only
 uv run grimoire test bats

@@ -99,3 +99,4 @@ log/
 .claude/worktrees/
 .playwright-mcp/
 luatex.*/
+node_modules/

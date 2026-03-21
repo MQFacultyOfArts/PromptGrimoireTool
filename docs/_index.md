@@ -52,6 +52,10 @@ library references during development.
 
 - [PromptGrimoire Guides](guides/index.md)
 
+## investigations
+
+- [Causal Analysis: Connection Pool Shrinkage Under CancelledError (#403)](investigations/2026-03-21-pool-shrinkage-403.md)
+
 ## lark
 
 - [Using Lark as a standalone lexer (tokenizer only, no parsing)](lark/lexer-usage.md)

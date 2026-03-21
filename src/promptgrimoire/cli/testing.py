@@ -578,6 +578,23 @@ def changed_tests(
     )
 
 
+def _run_js(*, verbose: bool = False) -> int:
+    """Run JS unit tests (vitest) and return exit code.
+
+    Skips gracefully when npx is not available (e.g. production server).
+    """
+    import shutil
+
+    if not shutil.which("npx"):
+        console.print("[yellow]npx not installed, skipping JS tests[/]")
+        return 0
+
+    cmd = ["npx", "vitest", "run"]
+    if verbose:
+        cmd.append("--reporter=verbose")
+    return subprocess.run(cmd, check=False).returncode
+
+
 def _run_bats() -> int:
     """Run BATS shell script tests and return exit code."""
     import shutil
@@ -658,10 +675,7 @@ def all_tests(
 
     # --- JS (vitest) ---
     console.print("\n[bold blue]Running JS unit tests...[/]")
-    js_exit = subprocess.run(
-        ["npx", "vitest", "run"],
-        check=False,
-    ).returncode
+    js_exit = _run_js()
 
     if js_exit != 0 and exit_first:
         sys.exit(js_exit)
@@ -732,11 +746,7 @@ def smoke_tests(
 @test_app.command("js")
 def js_tests() -> None:
     """Run JS unit tests (vitest)."""
-    result = subprocess.run(
-        ["npx", "vitest", "run", "--reporter=verbose"],
-        check=False,
-    )
-    sys.exit(result.returncode)
+    sys.exit(_run_js(verbose=True))
 
 
 @test_app.command("smoke-export")

@@ -555,7 +555,10 @@ def _build_annotation_card(
                 d.set_visibility(True)
                 ch.props('icon="expand_less"')
                 state.expanded_cards.add(hid)
-            await ui.run_javascript("requestAnimationFrame(window._positionCards)")
+            await ui.run_javascript(
+                "if (window._positionCards)"
+                " requestAnimationFrame(window._positionCards)"
+            )
 
         header_row.on("click", toggle_detail)
 

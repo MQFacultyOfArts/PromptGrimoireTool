@@ -1,7 +1,8 @@
 """Red tests: NiceGUI slot deletion race conditions (#369).
 
 These tests reproduce the error patterns observed in production telemetry
-(incident.db, epochs 1-13, 1006 JSONL events, 550 journal error-seconds).
+(incident.db, epochs 1-13, 1006 JSONL events, 550 journal error-seconds;
+plus 88 error-seconds in Mar 19-21 data).
 
 Root cause mechanism (discovered during investigation):
     1. A dialog is created inside a container's slot context
@@ -348,3 +349,158 @@ async def test_delete_highlight_survives_pre_cleared_card(
     )
     # 3. annotation_cards dict was cleaned up
     assert highlight_id not in state.annotation_cards
+
+
+# ---------------------------------------------------------------------------
+# Category 1 Part 1: Primary TimeoutError
+# Production: cards.py:558 -> ui.run_javascript(
+#     "requestAnimationFrame(window._positionCards)")
+#
+# Production tracebacks (20/20 in Mar 19-21 data) show:
+#   1. TimeoutError: JavaScript did not respond within 1.0 s
+#   2. handle_exception -> context.client -> stale slot -> RuntimeError
+#
+# Hypothesis: if window._positionCards is undefined,
+# requestAnimationFrame(undefined) throws TypeError.  NiceGUI's
+# runJavascript (nicegui.js:327) catches only SyntaxError, re-throws
+# all others, so javascript_response is never emitted.  Server times out.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.nicegui_ui
+async def test_missing_js_global_causes_timeout(
+    nicegui_user: User,
+) -> None:
+    """Category 1 Part 1: missing JS global causes TimeoutError.
+
+    Prediction: await ui.run_javascript(
+        "requestAnimationFrame(window.__definitely_missing)")
+    raises TimeoutError because:
+      1. requestAnimationFrame(undefined) throws TypeError in browser
+      2. NiceGUI's runJavascript catches only SyntaxError, re-throws
+      3. Promise rejects without emitting javascript_response
+      4. Server's JavaScriptRequest times out
+
+    Limitation: NiceGUI's test user does NOT execute JS — it uses
+    pattern-matching rules (testing/user.py:93).  Unmatched JS
+    always times out.  This test confirms the server-side timeout
+    machinery works, but the browser-side TypeError hypothesis
+    requires E2E testing with a real browser.
+    """
+    await nicegui_user.open("/login")
+
+    with nicegui_user:
+        container = ui.column()
+
+    with container, pytest.raises(TimeoutError, match="JavaScript did not respond"):
+        await ui.run_javascript(
+            "requestAnimationFrame(window.__definitely_missing)",
+            timeout=1.0,
+        )
+
+
+@pytest.mark.nicegui_ui
+async def test_guarded_js_global_resolves_with_rule(
+    nicegui_user: User,
+) -> None:
+    """Category 1 Part 1 negative border: guard pattern resolves.
+
+    NiceGUI's test user doesn't execute JS, so we register a
+    javascript_rule that matches the guarded pattern and returns
+    None.  This verifies the server-side resolution path: when
+    the browser does respond, no timeout occurs.
+
+    The actual browser-side behaviour (if-guard short-circuits,
+    eval returns undefined, response emitted) requires E2E testing.
+    """
+    import re
+
+    await nicegui_user.open("/login")
+
+    # Register a rule that matches our guarded JS and returns None
+    # (simulating the browser eval returning undefined)
+    nicegui_user.javascript_rules[
+        re.compile(r"if \(window\.__definitely_missing\)")
+    ] = lambda _: None
+
+    with nicegui_user:
+        container = ui.column()
+
+    with container:
+        result = await ui.run_javascript(
+            "if (window.__definitely_missing)"
+            " requestAnimationFrame(window.__definitely_missing)",
+            timeout=1.0,
+        )
+    assert result is None
+
+
+# ---------------------------------------------------------------------------
+# Category 1 Part 2: Secondary RuntimeError
+# Concurrent rebuild stales the old card's child element's slot weakref.
+#
+# Hypothesis: container.clear() + annotation_cards[hl_id] overwrite
+# drops all strong references to the old card.  CPython refcount
+# collection frees it, making header_row's parent_slot._parent
+# weakref return None.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.nicegui_ui
+async def test_container_clear_plus_dict_overwrite_stales_child_slot(
+    nicegui_user: User,
+) -> None:
+    """Category 1 Part 2: container.clear() + dict overwrite stales weakref.
+
+    Prediction: After container.clear() removes the card from
+    client.elements and slot.children, and annotation_cards[hl_id]
+    is overwritten with a new card, the old card is collected by
+    CPython's reference counting.  The old header_row's
+    parent_slot._parent weakref returns None.
+
+    Falsification: If the weakref is still alive after clear +
+    overwrite + gc.collect(), there is a hidden strong reference
+    keeping the old card alive (e.g. NiceGUI outbox, binding
+    system, or event handler registry).
+    """
+    await nicegui_user.open("/login")
+
+    with nicegui_user:
+        container = ui.column()
+
+        with container:
+            old_card = ui.card()
+            with old_card:
+                header_row = ui.row()
+
+    # Capture the header_row's parent slot (owned by old_card)
+    parent_slot = header_row.parent_slot
+    assert parent_slot is not None
+    # Verify the weakref is alive before the clear
+    assert parent_slot._parent() is not None
+    # Simulate annotation_cards dict
+    annotation_cards: dict[str, ui.card] = {"hl-001": old_card}
+
+    # Step 1: container.clear() — removes old_card from
+    # client.elements and slot.children
+    container.clear()
+
+    # Step 2: rebuild creates a new card and overwrites the dict
+    with container:
+        new_card = ui.card()
+    annotation_cards["hl-001"] = new_card
+
+    # Step 3: drop the test's local reference to old_card
+    # (in production, the loop variable in _refresh_annotation_cards
+    # goes out of scope when the function returns)
+    del old_card
+
+    # Step 4: force GC in case refcount didn't collect immediately
+    gc.collect()
+
+    # The old card should be collected — weakref should be stale
+    assert parent_slot._parent() is None, (
+        "Expected weakref to be stale after container.clear() + "
+        "dict overwrite, but old card is still alive. "
+        "Hidden strong reference exists."
+    )

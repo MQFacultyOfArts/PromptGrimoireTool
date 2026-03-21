@@ -20,6 +20,7 @@ PromptGrimoire is a collaborative "classroom grimoire" for prompt iteration, ann
 - **8-Lane Model**: Tests are split into 8 lanes (js, bats, unit, integration, playwright, nicegui, smoke, blns+extra). `test all` runs BATS + JS + unit. `e2e all` runs all 8 lanes. `e2e slow` is a superset of `e2e all` with latexmk-enabled Playwright and compiled-PDF validation. E2E tests (Playwright) contaminate xdist workers and must never run in unit/integration lanes. JS tests (`tests/js/`) use vitest + happy-dom. BATS tests cover shell scripts in `deploy/tests/`.
 - **Smoke Marker**: The `smoke` marker is auto-applied by `requires_latex`, `requires_full_latexmk`, and `requires_pandoc` decorators. Smoke tests are excluded from the unit lane and run in their own lane.
 - **E2E Locators**: All interactable UI elements must have `data-testid` attributes. E2E tests must use `page.get_by_test_id()`. Never locate by visible text, placeholder, or Quasar CSS classes.
+- **NiceGUI Slot Safety**: (1) Execute side-effects (`ui.notify`, etc.) BEFORE container rebuilds that may destroy dialog canary elements and invalidate slot contexts. (2) Guard `element.delete()` with `element.is_deleted` check -- concurrent rebuilds can GC elements first. See `docs/postmortems/2026-03-20-slot-deletion-investigation-369.md`.
 
 ### 3. Philosophical Testing Standard (The "Thing Itself")
 - **No YOLO Synchronization**: Do not use arbitrary sleeps or wait for vague UI epiphenomena.

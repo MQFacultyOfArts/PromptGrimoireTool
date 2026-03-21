@@ -202,25 +202,40 @@ def _setup_logging() -> None:
     # Set file permissions to 0o644
     log_file.chmod(0o644)
 
-    # --- Console handler (human-readable) ---
-    # Note: format_exc_info is intentionally omitted here — ConsoleRenderer
-    # (via rich) handles exception rendering itself. Including format_exc_info
-    # before ConsoleRenderer triggers a UserWarning on every ERROR/CRITICAL log.
-    console_formatter = structlog.stdlib.ProcessorFormatter(
-        foreign_pre_chain=[
-            *shared_processors,
-            add_global_fields,
-            level_gated_traceback,
-            _clean_for_console,
-        ],
-        processors=[
-            structlog.stdlib.ProcessorFormatter.remove_processors_meta,
-            _clean_for_console,
-            structlog.dev.ConsoleRenderer(
-                sort_keys=False,
-            ),
-        ],
-    )
+    # --- Console handler ---
+    # Under systemd (no TTY), use JSONRenderer so journal entries are
+    # machine-parseable and free of ANSI escapes, rich box-drawing, and
+    # local-variable dumps (which leak student PII via show_locals=True).
+    # Under a TTY (dev), keep ConsoleRenderer for human readability but
+    # disable show_locals to avoid PII in local variable dumps.
+    if sys.stderr.isatty():
+        console_formatter = structlog.stdlib.ProcessorFormatter(
+            foreign_pre_chain=[
+                *shared_processors,
+                add_global_fields,
+                level_gated_traceback,
+                _clean_for_console,
+            ],
+            processors=[
+                structlog.stdlib.ProcessorFormatter.remove_processors_meta,
+                _clean_for_console,
+                structlog.dev.ConsoleRenderer(
+                    sort_keys=False,
+                    exception_formatter=structlog.dev.RichTracebackFormatter(
+                        show_locals=False,
+                    ),
+                ),
+            ],
+        )
+    else:
+        console_formatter = structlog.stdlib.ProcessorFormatter(
+            foreign_pre_chain=full_pre_chain,
+            processors=[
+                structlog.stdlib.ProcessorFormatter.remove_processors_meta,
+                structlog.processors.format_exc_info,
+                structlog.processors.JSONRenderer(),
+            ],
+        )
     console_handler = logging.StreamHandler(sys.stderr)
     console_handler.setLevel(logging.INFO)
     console_handler.setFormatter(console_formatter)

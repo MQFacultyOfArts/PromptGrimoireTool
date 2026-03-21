@@ -56,7 +56,7 @@ See [docs/testing.md](docs/testing.md) for full testing guidelines including E2E
 
 The test suite is organised into 8 lanes: 1 JS lane, 1 BATS lane for shell scripts, and 6 pytest lanes. `uv run grimoire test all` runs BATS + JS + unit tests (fast). `uv run grimoire e2e all` runs all 8 lanes sequentially: js, bats, unit, integration, playwright, nicegui, smoke, blns+extra. `uv run grimoire e2e slow` is a superset of `e2e all` that additionally runs Playwright with latexmk enabled and compiled-PDF validation.
 
-- **JS** (`tests/js/`, vitest) -- unit tests for static Javascript via happy-dom (system dependency: `npm i vitest happy-dom`)
+- **JS** (`tests/js/`, vitest + happy-dom) -- JavaScript unit tests
 - **BATS** (`deploy/tests/`, serial) -- shell script unit tests via bats-core (system dependency: `sudo apt install bats`)
 - **Unit** (`tests/unit/`, xdist) -- excludes `e2e`, `nicegui_ui`, `latexmk_full`, `smoke` markers
 - **Integration** (`tests/integration/`, xdist) -- excludes `e2e`, `nicegui_ui`, `smoke`
@@ -77,7 +77,15 @@ All interactable UI elements must have `data-testid` attributes. E2E tests must 
 
 ### E2E Race-Condition Patterns
 
-Three mandatory patterns: value-capture, rebuild epoch, and lightweight peer-left callback. See [docs/testing.md](docs/testing.md) § Common E2E Pitfalls for details and examples.
+Five patterns prevent NiceGUI-specific race conditions:
+
+- **Value-capture** (`ui_helpers.on_submit_with_value`): Reads the input DOM value client-side at click time, preventing `python-socketio` async task reordering from delivering stale values. All submit buttons bound to text inputs must use this helper.
+- **Rebuild epoch** (`cards_epoch` on `PageState`): After `container.clear()` rebuilds, the server increments a monotonic counter broadcast to `window.__annotationCardsEpoch`. Tests capture the old epoch, trigger the action, then `wait_for_function` until the epoch advances before reacquiring locators.
+- **Lightweight peer-left callback** (`_RemotePresence.on_peer_left`): CLIENT_DELETE events (peer disconnection) must NOT trigger a full `refresh_annotations()` rebuild. They change zero CRDT state, but a full rebuild races with in-flight user interactions (fill + click), destroying input values and button handlers mid-action. `_RemotePresence` carries a separate `on_peer_left` callback that only updates the user count display.
+- **Side-effects before rebuilds** (`tag_management._on_tag_deleted`): `ui.notify()` and other side-effects that access the current slot context must execute BEFORE `render_tag_list()` or any call that clears/rebuilds a container. Container rebuilds destroy dialog canary elements (via `weakref.finalize` in `nicegui/elements/dialog.py:30-34`), which invalidates the slot context held by NiceGUI's event dispatch wrapper (`events.py:457`). See [postmortem](docs/postmortems/2026-03-20-slot-deletion-investigation-369.md).
+- **is_deleted guard** (`highlights._remove_annotation_card`): Before calling `element.delete()` on a NiceGUI element, check `element.is_deleted` first. Concurrent container rebuilds can garbage-collect elements before explicit deletion runs, and calling `delete()` on an already-deleted element raises `ValueError` at `nicegui/element.py:504`. See [postmortem](docs/postmortems/2026-03-20-slot-deletion-investigation-369.md).
+
+Details and examples in [docs/testing.md](docs/testing.md) § Common E2E Pitfalls.
 
 ### Code Quality Hooks
 
@@ -108,7 +116,7 @@ uv run grimoire test changed
 # Run BATS + JS + unit tests (fast, excludes smoke/E2E/integration)
 uv run grimoire test all
 
-# Run JS unit tests only
+# Run JS unit tests only (vitest + happy-dom)
 uv run grimoire test js
 
 # Run BATS shell script tests only

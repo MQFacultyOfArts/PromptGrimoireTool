@@ -1278,6 +1278,71 @@ def _entry_locate_button(guide: Guide) -> None:
         )
 
 
+def _entry_view_student_work(guide: Guide) -> None:
+    """How can I see the work students did for my activity?"""
+    with guide.step(
+        "How can I see the work students did for my activity?",
+        level=3,
+        text_only=True,
+    ) as g:
+        g.note(
+            "As an instructor, student workspaces appear on your "
+            "**Navigator** (the home page) under a **Shared in Unit** "
+            "section grouped by unit. You do not need students to "
+            "explicitly share their work -- the system shows all "
+            "student workspaces in units where you are enrolled as "
+            "an instructor."
+        )
+        g.note(
+            "**Path 1 -- Scroll the Navigator.** Go to Home and scroll "
+            "down past your own workspaces. Student workspaces appear "
+            "grouped under the unit name."
+        )
+        g.note(
+            "**Path 2 -- Search.** Type the unit code (e.g. ``EDST4``) "
+            "into the search bar at the top of the Navigator. This "
+            "filters to everything in that unit -- your workspaces and "
+            "all student workspaces."
+        )
+        g.note(
+            "**Important: your account must have the instructor role.** "
+            "The Navigator only shows all student workspaces if the "
+            "system recognises you as a privileged user (instructor or "
+            "admin). If you are teaching a unit but your account does "
+            "not have the instructor role assigned, you will only see "
+            "workspaces that students have explicitly shared. Ask your "
+            "system administrator to verify your role is set correctly "
+            "in the authentication system."
+        )
+        g.note(
+            "**Common mistake: checking the Unit Settings page.** "
+            "The Unit Settings page (``/courses/...``) only shows "
+            "workspaces that students have explicitly toggled "
+            "**Share with class**. Most students will not have done "
+            "this. The Navigator is the correct place to see all "
+            "student work."
+        )
+        g.note(
+            "**If you see no student workspaces at all:**\n\n"
+            "1. Check that your account has the **instructor role** -- "
+            "without it, the system treats you as a regular user\n"
+            "2. Check **Students with no work** in Unit Settings -- "
+            "if all students are listed there, none have clicked "
+            "**Start** yet\n"
+            "3. Confirm the week is **published** -- students cannot "
+            "see activities in draft weeks\n"
+            "4. Confirm students are **enrolled** -- unenrolled "
+            "students cannot see the unit"
+        )
+        g.note(
+            "See [I want to find my workspace]"
+            "(#i-want-to-find-my-workspace) for a screenshot of the "
+            "Navigator, and [What does 'Students with no work' mean?]"
+            "(#what-does-students-with-no-work-mean) for the "
+            "diagnostic panel."
+        )
+
+
 def _entry_drag_organise(guide: Guide) -> None:
     """I want to reorder or reclassify highlights on the Organise tab."""
     with guide.step(
@@ -1369,6 +1434,7 @@ def _run_management_sections(
     _entry_create_unit(page, base_url, guide)
     _entry_rename_entities(guide)
     _entry_students_no_work(page, base_url, course_url, guide)
+    _entry_view_student_work(guide)
     _entry_publish_activity(guide)
 
     guide.section("Activities and Templates")

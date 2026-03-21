@@ -105,6 +105,9 @@ jobs:
       - name: Install dependencies
         run: uv sync --locked --all-groups
 
+      - name: Install JS test dependencies
+        run: npm ci
+
       - name: Cache TinyTeX
         uses: actions/cache@v4
         with:

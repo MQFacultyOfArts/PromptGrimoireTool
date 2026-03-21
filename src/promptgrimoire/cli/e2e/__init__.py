@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import asyncio
 import os
+import subprocess
 import sys
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 import typer
 
@@ -18,9 +18,6 @@ from promptgrimoire.cli._shared import (
 )
 from promptgrimoire.cli.e2e._lanes import PLAYWRIGHT_LANE, LaneResult
 from promptgrimoire.cli.e2e._retry import _retry_e2e_tests_in_isolation
-
-if TYPE_CHECKING:
-    import subprocess
 from promptgrimoire.cli.e2e._server import (
     _check_ptrace_scope,
     _start_e2e_server,
@@ -146,7 +143,15 @@ def _run_all_lane_steps(user_args: list[str]) -> list[LaneResult]:
 
     lane_results: list[LaneResult] = []
 
-    # --- Lane 0: BATS (shell script tests) ---
+    # --- Lane 0: JS (vitest) ---
+    console.print("[blue]Running JS unit tests...[/]")
+    js_exit = subprocess.run(
+        ["npx", "vitest", "run"],
+        check=False,
+    ).returncode
+    lane_results.append(LaneResult("js", js_exit, log_path=None))
+
+    # --- Lane 0.5: BATS (shell script tests) ---
     console.print("[blue]Running BATS lane...[/]")
     bats_exit = _run_bats()
     lane_results.append(LaneResult("bats", bats_exit))

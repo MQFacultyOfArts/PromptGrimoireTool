@@ -17,7 +17,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from datetime import date, datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 from uuid import UUID
 
 import structlog
@@ -125,7 +125,7 @@ def anonymise_highlights(
             new_comments: list[object] = []
             for comment in comments:
                 if isinstance(comment, dict):
-                    typed: dict[str, object] = comment  # type: ignore[assignment]
+                    typed = cast("dict[str, object]", comment)
                     new_comments.append(_anon(typed))
                 else:
                     new_comments.append(comment)

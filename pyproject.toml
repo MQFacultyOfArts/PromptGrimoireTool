@@ -137,9 +137,6 @@ ignore = [
     "S101",     # Type-narrowing asserts moved from workspace.py
     "PLC0415",  # Late import to break circular dependency with workspace.py
 ]
-"src/promptgrimoire/pages/annotation/highlights.py" = [
-    "PLC0415",  # Late import to break circular dependency with tab_bar.py
-]
 "src/promptgrimoire/pages/annotation/paste_script.py" = [
     "S608",     # False positive: f-string constructs HTML/JS, not SQL
 ]

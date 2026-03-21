@@ -169,7 +169,12 @@ async def _delete_highlight(
         await pm.force_persist_workspace(state.workspace_id)
         if state.save_status:
             state.save_status.text = "Saved"
-    card.delete()
+    # Guard: the card may have already been deleted (e.g. by a concurrent
+    # container rebuild). Calling card.delete() on an already-deleted
+    # element raises ValueError at element.py:504.
+    # See docs/postmortems/2026-03-20-slot-deletion-investigation-369.md
+    if not card.is_deleted:
+        card.delete()
     if state.annotation_cards and highlight_id in state.annotation_cards:
         del state.annotation_cards[highlight_id]
     _update_highlight_css(state)

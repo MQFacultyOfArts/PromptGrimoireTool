@@ -16,6 +16,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlmodel import select
 
 from promptgrimoire.db.engine import get_session
+from promptgrimoire.db.exceptions import DuplicateCodenameError, ZeroEditorError
 from promptgrimoire.db.models import (
     ACLEntry,
     Permission,
@@ -68,37 +69,6 @@ class RosterReport:
     users_created: int
     memberships_created: int
     memberships_updated: int
-
-
-class DuplicateCodenameError(Exception):
-    """Raised when a team codename already exists within one activity."""
-
-    def __init__(self, activity_id: UUID, codename: str) -> None:
-        self.activity_id = activity_id
-        self.codename = codename
-        super().__init__(
-            f"Codename {codename!r} already exists in activity {activity_id}"
-        )
-
-
-class ZeroEditorError(Exception):
-    """Raised when a change would leave a team without any editable member."""
-
-    def __init__(
-        self,
-        team_id: UUID,
-        user_id: UUID,
-        current_permission: str | None,
-        attempted_permission: str | None,
-    ) -> None:
-        self.team_id = team_id
-        self.user_id = user_id
-        self.current_permission = current_permission
-        self.attempted_permission = attempted_permission
-        super().__init__(
-            "Requested team permission change would leave the team without any "
-            "member whose permission grants can_edit = TRUE"
-        )
 
 
 def _is_duplicate_codename_error(error: IntegrityError) -> bool:

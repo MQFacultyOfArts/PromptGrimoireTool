@@ -681,10 +681,17 @@ frontend fe_https
 
 backend be_promptgrimoire
     server app 127.0.0.1:8080 check
+    errorfile 503 /etc/haproxy/errors/503.http
 
     # Forward original client info
     http-request set-header X-Forwarded-Proto https
     http-request set-header X-Real-IP %[src]
+```
+
+The `errorfile` serves a branded "PromptGrimoire is restarting" page (with auto-refresh) when the backend is in maintenance mode. The source file lives in `deploy/503.http`; copy it to the server:
+
+```bash
+sudo cp deploy/503.http /etc/haproxy/errors/503.http
 ```
 
 **Key configuration points:**
@@ -820,13 +827,60 @@ $AddUnixListenSocket /var/lib/haproxy/dev/log
 sudo systemctl restart rsyslog
 ```
 
-Fix the apparmor profile so rsyslogd can access HAProxy's chroot log socket (without this, the journal fills with `apparmor="DENIED"` spam):
+Fix the apparmor profile so rsyslogd can access HAProxy's chroot log socket. There are **two** required changes:
+
+**1. Add the local rule** for the chroot socket path:
 
 ```bash
 echo '/var/lib/haproxy/dev/log rw,' | sudo tee -a /etc/apparmor.d/local/usr.sbin.rsyslogd
+```
+
+**2. Add `attach_disconnected` flag** to the main profile. Without this, apparmor blocks rsyslogd from accessing paths inside HAProxy's chroot after a reload, with `"Failed name lookup - disconnected path"` errors. This is a [known Ubuntu bug](https://bugs.launchpad.net/ubuntu/+source/haproxy/+bug/2138647) affecting HAProxy + rsyslog on Ubuntu 24.04. The fix is included in rsyslog >= 8.2512.0-1ubuntu4, but on older versions you must apply it manually.
+
+Edit `/etc/apparmor.d/usr.sbin.rsyslogd` and change the profile declaration from:
+
+```
+/usr/sbin/rsyslogd {
+```
+
+to:
+
+```
+/usr/sbin/rsyslogd flags=(attach_disconnected) {
+```
+
+Then reload and restart:
+
+```bash
 sudo apparmor_parser -r /etc/apparmor.d/usr.sbin.rsyslogd
 sudo systemctl restart rsyslog
 ```
+
+> **Ref:** [LP#2138647: haproxy stops logging after reload with permission denied](https://bugs.launchpad.net/ubuntu/+source/haproxy/+bug/2138647), [LP#2098148: Cannot log to bindmounted syslog socket within a chroot](https://bugs.launchpad.net/apparmor/+bug/2098148)
+
+**Validate that HAProxy logging works** (do NOT skip this):
+
+```bash
+# 1. Check the rsyslog config exists and has the right content
+cat /etc/rsyslog.d/49-haproxy.conf
+# Must show: $AddUnixListenSocket, :programname filter, /var/log/haproxy.log
+
+# 2. Check the chroot socket exists
+ls -la /var/lib/haproxy/dev/log
+# Must exist as a socket (type 's')
+
+# 3. Check apparmor is not blocking rsyslog
+sudo journalctl -u rsyslog --since "5 min ago" | grep -i denied
+# Should show nothing.
+
+# 4. Generate a test request and verify it appears in the log
+curl -sk https://localhost/ > /dev/null 2>&1; sleep 2
+sudo tail -1 /var/log/haproxy.log
+# Must show a log line with the request. If the file is empty,
+# rsyslog is not routing HAProxy's local0 facility.
+```
+
+> **Incident note (2026-03-16):** HAProxy logging was broken during a production incident -- `haproxy.log` was 0 bytes for the entire day. We had zero HTTP-level data for incident response. This validation section was added after that incident. Always verify after setup and after OS upgrades.
 
 ### fail2ban configuration
 
@@ -1212,22 +1266,46 @@ All course/activity configuration is done through the web UI:
 ### Deploy an update
 
 ```bash
-cd /opt/promptgrimoire
-sudo -u promptgrimoire git pull
-sudo -u promptgrimoire /home/promptgrimoire/.local/bin/uv sync --no-dev
-sudo systemctl restart promptgrimoire
+sudo /opt/promptgrimoire/deploy/restart.sh              # full: pull, sync, test, restart
+sudo /opt/promptgrimoire/deploy/restart.sh --skip-tests  # skip unit tests (faster)
 ```
 
+The deploy script (`deploy/restart.sh`) runs: `git pull` → `uv sync --no-dev` → unit tests (e-stop on failure) → HAProxy drain (lets in-flight requests finish) → HAProxy maintenance mode (serves friendly 503 page) → `systemctl restart` → wait for `/healthz` → HAProxy back to ready.
+
 Alembic migrations run automatically on app start.
+
+**One-time setup** (after first deploy of the script):
+
+```bash
+sudo mkdir -p /etc/haproxy/errors
+sudo cp /opt/promptgrimoire/deploy/503.http /etc/haproxy/errors/503.http
+# Add errorfile line to backend (see § 11. HAProxy above), then:
+sudo haproxy -c -f /etc/haproxy/haproxy.cfg && sudo systemctl reload haproxy
+```
+
+**Recovery** — if a deploy fails mid-restart and HAProxy is stuck in maintenance mode:
+
+```bash
+echo "set server be_promptgrimoire/app state ready" | socat stdio /run/haproxy/admin.sock
+```
 
 ### View logs
 
 ```bash
-# App (systemd journal)
+# App (systemd journal) — real-time tail
 sudo journalctl -u promptgrimoire -f
 
-# App (file logs, more detail)
-ls /opt/promptgrimoire/logs/
+# Errors only (real-time) — works regardless of logging framework
+sudo journalctl -u promptgrimoire -f -p err
+
+# Errors in a time window
+sudo journalctl -u promptgrimoire --no-pager -S "11:00" -U "11:15" | grep -A5 "error"
+
+# Structured JSON log file (see docs/logging.md for jq queries)
+sudo tail -f /opt/promptgrimoire/logs/sessions/promptgrimoire.jsonl | jq .
+
+# Errors and criticals from structured log
+sudo tail -f /opt/promptgrimoire/logs/sessions/promptgrimoire.jsonl | jq 'select(.level == "error" or .level == "critical")'
 
 # HAProxy
 sudo tail -f /var/log/haproxy.log
@@ -1238,6 +1316,8 @@ sudo tail -f /var/log/fail2ban.log
 # Backup
 sudo tail -f /var/log/promptgrimoire-backup.log
 ```
+
+**Known gap:** Errors from third-party libraries (aiohttp, uvicorn) that log via stdlib `logging` bypass the structlog Discord alert processor. Use `journalctl -p err` to catch everything. See #359.
 
 ### Health checks
 
@@ -1292,6 +1372,8 @@ Idempotent — safe to run multiple times.
 | Deploy key | `/home/promptgrimoire/.ssh/id_ed25519` |
 | systemd unit | `/etc/systemd/system/promptgrimoire.service` |
 | HAProxy config | `/etc/haproxy/haproxy.cfg` |
+| HAProxy 503 page | `/etc/haproxy/errors/503.http` (source: `deploy/503.http`) |
+| Deploy script | `/opt/promptgrimoire/deploy/restart.sh` |
 | HAProxy combined cert | `/etc/haproxy/certs/grimoire.drbbs.org.pem` |
 | Let's Encrypt certs | `/etc/letsencrypt/live/grimoire.drbbs.org/` |
 | Cert smush script | `/usr/local/bin/haproxy-cert-smush` |

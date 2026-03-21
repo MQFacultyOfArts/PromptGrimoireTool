@@ -15,6 +15,12 @@ from uuid import UUID
 import structlog
 from nicegui import ui
 
+from promptgrimoire.db.exceptions import (
+    DuplicateNameError,
+    TagCreationDeniedError,
+    TagLockedError,
+)
+
 logger = structlog.get_logger()
 logging.getLogger(__name__).setLevel(logging.INFO)
 
@@ -88,7 +94,7 @@ async def _refresh_tag_state(
         # a full rebuild rather than a no-op diff.
         state.invalidate_card_cache()
         if state.refresh_annotations:
-            state.refresh_annotations()
+            state.refresh_annotations(trigger="tag_save")
 
         # Broadcast tag state change to other connected clients
         if state.broadcast_update:
@@ -134,19 +140,17 @@ async def _create_tag_or_notify(
             group_id=group_id,
             crdt_doc=state.crdt_doc,
         )
-    except PermissionError:
+    except TagCreationDeniedError:
         logger.warning("tag_creation_denied", operation="create_tag")
         ui.notify("Tag creation not allowed", type="negative")
         return None
+    except DuplicateNameError:
+        logger.warning("duplicate_tag_name", operation="create_tag", name=name)
+        ui.notify(f"A tag named '{name}' already exists", type="warning")
+        return None
     except Exception as exc:
-        from sqlalchemy.exc import IntegrityError  # noqa: PLC0415
-
-        if isinstance(exc, IntegrityError) and "uq_tag_workspace_name" in str(exc):
-            logger.warning("duplicate_tag_name", operation="create_tag", name=name)
-            ui.notify(f"A tag named '{name}' already exists", type="warning")
-        else:
-            logger.exception("tag_creation_failed", operation="create_tag")
-            ui.notify(f"Failed to create tag: {exc}", type="negative")
+        logger.exception("tag_creation_failed", operation="create_tag")
+        ui.notify(f"Failed to create tag: {exc}", type="negative")
         return None
 
 
@@ -219,23 +223,19 @@ async def _save_single_tag(
             bypass_lock=bypass_lock,
             crdt_doc=crdt_doc,
         )
-    except ValueError as exc:
+    except TagLockedError as exc:
         logger.warning(
             "tag_save_validation_error", operation="save_tag", tag_id=str(tag_id)
         )
         ui.notify(str(exc), type="warning")
         return False
+    except DuplicateNameError:
+        logger.warning("duplicate_tag_name", operation="save_tag", name=name)
+        ui.notify(f"A tag named '{name}' already exists", type="warning")
+        return False
     except Exception as exc:
-        from sqlalchemy.exc import IntegrityError  # noqa: PLC0415
-
-        if isinstance(exc, IntegrityError) and "uq_tag_workspace_name" in str(exc):
-            logger.warning("duplicate_tag_name", operation="save_tag", name=name)
-            ui.notify(f"A tag named '{name}' already exists", type="warning")
-        else:
-            logger.exception(
-                "tag_save_failed", operation="save_tag", tag_id=str(tag_id)
-            )
-            ui.notify(f"Failed to save: {exc}", type="negative")
+        logger.exception("tag_save_failed", operation="save_tag", tag_id=str(tag_id))
+        ui.notify(f"Failed to save: {exc}", type="negative")
         return False
     # Update originals so subsequent blur doesn't re-save
     inputs["orig_name"] = name
@@ -267,6 +267,10 @@ async def _save_single_group(
         await update_tag_group(
             group_id, name=name, color=color or None, crdt_doc=crdt_doc
         )
+    except DuplicateNameError:
+        logger.warning("duplicate_tag_group_name", operation="save_group", name=name)
+        ui.notify(f"A tag group named '{name}' already exists", type="warning")
+        return False
     except Exception as exc:
         logger.exception(
             "group_save_failed", operation="save_group", group_id=str(group_id)

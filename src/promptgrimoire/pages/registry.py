@@ -78,6 +78,30 @@ def _is_page_visible(
     )
 
 
+async def _check_ban(user_id: str, route: str) -> bool:
+    """Return True (and redirect) if the user is banned."""
+    from uuid import UUID as _UUID  # noqa: PLC0415
+
+    from promptgrimoire.db.users import (  # noqa: PLC0415 -- inline to avoid circular import (registry -> db)
+        is_user_banned,
+    )
+
+    if await is_user_banned(_UUID(user_id)):
+        logger.warning("banned_user_redirected", user_id=user_id, route=route)
+        ui.navigate.to("/banned")
+        return True
+    return False
+
+
+def _register_client(user_id: str) -> None:
+    """Register the current NiceGUI client for real-time ban kick."""
+    from uuid import UUID as _UUID  # noqa: PLC0415
+
+    from promptgrimoire.auth import client_registry  # noqa: PLC0415
+
+    client_registry.register(_UUID(user_id), ui.context.client)
+
+
 def page_route(
     route: str,
     *,
@@ -135,6 +159,17 @@ def page_route(
             except RuntimeError:
                 logger.debug("storage_unavailable", route=route)
             bind_contextvars(user_id=user_id, request_path=route)
+
+            # Ban check: runs for any authenticated user regardless of
+            # requires_auth, so /annotation (requires_auth=False) is covered.
+            # /banned uses @ui.page directly and never enters page_route.
+            if user_id and await _check_ban(user_id, route):
+                return
+
+            # Register client for real-time ban kick
+            if user_id:
+                _register_client(user_id)
+
             await func(*args, **kwargs)
 
         return ui.page(route)(_with_log_context)

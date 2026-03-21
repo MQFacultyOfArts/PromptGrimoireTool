@@ -6212,9 +6212,1324 @@ It catches any divergence that would cause highlights to render at wrong positio
 
 **Verifies:** Lazy engine initialization on first use
 
+### BusinessLogicError logs warning, not exception
+**File:** tests/unit/test_db_engine.py::TestGetSession::test_business_logic_error_logs_warning_not_exception
+1. Replace session factory with mock
+2. Raise BusinessLogicError inside get_session()
+3. Assert logger.warning called once, logger.exception NOT called
+4. Assert rollback was called
+
+**Verifies:** BusinessLogicError triage produces WARNING (AC2.1, AC2.5)
+
+### Unexpected exception logs exception, not warning
+**File:** tests/unit/test_db_engine.py::TestGetSession::test_unexpected_exception_logs_exception_not_warning
+1. Replace session factory with mock
+2. Raise RuntimeError inside get_session()
+3. Assert logger.exception called once, logger.warning NOT called
+4. Assert rollback was called
+
+**Verifies:** Non-business exceptions produce ERROR log level (AC2.2)
+
+### BusinessLogicError uses distinct event name
+**File:** tests/unit/test_db_engine.py::TestGetSession::test_business_logic_error_uses_distinct_event_name
+1. Replace session factory with mock
+2. Raise BusinessLogicError inside get_session()
+3. Assert event name is "Business logic error, rolling back transaction"
+4. Assert event name is NOT "Database session error, rolling back transaction"
+
+**Verifies:** Distinct log event name enables filtering (AC2.3)
+
+### Both exception branches include exc_class
+**File:** tests/unit/test_db_engine.py::TestGetSession::test_both_branches_include_exc_class
+1. Raise BusinessLogicError, assert warning kwargs contain exc_class="BusinessLogicError"
+2. Raise RuntimeError, assert exception kwargs contain exc_class="RuntimeError"
+
+**Verifies:** Structured log includes exception class name for filtering (AC2.4)
+
 ### get_engine returns None before init, engine after init
 **File:** tests/unit/test_db_engine.py::TestGetEngine
 1. Set _state.engine to None, assert get_engine() returns None
 2. Set _state.engine to mock, assert get_engine() returns the mock
 
 **Verifies:** Engine accessor reflects initialization state
+
+## User Ban System
+
+### Ban sets DB fields (is_banned, banned_at)
+**File:** tests/integration/test_user_ban.py::TestSetBanned::test_ban_user_sets_fields
+1. Create a user
+2. Call set_banned(user.id, True)
+3. Assert is_banned is True
+4. Assert banned_at is recent UTC datetime (within 5 seconds)
+
+**Verifies:** Banning sets the correct DB state with timestamp
+
+### Unban clears DB fields
+**File:** tests/integration/test_user_ban.py::TestSetBanned::test_unban_user_clears_fields
+1. Create a user, ban them
+2. Call set_banned(user.id, False)
+3. Assert is_banned is False
+4. Assert banned_at is None
+
+**Verifies:** Unbanning fully reverses ban state
+
+### set_banned returns None for non-existent user
+**File:** tests/integration/test_user_ban.py::TestSetBanned::test_set_banned_nonexistent_returns_none
+1. Call set_banned(random_uuid, True)
+2. Assert result is None
+
+**Verifies:** Graceful handling of non-existent user IDs
+
+### is_user_banned returns True for banned user
+**File:** tests/integration/test_user_ban.py::TestIsUserBanned::test_is_user_banned_returns_true
+1. Create user, ban them
+2. Call is_user_banned(user.id)
+3. Assert returns True
+
+**Verifies:** Lightweight boolean query reflects ban state
+
+### is_user_banned returns False for non-banned user
+**File:** tests/integration/test_user_ban.py::TestIsUserBanned::test_is_user_banned_returns_false
+1. Create user (not banned)
+2. Call is_user_banned(user.id)
+3. Assert returns False
+
+**Verifies:** Default state is not banned
+
+### get_banned_users returns only banned users
+**File:** tests/integration/test_user_ban.py::TestGetBannedUsers::test_get_banned_users_returns_banned
+1. Create two users, ban one
+2. Call get_banned_users()
+3. Assert banned user is in result with correct email, display_name, banned_at
+
+**Verifies:** List query filters correctly and includes expected fields
+
+### Full ban -> list -> unban -> list lifecycle
+**File:** tests/integration/test_ban_lifecycle.py::TestBanLifecycle::test_ban_list_unban_list
+1. Create user with stytch_member_id (mock Stytch, real DB)
+2. Call _cmd_ban(email) -- verify "banned" in output, DB state set, Stytch metadata updated, session revocation called
+3. Call _cmd_list_banned() -- verify email appears in output
+4. Call _cmd_unban(email) -- verify "unbanned" in output, DB state cleared
+5. Call _cmd_list_banned() again -- verify email no longer in output
+
+**Verifies:** Complete CLI ban/unban round-trip with real DB persistence
+
+### Ban CLI sets DB state and Stytch metadata
+**File:** tests/unit/test_ban_commands.py::TestCmdBan::test_ban_sets_db_state_and_stytch
+1. Mock _require_user, set_banned, _update_stytch_metadata, auth client
+2. Call _cmd_ban("target@test.com")
+3. Assert set_banned called with (user.id, True)
+4. Assert _update_stytch_metadata called with {"banned": "true"}
+
+**Verifies:** Ban command orchestrates DB and Stytch updates
+
+### Ban CLI revokes Stytch sessions
+**File:** tests/unit/test_ban_commands.py::TestCmdBan::test_ban_revokes_sessions
+1. Mock user with stytch_member_id="member-xyz"
+2. Call _cmd_ban
+3. Assert revoke_member_sessions called with member_id="member-xyz"
+
+**Verifies:** Session revocation uses correct member ID
+
+### Ban without stytch_member_id warns but continues
+**File:** tests/unit/test_ban_commands.py::TestCmdBan::test_ban_without_stytch_member_id_warns
+1. Mock user with stytch_member_id=None
+2. Call _cmd_ban
+3. Assert set_banned still called, revoke_member_sessions NOT called
+4. Assert "skipping session revocation" in console output
+
+**Verifies:** Graceful degradation when Stytch member ID missing
+
+### Ban admin user prints warning but proceeds
+**File:** tests/unit/test_ban_commands.py::TestCmdBan::test_ban_admin_user_warns
+1. Mock user with is_admin=True
+2. Call _cmd_ban
+3. Assert "admin" in output, set_banned still called
+
+**Verifies:** Admin ban warning does not block the operation
+
+### Ban calls kick endpoint when secret configured
+**File:** tests/unit/test_ban_commands.py::TestCmdBan::test_ban_with_kick_endpoint
+1. Mock admin_api_secret="test-secret", base_url="http://localhost:8080"
+2. Mock httpx.AsyncClient.post to return {"kicked": 2}
+3. Call _cmd_ban
+4. Assert POST to /api/admin/kick was called
+5. Assert kicked count appears in output
+
+**Verifies:** CLI triggers real-time kick when admin secret is available
+
+### Unban clears DB state and Stytch metadata
+**File:** tests/unit/test_ban_commands.py::TestCmdUnban::test_unban_clears_db_state_and_stytch
+1. Mock user (already banned)
+2. Call _cmd_unban
+3. Assert set_banned called with (user.id, False)
+4. Assert _update_stytch_metadata called with {"banned": ""}
+
+**Verifies:** Unban reverses both DB and Stytch state
+
+### Ban --list shows table with banned users
+**File:** tests/unit/test_ban_list.py::TestCmdListBanned::test_list_banned_shows_table
+1. Mock get_banned_users returning one user
+2. Call _cmd_list_banned
+3. Assert email, display_name, and date in output
+
+**Verifies:** List command renders tabular banned user data
+
+### Ban --list shows message when no users banned
+**File:** tests/unit/test_ban_list.py::TestCmdListBanned::test_list_banned_empty
+1. Mock get_banned_users returning empty list
+2. Call _cmd_list_banned
+3. Assert "no banned users" in output
+
+**Verifies:** Empty state message for ban list
+
+### Client registry: register adds client
+**File:** tests/unit/test_client_registry.py::TestRegister::test_register_adds_client
+1. Create mock client, register with user_id
+2. Assert client is in _registry[user_id]
+
+**Verifies:** Registration tracks client-user mapping
+
+### Client registry: register sets on_delete callback
+**File:** tests/unit/test_client_registry.py::TestRegister::test_register_sets_on_delete_callback
+1. Register a mock client
+2. Assert client.on_delete was called once
+
+**Verifies:** Auto-cleanup wiring on registration
+
+### Client registry: deregister removes client and cleans empty user
+**File:** tests/unit/test_client_registry.py::TestDeregister::test_deregister_removes_client + test_deregister_cleans_empty_user
+1. Add client to registry, deregister it
+2. Assert client removed AND user_id key removed when set is empty
+
+**Verifies:** Clean teardown prevents memory leaks
+
+### Client registry: disconnect_user redirects all clients
+**File:** tests/unit/test_client_registry.py::TestDisconnectUser::test_disconnect_calls_run_javascript
+1. Register two clients for same user
+2. Call disconnect_user(user_id)
+3. Assert run_javascript('window.location.href = "/banned"') called on both
+
+**Verifies:** All active sessions get force-redirected
+
+### Client registry: disconnect tolerates stale clients
+**File:** tests/unit/test_client_registry.py::TestDisconnectUser::test_disconnect_tolerates_stale_client
+1. Register three clients, one raises RuntimeError on run_javascript
+2. Call disconnect_user
+3. Assert count is 2 (two successful), all three attempted
+
+**Verifies:** Stale client errors don't abort the disconnect loop
+
+### Kick endpoint: missing auth header returns 403
+**File:** tests/unit/test_kick_endpoint.py::TestMissingAuth::test_no_auth_header_returns_403
+1. POST /api/admin/kick without Authorization header
+2. Assert 403 with {"error": "Forbidden"}
+
+**Verifies:** Unauthenticated requests are rejected
+
+### Kick endpoint: wrong bearer token returns 403
+**File:** tests/unit/test_kick_endpoint.py::TestWrongToken::test_wrong_token_returns_403
+1. POST with incorrect Bearer token
+2. Assert 403
+
+**Verifies:** Invalid credentials are rejected
+
+### Kick endpoint: valid token triggers disconnect
+**File:** tests/unit/test_kick_endpoint.py::TestValidKick::test_valid_token_banned_user_kicks
+1. POST with valid bearer token, user_id of banned user
+2. Mock is_user_banned=True, disconnect_user returns 3
+3. Assert 200 with {"kicked": 3, "was_banned": true}
+
+**Verifies:** Authenticated kick request triggers real-time disconnect
+
+### Kick endpoint: non-banned user skips kick
+**File:** tests/unit/test_kick_endpoint.py::TestValidKick::test_valid_token_not_banned_skips_kick
+1. POST with valid token, user_id of non-banned user
+2. Mock is_user_banned=False
+3. Assert 200 with {"kicked": 0, "was_banned": false}, disconnect_user not called
+
+**Verifies:** Kick is a no-op for non-banned users
+
+### Kick endpoint: unconfigured secret returns 503
+**File:** tests/unit/test_kick_endpoint.py::TestUnconfiguredSecret::test_empty_secret_returns_503
+1. Set admin_api_secret to empty string
+2. POST with any auth header
+3. Assert 503 with "ADMIN_API_SECRET not configured"
+
+**Verifies:** Fail-closed when secret not configured
+
+### Auth: revoke_member_sessions clears sessions
+**File:** tests/unit/test_auth_revoke.py::TestMockRevokeMemberSessions::test_revoke_clears_sessions_for_member
+1. Authenticate a user (creates session)
+2. Validate session is active
+3. Call revoke_member_sessions(member_id)
+4. Validate session is now invalid
+
+**Verifies:** Session revocation actually invalidates active sessions
+
+### Auth: revoke only affects target member
+**File:** tests/unit/test_auth_revoke.py::TestMockRevokeMemberSessions::test_revoke_only_affects_target_member
+1. Authenticate two users
+2. Revoke user1's sessions
+3. Assert user1 session invalid, user2 session still valid
+
+**Verifies:** Session revocation is scoped to the target member only
+
+### E2E: banned page displays suspension message
+**File:** tests/e2e/test_banned_page.py::TestBannedPage::test_banned_page_displays_suspension_message
+1. Navigate to /banned directly
+2. Assert suspension-message and suspension-contact test IDs are visible
+
+**Verifies:** Banned page renders correctly for direct access
+
+### E2E: banned user redirected to /banned on protected page access
+**File:** tests/e2e/test_banned_page.py::TestBannedPage::test_banned_user_redirected_to_banned_page
+1. Authenticate with unique email
+2. Ban user via direct DB update
+3. Navigate to / (protected page)
+4. Wait for URL to contain "/banned"
+5. Assert suspension message visible
+
+**Verifies:** page_route ban guard redirects banned users in real browser
+
+## Exception Taxonomy (Unit)
+
+### Simple exceptions are BusinessLogicError subclasses
+**File:** tests/unit/test_exception_taxonomy.py::test_simple_exception_is_business_logic_error
+1. Parametrize over SharePermissionError, OwnershipError, TagCreationDeniedError, DuplicateNameError, TagLockedError
+2. Instantiate each with a message string
+3. Assert isinstance(exc, BusinessLogicError)
+
+**Verifies:** All simple domain exceptions inherit BusinessLogicError (AC1.1)
+
+### Complex exceptions preserve attributes and are BusinessLogicError
+**File:** tests/unit/test_exception_taxonomy.py::test_deletion_blocked_error_is_business_logic_error (and 5 similar)
+1. Instantiate each complex exception (DeletionBlockedError, ProtectedDocumentError, DuplicateCodenameError, ZeroEditorError, DuplicateEnrollmentError, StudentIdConflictError) with domain-specific kwargs
+2. Assert isinstance(exc, BusinessLogicError)
+3. Assert domain attributes (e.g. student_workspace_count, document_id, codename) are preserved
+
+**Verifies:** Complex exceptions carry structured data and inherit correctly (AC1.1)
+
+### Message preservation for UI display
+**File:** tests/unit/test_exception_taxonomy.py::test_share_permission_error_preserves_message (and 2 similar)
+1. Create SharePermissionError, OwnershipError, TagCreationDeniedError with specific message strings
+2. Assert str(exc) == original message
+
+**Verifies:** str() returns the user-facing message verbatim for UI display (AC1.5)
+
+### DuplicateNameError is not a ValueError
+**File:** tests/unit/test_exception_taxonomy.py::test_duplicate_name_error_is_not_value_error
+1. Create DuplicateNameError
+2. Assert NOT isinstance(exc, ValueError)
+
+**Verifies:** Intentional reparenting from ValueError to BusinessLogicError (AC1.6)
+
+### BusinessLogicError is not a builtin exception type
+**File:** tests/unit/test_exception_taxonomy.py::test_business_logic_error_is_not_builtin_permission_error (and 1 similar)
+1. Create SharePermissionError, assert NOT isinstance(exc, PermissionError)
+2. Create BusinessLogicError, assert NOT isinstance(exc, ValueError)
+
+**Verifies:** Exception hierarchy is distinct from Python builtins
+
+## Business Exception Triage (Integration)
+
+### grant_share with sharing disabled logs business error
+**File:** tests/integration/test_business_exception_triage.py::TestBusinessExceptionTriage::test_grant_share_rejected_logs_business_error
+1. Create course with default_allow_sharing=False, two enrolled users, a cloned workspace
+2. Patch db.engine.logger
+3. Call grant_share() with sharing_allowed=False, expect SharePermissionError
+4. Assert logger.warning called with "Business logic error" event and exc_class="SharePermissionError"
+5. Assert logger.exception NOT called
+
+**Verifies:** Domain exceptions from real DB operations produce WARNING, not ERROR (AC2.6)
+
+### delete_workspace by non-owner logs business error
+**File:** tests/integration/test_business_exception_triage.py::TestBusinessExceptionTriage::test_delete_workspace_non_owner_logs_business_error
+1. Create course, two enrolled users, a cloned workspace
+2. Patch db.engine.logger
+3. Call delete_workspace() with non-owner user_id, expect OwnershipError
+4. Assert logger.warning called with "Business logic error" event and exc_class="OwnershipError"
+5. Assert logger.exception NOT called
+
+**Verifies:** Ownership violations produce WARNING, not ERROR (AC2.7)
+
+## Share Button Visibility (Unit)
+
+### Share button guard boolean expression
+**File:** tests/unit/test_sharing_button_visibility.py::TestShareButtonVisibility::test_share_button_guard
+1. Parametrize (allow_sharing, viewer_is_privileged, can_manage_sharing, expected) over 6 cases
+2. Evaluate `(allow_sharing or viewer_is_privileged) and can_manage_sharing`
+3. Assert result matches expected
+
+**Verifies:** Share button visibility: staff bypass on allow_sharing, no bypass on can_manage_sharing (AC3.1-AC3.3)
+
+### Class toggle has no staff bypass
+**File:** tests/unit/test_sharing_button_visibility.py::TestClassToggleNoStaffBypass::test_class_toggle_false_when_sharing_disabled
+1. Set allow_sharing=False, can_manage_sharing=True, viewer_is_privileged=True
+2. Evaluate `allow_sharing and can_manage_sharing` (no staff bypass term)
+3. Assert result is False
+
+**Verifies:** "Share with class" toggle ignores staff privilege (AC3.4)
+
+### Structural guard for share button expression
+**File:** tests/unit/test_sharing_button_visibility.py::TestStructuralGuard::test_share_button_guard_expression
+1. Run ast-grep on sharing.py searching for `(allow_sharing or viewer_is_privileged) and can_manage_sharing`
+2. Assert the pattern is found (exit code 0)
+
+**Verifies:** The guard expression exists in production code (structural regression guard)
+
+## Workspace Placement -- Sharing Defaults (Integration)
+
+### Loose workspace defaults to allow_sharing=True
+**File:** tests/integration/test_workspace_placement.py::test_loose_workspace_allow_sharing_true
+1. Create PlacementContext(placement_type="loose"), assert allow_sharing=True (dataclass default)
+2. Create a workspace in DB, get_placement_context(), assert allow_sharing=True
+
+**Verifies:** Loose workspaces default to sharing enabled (AC4.1, AC4.2)
+
+### Activity-placed workspace sharing unaffected
+**File:** tests/integration/test_workspace_placement.py::test_activity_placed_sharing_unaffected
+1. Create course with default_allow_sharing, activity, and cloned workspace
+2. Get placement context, assert allow_sharing matches course default
+
+**Verifies:** Activity-placed workspaces inherit course sharing setting (AC4.3)
+||||||| parent of 37db489c (docs: update project context for incident-analysis-tools)
+
+## Incident Analysis -- Ingest & Provenance
+
+### Parse valid manifest
+**File:** tests/unit/incident/test_ingest.py::TestParseManifest::test_valid_manifest
+1. Build manifest JSON with hostname, timezone, requested_window, files
+2. Call parse_manifest() with bytes
+3. Assert returned dict contains all required keys
+
+**Verifies:** Manifest parser accepts well-formed input
+
+### Reject manifest with missing fields
+**File:** tests/unit/incident/test_ingest.py::TestParseManifest::test_missing_required_field
+1. Build manifest missing "hostname"
+2. Assert parse_manifest() raises ValueError mentioning "hostname"
+
+**Verifies:** Manifest validation catches missing required fields
+
+### Reject invalid JSON manifest
+**File:** tests/unit/incident/test_ingest.py::TestParseManifest::test_invalid_json
+1. Pass garbage bytes to parse_manifest()
+2. Assert ValueError raised
+
+**Verifies:** Manifest parser handles malformed JSON gracefully
+
+### Map known filenames to format strings
+**File:** tests/unit/incident/test_ingest.py::TestFormatToTable::test_known_formats
+1. Call format_to_table() with each known filename (journal.json, structlog.jsonl, haproxy.log, postgresql.log)
+2. Assert correct format string returned
+
+**Verifies:** Filename-to-format dispatch table is correct
+
+### Reject unknown filenames
+**File:** tests/unit/incident/test_ingest.py::TestFormatToTable::test_unknown_filename
+1. Call format_to_table("unknown.txt")
+2. Assert ValueError raised
+
+**Verifies:** Unknown filenames are rejected rather than silently ignored
+
+### SHA256 hash computation
+**File:** tests/unit/incident/test_ingest.py::TestComputeSha256::test_computes_hash
+1. Write known content to file
+2. Call compute_sha256()
+3. Assert matches hashlib.sha256 of same content
+
+**Verifies:** SHA256 dedup hash is correctly computed
+
+### Ingest populates sources table
+**File:** tests/unit/incident/test_ingest.py::TestRunIngest::test_ingest_populates_sources
+1. Create tarball with manifest + journal.json + structlog.jsonl
+2. Call run_ingest()
+3. Query sources table
+4. Assert 2 rows with correct filenames, format, sha256, hostname
+
+**Verifies:** Ingest creates source rows for each file in manifest
+
+### Re-ingest is a no-op (SHA256 dedup)
+**File:** tests/unit/incident/test_ingest.py::TestRunIngestDedup::test_reingest_is_noop
+1. Ingest tarball once
+2. Ingest same tarball again
+3. Assert sources table still has same count (no duplicates)
+
+**Verifies:** SHA256 dedup prevents duplicate source rows
+
+### Missing manifest exits with error
+**File:** tests/unit/incident/test_ingest.py::TestRunIngestNoManifest::test_missing_manifest_exits
+1. Create tarball without manifest.json
+2. Call run_ingest()
+3. Assert SystemExit(1) raised
+
+**Verifies:** Missing manifest produces clear error
+
+### Ingest dispatches journal parser
+**File:** tests/unit/incident/test_ingest_with_parsers.py::TestIngestWithParsers::test_journal_events_populated
+1. Create tarball with manifest + journal.json containing valid journal lines
+2. Call run_ingest()
+3. Query journal_events table
+4. Assert correct event count and field values (ts_utc, priority, pid, message)
+
+**Verifies:** Journal parser is wired into ingest dispatch
+
+### Ingest dispatches JSONL parser
+**File:** tests/unit/incident/test_ingest_with_parsers.py::TestIngestWithParsers::test_jsonl_events_populated
+1. Create tarball with manifest + structlog.jsonl containing valid JSONL lines
+2. Call run_ingest()
+3. Query jsonl_events table
+4. Assert correct event count and field values (ts_utc, level, event)
+
+**Verifies:** JSONL parser is wired into ingest dispatch
+
+### Ingest handles both formats together
+**File:** tests/unit/incident/test_ingest_with_parsers.py::TestIngestWithParsers::test_both_formats_together
+1. Create tarball with both journal.json and structlog.jsonl
+2. Call run_ingest()
+3. Assert both journal_events and jsonl_events tables populated
+
+**Verifies:** Multiple format parsers dispatch independently
+
+### Re-ingest dedup prevents duplicate events
+**File:** tests/unit/incident/test_ingest_with_parsers.py::TestIngestWithParsers::test_reingest_dedup_no_duplicate_events
+1. Ingest tarball with parseable files
+2. Re-ingest same tarball
+3. Assert event counts unchanged
+
+**Verifies:** Source-level dedup prevents duplicate parsed events
+
+### Ingest dispatches HAProxy parser
+**File:** tests/unit/incident/test_ingest_haproxy_pglog.py::TestIngestHaproxy::test_haproxy_events_populated
+1. Create tarball with haproxy.log
+2. Ingest it
+3. Query haproxy_events table
+4. Assert events have correct fields (ts_utc, client_ip, status_code, method, path)
+
+**Verifies:** HAProxy parser is wired into ingest dispatch
+
+### HAProxy unparseable count reported
+**File:** tests/unit/incident/test_ingest_haproxy_pglog.py::TestIngestHaproxy::test_unparseable_count_in_output
+1. Create tarball with HAProxy log containing garbage lines + valid lines
+2. Ingest it with capsys capture
+3. Assert output mentions unparseable count
+
+**Verifies:** User gets feedback about skipped lines
+
+### Ingest dispatches PG text parser
+**File:** tests/unit/incident/test_ingest_haproxy_pglog.py::TestIngestPglog::test_pglog_text_events_populated
+1. Create tarball with postgresql.log (text format)
+2. Ingest it
+3. Query pg_events table
+4. Assert events with correct PID, level, message
+
+**Verifies:** PG text parser auto-detected and dispatched
+
+### Ingest dispatches PG JSON parser
+**File:** tests/unit/incident/test_ingest_haproxy_pglog.py::TestIngestPglog::test_pglog_json_events_populated
+1. Create tarball with postgresql.json (JSON format)
+2. Ingest it
+3. Query pg_events table
+4. Assert events with correct fields
+
+**Verifies:** PG JSON parser auto-detected and dispatched
+
+### All formats together in one tarball
+**File:** tests/unit/incident/test_ingest_haproxy_pglog.py::TestIngestPglog::test_all_formats_together
+1. Create tarball with journal.json, structlog.jsonl, haproxy.log, postgresql.log
+2. Ingest it
+3. Assert all 4 event tables populated
+
+**Verifies:** Full parser dispatch chain works end-to-end
+
+### PG log auto-detection (JSON vs text)
+**File:** tests/unit/incident/test_ingest_haproxy_pglog.py::TestPglogAuto::test_json_format_detected / test_text_format_detected
+1. Call parse_pglog_auto() with JSON-formatted PG log data
+2. Assert events returned (JSON path taken)
+3. Call parse_pglog_auto() with text-formatted PG log data
+4. Assert events returned (text path taken)
+
+**Verifies:** Auto-detection correctly routes to JSON vs text parser
+
+### Rotated PG filenames map to pglog format
+**File:** tests/unit/incident/test_ingest_haproxy_pglog.py::TestFormatToTable / tests/unit/incident/test_bugs.py::TestBugRotatedPgFilenamesRejected
+1. Call format_to_table() with "postgresql-16-main.log", "postgresql-16-main.json"
+2. Assert both return "pglog"
+
+**Verifies:** Pattern-matched PG filenames (not just exact match) are accepted
+
+## Incident Analysis -- Journal Parser
+
+### Microsecond timestamp conversion
+**File:** tests/unit/incident/test_journal_parser.py::TestTimestampConversion::test_microsecond_precision
+1. Build journal line with __REALTIME_TIMESTAMP=1710536535123456 (microseconds epoch)
+2. Parse it
+3. Assert ts_utc = "2024-03-15T21:02:15.123456Z"
+
+**Verifies:** Microsecond-epoch timestamps convert to canonical UTC format
+
+### Field extraction (priority, pid, message, unit, raw_json)
+**File:** tests/unit/incident/test_journal_parser.py::TestFieldExtraction::test_*
+1. Parse journal line with known values
+2. Assert priority is int, pid is int, message extracted, unit extracted
+3. Assert raw_json contains full original JSON
+
+**Verifies:** All journal fields correctly extracted and typed
+
+### Time window filtering
+**File:** tests/unit/incident/test_journal_parser.py::TestTimeWindowFiltering::test_event_inside_window / test_event_outside_window / test_event_just_before_start_excluded
+1. Parse journal lines with timestamps inside, outside, and at boundary of window
+2. Assert only in-window events returned
+3. Assert 1 second before start is excluded, 1 second after end is excluded
+
+**Verifies:** Strict window filtering with no buffer
+
+### Edge cases (empty input, blank lines, missing fields)
+**File:** tests/unit/incident/test_journal_parser.py::TestEdgeCases::test_*
+1. Parse empty bytes, bytes with blank lines, lines missing __REALTIME_TIMESTAMP
+2. Assert empty result for empty/blank, skip lines with missing timestamp
+
+**Verifies:** Parser handles malformed input gracefully
+
+### Byte-array MESSAGE field (production data bug)
+**File:** tests/unit/incident/test_real_data_bugs.py::TestBugJournalMessageByteArray::test_byte_array_message_decoded
+1. Build journal line where MESSAGE is a JSON array of bytes (systemd binary encoding)
+2. Parse it
+3. Assert message field is decoded to readable string
+
+**Verifies:** Binary-encoded journal messages are handled (real production format)
+
+## Incident Analysis -- JSONL Parser
+
+### Timestamp passthrough with canonical format
+**File:** tests/unit/incident/test_jsonl_parser.py::TestTimestampPassthrough::test_*
+1. Parse JSONL line with ISO 8601 timestamp
+2. Assert ts_utc matches input in canonical Z-suffix format
+
+**Verifies:** Timestamps pass through normalise_utc correctly
+
+### Field extraction (level, event, user_id, workspace_id, exc_info, extra_json)
+**File:** tests/unit/incident/test_jsonl_parser.py::TestFieldExtraction::test_*
+1. Parse JSONL line with all structlog fields
+2. Assert dedicated fields extracted, remaining fields go to extra_json
+3. Assert extracted fields excluded from extra_json
+
+**Verifies:** Structlog fields correctly mapped to schema columns
+
+### exc_info handling (null, absent, string)
+**File:** tests/unit/incident/test_jsonl_parser.py::TestExcInfoNull::test_*
+1. Parse lines with exc_info=null, absent exc_info, exc_info="traceback..."
+2. Assert null/absent -> Python None, string -> preserved
+
+**Verifies:** exc_info nullable semantics match Python convention
+
+### Malformed timestamp resilience
+**File:** tests/unit/incident/test_bugs.py::TestBugJsonlCrashOnBadTimestamp / tests/unit/incident/test_query_timestamp_bug.py::TestJsonlMalformedTimestampResilience
+1. Parse JSONL line with null timestamp, integer timestamp
+2. Assert line is skipped (not crash)
+
+**Verifies:** Bad timestamp types/shapes don't crash the parser
+
+## Incident Analysis -- HAProxy Parser
+
+### AEDT/AEST timestamp conversion
+**File:** tests/unit/incident/test_haproxy_parser.py::TestTimestampConversion::test_aedt_to_utc / test_aest_offset
+1. Parse HAProxy line with local-timezone timestamp
+2. Assert ts_utc is UTC with Z suffix
+
+**Verifies:** HAProxy's local timestamps convert to UTC correctly
+
+### Field extraction (status, timings, method, path, client_ip, backend, bytes)
+**File:** tests/unit/incident/test_haproxy_parser.py::TestFieldExtraction::test_*
+1. Parse HAProxy HTTP log line
+2. Assert all timing fields (tr, tw, tc, tr_resp, ta), status code, method, path, client_ip, backend/server, bytes_read extracted
+
+**Verifies:** HAProxy combined log format fully parsed
+
+### Unparseable lines counted
+**File:** tests/unit/incident/test_haproxy_parser.py::TestUnparseableLines::test_garbage_lines_counted / test_all_garbage_returns_empty
+1. Parse data with mix of valid + garbage lines
+2. Assert valid events returned, unparseable count is correct
+3. Parse all-garbage data: assert empty events, count = line count
+
+**Verifies:** Unparseable lines are skipped with count, not fatal
+
+### IPv6 client addresses
+**File:** tests/unit/incident/test_bugs.py::TestBugHaproxyIpv6Dropped::test_ipv6_localhost_parsed
+1. Parse HAProxy line with ::1 (IPv6 localhost) client address
+2. Assert event parsed with client_ip="::1"
+
+**Verifies:** IPv6 addresses are not dropped as unparseable
+
+### SSL handshake failure (non-HTTP line)
+**File:** tests/unit/incident/test_real_data_bugs.py::TestBugHaproxySslHandshakeDropped::test_ssl_handshake_failure_parsed
+1. Parse HAProxy SSL handshake failure line (non-standard format)
+2. Assert event parsed with appropriate fields
+
+**Verifies:** Non-HTTP HAProxy lines (SSL errors, connection resets) are captured
+
+### Admin/server state lines
+**File:** tests/unit/incident/test_real_data_bugs.py::TestHaproxyAdminLines::test_server_drain_parsed
+1. Parse HAProxy admin line (server state change)
+2. Assert event captured
+
+**Verifies:** HAProxy admin messages are included in timeline
+
+### Malformed HTTP line not misidentified as admin
+**File:** tests/unit/incident/test_codex_round3.py::TestHaproxyAdminFallbackTooBroad::test_malformed_http_line_is_unparseable_not_admin
+1. Parse truncated/malformed HTTP log line
+2. Assert it is counted as unparseable (not captured as admin event)
+
+**Verifies:** Admin regex doesn't false-positive on garbage
+
+## Incident Analysis -- PostgreSQL Parser
+
+### Text format: multi-line grouping (ERROR + DETAIL + STATEMENT)
+**File:** tests/unit/incident/test_pglog_parser.py::TestTextMultiLineGrouping::test_error_detail_statement_grouped / test_message_contains_all_text
+1. Parse PG text log with ERROR followed by DETAIL and STATEMENT continuation lines
+2. Assert single event returned (not 3)
+3. Assert message contains all text, detail and statement fields populated
+
+**Verifies:** pgtoolkit groups multi-line PG log entries correctly
+
+### Text format: PID extraction and separate events
+**File:** tests/unit/incident/test_pglog_parser.py::TestTextSeparatePIDs::test_two_pids_two_events
+1. Parse PG text log with two events from different PIDs
+2. Assert 2 separate events with correct PIDs
+
+**Verifies:** Events from different PIDs are kept separate
+
+### Text format: timestamp stored as UTC
+**File:** tests/unit/incident/test_pglog_parser.py::TestTextTimestamp::test_timestamp_stored_as_utc
+1. Parse PG text log entry
+2. Assert ts_utc ends with "Z" (canonical UTC format)
+
+**Verifies:** PG text timestamps normalised to UTC
+
+### JSON format: field extraction
+**File:** tests/unit/incident/test_pglog_parser.py::TestJsonFieldExtraction::test_all_fields_extracted
+1. Parse PG JSON log line with all fields (error_severity, detail, statement, message)
+2. Assert all fields extracted and mapped to schema columns
+
+**Verifies:** PG JSON log format fully parsed
+
+### JSON format: GMT timestamp conversion
+**File:** tests/unit/incident/test_pglog_parser.py::TestJsonTimestamp::test_gmt_timestamp_to_iso8601
+1. Parse PG JSON line with "Tue Mar 16 05:10:00 2026 GMT" timestamp
+2. Assert ts_utc in canonical ISO 8601 UTC format
+
+**Verifies:** PG JSON epoch-style timestamps convert correctly
+
+### Production PG log format match
+**File:** tests/unit/incident/test_real_data_bugs.py::TestBugPgLogFormatMismatch::test_actual_production_pg_line_parsed
+1. Parse actual production PG log line (with real log_line_prefix format)
+2. Assert event parsed successfully
+
+**Verifies:** Parser regex matches actual production PG log format
+
+## Incident Analysis -- Beszel Metrics
+
+### Successful fetch and field mapping
+**File:** tests/unit/incident/test_beszel.py::TestSuccessfulFetch::test_single_record
+1. Mock PocketBase API response with system metrics
+2. Call fetch_beszel_metrics()
+3. Assert returned dict has all fields (cpu, mem_used, mem_percent, net_*, disk_*, load_*)
+
+**Verifies:** Beszel API response correctly mapped to metric schema
+
+### Compact key mapping (ns->net_sent, nr->net_recv, etc.)
+**File:** tests/unit/incident/test_beszel.py::TestCompactKeyMapping::test_*
+1. Mock API response with compact keys (ns, nr, dr, dw, etc.)
+2. Assert mapped to full field names
+
+**Verifies:** Beszel's abbreviated JSON keys correctly expanded
+
+### Pagination
+**File:** tests/unit/incident/test_beszel.py::TestPagination::test_two_pages
+1. Mock API with 2 pages of results (page=1 totalPages=2)
+2. Assert all records from both pages returned
+
+**Verifies:** Multi-page API responses fully consumed
+
+### Error handling (connection error, HTTP error)
+**File:** tests/unit/incident/test_beszel.py::TestConnectionError / TestHTTPError
+1. Mock connection failure / 404 response
+2. Assert appropriate exception raised
+
+**Verifies:** API errors propagate cleanly
+
+### Beszel dedup
+**File:** tests/unit/incident/test_codex_round3.py::TestBeszelDedup::test_beszel_dedup_message
+1. Run beszel CLI command twice with same parameters
+2. Assert second run outputs "Already fetched (dedup)"
+
+**Verifies:** SHA256 dedup prevents duplicate Beszel fetches
+
+## Incident Analysis -- Queries
+
+### Sources query returns provenance
+**File:** tests/unit/incident/test_queries.py::TestQuerySources::test_*
+1. Populate DB with multi-format sources + events
+2. Call query_sources()
+3. Assert all sources returned with sha256 prefix (12 chars), event counts, first/last timestamps
+
+**Verifies:** Provenance summary includes event stats per source
+
+### Timeline interleaves events by ts_utc
+**File:** tests/unit/incident/test_queries.py::TestQueryTimeline::test_events_interleaved_by_ts / test_returns_events_in_window
+1. Populate DB with events from different sources at interleaved timestamps
+2. Call query_timeline() with time window
+3. Assert events ordered by ts_utc regardless of source
+
+**Verifies:** Cross-source timeline correctly interleaves by timestamp
+
+### Timeline level filter
+**File:** tests/unit/incident/test_queries.py::TestQueryTimeline::test_level_filter
+1. Populate DB with events at different levels
+2. Call query_timeline() with level_filter
+3. Assert only matching events returned
+
+**Verifies:** Level/status filtering works on the timeline view
+
+### Breakdown counts by source and level
+**File:** tests/unit/incident/test_queries.py::TestQueryBreakdown::test_counts_correct / test_deterministic_between_runs / test_ordered_by_count_desc
+1. Populate DB with known event distributions
+2. Call query_breakdown() twice
+3. Assert counts match expected, results identical between runs, ordered by count DESC
+
+**Verifies:** Breakdown produces deterministic, correctly ordered aggregates
+
+### Query timestamp padding bug
+**File:** tests/unit/incident/test_query_timestamp_bug.py::TestQueryStartSecondBug::test_event_at_window_start_included
+1. Store event with ts_utc "...00.000000Z"
+2. Query with bound "...00Z" (no microseconds)
+3. Assert event IS included (bounds padded by _normalise_bound)
+
+**Verifies:** Query bounds padded to microsecond precision for correct string comparison
+
+## Incident Analysis -- CLI
+
+### Sources output formats (table, JSON, CSV)
+**File:** tests/unit/incident/test_queries.py::TestSourcesCLI::test_sources_table_output / test_sources_json_output / test_sources_csv_output
+1. Invoke CLI `sources` command with --json / --csv / default
+2. Assert output parses correctly in each format
+
+**Verifies:** CLI output renderers produce valid table/JSON/CSV
+
+### Timeline CLI with start > end error
+**File:** tests/unit/incident/test_queries.py::TestTimelineCLI::test_start_after_end_exits_with_error
+1. Invoke `timeline --start "16:30" --end "16:00"`
+2. Assert exit code 1 with error message
+
+**Verifies:** Invalid time window rejected at CLI level
+
+### Timezone validation
+**File:** tests/unit/incident/test_codex_round3.py::TestTimezoneCLIValidation::test_invalid_timezone_gives_cli_error / test_beszel_invalid_timezone_gives_cli_error
+1. Invoke timeline/beszel command with --timezone "Fake/Zone"
+2. Assert BadParameter error with helpful message
+
+**Verifies:** Invalid IANA timezone names rejected with user-friendly error
+
+## Incident Analysis -- Schema Migration
+
+### Old schema upgraded with provenance columns
+**File:** tests/unit/incident/test_schema_upgrade.py::TestSchemaUpgrade::test_old_schema_upgraded_with_new_columns
+1. Create DB with v1 schema (no source_path, collection_method)
+2. Insert a row
+3. Call create_schema() (triggers migration)
+4. Assert source_path and collection_method columns exist
+5. Assert existing data preserved
+
+**Verifies:** Lightweight migration adds columns without data loss
+
+### Fresh schema has provenance columns
+**File:** tests/unit/incident/test_schema_upgrade.py::TestSchemaUpgrade::test_fresh_schema_has_provenance_columns
+1. Create fresh DB with create_schema()
+2. Assert source_path and collection_method in table_info
+
+**Verifies:** Fresh databases include v2 columns
+
+### Idempotent migration
+**File:** tests/unit/incident/test_schema_upgrade.py::TestSchemaUpgrade::test_idempotent_migration
+1. Run create_schema() twice on same DB
+2. Assert no errors
+
+**Verifies:** Schema migration is safe to re-run
+
+## Incident Analysis -- Cross-Cutting Bug Fixes
+
+### All parsers produce same ts_utc format
+**File:** tests/unit/incident/test_bugs.py::TestBugTimestampFormatMismatch::test_journal_and_jsonl_produce_same_format
+1. Parse journal line and JSONL line with equivalent timestamps
+2. Assert both ts_utc values end with "Z" (not +00:00)
+
+**Verifies:** Canonical timestamp format is consistent across parsers
+
+### in_window has no hidden buffer
+**File:** tests/unit/incident/test_bugs.py::TestBugInWindowHasHiddenBuffer::test_one_second_outside_is_excluded
+1. Call in_window() with timestamp 1 second past window end
+2. Assert returns False
+
+**Verifies:** Window filtering is strict (no hidden 5-minute buffer)
+
+### HAProxy timestamp ends with Z
+**File:** tests/unit/incident/test_real_data_bugs.py::TestBugHaproxyTimestampFormat::test_haproxy_ts_utc_ends_with_z
+1. Parse HAProxy line
+2. Assert ts_utc ends with "Z"
+
+**Verifies:** HAProxy timestamps use normalise_utc (Z suffix, not +00:00)
+
+### PG text timestamp ends with Z
+**File:** tests/unit/incident/test_real_data_bugs.py::TestBugPgTextTimestampFormat::test_pg_text_ts_utc_ends_with_z
+1. Parse PG text log line
+2. Assert ts_utc ends with "Z"
+
+**Verifies:** PG text timestamps use normalise_utc (Z suffix, not +00:00)
+
+## Incident Analysis -- Epoch Extraction
+
+### Two commits produce two epochs
+**File:** tests/unit/test_epoch_extraction.py::TestExtractEpochs::test_two_commits_two_epochs
+1. Create in-memory SQLite DB with schema
+2. Insert 3 JSONL events with commit "aaa", then 3 with commit "bbb"
+3. Call extract_epochs(conn)
+4. Assert 2 epochs returned with correct commit, start/end timestamps, and event counts
+5. Assert first epoch ends before second begins
+
+**Verifies:** Commit hash transitions are detected as epoch boundaries
+
+### Single commit produces one epoch
+**File:** tests/unit/test_epoch_extraction.py::TestExtractEpochs::test_single_commit_one_epoch
+1. Insert 3 JSONL events all with commit "aaa"
+2. Call extract_epochs(conn)
+3. Assert exactly 1 epoch with event_count=3
+
+**Verifies:** Contiguous same-commit events are grouped into a single epoch
+
+### Empty database returns empty list
+**File:** tests/unit/test_epoch_extraction.py::TestExtractEpochs::test_empty_db_empty_list
+1. Create schema with no JSONL events
+2. Call extract_epochs(conn)
+3. Assert empty list returned
+
+**Verifies:** Graceful handling of no data
+
+### Crash-bounce detection (short epoch)
+**File:** tests/unit/test_epoch_extraction.py::TestExtractEpochs::test_crash_bounce_detection_short
+1. Insert 2 JSONL events 60s apart with same commit
+2. Call extract_epochs(conn)
+3. Assert duration_seconds=60.0 and is_crash_bounce=True
+
+**Verifies:** Epochs under 300s threshold are flagged as crash-bounce
+
+### Crash-bounce detection (long epoch)
+**File:** tests/unit/test_epoch_extraction.py::TestExtractEpochs::test_crash_bounce_detection_long
+1. Insert 2 JSONL events 600s apart with same commit
+2. Call extract_epochs(conn)
+3. Assert duration_seconds=600.0 and is_crash_bounce=False
+
+**Verifies:** Epochs at or above 300s threshold are not flagged
+
+### Crash-bounce boundary (exactly 300s)
+**File:** tests/unit/test_epoch_extraction.py::TestExtractEpochs::test_crash_bounce_boundary_exactly_300
+1. Insert 2 JSONL events exactly 300s apart
+2. Assert duration_seconds=300.0 and is_crash_bounce=False
+
+**Verifies:** 300s boundary is inclusive (>=300 is not a bounce)
+
+## Incident Analysis -- Epoch Enrichment
+
+### Journal Consumed message matched
+**File:** tests/unit/test_epoch_enrichment.py::TestEnrichEpochsJournal::test_consumed_message_matched
+1. Create epoch from JSONL events
+2. Insert journal "Consumed 8.509s CPU time, 366.5M memory peak, 0B memory swap peak" near epoch end
+3. Call enrich_epochs_journal(conn, epochs)
+4. Assert cpu_consumed="8.509s", memory_peak="366.5M", swap_peak="0B", memory_peak_bytes=384303104
+
+**Verifies:** Journal Consumed messages are parsed and attached to epochs
+
+### No matching journal message
+**File:** tests/unit/test_epoch_enrichment.py::TestEnrichEpochsJournal::test_no_matching_journal_message
+1. Create epoch with no nearby journal events
+2. Call enrich_epochs_journal(conn, epochs)
+3. Assert all enrichment fields are None
+
+**Verifies:** Missing journal data produces None, not errors
+
+### Epoch end correction from journal timestamp
+**File:** tests/unit/test_epoch_enrichment.py::TestEnrichEpochsJournal::test_epoch_end_correction
+1. Create epoch, insert journal event 30s after last JSONL event
+2. Call enrich_epochs_journal(conn, epochs)
+3. Assert end_utc updated to journal timestamp, duration recalculated to 90s
+
+**Verifies:** Journal timestamps can extend epoch boundaries and recalculate duration
+
+### Memory bytes parsing (various units)
+**File:** tests/unit/test_epoch_enrichment.py::TestParseMemoryBytes::test_gigabytes/megabytes/zero_bytes/kilobytes/invalid_returns_none
+1. Call _parse_memory_bytes with "2.7G", "366.5M", "0B", "512K", "garbage"
+2. Assert correct byte values or None for invalid input
+
+**Verifies:** Human-readable memory strings are converted to byte counts
+
+### GitHub PR commit hash prefix match
+**File:** tests/unit/test_epoch_enrichment.py::TestEnrichEpochsGithub::test_commit_hash_prefix_match
+1. Create epoch with short commit hash "ba70f4fa"
+2. Insert github_event with full 40-char commit_oid starting with "ba70f4fa"
+3. Call enrich_epochs_github(conn, epochs)
+4. Assert pr_number, pr_title, pr_author, pr_url populated
+
+**Verifies:** Short commit hashes from JSONL match full GitHub commit OIDs via prefix
+
+### No matching PR
+**File:** tests/unit/test_epoch_enrichment.py::TestEnrichEpochsGithub::test_no_matching_pr
+1. Create epoch with commit "deadbeef", no matching github_events
+2. Call enrich_epochs_github(conn, epochs)
+3. Assert pr_title="no PR", all other PR fields None
+
+**Verifies:** Unmatched commits get sentinel values, not errors
+
+## Incident Analysis -- Epoch Queries
+
+### Error query filters by level
+**File:** tests/unit/test_epoch_queries.py::TestQueryEpochErrors::test_filters_by_level
+1. Insert JSONL events with levels error, warning, critical, info, info
+2. Call query_epoch_errors with 1-hour window
+3. Assert only error/warning/critical returned, not info
+
+**Verifies:** Info-level events are excluded from error aggregation
+
+### Error per-hour normalisation
+**File:** tests/unit/test_epoch_queries.py::TestQueryEpochErrors::test_per_hour_calculation
+1. Insert 5 error events in a 1-hour window
+2. Assert count=5, per_hour=5.0, is_crash_bounce=False
+
+**Verifies:** Raw counts are normalised to per-hour rates
+
+### Error crash-bounce suppresses rate
+**File:** tests/unit/test_epoch_queries.py::TestQueryEpochErrors::test_crash_bounce
+1. Insert error in 120s duration epoch
+2. Assert per_hour=None, is_crash_bounce=True
+
+**Verifies:** Short epochs suppress per-hour rates (not meaningful)
+
+### Error grouping by level and event
+**File:** tests/unit/test_epoch_queries.py::TestQueryEpochErrors::test_groups_by_level_and_event
+1. Insert errors with same level but different event names
+2. Assert separate rows per (level, event) pair
+
+**Verifies:** Errors are grouped by both level and event type
+
+### HAProxy status distribution and percentiles
+**File:** tests/unit/test_epoch_queries.py::TestQueryEpochHaproxy::test_status_distribution_and_totals / test_percentiles
+1. Insert HAProxy events with known status codes and ta_ms values
+2. Assert total_requests, count_5xx, rate_5xx, requests_per_minute
+3. For percentiles: insert 100 events with ta_ms 1..100, verify p50=51, p95=96, p99=100
+
+**Verifies:** HAProxy aggregation produces correct status counts, rates, and latency percentiles
+
+### HAProxy crash-bounce rates
+**File:** tests/unit/test_epoch_queries.py::TestQueryEpochHaproxy::test_crash_bounce_rates
+1. Insert HAProxy event in 120s duration epoch
+2. Assert rate_5xx=None, requests_per_minute=None
+
+**Verifies:** Short epochs suppress rate calculations
+
+### Beszel resource mean/max aggregation
+**File:** tests/unit/test_epoch_queries.py::TestQueryEpochResources::test_mean_and_max
+1. Insert 2 beszel_metrics rows with known CPU/mem/load values
+2. Assert mean and max computed correctly for each metric
+
+**Verifies:** Resource metrics are correctly aggregated
+
+### PG error grouping
+**File:** tests/unit/test_epoch_queries.py::TestQueryEpochPg::test_grouped_counts
+1. Insert PG events with various level/error_type combinations
+2. Assert grouped counts match expected values
+
+**Verifies:** PG errors are grouped by (level, error_type)
+
+### Journal anomaly priority filtering
+**File:** tests/unit/test_epoch_queries.py::TestQueryEpochJournalAnomalies::test_filters_by_priority
+1. Insert journal events with priorities 2, 3, 5, 6
+2. Assert only priority <= 3 returned (crit and err, not notice/info)
+
+**Verifies:** Only high-severity journal events are surfaced as anomalies
+
+### Journal anomaly timestamp ordering
+**File:** tests/unit/test_epoch_queries.py::TestQueryEpochJournalAnomalies::test_ordered_by_timestamp
+1. Insert anomaly events in non-chronological order
+2. Assert results are sorted by ts_utc
+
+**Verifies:** Anomalies are returned in chronological order
+
+## Incident Analysis -- GitHub Fetcher
+
+### Token resolution priority (override > env > CLI)
+**File:** tests/unit/test_github_fetcher.py::TestResolveGithubToken::test_token_override_takes_priority / test_env_var_used_when_no_override / test_gh_cli_used_when_no_env_var / test_env_var_preferred_over_gh_cli
+1. Test with explicit override: returns override value
+2. Test with GITHUB_TOKEN env var (no override): returns env value
+3. Test with gh CLI fallback (no env var): mocks subprocess.run, returns CLI stdout
+4. Test env var present with subprocess mock: subprocess never called
+
+**Verifies:** Token resolution follows documented priority chain
+
+### Missing token raises RuntimeError
+**File:** tests/unit/test_github_fetcher.py::TestResolveGithubToken::test_missing_token_raises_runtime_error
+1. Remove GITHUB_TOKEN from env, mock subprocess.run returning failure
+2. Assert RuntimeError raised matching "GITHUB_TOKEN"
+
+**Verifies:** Clear error when no token source is available
+
+### Fetch returns merged PRs in window
+**File:** tests/unit/test_github_fetcher.py::TestFetchGithubPrs::test_returns_merged_prs_in_window
+1. Mock httpx.Client with page of 4 PRs: 2 merged in window, 1 merged outside, 1 unmerged
+2. Call fetch_github_prs with window
+3. Assert 2 results with correct pr_number, title, author, commit_oid, url fields
+
+**Verifies:** Only merged PRs within the time window are returned
+
+### Pagination stops when past window
+**File:** tests/unit/test_github_fetcher.py::TestFetchGithubPrs::test_pagination_stops_when_all_before_window
+1. Mock 2 pages: page 1 has in-window PR, page 2 has all-before-window PRs
+2. Assert 1 result and exactly 2 HTTP requests (no 3rd page fetch)
+
+**Verifies:** Pagination terminates efficiently when PRs predate the window
+
+### Empty first page
+**File:** tests/unit/test_github_fetcher.py::TestFetchGithubPrs::test_empty_first_page_returns_empty
+1. Mock empty first page response
+2. Assert empty list returned
+
+**Verifies:** Graceful handling of no matching PRs
+
+## Incident Analysis -- GitHub CLI
+
+### Fetched PRs inserted into DB
+**File:** tests/unit/test_github_cli.py::TestGithubCliOrchestration::test_fetched_prs_inserted_into_db
+1. Mock sqlite3.connect, resolve_github_token, fetch_github_prs with 2 sample PRs
+2. Invoke `github` CLI with --start, --end, --repo, --token
+3. Assert exit code 0, "2 PRs" in output, 2 rows in github_events table
+
+**Verifies:** CLI orchestrates fetch and DB insertion correctly
+
+### Source row fields
+**File:** tests/unit/test_github_cli.py::TestGithubCliOrchestration::test_source_row_fields
+1. Invoke github CLI, check sources table
+2. Assert format="github", hostname="github.com", collection_method="REST API", filename="org/repo"
+
+**Verifies:** Source provenance metadata is correctly recorded
+
+### Events reference correct source_id
+**File:** tests/unit/test_github_cli.py::TestGithubCliOrchestration::test_github_events_have_correct_source_id
+1. Invoke github CLI, query both sources and github_events tables
+2. Assert all github_events.source_id matches the single sources.id
+
+**Verifies:** Foreign key integrity between sources and github_events
+
+### Dedup on second call
+**File:** tests/unit/test_github_cli.py::TestGithubCliDedup::test_second_call_skips_insertion
+1. Invoke github CLI twice with same params
+2. Assert second call prints dedup message, fetch_github_prs called only once, still 2 rows
+
+**Verifies:** SHA256-based dedup prevents duplicate ingestion
+
+### Force flag bypasses dedup
+**File:** tests/unit/test_github_cli.py::TestGithubCliDedup::test_force_flag_bypasses_dedup
+1. Invoke github CLI, then invoke again with --force
+2. Assert fetch called twice, still 2 rows (old deleted, new inserted)
+
+**Verifies:** --force flag deletes existing data and re-fetches
+
+### Detect GitHub repo from git remote
+**File:** tests/unit/test_github_cli.py::TestDetectGithubRepo::test_detects_ssh_url / test_detects_https_url / test_no_remote_raises
+1. Mock subprocess.run with SSH URL "git@github.com:org/repo.git": returns "org/repo"
+2. Mock with HTTPS URL: returns "org/repo"
+3. Mock with failed subprocess: raises typer.BadParameter
+
+**Verifies:** Repo slug extraction from git remote URLs with fallback error
+
+## Incident Analysis -- Report Rendering
+
+### All sections present in report
+**File:** tests/unit/test_report_render.py::TestRenderReviewReport::test_all_sections_present
+1. Call render_review_report with mock data for all parameters
+2. Assert section headers: Source Inventory, Epoch Timeline, Per-Epoch Analysis, User Activity Summary, Trend Analysis
+
+**Verifies:** Report structure includes all required sections
+
+### Key data included in report
+**File:** tests/unit/test_report_render.py::TestRenderReviewReport::test_data_included
+1. Call render_review_report with mock data containing known values
+2. Assert commit hash, PR title, error event, HAProxy stats, resource stats, user counts, trend commit all appear
+
+**Verifies:** Report content includes actual data values, not just headers
+
+### Static counts omitted when None
+**File:** tests/unit/test_report_render.py::TestRenderReviewReport::test_static_counts_omitted_when_none
+1. Call render_review_report with static_counts=None
+2. Assert "Static DB Counts" not in report
+
+**Verifies:** Optional section is suppressed when data unavailable
+
+### Static counts included when provided
+**File:** tests/unit/test_report_render.py::TestRenderReviewReport::test_static_counts_included_when_provided
+1. Call render_review_report with static_counts={"users": 42, "workspaces": 100}
+2. Assert "Static DB Counts" in report and values appear
+
+**Verifies:** Optional section renders when data is provided
+
+### Empty epochs handled
+**File:** tests/unit/test_report_render.py::TestRenderReviewReport::test_empty_epochs
+1. Call with empty epochs/analyses/trends lists
+2. Assert report still contains Epoch Timeline and User Activity Summary sections
+
+**Verifies:** Report renders gracefully with no epoch data
+
+### None percentiles show N/A
+**File:** tests/unit/test_report_render.py::TestRenderReviewReport::test_none_percentiles_show_na
+1. Set HAProxy p50/p95/p99 to None
+2. Assert "N/A" appears in report
+
+**Verifies:** Missing percentile data displays as N/A, not None
+
+### Crash-bounce epochs marked
+**File:** tests/unit/test_report_render.py::TestRenderReviewReport::test_crash_bounce_marker
+1. Set is_crash_bounce=True on epoch
+2. Assert "crash" appears in report (case-insensitive)
+
+**Verifies:** Crash-bounce epochs are visually flagged
+
+### Trend delta formatting
+**File:** tests/unit/test_report_render.py::TestRenderReviewReport::test_trend_delta_formatting
+1. Call with trends containing positive deltas
+2. Assert "+10" and "+100%" style formatting appears
+
+**Verifies:** Trend deltas use signed notation for clarity
+
+## Incident Analysis -- Review CLI
+
+### Orchestration calls all analysis functions
+**File:** tests/unit/test_review_cli.py::TestReviewOrchestration::test_orchestration_calls_all_functions
+1. Mock all analysis functions (extract_epochs, enrich_*, query_epoch_*, compute_trends, render_review_report)
+2. Invoke `review --db test.db`
+3. Assert each function called exactly once
+4. Assert report output appears in stdout
+
+**Verifies:** Review command orchestrates the full analysis pipeline in correct sequence
+
+### Missing counts_json handled
+**File:** tests/unit/test_review_cli.py::TestReviewOrchestration::test_missing_counts_json
+1. Invoke review without --counts-json flag
+2. Assert render_review_report called with static_counts=None
+
+**Verifies:** Optional counts file gracefully omitted
+
+### No epochs early exit
+**File:** tests/unit/test_review_cli.py::TestReviewOrchestration::test_no_epochs_early_exit
+1. Mock extract_epochs returning empty list
+2. Invoke review CLI
+3. Assert exit code 0 and "No epochs found" in output
+
+**Verifies:** Empty database produces helpful message, not a crash
+
+## CJK Annotated Table Export (Integration)
+
+### Pipeline completes without crash
+**File:** tests/integration/test_cjk_annotated_table_export.py::TestCjkAnnotatedTablePipeline::test_generates_tex_without_crash
+1. Load CJK HTML fixture with annotated table cells
+2. Call generate_tex_only() with matching _TAG_COLOURS dict
+3. Assert .tex file exists and has >100 chars
+
+**Verifies:** CJK text with annotations inside table cells does not crash the export pipeline
+
+### annotref appears in generated .tex
+**File:** tests/integration/test_cjk_annotated_table_export.py::TestCjkAnnotatedTablePipeline::test_annotref_in_tex
+1. Load CJK HTML fixture, generate .tex with tag colours
+2. Assert `\annotref{` appears in output
+
+**Verifies:** Table-cell annotations are split into endnote references (not inline \annot)
+
+### annotendnote appears in generated .tex
+**File:** tests/integration/test_cjk_annotated_table_export.py::TestCjkAnnotatedTablePipeline::test_annotendnote_in_tex
+1. Load CJK HTML fixture, generate .tex with tag colours
+2. Assert `\annotendnote{` appears in output
+
+**Verifies:** Endnote definitions are emitted for table-cell annotations
+
+### No \annot{} inside longtable regions
+**File:** tests/integration/test_cjk_annotated_table_export.py::TestCjkAnnotatedTablePipeline::test_no_annot_inside_longtable
+1. Load CJK HTML fixture, generate .tex with tag colours
+2. Extract all \begin{longtable}...\end{longtable} regions via regex
+3. Assert none contain `\annot{`
+
+**Verifies:** Regression guard -- inline annotations are never emitted inside longtable (causes LaTeX crash)
+
+## CJK Slow Compilation (Integration -- slow)
+
+### Yuki workspace compiles to non-empty PDF
+**File:** tests/integration/test_cjk_annotated_table_export.py::TestCjkSlowCompilation::test_pdf_exists_and_nonempty
+1. Load Yuki CJK workspace fixture (JSON with HTML documents)
+2. Run generate_tex_only() then compile_latex() (module-scoped, runs once)
+3. Assert PDF exists and has size > 0
+
+**Verifies:** Full CJK workspace with real content compiles to valid PDF
+
+### Compilation completes under 30 seconds
+**File:** tests/integration/test_cjk_annotated_table_export.py::TestCjkSlowCompilation::test_compilation_under_30_seconds
+1. Reuse module-scoped compilation result
+2. Assert elapsed time < 30s
+
+**Verifies:** Performance guard -- CJK compilation stays within acceptable bounds
+
+### CJK + emoji compiles from read-only cwd
+**File:** tests/integration/test_cjk_annotated_table_export.py::TestReadOnlyCwdCompilation::test_cjk_emoji_compiles_from_readonly_cwd
+1. Generate .tex from CJK + annotated table fixture
+2. os.chdir("/") to simulate systemd ProtectSystem=strict (read-only cwd)
+3. Call compile_latex() (which should set cwd=output_dir internally)
+4. Restore original cwd in finally block
+5. Assert PDF exists and size > 5000 bytes
+
+**Verifies:** Regression guard -- compile_latex works when process cwd is read-only (luaotfload color-emoji harf shaper writes PNG cache to temp dir)
+
+## Fixture Colour Guard (Unit)
+
+### CJK fixture colours match integration test tag_colours
+**File:** tests/unit/export/test_fixture_colour_guard.py::TestFixtureColourGuard::test_cjk_fixture_colours_match_integration_test
+1. Load workspace_cjk_annotated_table.html fixture
+2. Extract colour refs from data-annots and data-colors attributes (tag-X-dark, tag-X-light)
+3. Extract base tag names (X) from colour refs
+4. Compare against known integration test _TAG_COLOURS keys {Jurisdiction, Reasons, Decision}
+5. Assert no base names are missing from the integration test's colour dict
+
+**Verifies:** Fixture colour references stay in sync with the tag_colours dict used by integration tests, preventing silent "Undefined color" LaTeX errors that present as 120s Playwright timeouts
+
+### No UUID colour refs in fixtures
+**File:** tests/unit/export/test_fixture_colour_guard.py::TestFixtureColourGuard::test_no_uuid_colour_refs_in_fixtures
+1. Scan all HTML fixtures in tests/fixtures/ for data-annots attributes
+2. Search for UUID-pattern colour refs (tag-{uuid}-dark/light)
+3. Assert none found
+
+**Verifies:** Fixtures use human-readable tag names, not workspace-specific UUIDs that vary across test runs
+
+## CJK Export Download (E2E)
+
+### Export download completes for CJK workspace
+**File:** tests/e2e/test_cjk_export.py::TestCjkAnnotatedTableExport::test_export_download_completes
+1. Authenticate, create workspace with plain CJK + emoji HTML (no pre-baked data-annots)
+2. Navigate to annotation page, wait for text walker
+3. Trigger export, capture .tex download
+4. Assert "日本語" in exported content
+
+**Verifies:** CJK content survives the full E2E export pipeline (browser -> server -> pandoc -> .tex)
+
+### Full PDF compilation (slow E2E)
+**File:** tests/e2e/test_cjk_export.py::TestCjkAnnotatedTableExport::test_full_pdf_compilation
+1. Skip unless E2E_SKIP_LATEXMK=0 (run via `uv run grimoire e2e slow`)
+2. Authenticate, create workspace with plain CJK + emoji HTML
+3. Navigate to annotation page, wait for text walker
+4. Trigger export, capture download
+5. Assert result is PDF (not .tex fallback)
+6. Assert PDF size > 5000 bytes
+
+**Verifies:** Full CJK + emoji PDF compilation through the E2E pipeline, exercising luaotfload color-emoji cache path

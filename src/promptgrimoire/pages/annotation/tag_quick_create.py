@@ -8,6 +8,7 @@ and ``_refresh_tag_state`` from ``tag_management_save`` (leaf module).
 from __future__ import annotations
 
 import logging
+import re
 from typing import TYPE_CHECKING
 from uuid import UUID
 
@@ -27,6 +28,7 @@ logging.getLogger(__name__).setLevel(logging.INFO)
 if TYPE_CHECKING:
     from promptgrimoire.pages.annotation import PageState
 
+_HEX_COLOR_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
 _SWATCH_BASE = "w-8 h-8 min-w-0 p-0 rounded-full"
 _SWATCH_SELECTED = f"{_SWATCH_BASE} ring-2 ring-offset-1 ring-black"
 
@@ -68,7 +70,7 @@ def _build_colour_picker(
 
     def _on_custom_color(e: object) -> None:
         val = getattr(e, "value", None)
-        if val:
+        if val and _HEX_COLOR_RE.match(val):
             selected_color[0] = val
             for btn in swatch_buttons:
                 btn.classes(replace=_SWATCH_BASE)
@@ -221,6 +223,6 @@ async def open_quick_create(state: PageState) -> None:
     # Invalidate cache because tag creation changes the tag select options.
     state.invalidate_card_cache()
     if state.refresh_annotations:
-        state.refresh_annotations()
+        state.refresh_annotations(trigger="tag_quick_create")
     if state.broadcast_update:
         await state.broadcast_update()

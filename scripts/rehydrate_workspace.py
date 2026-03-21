@@ -99,6 +99,9 @@ def rehydrate(path: Path, conninfo: str) -> dict:
                 # Encode paragraph_map to JSON string for the json column
                 if isinstance(doc.get("paragraph_map"), dict):
                     doc["paragraph_map"] = json.dumps(doc["paragraph_map"])
+                # NULL out source_document_id — template doc won't exist
+                # in standalone rehydration.
+                doc["source_document_id"] = None
                 cur.execute(
                     """
                     INSERT INTO workspace_document (

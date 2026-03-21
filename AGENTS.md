@@ -17,7 +17,7 @@ PromptGrimoire is a collaborative "classroom grimoire" for prompt iteration, ann
 
 ### 2. Testing Constraints (TDD Mandatory)
 - **Async Fixtures**: NEVER use `@pytest.fixture` on `async def` functions. Always use `@pytest_asyncio.fixture`. Using the sync decorator causes `Runner.run() cannot be called from a running event loop` under xdist.
-- **6-Lane Model**: Tests are split into 6 lanes (unit, integration, playwright, nicegui, smoke, blns+slow). `test all` runs unit only. `e2e all` runs all 6 lanes. E2E tests (Playwright) contaminate xdist workers and must never run in unit/integration lanes.
+- **7-Lane Model**: Tests are split into 7 lanes (bats, unit, integration, playwright, nicegui, smoke, blns+slow). `test all` runs BATS + unit. `e2e all` runs all 7 lanes. E2E tests (Playwright) contaminate xdist workers and must never run in unit/integration lanes. BATS tests cover shell scripts in `deploy/tests/`.
 - **Smoke Marker**: The `smoke` marker is auto-applied by `requires_latex`, `requires_full_latexmk`, and `requires_pandoc` decorators. Smoke tests are excluded from the unit lane and run in their own lane.
 - **E2E Locators**: All interactable UI elements must have `data-testid` attributes. E2E tests must use `page.get_by_test_id()`. Never locate by visible text, placeholder, or Quasar CSS classes.
 
@@ -43,6 +43,7 @@ Use these commands for verification and execution:
 uv run grimoire test changed           # Fast unit/integration tests based on git diff
 uv run grimoire test all                # Unit tests only (fast, excludes smoke/E2E/integration)
 uv run grimoire test smoke              # Toolchain smoke tests (pandoc, lualatex, tlmgr)
+uv run grimoire test smoke-export       # Post-deploy CJK+emoji PDF compilation smoke test
 uv run grimoire test all --co           # List collected tests without running
 uv run grimoire test all -k "pattern"   # Filter tests by keyword expression
 uv run grimoire e2e run                 # E2E tests (parallel by default, per-file isolation)
@@ -60,9 +61,19 @@ uvx ty check                # Type checking
 # Execution & Data
 uv run grimoire seed run            # Idempotent development data seeding
 uv run grimoire admin list|show|create|admin|enroll|unenroll|role  # User management
+uv run grimoire admin ban <email>       # Ban a user (DB + Stytch + kick)
+uv run grimoire admin unban <email>     # Remove ban
+uv run grimoire admin ban --list        # List all banned users
 uv run grimoire admin webhook         # Test Discord webhook alerting
 uv run grimoire docs build          # Generate user-facing documentation (requires pandoc)
 uv run run.py                       # Run the application
+
+# Incident analysis (standalone SQLite tooling, not part of main app)
+uv run scripts/incident_db.py ingest <tarball.tar.gz>    # Ingest telemetry tarball
+uv run scripts/incident_db.py sources                     # Show ingested sources
+uv run scripts/incident_db.py timeline --start "..." --end "..."  # Cross-source timeline
+uv run scripts/incident_db.py breakdown                   # Event counts by source/level
+uv run scripts/incident_db.py beszel --start "..." --end "..."    # Fetch Beszel metrics
 ```
 
 ## Autonomous Agent Guidelines
@@ -79,7 +90,7 @@ When operating autonomously (e.g., executing implementation plans, working on PR
 Structured JSON logging via structlog. Full details in `docs/logging.md`.
 
 - **Logger convention:** `logger = structlog.get_logger()` at module level. All modules use structlog, not stdlib logging.
-- **Exception handling rule:** Every `except` block must log (`logger.exception()` or `logger.warning()`). No silent exception swallowing.
+- **Exception handling rule:** Every `except` block must log (`logger.exception()` or `logger.warning()`). No silent exception swallowing. `get_session()` enforces this automatically: `BusinessLogicError` subclasses are logged at WARNING; all other exceptions at ERROR (triggering Discord alerting).
 - **Context propagation:** `page_route` decorator auto-binds `user_id` and `request_path`. Workspace handlers bind `workspace_id`.
 - **Print guard:** No `print()` in `src/promptgrimoire/` except `cli/`. Guard test enforces this.
 - **Discord alerting:** ERROR/CRITICAL events fire Discord webhook embeds (configured via `ALERTING__DISCORD_WEBHOOK_URL`). Fire-and-forget, deduplicated by `(exception_type, logger_name)` within 60s.
@@ -105,4 +116,34 @@ Before modifying core systems, reference the detailed documentation in the `docs
 
 **Wargame turn cycle engine** (`db/wargames.py`): `start_game()`, `lock_round()`, `run_preprocessing()`, `publish_all()`, `on_deadline_fired()`. Teams cycle: drafting -> locked -> preprocessing -> published -> drafting (next round). PydanticAI agents (`wargame/agents.py`) produce structured TurnResult and StudentSummary. Background polling worker (`deadline_worker.py`) fires expired deadlines.
 
+**Business exception taxonomy** (`db/exceptions.py`): All domain exceptions derive from `BusinessLogicError`. This lets `get_session()` triage log levels -- expected rejections (WARNING) vs unexpected failures (ERROR+Discord). Subclasses: `SharePermissionError`, `OwnershipError`, `TagCreationDeniedError`, `DeletionBlockedError`, `ProtectedDocumentError`, `DuplicateNameError`, `TagLockedError`, `DuplicateCodenameError`, `ZeroEditorError`, `DuplicateEnrollmentError`, `StudentIdConflictError`. DB functions must raise these (not raw `PermissionError`/`ValueError`/`IntegrityError`) for business logic cases. UI catches specific subclasses to display user-friendly messages.
+
 **Navigator FTS** (`db/navigator.py`): `search_navigator()` runs a three-leg UNION ALL: (1) document content, (2) CRDT search_text, (3) metadata (owner name, workspace/activity/week titles, course code/name). Uses prefix matching via `to_tsquery` with `:*` suffixes. Metadata snippets are labelled ("Title: ... | Author: ... | Unit: ...").
+
+### User Ban System
+
+**Schema:** `User.is_banned` (boolean, default false) and `User.banned_at` (timestamptz, nullable). Migration `7abc07630af3`.
+
+**DB API** (`db/users.py`): `set_banned(user_id, is_banned)`, `is_user_banned(user_id)` (lightweight boolean query), `get_banned_users()`.
+
+**Page-route ban guard** (`pages/registry.py`): The `page_route` decorator checks `is_user_banned()` on every page load for authenticated users, redirecting banned users to `/banned`. The `/banned` page uses `@ui.page` directly (not `page_route`) to avoid redirect loops.
+
+**Client registry** (`auth/client_registry.py`): Module-level `dict[UUID, set[Client]]` mapping users to connected NiceGUI clients. `page_route` registers clients on each page load; `disconnect_user()` redirects all of a user's clients to `/banned` via `run_javascript`. Auto-deregisters on `client.on_delete`.
+
+**Kick endpoint** (`POST /api/admin/kick`): Starlette route in `__init__.py`, authenticated via `ADMIN__ADMIN_API_SECRET` bearer token (HMAC-compared). Calls `disconnect_user()` to force-redirect banned user's active sessions.
+
+**Auth protocol extension** (`auth/protocol.py`): `revoke_member_sessions(member_id)` added to `AuthClientProtocol`. Revokes all Stytch sessions for a member.
+
+**CLI** (`cli/admin.py`): `admin ban <email>` (sets DB flag, updates Stytch metadata, revokes sessions, calls kick endpoint), `admin unban <email>` (reverses all), `admin ban --list` (tabular display of banned users).
+
+**Config** (`config.py`): `AdminConfig` sub-model with `admin_api_secret: SecretStr`. Env var: `ADMIN__ADMIN_API_SECRET`.
+
+### Incident Analysis Tooling
+
+Standalone SQLite-based tooling for post-incident telemetry analysis. Lives in `scripts/incident/` (library) and `scripts/incident_db.py` (Typer CLI). Completely independent of the main application -- no imports from `src/promptgrimoire/`.
+
+**Pipeline:** `deploy/collect-telemetry.sh` (run on production server) produces a time-windowed tarball with `manifest.json`. The CLI ingests tarballs into SQLite via format-specific parsers (journal, structlog JSONL, HAProxy, PostgreSQL text/JSON, Beszel API).
+
+**Schema:** 5 event tables (`journal_events`, `jsonl_events`, `haproxy_events`, `pg_events`, `beszel_metrics`) + `sources` provenance table + `timeline` UNION ALL view. All timestamps stored as canonical `YYYY-MM-DDTHH:MM:SS.ffffffZ` (microsecond UTC).
+
+**Key invariants:** SHA256 dedup on `sources` (re-ingest is safe). Parsers produce dicts with `ts_utc` in canonical format via `normalise_utc()`. Query bounds are padded to microsecond precision for correct SQLite string comparison.

@@ -47,8 +47,21 @@ def _get_card_top(page: Page, card_index: int) -> float:
 
 
 def _wait_for_position_cards(page: Page) -> None:
-    """Wait for ``positionCards()`` to run after a layout change."""
-    page.wait_for_function("new Promise(r => requestAnimationFrame(r))")
+    """Wait until rendered annotation cards have numeric ``style.top``."""
+    page.wait_for_function(
+        """() => {
+            const cards = Array.from(
+                document.querySelectorAll(
+                    '[data-testid="annotation-card"]'
+                )
+            );
+            return cards.length > 0
+                && cards.every(c =>
+                    Number.isFinite(parseFloat(c.style.top))
+                );
+        }""",
+        timeout=10000,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -258,7 +271,10 @@ class TestCardPositioning:
         page.goto(f"{app_server}/annotation?workspace_id={workspace_id}")
 
         # Wait for the highlights-ready flag set by annotation-highlight.js
-        page.wait_for_function("() => window._highlightsReady === true", timeout=10000)
+        page.wait_for_function(
+            "() => window._highlightsReady === true",
+            timeout=10000,
+        )
 
         # Cards must be positioned without any manual scroll
         _wait_for_position_cards(page)

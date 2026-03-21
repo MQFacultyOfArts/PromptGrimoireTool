@@ -143,3 +143,14 @@ class AuthClientProtocol(Protocol):
             MemberUpdateResult indicating success or failure.
         """
         ...
+
+    async def revoke_member_sessions(self, *, member_id: str) -> SessionResult:
+        """Revoke all active sessions for a member.
+
+        Args:
+            member_id: The Stytch member ID whose sessions to revoke.
+
+        Returns:
+            SessionResult with valid=True on success, valid=False on failure.
+        """
+        ...

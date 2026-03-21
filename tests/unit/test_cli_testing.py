@@ -43,6 +43,7 @@ def _capture_run_pytest(monkeypatch: pytest.MonkeyPatch) -> dict[str, object]:
         return 0
 
     monkeypatch.setattr(testing, "_run_pytest", _fake_run_pytest)
+    monkeypatch.setattr(testing, "_run_bats", lambda: 0)
     return captured
 
 

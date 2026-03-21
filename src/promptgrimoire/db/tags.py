@@ -7,13 +7,21 @@ Tags are per-workspace annotation categories; TagGroups visually group them.
 from __future__ import annotations
 
 import logging
+import re
 from typing import TYPE_CHECKING
 
 import structlog
 from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 from sqlmodel import select
 
 from promptgrimoire.db.engine import get_session
+from promptgrimoire.db.exceptions import (
+    DuplicateNameError,
+    SharePermissionError,
+    TagCreationDeniedError,
+    TagLockedError,
+)
 from promptgrimoire.db.models import Tag, TagGroup
 
 logger = structlog.get_logger()
@@ -22,7 +30,26 @@ logging.getLogger(__name__).setLevel(logging.WARNING)
 if TYPE_CHECKING:
     from uuid import UUID
 
+    from sqlalchemy.ext.asyncio import AsyncSession
+
     from promptgrimoire.crdt.annotation_doc import AnnotationDocument
+
+
+_HEX_COLOR_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
+
+
+def _validate_hex_color(color: str, *, nullable: bool = False) -> None:
+    """Validate a hex colour string matches ^#[0-9a-fA-F]{6}$.
+
+    Raises ValueError for invalid colours so the error surfaces as a
+    clean application-level rejection rather than a DB IntegrityError
+    from the ck_tag_color_hex / ck_tag_group_color_hex constraints.
+    """
+    if nullable and color is None:
+        return
+    if not isinstance(color, str) or not _HEX_COLOR_RE.match(color):
+        msg = f"Color must be a 7-character hex string (e.g. '#1f77b4'), got {color!r}"
+        raise ValueError(msg)
 
 
 async def _check_tag_creation_permission(workspace_id: UUID) -> None:
@@ -32,14 +59,14 @@ async def _check_tag_creation_permission(workspace_id: UUID) -> None:
         workspace_id: The workspace to check.
 
     Raises:
-        PermissionError: If allow_tag_creation resolves to False.
+        TagCreationDeniedError: If allow_tag_creation resolves to False.
     """
     from promptgrimoire.db.workspaces import get_placement_context
 
     ctx = await get_placement_context(workspace_id)
     if not ctx.allow_tag_creation:
         msg = "Tag creation not allowed on this workspace"
-        raise PermissionError(msg)
+        raise TagCreationDeniedError(msg)
 
 
 # ── TagGroup CRUD ────────────────────────────────────────────────────
@@ -53,7 +80,7 @@ async def create_tag_group(
 ) -> TagGroup:
     """Create a TagGroup in a workspace.
 
-    Resolves PlacementContext and raises PermissionError if
+    Resolves PlacementContext and raises TagCreationDeniedError if
     allow_tag_creation is False.
 
     Order index is assigned atomically via the workspace's
@@ -96,8 +123,19 @@ async def create_tag_group(
             order_index=order_index,
         )
         session.add(group)
-        await session.flush()
-        await session.refresh(group)
+        duplicate_name = await _flush_or_detect_duplicate(
+            session,
+            "uq_tag_group_workspace_name",
+            "Duplicate tag group name",
+            name=name,
+            workspace_id=str(workspace_id),
+        )
+        if not duplicate_name:
+            await session.refresh(group)
+
+    if duplicate_name:
+        msg = f"A tag group named '{name}' already exists in this workspace"
+        raise DuplicateNameError(msg)
 
     if crdt_doc is not None:
         crdt_doc.set_tag_group(
@@ -119,6 +157,28 @@ async def get_tag_group(group_id: UUID) -> TagGroup | None:
 _UNSET = object()
 
 
+async def _flush_or_detect_duplicate(
+    session: AsyncSession,
+    constraint: str,
+    log_msg: str,
+    **log_kwargs: str,
+) -> bool:
+    """Flush *session*; return True if a duplicate-name constraint fired.
+
+    Returns False on clean flush (caller must then call session.refresh).
+    Raises IntegrityError for any non-duplicate constraint violation.
+    """
+    try:
+        await session.flush()
+    except IntegrityError as exc:
+        if constraint in str(exc):
+            logger.warning(log_msg, **log_kwargs)
+            await session.rollback()
+            return True
+        raise
+    return False
+
+
 async def update_tag_group(
     group_id: UUID,
     name: str | None = None,
@@ -138,7 +198,13 @@ async def update_tag_group(
     Omit any parameter (or pass None) to leave it unchanged.
     ``color`` uses a sentinel default so that passing ``None`` explicitly
     clears the colour.
+
+    Raises:
+        DuplicateNameError: If *name* conflicts with an existing group name.
     """
+    if color is not _UNSET and color is not None:
+        _validate_hex_color(str(color))
+
     async with get_session() as session:
         group = await session.get(TagGroup, group_id)
         if not group:
@@ -152,8 +218,18 @@ async def update_tag_group(
             group.color = color  # type: ignore[assignment]  -- sentinel pattern
 
         session.add(group)
-        await session.flush()
-        await session.refresh(group)
+        duplicate = await _flush_or_detect_duplicate(
+            session,
+            "uq_tag_group_workspace_name",
+            "Duplicate tag group name on update",
+            group_id=str(group_id),
+        )
+        if not duplicate:
+            await session.refresh(group)
+
+    if duplicate:
+        msg = f"A tag group named '{name}' already exists in this workspace"
+        raise DuplicateNameError(msg)
 
     if crdt_doc is not None:
         crdt_doc.set_tag_group(
@@ -216,7 +292,7 @@ async def create_tag(
 ) -> Tag:
     """Create a Tag in a workspace.
 
-    Resolves PlacementContext and raises PermissionError if
+    Resolves PlacementContext and raises TagCreationDeniedError if
     allow_tag_creation is False.
 
     Order index is assigned atomically via the workspace's
@@ -243,6 +319,7 @@ async def create_tag(
     Tag
         The created Tag.
     """
+    _validate_hex_color(color)
     await _check_tag_creation_permission(workspace_id)
 
     async with get_session() as session:
@@ -270,8 +347,19 @@ async def create_tag(
             order_index=order_index,
         )
         session.add(tag)
-        await session.flush()
-        await session.refresh(tag)
+        duplicate_name = await _flush_or_detect_duplicate(
+            session,
+            "uq_tag_workspace_name",
+            "Duplicate tag name",
+            name=name,
+            workspace_id=str(workspace_id),
+        )
+        if not duplicate_name:
+            await session.refresh(tag)
+
+    if duplicate_name:
+        msg = f"A tag named '{name}' already exists in this workspace"
+        raise DuplicateNameError(msg)
 
     if crdt_doc is not None:
         crdt_doc.set_tag(
@@ -302,7 +390,7 @@ def _enforce_tag_lock(
     description: object,
     group_id: object,
 ) -> None:
-    """Raise ValueError if a locked tag has non-lock field changes.
+    """Raise TagLockedError if a locked tag has non-lock field changes.
 
     Skipped when ``bypass_lock`` is True (instructor operations).
     """
@@ -313,7 +401,7 @@ def _enforce_tag_lock(
     )
     if has_non_lock_changes:
         msg = "Tag is locked"
-        raise ValueError(msg)
+        raise TagLockedError(msg)
 
 
 def _apply_tag_field_updates(
@@ -369,10 +457,13 @@ async def update_tag(
     Uses the Ellipsis sentinel pattern: omit a parameter to leave it
     unchanged. If the tag is locked, only the ``locked`` field itself
     may be changed (to allow instructor lock toggle); all other field
-    changes raise ``ValueError("Tag is locked")``.
+    changes raise ``TagLockedError``.
 
     Pass ``bypass_lock=True`` to allow instructors to edit locked tags.
     """
+    if color is not ... and color is not None:
+        _validate_hex_color(color)
+
     async with get_session() as session:
         tag = await session.get(Tag, tag_id)
         if not tag:
@@ -396,8 +487,18 @@ async def update_tag(
         )
 
         session.add(tag)
-        await session.flush()
-        await session.refresh(tag)
+        duplicate_name = await _flush_or_detect_duplicate(
+            session,
+            "uq_tag_workspace_name",
+            "Duplicate tag name on update",
+            tag_id=str(tag_id),
+        )
+        if not duplicate_name:
+            await session.refresh(tag)
+
+    if duplicate_name:
+        msg = f"A tag named '{name}' already exists in this workspace"
+        raise DuplicateNameError(msg)
 
     if crdt_doc is not None:
         _sync_tag_to_crdt(tag, crdt_doc)
@@ -433,7 +534,7 @@ async def delete_tag(
 
         if tag.locked and not bypass_lock:
             msg = "Tag is locked"
-            raise ValueError(msg)
+            raise TagLockedError(msg)
 
         workspace_id = tag.workspace_id
         tag_id_for_cleanup = tag.id
@@ -612,7 +713,7 @@ async def import_tags_from_workspace(
         List of newly created Tag objects.
 
     Raises:
-        PermissionError: If user lacks read access to source workspace.
+        SharePermissionError: If user lacks read access to source workspace.
     """
     await _check_import_access(source_workspace_id, user_id)
 
@@ -657,14 +758,14 @@ async def _check_import_access(source_workspace_id: UUID, user_id: UUID) -> None
     """Verify user has read access to the source workspace.
 
     Raises:
-        PermissionError: If user has no permission on the source workspace.
+        SharePermissionError: If user has no permission on the source workspace.
     """
     from promptgrimoire.db.acl import resolve_permission
 
     permission = await resolve_permission(source_workspace_id, user_id)
     if permission is None:
         msg = "No read access to source workspace"
-        raise PermissionError(msg)
+        raise SharePermissionError(msg)
 
 
 # ── CRDT cleanup ─────────────────────────────────────────────────────

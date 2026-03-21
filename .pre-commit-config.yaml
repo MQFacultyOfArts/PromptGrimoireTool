@@ -9,6 +9,22 @@ repos:
       # Run the formatter
       - id: ruff-format
 
+  # Shell script linting
+  - repo: https://github.com/shellcheck-py/shellcheck-py
+    rev: v0.11.0.1
+    hooks:
+      - id: shellcheck
+        args: [--severity=warning]
+        files: ^deploy/.*\.sh$
+
+  # JavaScript lint (Biome) — annotation static JS
+  - repo: https://github.com/biomejs/pre-commit
+    rev: v2.4.1
+    hooks:
+      - id: biome-lint
+        additional_dependencies: ["@biomejs/biome@2.4.7"]
+        files: ^src/promptgrimoire/static/.*\.js$
+
   # Type checking
   - repo: local
     hooks:
@@ -55,6 +71,26 @@ repos:
         entry: uv run python scripts/prune_orphan_pyc.py
         language: system
         always_run: true
+        pass_filenames: false
+
+  # JavaScript unit tests (vitest)
+  - repo: local
+    hooks:
+      - id: vitest
+        name: JS unit tests (vitest)
+        entry: npx vitest run
+        language: system
+        files: ^(tests/js/.*\.test\.js|src/promptgrimoire/static/annotation-.*\.js)$
+        pass_filenames: false
+
+  # Shell script unit tests (BATS)
+  - repo: local
+    hooks:
+      - id: bats-tests
+        name: shell script unit tests (bats)
+        entry: bats deploy/tests/
+        language: system
+        files: ^(deploy/.*\.sh|deploy/tests/.*)$
         pass_filenames: false
 
   # General pre-commit hooks

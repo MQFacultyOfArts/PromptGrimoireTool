@@ -11,7 +11,7 @@ Traceability:
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 from uuid import uuid4
 
 import pytest
@@ -152,3 +152,45 @@ class TestSaveSingleGroupModelDict:
         await _save_single_group(gid, {gid: group_model}, update_group)
         assert group_model["orig_name"] == "Renamed"
         assert group_model["orig_color"] == "#aabbcc"
+
+
+class TestCreateTagOrNotify:
+    """_create_tag_or_notify maps domain duplicate errors to warning UI."""
+
+    @pytest.mark.asyncio
+    async def test_duplicate_name_shows_warning_not_generic_failure(self) -> None:
+        """DuplicateNameError should show warning UI and avoid exception logging."""
+        from types import SimpleNamespace
+
+        from promptgrimoire.db.tags import DuplicateNameError
+        from promptgrimoire.pages.annotation.tag_management_save import (
+            _create_tag_or_notify,
+        )
+
+        state = SimpleNamespace(workspace_id=uuid4(), crdt_doc=None)
+        create_tag = AsyncMock(
+            side_effect=DuplicateNameError(
+                "A tag named 'Evidence' already exists in this workspace"
+            )
+        )
+
+        with (
+            patch("promptgrimoire.pages.annotation.tag_management_save.ui") as mock_ui,
+            patch(
+                "promptgrimoire.pages.annotation.tag_management_save.logger"
+            ) as mock_logger,
+        ):
+            result = await _create_tag_or_notify(
+                create_tag,
+                state,  # type: ignore[arg-type]  # SimpleNamespace stub for PageState
+                "Evidence",
+                "#1f77b4",
+                None,
+            )
+
+        assert result is None
+        mock_ui.notify.assert_called_once_with(
+            "A tag named 'Evidence' already exists",
+            type="warning",
+        )
+        mock_logger.exception.assert_not_called()

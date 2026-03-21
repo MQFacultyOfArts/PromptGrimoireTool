@@ -257,10 +257,13 @@ _ALLOWED_TEST_OS_ENVIRON_GET = {
     # E2E helpers read DATABASE__URL for sync DB seeding (same pattern as conftest)
     _TESTS_DIR / "e2e" / "db_fixtures.py",
     _TESTS_DIR / "e2e" / "tag_helpers.py",
+    # Ban test reads DATABASE__URL for sync DB ban (same pattern as db_fixtures)
+    _TESTS_DIR / "e2e" / "test_banned_page.py",
     # This file itself references os.environ in test assertions/comments
     _TESTS_DIR / "unit" / "test_env_vars.py",
-    # Filename E2E test reads E2E_SKIP_LATEXMK (test-runner flag, not app config)
+    # E2E tests reading E2E_SKIP_LATEXMK (test-runner flag, not app config)
     _TESTS_DIR / "e2e" / "test_pdf_export_filename.py",
+    _TESTS_DIR / "e2e" / "test_cjk_export.py",
     # make_docs test captures DEV__AUTH_MOCK env state at mock call time
     _TESTS_DIR / "unit" / "test_make_docs.py",
     # clone test reads _CLONE_TEST_SOURCE_URL (set by CLI harness)

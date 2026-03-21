@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 import os
+import time as _time
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
@@ -19,6 +20,7 @@ from sqlalchemy.pool import NullPool
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from promptgrimoire.config import get_settings
+from promptgrimoire.db.exceptions import BusinessLogicError
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
@@ -179,8 +181,8 @@ async def init_db() -> None:
         logger.info("Using NullPool (test environment detected)")
     else:
         pool_kwargs |= {
-            "pool_size": 5,
-            "max_overflow": 10,
+            "pool_size": 80,
+            "max_overflow": 15,
             "pool_pre_ping": True,
             "pool_recycle": 3600,
         }
@@ -292,11 +294,33 @@ async def get_session() -> AsyncIterator[AsyncSession]:
     session_factory = _state.session_factory
     assert session_factory is not None  # noqa: S101 — type narrowing
 
+    _t0 = _time.monotonic()
     async with session_factory() as session:
+        _acquire_ms = round((_time.monotonic() - _t0) * 1000)
+        if _acquire_ms > 5:
+            _pool_logger.warning(
+                "session_acquire_slow",
+                acquire_ms=_acquire_ms,
+                pool=_pool_status(_state.engine.sync_engine.pool)
+                if _state.engine
+                else "?",
+            )
+        else:
+            _pool_logger.debug("session_acquire", acquire_ms=_acquire_ms)
         try:
             yield session
             await session.commit()
-        except Exception:
-            logger.exception("Database session error, rolling back transaction")
+        except BusinessLogicError as exc:
+            logger.warning(
+                "Business logic error, rolling back transaction",
+                exc_class=type(exc).__name__,
+            )
+            await session.rollback()
+            raise
+        except Exception as exc:
+            logger.exception(
+                "Database session error, rolling back transaction",
+                exc_class=type(exc).__name__,
+            )
             await session.rollback()
             raise

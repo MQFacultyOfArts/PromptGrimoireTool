@@ -108,6 +108,8 @@ When adding new UI elements, add `data-testid` in the source and use `get_by_tes
 - **Copy protection setup**: create week/activity BEFORE enabling copy protection (dialog→nav race)
 - **MockAuthClient `_pending_email` pollution**: use explicit `mock-token-{email}` format tokens instead of `MOCK_VALID_MAGIC_TOKEN` when test ordering matters (pytest-randomly)
 
+- **Fixture colour name mismatch (display names vs UUIDs)**: HTML fixtures with pre-baked `data-annots` attributes hardcode colour names like `tag-Jurisdiction-dark`. The live app export path uses UUID-keyed colours from `state.tag_colours()` (which maps `ti.raw_key` → colour). The preamble generates `tag-{uuid}-dark`, not `tag-Jurisdiction-dark`. In fast mode (`.tex` only) this doesn't matter — undefined colours aren't exercised. In slow mode (full compilation) LaTeX fails on "Undefined color", the export handler catches the exception and never triggers a download, and Playwright burns 120s waiting. **Rule:** E2E tests that compile PDFs must either (a) use inline HTML without pre-baked `data-annots`, or (b) create real CRDT highlights so colour refs use UUID keys end-to-end. A guard test (`test_fixture_colour_guard.py`) catches mismatches at the unit level.
+
 See [docs/e2e-debugging.md](e2e-debugging.md) for E2E infrastructure details and debugging patterns.
 
 ## Database Test Architecture
@@ -297,6 +299,26 @@ Fixture names can be partial (substring match). Supports both `.html` and `.html
 
 ### E2E Debugging
 
+### NiceGUI Integration Test Pitfalls (PG005)
+
+**Sync element access must be gated by `_should_see_testid`.** The helpers `_set_input_value` and `_click_testid` are synchronous — they do not yield to the event loop. If the page handler is an async function with mid-render `await` calls (e.g. `await get_all_roles()`), elements created after the await may not exist yet.
+
+```python
+# BAD — races if page handler has an await before rendering the input:
+await nicegui_user.should_see(content="Add Enrollment")
+_set_input_value(nicegui_user, "enrollment-email-input", student_email)
+
+# GOOD — _should_see_testid yields to the event loop via asyncio.sleep:
+await _should_see_testid(nicegui_user, "enrollment-email-input")
+_set_input_value(nicegui_user, "enrollment-email-input", student_email)
+```
+
+**Why `should_see(content=...)` is not enough:** It matches text content, not element identity. A label rendered synchronously before an `await` can satisfy `should_see`, but the input rendered after the `await` doesn't exist yet. `_should_see_testid` polls for the specific `data-testid`, yielding to the event loop on each retry.
+
+**Guard test:** `test_e2e_anti_patterns.py::test_nicegui_sync_access_has_testid_gate` (PG005) scans all `tests/integration/` async test functions and flags any `_set_input_value` or `_click_testid` call without a preceding `await _should_see_testid` for the same testid. Suppress with `# noqa: PG005`.
+
+**Root cause reference:** 2026-03-17 CI failure in `TestEnrollStudent.test_enroll_student` — `courses.py:_render_add_enrollment_form` renders a label synchronously then awaits `get_all_roles()` before creating the input. On CI (cold DB), the await didn't complete within the same event loop tick.
+
 See [docs/e2e-debugging.md](e2e-debugging.md) for:
 - Server lifecycle and cleanup endpoint details
 - NiceGUI task leak patterns and fixes
@@ -304,6 +326,20 @@ See [docs/e2e-debugging.md](e2e-debugging.md) for:
 - Server log (`test-e2e-server.log`) post-mortem
 
 ## Debugging Production Issues
+
+### Incident Telemetry Pipeline
+
+For structured post-incident analysis, use the automated telemetry pipeline. Full procedure in [docs/postmortems/2026-03-16-incident-response.md](postmortems/2026-03-16-incident-response.md) § "Automated telemetry pipeline".
+
+| Tool | Purpose |
+|------|---------|
+| `deploy/collect-telemetry.sh` | Collects journal, structlog JSONL, HAProxy, PG logs from prod (handles rotated files) |
+| `scripts/incident_db.py ingest` | Parses tarball into normalised SQLite database |
+| `scripts/incident_db.py beszel` | Adds Beszel system metrics (CPU, memory, load) via PocketBase API |
+| `scripts/incident_db.py sources` | Source inventory with timestamps and provenance |
+| `scripts/incident_db.py timeline` | Cross-source timeline view |
+| `scripts/incident_db.py breakdown` | Error breakdown by event type |
+| `.claude/skills/incident-analysis/` | Structured analysis methodology (provenance, falsification, self-challenge) |
 
 ### Extract/Rehydrate Workspace
 

@@ -306,7 +306,7 @@ def _refresh_source_tab(state: PageState) -> None:
     """Refresh a source tab on return visit (highlights + cards + CSS)."""
     _push_highlights_to_client(state)
     if state.refresh_annotations:
-        state.refresh_annotations()
+        state.refresh_annotations(trigger="tab_switch_annotate")
     _update_highlight_css(state)
     # Sync paragraph toggle to this document's auto_number setting
     if state.paragraph_toggle is not None:

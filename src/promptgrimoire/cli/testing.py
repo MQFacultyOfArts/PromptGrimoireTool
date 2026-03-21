@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 import typer
+import typer.core
 from rich.panel import Panel
 from rich.progress import (
     BarColumn,
@@ -36,14 +37,44 @@ from promptgrimoire.cli._shared import (
 if TYPE_CHECKING:
     from typing import IO
 
+    import click
     from rich.progress import TaskID
 
+
+def _looks_like_test_path(arg: str) -> bool:
+    """True if *arg* looks like a test file path, not a subcommand."""
+    return (
+        arg.endswith(".py")
+        or arg.startswith("tests/")
+        or arg.startswith("tests\\")
+        or "::test_" in arg
+    )
+
+
+class _TestGroup(typer.core.TyperGroup):
+    """Auto-redirect bare test paths to the ``run`` subcommand.
+
+    ``grimoire test tests/unit/foo.py`` is treated as
+    ``grimoire test run tests/unit/foo.py``.
+    """
+
+    def resolve_command(
+        self,
+        ctx: click.Context,
+        args: list[str],
+    ) -> tuple[str | None, click.Command | None, list[str]]:
+        if args and _looks_like_test_path(args[0]):
+            args = ["run", *args]
+        return super().resolve_command(ctx, args)
+
+
 test_app = typer.Typer(
+    cls=_TestGroup,
     help=(
         "Unit and integration test commands.\n\n"
         "To bypass the conftest guard for debugging this harness, "
         "set GRIMOIRE_TEST_HARNESS=1."
-    )
+    ),
 )
 _NON_UI_MARKER_EXPRESSION = "not e2e and not nicegui_ui"
 _TEST_ALL_MARKER_EXPRESSION = (
@@ -559,6 +590,37 @@ def changed_tests(
     )
 
 
+def _run_bats() -> int:
+    """Run BATS shell script tests and return exit code."""
+    import shutil
+
+    if not shutil.which("bats"):
+        console.print("[yellow]bats not installed, skipping (sudo apt install bats)[/]")
+        return 0
+
+    bats_dir = Path("deploy/tests")
+    if not bats_dir.exists():
+        console.print("[yellow]No BATS test directory found, skipping[/]")
+        return 0
+
+    bats_files = sorted(bats_dir.glob("*.bats"))
+    if not bats_files:
+        console.print("[yellow]No .bats files found, skipping[/]")
+        return 0
+
+    result = subprocess.run(
+        ["bats", *[str(f) for f in bats_files]],
+        check=False,
+    )
+    return result.returncode
+
+
+@test_app.command("bats")
+def bats_tests() -> None:
+    """Run BATS shell script tests (deploy/tests/*.bats)."""
+    sys.exit(_run_bats())
+
+
 @test_app.command(
     "all",
     context_settings={"allow_extra_args": True, "allow_interspersed_args": False},
@@ -578,7 +640,7 @@ def all_tests(
         False, "--co", "--collect-only", help="Only collect tests, don't run them"
     ),
 ) -> None:
-    """Run unit tests under xdist parallel execution."""
+    """Run BATS + unit tests under xdist parallel execution."""
     from promptgrimoire.cli._shared import _prepend_filter
 
     default_args = [
@@ -598,23 +660,39 @@ def all_tests(
             )
         )
 
+    # Run BATS first, then unit tests
+    console.print("[blue]Running BATS lane...[/]")
+    bats_exit = _run_bats()
+    if bats_exit != 0:
+        console.print("[red]BATS failed — continuing to unit tests[/]")
+
     args = _prepend_pytest_flags(args, exit_first=exit_first, failed_first=failed_first)
 
-    sys.exit(
-        _run_pytest(
-            title="Unit Tests (excludes smoke, E2E, NiceGUI UI, latexmk)",
-            log_path=Path("test-all.log"),
-            default_args=[
-                *default_args,
-                "-n",
-                _xdist_worker_count(),
-                "--dist=worksteal",
-                "-v",
-            ],
-            extra_args=args,
-            extra_env={_SKIP_LATEXMK_ENV_VAR: "1"},
-        )
+    # --- JS (vitest) ---
+    console.print("\n[bold blue]Running JS unit tests...[/]")
+    js_exit = subprocess.run(
+        ["npx", "vitest", "run"],
+        check=False,
+    ).returncode
+
+    if js_exit != 0 and exit_first:
+        sys.exit(js_exit)
+
+    unit_exit = _run_pytest(
+        title="Unit Tests (excludes smoke, E2E, NiceGUI UI, latexmk)",
+        log_path=Path("test-all.log"),
+        default_args=[
+            *default_args,
+            "-n",
+            _xdist_worker_count(),
+            "--dist=worksteal",
+            "-v",
+        ],
+        extra_args=args,
+        extra_env={_SKIP_LATEXMK_ENV_VAR: "1"},
     )
+
+    sys.exit(1 if bats_exit != 0 or js_exit != 0 or unit_exit != 0 else 0)
 
 
 @test_app.command(
@@ -661,3 +739,74 @@ def smoke_tests(
             extra_args=args,
         )
     )
+
+
+@test_app.command("js")
+def js_tests() -> None:
+    """Run JS unit tests (vitest)."""
+    result = subprocess.run(
+        ["npx", "vitest", "run", "--reporter=verbose"],
+        check=False,
+    )
+    sys.exit(result.returncode)
+
+
+@test_app.command("smoke-export")
+def smoke_export() -> None:
+    """Compile a CJK + emoji test document to PDF.
+
+    Post-deploy smoke test: exercises the full generate_tex_only() +
+    compile_latex() pipeline with CJK text and emoji. Verifies that
+    luaotfload's color-emoji PNG cache write succeeds in the current
+    execution context (catches ProtectSystem=strict cwd issues).
+
+    Usage on server after deploy:
+        grimoire-run grimoire test smoke-export
+    """
+    import asyncio
+    import tempfile
+    from pathlib import Path
+
+    from promptgrimoire.export.pdf import compile_latex
+    from promptgrimoire.export.pdf_export import generate_tex_only
+
+    # Exercises: CJK text, emoji, table with annotation in cell,
+    # and non-table annotation. Tag colour "smoke" generates
+    # tag-smoke, tag-smoke-light, tag-smoke-dark in the preamble.
+    html = (
+        "<p>日本語のテスト文書です。</p>\n"
+        "<table><tr>"
+        '<td><span data-hl="0" data-colors="tag-smoke-light"'
+        ' data-annots="\\annot{tag-smoke-dark}'
+        "{\\textbf{1.} Smoke test annotation}"
+        '">注釈テキスト</span></td>'
+        "<td>✅ 完了</td>"
+        "</tr></table>\n"
+        "<p>😊 よくできました</p>"
+    )
+    tag_colours: dict[str, str] = {"smoke": "#888888"}
+
+    async def _run() -> Path:
+        output_dir = Path(tempfile.mkdtemp(prefix="grimoire_smoke_export_"))
+        tex_path = await generate_tex_only(
+            html_content=html,
+            highlights=[],
+            tag_colours=tag_colours,
+            output_dir=output_dir,
+        )
+        return await compile_latex(tex_path, output_dir)
+
+    try:
+        pdf_path = asyncio.run(_run())
+    except Exception as exc:
+        print(f"FAIL: {type(exc).__name__}: {exc}")
+        sys.exit(1)
+
+    size = pdf_path.stat().st_size
+
+    if size < 1000:
+        print(f"FAIL: PDF too small ({size} bytes): {pdf_path}")
+        sys.exit(1)
+
+    print(f"OK: {pdf_path} ({size} bytes)")
+    sys.exit(0)

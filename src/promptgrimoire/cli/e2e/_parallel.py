@@ -336,6 +336,8 @@ async def _retry_parallel_failures(
     source_db_name: str,
     run_dir: Path,
     user_args: list[str],
+    *,
+    browser: str | None = None,
 ) -> tuple[list[Path], list[Path]]:
     """Re-run failed E2E files with fresh servers and databases.
 
@@ -368,6 +370,7 @@ async def _retry_parallel_failures(
             retry_dbs=retry_dbs,
             retry_ports=retry_ports,
             run_worker_for_lane=_run_worker_for_lane,
+            browser=browser,
         )
         _print_retry_summary(genuine_failures, flaky_files)
         return genuine_failures, flaky_files
@@ -422,6 +425,8 @@ async def _finalise_parallel_results(
     source_db_name: str,
     run_dir: Path,
     user_args: list[str],
+    *,
+    browser: str | None = None,
 ) -> tuple[bool, bool]:
     """Summarise, retry failures, merge JUnit XML.
 
@@ -446,6 +451,7 @@ async def _finalise_parallel_results(
                 source_db_name,
                 run_dir,
                 user_args,
+                browser=browser,
             )
             all_passed = not genuine_failures and not any(
                 result.exit_code == -1 for result in results
@@ -561,6 +567,7 @@ async def run_lane_files(
             source_db_name,
             run_dir,
             user_args,
+            browser=browser,
         )
         return 0 if all_passed else 1
 

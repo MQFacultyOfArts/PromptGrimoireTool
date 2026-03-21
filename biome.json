@@ -1,0 +1,32 @@
+{
+  "$schema": "https://biomejs.dev/schemas/2.4.7/schema.json",
+  "files": {
+    "includes": ["src/promptgrimoire/static/*.js"]
+  },
+  "linter": {
+    "enabled": true,
+    "rules": {
+      "recommended": true,
+      "correctness": {
+        "useParseIntRadix": "error",
+        "noUnusedVariables": "off",
+        "noUnusedFunctionParameters": "off",
+        "noInnerDeclarations": "off"
+      },
+      "suspicious": {
+        "noGlobalIsNan": "error"
+      },
+      "style": {
+        "useTemplate": "off",
+        "useConst": "off",
+        "noParameterAssign": "off",
+        "useDefaultParameterLast": "off"
+      },
+      "complexity": {
+        "noForEach": "off",
+        "useArrowFunction": "off",
+        "useOptionalChain": "off"
+      }
+    }
+  }
+}

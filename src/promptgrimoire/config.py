@@ -75,6 +75,12 @@ class AlertingConfig(BaseModel):
     discord_webhook_url: str = ""
 
 
+class AdminConfig(BaseModel):
+    """Admin API configuration."""
+
+    admin_api_secret: SecretStr = SecretStr("")
+
+
 class AppConfig(BaseModel):
     """Application runtime configuration."""
 
@@ -280,6 +286,7 @@ class Settings(BaseSettings):
     llm: LlmConfig = LlmConfig()
     app: AppConfig = AppConfig()
     alerting: AlertingConfig = AlertingConfig()
+    admin: AdminConfig = AdminConfig()
     features: FeaturesConfig = FeaturesConfig()
     dev: DevConfig = DevConfig()
     i18n: I18nConfig = I18nConfig()

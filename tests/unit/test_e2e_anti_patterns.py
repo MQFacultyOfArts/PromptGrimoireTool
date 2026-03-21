@@ -9,6 +9,8 @@ a specific guard.  The noqa code must match:
 - PG002 — text-based locators (get_by_text, get_by_role, get_by_placeholder)
 - PG003 — hardcoded char offsets in select_chars / create_highlight_with_tag
 - PG004 — invoke_callback inside _handle_client_delete
+- PG005 — sync element access without _should_see_testid gate (NiceGUI)
+- PG006 — unguarded outbound HTTP calls in unit tests
 
 Guard 1 (PG001) — wait_for_timeout / asyncio.sleep: Fixed timeouts in
 E2E tests are never reliable under parallel execution.  Use condition-based
@@ -349,5 +351,280 @@ def test_client_delete_uses_peer_left_not_callback() -> None:
         "_handle_client_delete must use invoke_peer_left(), NOT invoke_callback().\n"
         "invoke_callback() triggers full DOM rebuild which races with user input.\n"
         "See: commit 43d644b8\n\n"
+        "Violations:\n" + "\n".join(f"  {v}" for v in violations)
+    )
+
+
+# ---------------------------------------------------------------------------
+# Guard 5 (PG005): Sync element access needs _should_see_testid gate
+# ---------------------------------------------------------------------------
+
+_INTEGRATION_DIR = _REPO_ROOT / "tests" / "integration"
+
+_SYNC_ACCESS_FUNCTIONS = frozenset({"_set_input_value", "_click_testid"})
+
+
+def _extract_testid_arg(node: ast.Call) -> str | None:
+    """Extract the testid string from a helper call.
+
+    Pattern: ``_set_input_value(user, "testid", value)`` or
+    ``_click_testid(user, "testid")``.  Returns the second
+    positional argument if it is a string literal.
+    """
+    if len(node.args) < 2:
+        return None
+    arg = node.args[1]
+    if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
+        return arg.value
+    # f-string testids (e.g. f"group-add-tag-btn-{id}") are dynamic —
+    # can't statically match them to _should_see_testid calls.
+    return None
+
+
+def _iter_calls_in_order(node: ast.AST) -> list[ast.Call]:
+    """Collect all Call nodes in source order (by line number).
+
+    ``ast.walk`` does not guarantee traversal order.  This function
+    collects every ``ast.Call`` in the subtree, then sorts by line
+    number to ensure gates are seen before the accesses they protect.
+    """
+    calls: list[ast.Call] = []
+    for child in ast.walk(node):
+        if isinstance(child, ast.Call) and hasattr(child, "lineno"):
+            calls.append(child)
+    calls.sort(key=lambda c: (c.lineno, c.col_offset))
+    return calls
+
+
+def _check_ungated_sync_access(
+    func_node: ast.AsyncFunctionDef,
+    source_lines: list[str],
+) -> list[tuple[int, str]]:
+    """Find sync element accesses not preceded by _should_see_testid.
+
+    Returns list of (lineno, description) for violations.
+    """
+    gated: set[str] = set()
+    violations: list[tuple[int, str]] = []
+
+    for node in _iter_calls_in_order(func_node):
+        func = node.func
+
+        # Check for _should_see_testid(user, "testid")
+        if isinstance(func, ast.Name) and func.id == "_should_see_testid":
+            testid = _extract_testid_arg(node)
+            if testid:
+                gated.add(testid)
+
+        # Check for _set_input_value / _click_testid
+        if isinstance(func, ast.Name) and func.id in _SYNC_ACCESS_FUNCTIONS:
+            testid = _extract_testid_arg(node)
+            if testid is None:
+                # Dynamic testid — can't check statically, skip
+                continue
+            if testid not in gated:
+                lineno = node.lineno
+                if _has_noqa(source_lines, lineno, "PG005"):
+                    continue
+                violations.append(
+                    (
+                        lineno,
+                        f"{func.id}(_, {testid!r}) without "
+                        f"preceding _should_see_testid gate",
+                    )
+                )
+
+    return violations
+
+
+def test_nicegui_sync_access_has_testid_gate() -> None:
+    """NiceGUI sync element access must be preceded by _should_see_testid (PG005).
+
+    ``_set_input_value`` and ``_click_testid`` are synchronous — they
+    do not yield to the event loop.  If an async page handler has not
+    finished rendering the target element, these calls fail.
+
+    ``_should_see_testid`` polls with ``await asyncio.sleep()`` which
+    yields to the event loop, letting pending async renders complete.
+
+    Every ``_set_input_value(user, "X", ...)`` and
+    ``_click_testid(user, "X")`` must be preceded (in the same test
+    function) by ``await _should_see_testid(user, "X")``.
+
+    See: 2026-03-17 CI failure — TestEnrollStudent.test_enroll_student
+    Suppress with: # noqa: PG005
+    """
+    all_violations: list[str] = []
+
+    for py_file in _iter_py_files(_INTEGRATION_DIR):
+        tree = _parse_file(py_file)
+        if tree is None:
+            continue
+
+        source_lines = py_file.read_text().splitlines()
+
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.AsyncFunctionDef):
+                continue
+            if not node.name.startswith("test_"):
+                continue
+
+            violations = _check_ungated_sync_access(node, source_lines)
+            rel = py_file.relative_to(_REPO_ROOT)
+            for lineno, desc in violations:
+                all_violations.append(f"{rel}:{lineno} - {desc}")
+
+    assert not all_violations, (
+        "NiceGUI integration tests: sync element access without "
+        "_should_see_testid gate.\n"
+        "_set_input_value / _click_testid are synchronous and will "
+        "fail if the async page handler\n"
+        "hasn't finished rendering. Add: await _should_see_testid"
+        '(user, "testid") before access.\n'
+        "Suppress with: # noqa: PG005\n\n"
+        "Violations:\n" + "\n".join(f"  {v}" for v in all_violations)
+    )
+
+
+# ---------------------------------------------------------------------------
+# Guard 6 (PG006): No unguarded outbound HTTP calls in unit tests
+# ---------------------------------------------------------------------------
+
+_UNIT_DIR = _REPO_ROOT / "tests" / "unit"
+
+# HTTP client call patterns to flag
+_HTTP_CLIENT_CALLS = frozenset(
+    {
+        # httpx
+        "Client",
+        "AsyncClient",
+        "get",
+        "post",
+        "put",
+        "patch",
+        "delete",
+        # requests
+        "Session",
+        # urllib
+        "urlopen",
+    }
+)
+
+# Module prefixes that indicate an HTTP client call (not just any .get())
+_HTTP_MODULES = frozenset({"httpx", "requests", "urllib"})
+
+
+def _check_unguarded_http_call(node: ast.AST) -> str | None:
+    """Return description if node is an HTTP client call, else None.
+
+    Matches ``httpx.Client()``, ``httpx.get()``, ``requests.post()``,
+    ``urllib.request.urlopen()``, etc.
+    """
+    if not isinstance(node, ast.Call):
+        return None
+    func = node.func
+
+    # httpx.Client(), httpx.get(), requests.post(), etc.
+    if (
+        isinstance(func, ast.Attribute)
+        and isinstance(func.value, ast.Name)
+        and func.value.id in _HTTP_MODULES
+        and func.attr in _HTTP_CLIENT_CALLS
+    ):
+        return f"{func.value.id}.{func.attr}()"
+
+    # urllib.request.urlopen()  -- noqa: ERA001
+    if (
+        isinstance(func, ast.Attribute)
+        and isinstance(func.value, ast.Attribute)
+        and isinstance(func.value.value, ast.Name)
+        and func.value.value.id == "urllib"
+        and func.value.attr == "request"
+        and func.attr == "urlopen"
+    ):
+        return "urllib.request.urlopen()"
+
+    return None
+
+
+def _function_has_mock(func_node: ast.AST) -> bool:
+    """Check if a function body contains patch/mock usage."""
+    for child in ast.walk(func_node):
+        if not isinstance(child, ast.Call):
+            continue
+        f = child.func
+        # Match patch() or mock.patch() calls
+        if isinstance(f, ast.Name) and f.id == "patch":
+            return True
+        if isinstance(f, ast.Attribute) and f.attr == "patch":
+            return True
+    # Also check decorators
+    if isinstance(func_node, ast.FunctionDef | ast.AsyncFunctionDef):
+        for dec in func_node.decorator_list:
+            if isinstance(dec, ast.Call):
+                df = dec.func
+                if isinstance(df, ast.Name) and df.id == "patch":
+                    return True
+                if isinstance(df, ast.Attribute) and df.attr == "patch":
+                    return True
+            elif isinstance(dec, ast.Attribute) and dec.attr == "patch":
+                return True
+    return False
+
+
+def test_no_unguarded_network_calls_in_unit_tests() -> None:
+    """Unit tests must not make outbound HTTP calls without mocking (PG006).
+
+    Direct ``httpx.Client()``, ``httpx.get()``, ``requests.post()``,
+    ``urllib.request.urlopen()`` etc. in unit tests will hit real network
+    endpoints, causing CI failures when the endpoint is unavailable and
+    making tests non-deterministic.
+
+    HTTP calls are allowed if the test function contains ``patch()`` usage
+    (indicating the call is mocked).
+
+    Root cause: ``test_beszel_dedup_message`` called ``fetch_beszel_metrics()``
+    which hit ``localhost:8090`` via ``httpx.Client``. Fixed in PR #358.
+
+    Suppress with: # noqa: PG006
+    """
+    violations: list[str] = []
+
+    for py_file in _iter_py_files(_UNIT_DIR):
+        tree = _parse_file(py_file)
+        if tree is None:
+            continue
+
+        source_lines = py_file.read_text().splitlines()
+
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
+                continue
+            if not node.name.startswith("test_"):
+                continue
+
+            # If the function has mock/patch, HTTP calls are guarded
+            if _function_has_mock(node):
+                continue
+
+            # Check for HTTP client calls in this test function
+            for child in ast.walk(node):
+                desc = _check_unguarded_http_call(child)
+                if desc is None:
+                    continue
+                if not hasattr(child, "lineno"):
+                    continue
+                lineno: int = child.lineno  # type: ignore[assignment]  # AST node has int lineno at runtime
+                if _has_noqa(source_lines, lineno, "PG006"):
+                    continue
+                rel = py_file.relative_to(_REPO_ROOT)
+                violations.append(f"{rel}:{lineno} - {desc}")
+
+    violations.sort()
+    assert not violations, (
+        "Unit tests must not make unguarded outbound HTTP calls.\n"
+        "Either mock the HTTP client with patch() or move the test "
+        "to tests/integration/.\n"
+        "Suppress with: # noqa: PG006\n\n"
         "Violations:\n" + "\n".join(f"  {v}" for v in violations)
     )

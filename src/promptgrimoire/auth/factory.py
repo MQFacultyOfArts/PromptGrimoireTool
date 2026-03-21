@@ -14,15 +14,17 @@ if TYPE_CHECKING:
     from promptgrimoire.auth.protocol import AuthClientProtocol
 
 
-# Cached mock client instance to preserve session state across requests
-_mock_client_instance: AuthClientProtocol | None = None
+# Cached client instance to preserve session state across requests
+# and avoid leaking aiohttp.ClientSession objects.
+_client_instance: AuthClientProtocol | None = None
 
 
 def get_auth_client() -> AuthClientProtocol:
     """Get the appropriate auth client based on configuration.
 
     If DEV__AUTH_MOCK=true, returns MockAuthClient (singleton to preserve sessions).
-    Otherwise, returns StytchB2BClient with real credentials.
+    Otherwise, returns StytchB2BClient with real credentials (cached to prevent
+    aiohttp ClientSession leaks).
 
     Returns:
         An auth client implementing AuthClientProtocol.
@@ -30,15 +32,18 @@ def get_auth_client() -> AuthClientProtocol:
     Raises:
         ValueError: If stytch.project_id is empty and mock mode is disabled.
     """
-    global _mock_client_instance  # noqa: PLW0603
+    global _client_instance  # noqa: PLW0603
+
+    if _client_instance is not None:
+        return _client_instance
+
     settings = get_settings()
 
     if settings.dev.auth_mock:
-        if _mock_client_instance is None:
-            from promptgrimoire.auth.mock import MockAuthClient
+        from promptgrimoire.auth.mock import MockAuthClient
 
-            _mock_client_instance = MockAuthClient()
-        return _mock_client_instance
+        _client_instance = MockAuthClient()
+        return _client_instance
 
     stytch = settings.stytch
     if not stytch.project_id:
@@ -50,18 +55,19 @@ def get_auth_client() -> AuthClientProtocol:
 
     from promptgrimoire.auth.client import StytchB2BClient
 
-    return StytchB2BClient(
+    _client_instance = StytchB2BClient(
         project_id=stytch.project_id,
         secret=stytch.secret.get_secret_value(),
     )
+    return _client_instance
 
 
 def clear_config_cache() -> None:
     """Clear the configuration and mock client caches.
 
     Useful for testing when you need to reload configuration
-    or reset mock client session state.
+    or reset client state.
     """
-    global _mock_client_instance  # noqa: PLW0603
+    global _client_instance  # noqa: PLW0603
     get_settings.cache_clear()
-    _mock_client_instance = None
+    _client_instance = None

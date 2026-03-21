@@ -318,7 +318,7 @@ async def _handle_remote_update(state: PageState) -> None:
     if state.tag_info_list != old_tag_info:
         state.invalidate_card_cache()
     if state.refresh_annotations:
-        state.refresh_annotations()
+        state.refresh_annotations(trigger="crdt_broadcast")
     if state.active_tab == "Organise":
         if state.refresh_organise_with_scroll:
             await state.refresh_organise_with_scroll()

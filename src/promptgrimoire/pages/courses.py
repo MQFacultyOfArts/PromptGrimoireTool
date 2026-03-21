@@ -37,18 +37,22 @@ from promptgrimoire.db.courses import (
     enroll_user,
     get_course_by_id,
     get_enrollment,
-    list_course_enrollments,
     list_courses,
+    list_enrollment_rows,
     list_students_without_workspaces,
     list_user_enrollments,
     unenroll_user,
     update_course,
 )
 from promptgrimoire.db.engine import init_db
-from promptgrimoire.db.enrolment import StudentIdConflictError, bulk_enrol
-from promptgrimoire.db.exceptions import DeletionBlockedError
+from promptgrimoire.db.enrolment import bulk_enrol
+from promptgrimoire.db.exceptions import (
+    DeletionBlockedError,
+    OwnershipError,
+    StudentIdConflictError,
+)
 from promptgrimoire.db.roles import get_all_roles, get_staff_roles
-from promptgrimoire.db.users import find_or_create_user, get_user_by_id
+from promptgrimoire.db.users import find_or_create_user
 from promptgrimoire.db.weeks import (
     create_week,
     delete_week,
@@ -77,7 +81,7 @@ logger = structlog.get_logger()
 logging.getLogger(__name__).setLevel(logging.INFO)
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Awaitable, Callable
 
     from promptgrimoire.db.models import (
         Activity,
@@ -316,7 +320,7 @@ async def _handle_delete_workspace(
                     return
                 try:
                     await delete_workspace(workspace_id, user_id=user_id)
-                except PermissionError:
+                except OwnershipError:
                     logger.warning("permission_denied", operation="delete_workspace")
                     ui.notify("Permission denied", type="negative")
                     dialog.close()
@@ -683,6 +687,7 @@ async def _handle_enrol_upload(
     """
     # NiceGUI UploadEventArguments.file.read() returns coroutine at runtime;
     # ty sees IO[bytes].read() (sync), hence the suppression.
+    logger.debug("Upload handler called for course %s", course.code)
     try:
         data: bytes = await upload_event.file.read()  # pyright: ignore[reportAttributeAccessIssue]
     except Exception:
@@ -729,10 +734,9 @@ async def _handle_enrol_upload(
         f"Enrolled {report.enrolments_created} of {report.entries_processed} students"
         f" ({report.enrolments_skipped} already enrolled)"
     )
-    if report.enrolments_created == 0:
-        ui.notify(msg, type="info", position="top", close_button="OK")
-    else:
-        ui.notify(msg, type="positive", position="top", close_button="OK")
+    logger.info("Bulk enrol result: %s", msg)
+    ntype = "info" if report.enrolments_created == 0 else "positive"
+    ui.notify(msg, type=ntype, position="top", close_button="OK")
 
 
 async def open_course_settings(course: Course) -> None:
@@ -1023,10 +1027,18 @@ def _is_db_available() -> bool:
 
 
 async def _check_auth() -> bool:
-    """Check authentication and redirect if not logged in."""
-    if not _get_current_user():
+    """Check authentication and ban status, redirect if needed."""
+    user = _get_current_user()
+    if not user:
         ui.navigate.to("/login")
         return False
+    user_id = user.get("user_id")
+    if user_id:
+        from promptgrimoire.db.users import is_user_banned  # noqa: PLC0415
+
+        if await is_user_banned(UUID(user_id)):
+            ui.navigate.to("/banned")
+            return False
     return True
 
 
@@ -1587,42 +1599,9 @@ async def create_activity_page(course_id: str, week_id: str) -> None:
         ).props('flat data-testid="cancel-create-activity-btn"')
 
 
-async def _render_enrollment_card(
-    e: Any,
-    *,
-    cid: UUID,
-    on_remove: Callable[[], Any],
-) -> None:
-    """Render a single enrollment card with user info and remove button."""
-    enrolled_user = await get_user_by_id(e.user_id)
-    display_name = enrolled_user.display_name if enrolled_user else "Unknown"
-    email = enrolled_user.email if enrolled_user else str(e.user_id)
-
-    with ui.card().classes("w-full"):
-        with ui.row().classes("items-center justify-between w-full"):
-            with ui.column().classes("gap-1"):
-                ui.label(display_name).classes("font-semibold")
-                ui.label(email).classes("text-sm text-gray-500")
-                ui.label(f"Enrolled: {e.created_at.strftime('%Y-%m-%d')}").classes(
-                    "text-xs text-gray-400"
-                )
-            with ui.row().classes("gap-2 items-center"):
-                ui.badge(e.role)
-
-                async def remove(uid: UUID = e.user_id) -> None:
-                    await unenroll_user(course_id=cid, user_id=uid)
-                    ui.notify("Enrollment removed", type="positive")
-                    on_remove()
-
-                ui.button(icon="delete", on_click=remove).props(
-                    f"flat round dense color=negative"
-                    f' data-testid="delete-enrollment-btn-{e.user_id}"'
-                )
-
-
 async def _render_add_enrollment_form(
     cid: UUID,
-    on_added: Callable[[], Any],
+    on_added: Callable[[], Awaitable[None]],
 ) -> None:
     """Render the add-enrollment form with email input and role select."""
     with ui.card().classes("mb-4 p-4"):
@@ -1666,7 +1645,7 @@ async def _render_add_enrollment_form(
                         msg += " (new user created)"
                     ui.notify(msg, type="positive")
                     new_email.value = ""
-                    on_added()
+                    await on_added()
                 except Exception as e:
                     logger.exception("enroll_failed", operation="add_enrollment")
                     ui.notify(f"Failed to enroll: {e}", type="negative")
@@ -1691,22 +1670,73 @@ async def manage_enrollments_page(course_id: str) -> None:
 
     ui.label(f"Enrollments for {ctx.course.code}").classes("text-2xl font-bold mb-4")
 
-    @ui.refreshable
-    async def enrollments_list() -> None:
-        """Render the enrollments list."""
-        enrollments = await list_course_enrollments(cid)
-        if not enrollments:
-            ui.label("No enrollments").classes("text-gray-500")
-            return
-        with ui.column().classes("gap-2 w-full max-w-2xl"):
-            for e in enrollments:
-                await _render_enrollment_card(
-                    e,
-                    cid=cid,
-                    on_remove=enrollments_list.refresh,
-                )
+    # -- Enrollment table --
+    columns = [
+        {
+            "name": "display_name",
+            "label": "Name",
+            "field": "display_name",
+            "align": "left",
+            "sortable": True,
+        },
+        {
+            "name": "email",
+            "label": "Email",
+            "field": "email",
+            "align": "left",
+            "sortable": True,
+        },
+        {
+            "name": "student_id",
+            "label": "Student ID",
+            "field": "student_id",
+            "align": "left",
+            "sortable": True,
+        },
+        {
+            "name": "role",
+            "label": "Role",
+            "field": "role",
+            "align": "left",
+            "sortable": True,
+        },
+        {
+            "name": "created_at",
+            "label": "Enrolled",
+            "field": "created_at",
+            "align": "left",
+            "sortable": True,
+        },
+        {"name": "action", "label": "Actions", "align": "center"},
+    ]
 
-    await _render_add_enrollment_form(cid, on_added=enrollments_list.refresh)
+    async def handle_delete(user_id_str: str) -> None:
+        await unenroll_user(course_id=cid, user_id=UUID(user_id_str))
+        ui.notify("Enrollment removed", type="positive")
+        enrollment_table.rows = await list_enrollment_rows(cid)
+
+    initial_rows = await list_enrollment_rows(cid)
+    enrollment_table = ui.table(
+        columns=columns,
+        rows=initial_rows,
+        row_key="user_id",
+        pagination=25,
+    ).props('data-testid="enrollment-table"')
+
+    with enrollment_table.add_slot("body-cell-action"):
+        with enrollment_table.cell("action"):
+            ui.button(icon="delete").props(
+                'flat round dense color=negative data-testid="delete-enrollment-btn"'
+            ).on(
+                "click",
+                js_handler="() => emit(props.row.user_id)",
+                handler=lambda e: handle_delete(e.args),
+            )
+
+    async def refresh_table() -> None:
+        enrollment_table.rows = await list_enrollment_rows(cid)
+
+    await _render_add_enrollment_form(cid, on_added=refresh_table)
 
     # -- Bulk enrolment upload --
     ui.separator()
@@ -1723,15 +1753,8 @@ async def manage_enrollments_page(course_id: str) -> None:
     async def on_upload(e: Any) -> None:
         await _handle_enrol_upload(e, ctx.course, force_checkbox.value)
         if upload_widget is not None:
-            # Delay reset so it runs after QUploader finishes its
-            # post-upload state transition on the client side.
-            # Without this, re-uploading the same file won't fire
-            # because the browser's <input type="file"> retains
-            # the filename and suppresses the change event.
-            ui.run_javascript(
-                f"setTimeout(() => getElement({upload_widget.id}).reset(), 200)"
-            )
-        await enrollments_list.refresh()
+            upload_widget.reset()
+        enrollment_table.rows = await list_enrollment_rows(cid)
 
     upload_widget = ui.upload(
         label="Upload Moodle Grades XLSX",
@@ -1742,7 +1765,6 @@ async def manage_enrollments_page(course_id: str) -> None:
     upload_widget.props('accept=".xlsx" data-testid="enrol-upload"').classes("w-full")
 
     ui.separator()
-    await enrollments_list()
 
     ui.button(
         "Back to Unit",

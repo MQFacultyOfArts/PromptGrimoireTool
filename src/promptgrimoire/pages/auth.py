@@ -116,7 +116,14 @@ def _get_session_user() -> dict | None:
     Returns:
         User dict with email, member_id, roles, etc. or None if not authenticated.
     """
-    return app.storage.user.get("auth_user")
+    try:
+        return app.storage.user.get("auth_user")
+    except AssertionError:
+        logger.debug(
+            "storage_not_ready",
+            detail="NiceGUI user storage accessed before middleware initialised it",
+        )
+        return None
 
 
 def _set_session_user(

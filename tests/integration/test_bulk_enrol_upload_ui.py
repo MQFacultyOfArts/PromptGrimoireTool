@@ -93,6 +93,19 @@ class TestBulkEnrolUploadWidget:
         await _should_see_testid(nicegui_user, "enrol-force-checkbox")
 
     @pytest.mark.asyncio
+    async def test_enrollment_table_visible(self, nicegui_user: User) -> None:
+        """AC2.1: Enrollment table is visible after page load."""
+        email = "instructor@uni.edu"
+        await _authenticate(nicegui_user, email=email)
+
+        course_id, _code = await _create_course()
+        await _enroll(course_id, email, "instructor")
+
+        await nicegui_user.open(f"/courses/{course_id}/enrollments")
+
+        await _should_see_testid(nicegui_user, "enrollment-table")
+
+    @pytest.mark.asyncio
     async def test_student_does_not_see_upload_widget(self, nicegui_user: User) -> None:
         """AC7.4: Students cannot see the upload widget."""
         instructor_email = "instructor@uni.edu"

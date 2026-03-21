@@ -18,6 +18,7 @@ library references during development.
 
 ## architecture
 
+- [Context Diagram (Level 0)](architecture/dfd/0-context-diagram.md)
 - [[1] Learning Workspace — Level 1 Decomposition](architecture/dfd/1-level-1-decomposition.md)
 - [[5] Annotate Texts — Level 2 Decomposition](architecture/dfd/5-annotate-texts.md)
 
@@ -41,6 +42,7 @@ library references during development.
 ## dead-ends
 
 - [Dead End: Client-Side Char Span Synchronisation](dead-ends/2026-02-10-charspan-sync.md)
+- [Dead End: \annot with \par inside longtable + luatexja](dead-ends/2026-03-15-annot-par-in-longtable.md)
 
 ## design-notes
 
@@ -77,6 +79,7 @@ library references during development.
 - [NiceGUI styling with CSS, Tailwind, Quasar props, and static files](nicegui/styling.md)
 - [NiceGUI E2E Testing with Playwright](nicegui/testing.md)
 - [NiceGUI UI patterns - timer, refreshable, pages, events, storage, styling](nicegui/ui-patterns.md)
+- [ui.table (Quasar QTable) — columns, rows, pagination, selection, slots, cell templates](nicegui/ui-table.md)
 - [NiceGUI User fixture for fast headless page testing without a browser](nicegui/user-fixture-testing.md)
 
 ## openpyxl
@@ -110,7 +113,17 @@ library references during development.
 
 ## postmortems
 
+- [Root Cause: luaotfload harf-plug crash on server (color emoji PNG cache)](postmortems/2026-03-15-harf-emoji-cwd-crash.md)
 - [Post-Mortem: 2026-03-15 Production OOM Outage](postmortems/2026-03-15-production-oom.md)
+- [Afternoon Incident Analysis: 2026-03-16 14:50–17:20 AEDT](postmortems/2026-03-16-afternoon-analysis.md)
+- [Post-Mortem: 2026-03-16 Service Degradation and Data Loss During Live Class](postmortems/2026-03-16-gateway-failures-data-loss.md)
+- [Incident Response Commands: 2026-03-16](postmortems/2026-03-16-incident-response.md)
+- [Investigation: 2026-03-16 Gateway Failures](postmortems/2026-03-16-investigation.md)
+- [New Errors Observed 2026-03-16 ~15:00 AEDT](postmortems/2026-03-16-new-errors.md)
+- [Proposed Incident Analysis Tools](postmortems/2026-03-16-proposed-analysis-tools.md)
+- [Investigation: Firefox E2E CI Failures](postmortems/2026-03-18-firefox-e2e-failures.md)
+- [Investigation: #377 Page Load Latency](postmortems/2026-03-18-page-load-latency-377.md)
+- [PromptGrimoire Incident Analysis Playbook](postmortems/incident-analysis-playbook.md)
 
 ## prds
 
@@ -138,6 +151,7 @@ library references during development.
 
 ## stytch
 
+- [aiohttp session lifecycle in the Stytch Python SDK — lazy creation, external session injection, GC-based cleanup](stytch/async-session-management.md)
 - [B2B magic link token authentication - creates sessions with MFA support](stytch/b2b-authenticate.md)
 - [B2B fundamentals - Organizations, Members, settings, core flows, features](stytch/b2b-basics.md)
 - [B2B invitation emails - invite new Members to Organizations with roles](stytch/b2b-invite.md)

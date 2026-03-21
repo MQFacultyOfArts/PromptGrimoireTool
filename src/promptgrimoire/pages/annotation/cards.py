@@ -107,7 +107,7 @@ def _build_comment_delete_btn(
         if state.save_status:
             state.save_status.text = "Saved"
         if state.refresh_annotations:
-            state.refresh_annotations()
+            state.refresh_annotations(trigger="highlight_delete")
         if state.broadcast_update:
             await state.broadcast_update()
 
@@ -179,7 +179,7 @@ def _make_add_comment_handler(
             if state.save_status:
                 state.save_status.text = "Saved"
             if state.refresh_annotations:
-                state.refresh_annotations()
+                state.refresh_annotations(trigger="comment_save")
             if state.broadcast_update:
                 await state.broadcast_update()
 
@@ -444,8 +444,8 @@ def _build_annotation_card(
     tag_str = highlight.get("tag", "highlight")
     author = highlight.get("author", "Unknown")
     full_text = highlight.get("text", "")
-    start_char = highlight.get("start_char", 0)
-    end_char = highlight.get("end_char", start_char)
+    start_char = int(highlight.get("start_char", 0))
+    end_char = int(highlight.get("end_char", start_char))
     para_ref = highlight.get("para_ref", "")
     comments: list[dict[str, Any]] = highlight.get("comments", [])
 
@@ -634,7 +634,7 @@ def _diff_annotation_cards(state: PageState) -> None:
             _broadcast_cards_epoch(state)
 
 
-def _refresh_annotation_cards(state: PageState) -> None:
+def _refresh_annotation_cards(state: PageState, *, trigger: str = "unknown") -> None:
     """Refresh annotation cards from CRDT state.
 
     First call (``annotation_cards is None``): full build — clears the
@@ -644,9 +644,11 @@ def _refresh_annotation_cards(state: PageState) -> None:
     only adds/removes individual cards that changed, preserving the rest.
     """
     logger.debug(
-        "[CARDS] _refresh called: container=%s, crdt_doc=%s",
-        state.annotations_container is not None,
-        state.crdt_doc is not None,
+        "card_rebuild",
+        trigger=trigger,
+        cards_epoch=state.cards_epoch,
+        container_exists=state.annotations_container is not None,
+        crdt_doc_exists=state.crdt_doc is not None,
     )
     if state.annotations_container is None or state.crdt_doc is None:
         return

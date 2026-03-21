@@ -131,8 +131,8 @@ def _build_reference_card(
     """
     raw_author = highlight.get("author", "Unknown")
     hl_user_id = highlight.get("user_id")
-    start_char: int = highlight.get("start_char", 0)
-    end_char: int = highlight.get("end_char", 0)
+    start_char: int = int(highlight.get("start_char", 0))
+    end_char: int = int(highlight.get("end_char", 0))
     full_text = highlight.get("text", "")
     comments: list[dict[str, Any]] = highlight.get("comments", [])
 

@@ -4,6 +4,7 @@ docs/implementation_plans/*
 .codex
 .brainstorming*
 .commit-msg.tmp
+ai_transcripts/
 
 *.log
 
@@ -87,10 +88,15 @@ scripts/smoke_data/*.md
 !scripts/smoke_data/*.md.example
 scripts/smoke_data/*.log
 
+# Incident analysis SQLite databases (per-incident, ephemeral)
+*.db
+
 # Runtime logs
 log/
 
 # Git worktrees (parallel development)
 .worktrees/
+.claude/worktrees/
 .playwright-mcp/
 luatex.*/
+node_modules/

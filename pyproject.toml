@@ -17,14 +17,13 @@ classifiers = [
     "Topic :: Education",
 ]
 dependencies = [
-    "nicegui==3.8.0",  # pinned: 3.8.0 includes our upstream fixes (#5805, #5806, #5749)
+    "nicegui==3.9.0",  # pinned: 3.9.0 includes GHSA-w5g8-5849-vj76 media streaming security fix
     "sqlmodel>=0.0.22",
     "pycrdt>=0.10",
     "stytch>=11.0",
     "pydantic>=2.10",
     "pydantic-ai>=1.67.0",
-    "pydantic-settings>=2.7",
-    "python-dotenv>=1.0",  # Required by pydantic-settings for .env file reading
+    "pydantic-settings>=2.7",  # Required by pydantic-settings for .env file reading
     "asyncpg>=0.30",
     "anthropic>=0.76.0",
     "alembic>=1.18.0",
@@ -45,6 +44,7 @@ dependencies = [
     "openpyxl>=3.1.5",
     "structlog>=25.0",
     "httpx>=0.27",
+    "pyasn1>=0.6.3",
 ]
 
 [project.scripts]
@@ -204,6 +204,14 @@ ignore = [
 "alembic/versions/*.py" = [
     "TC003",  # Alembic generates imports outside TYPE_CHECKING block
 ]
+"scripts/incident_db.py" = [
+    "B008",     # typer.Argument/Option must be called in function defaults
+    "E402",     # sys.path manipulation must precede imports
+    "PLC0415",  # Lazy import of ingest module (not yet created in early phases)
+]
+"scripts/incident/*.py" = [
+    "TC003",  # sqlite3 used at runtime via caller-passed Connection objects
+]
 
 [tool.ruff.lint.isort]
 known-first-party = ["promptgrimoire"]
@@ -289,4 +297,5 @@ dev = [
     "pyright>=1.1.408",
     "browserstack-sdk>=1.40.0",
     "types-openpyxl>=3.1.5.20250919",
+    "shellcheck-py>=0.11.0",
 ]

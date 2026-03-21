@@ -13,6 +13,7 @@ from uuid import uuid4
 import pytest
 
 from promptgrimoire.config import get_settings
+from promptgrimoire.db.exceptions import SharePermissionError
 
 pytestmark = pytest.mark.skipif(
     not get_settings().dev.test_database_url,
@@ -193,7 +194,9 @@ class TestGrantShareRejection:
             display_name=f"Another {another_tag}",
         )
 
-        with pytest.raises(PermissionError, match="only workspace owners can share"):
+        with pytest.raises(
+            SharePermissionError, match="only workspace owners can share"
+        ):
             await grant_share(
                 data["workspace_id"],
                 data["recipient"].id,
@@ -211,7 +214,7 @@ class TestGrantShareRejection:
         from promptgrimoire.db.acl import grant_share
 
         data = await _make_sharing_data()
-        with pytest.raises(PermissionError, match="sharing is not allowed"):
+        with pytest.raises(SharePermissionError, match="sharing is not allowed"):
             await grant_share(
                 data["workspace_id"],
                 data["owner"].id,
@@ -229,7 +232,7 @@ class TestGrantShareRejection:
         from promptgrimoire.db.acl import grant_share
 
         data = await _make_sharing_data()
-        with pytest.raises(PermissionError, match="cannot grant owner permission"):
+        with pytest.raises(SharePermissionError, match="cannot grant owner permission"):
             await grant_share(
                 data["workspace_id"],
                 data["owner"].id,
@@ -249,7 +252,7 @@ class TestGrantShareRejection:
 
         data = await _make_sharing_data()
         with pytest.raises(
-            PermissionError, match="cannot modify owner permission via sharing"
+            SharePermissionError, match="cannot modify owner permission via sharing"
         ):
             await grant_share(
                 data["workspace_id"],
@@ -266,7 +269,7 @@ class TestGrantShareRejection:
 
         data = await _make_sharing_data()
         with pytest.raises(
-            PermissionError, match="cannot modify owner permission via sharing"
+            SharePermissionError, match="cannot modify owner permission via sharing"
         ):
             await grant_share(
                 data["workspace_id"],

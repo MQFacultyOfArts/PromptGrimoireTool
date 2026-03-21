@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import io
 import logging
+import re
 
 import fitz
 import mammoth
@@ -19,11 +20,19 @@ logger = structlog.get_logger()
 logging.getLogger(__name__).setLevel(logging.INFO)
 
 
+class ConversionError(Exception):
+    """File content could not be converted to HTML.
+
+    Raised for bad user input (corrupt files, unsupported formats),
+    not system failures.  Caught at WARNING level by the upload handler.
+    """
+
+
 def convert_docx_to_html(content: bytes) -> str:
     """Convert DOCX bytes to HTML string.
 
     Raises:
-        ValueError: If the content is not a valid DOCX file.
+        ConversionError: If the content is not a valid DOCX file.
     """
     try:
         result = mammoth.convert_to_html(
@@ -32,7 +41,7 @@ def convert_docx_to_html(content: bytes) -> str:
         )
     except Exception as exc:
         msg = f"Failed to convert DOCX: {exc}"
-        raise ValueError(msg) from exc
+        raise ConversionError(msg) from exc
 
     for message in result.messages:
         logger.warning("mammoth: %s", message)
@@ -40,15 +49,41 @@ def convert_docx_to_html(content: bytes) -> str:
     return result.value
 
 
+_BULLET_FENCE_RE = re.compile(r"```\n(.*?)\n```", re.DOTALL)
+
+
+def strip_bullet_code_fences(markdown: str) -> str:
+    """Remove code fences that wrap bullet-point lists.
+
+    pymupdf4llm sometimes wraps bullet lists in triple-backtick code fences,
+    which pandoc renders as ``<pre><code>`` blocks instead of ``<ul><li>``
+    lists.  This function strips the fences when ALL non-blank lines inside
+    start with ``- `` (optionally indented).
+
+    See: https://github.com/MQFacultyOfArts/PromptGrimoireTool/issues/349
+    """
+    if not markdown:
+        return markdown
+
+    def _replace(match: re.Match[str]) -> str:
+        content = match.group(1)
+        non_blank = [line for line in content.split("\n") if line.strip()]
+        if non_blank and all(re.match(r"\s*- ", line) for line in non_blank):
+            return content
+        return match.group(0)
+
+    return _BULLET_FENCE_RE.sub(_replace, markdown)
+
+
 async def convert_pdf_to_html(content: bytes) -> str:
     """Convert PDF bytes to HTML string via pymupdf4llm + pandoc.
 
     Raises:
-        ValueError: If the content is not a valid PDF or pandoc fails.
+        ConversionError: If the content is not a valid PDF or pandoc fails.
     """
     if not content:
         msg = "Failed to convert PDF: empty content"
-        raise ValueError(msg)
+        raise ConversionError(msg)
 
     def _extract_markdown() -> str:
         doc = fitz.open(stream=content, filetype="pdf")
@@ -59,7 +94,9 @@ async def convert_pdf_to_html(content: bytes) -> str:
         markdown = await loop.run_in_executor(None, _extract_markdown)
     except RuntimeError as exc:
         msg = f"Failed to convert PDF: {exc}"
-        raise ValueError(msg) from exc
+        raise ConversionError(msg) from exc
+
+    markdown = strip_bullet_code_fences(markdown)
 
     proc = await asyncio.create_subprocess_exec(
         "pandoc",
@@ -76,7 +113,7 @@ async def convert_pdf_to_html(content: bytes) -> str:
     )
     # returncode is guaranteed set after communicate() returns
     if proc.returncode != 0:
-        raise ValueError(
+        raise ConversionError(
             f"pandoc failed (rc={proc.returncode}): {stderr_bytes.decode()}"
         ) from None
 

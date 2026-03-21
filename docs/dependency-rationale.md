@@ -1,18 +1,18 @@
 # Dependency Rationale
 
-Last reviewed: 2026-03-15
+Last reviewed: 2026-03-20
 
 Each dependency lists: what it does, why it's here (not a stdlib/transitive alternative), and where the evidence is.
 
 ## Production Dependencies
 
-### nicegui == 3.8.0
+### nicegui == 3.9.0
 
 **Claim:** Web UI framework. The entire frontend is built on NiceGUI's component model, server-sent events, and WebSocket integration.
 
 **Evidence:** 13 files across `src/promptgrimoire/pages/` and `src/promptgrimoire/__init__.py` import from nicegui. Every page route, dialog, and UI component depends on it. Also provides the app server (`ui.run`), static file serving, client-side JS execution (`ui.run_javascript`), and the WebSocket-based client–server communication layer.
 
-**Pin rationale:** Pinned to 3.8.0 which includes our upstream fixes (#5805 element re-render regression, #5806 Outbox.stop wake, #5749 SPA script injection). The 3.7.x destroy+recreate regression from `docs/design-plans/2026-02-10-nicegui-3.7.x-regression.md` is resolved. The `Outbox.stop()` monkey-patch in `cli.py` was removed as the fix is now upstream.
+**Pin rationale:** Pinned to 3.9.0 which includes GHSA-w5g8-5849-vj76 (media streaming memory exhaustion security fix) and all prior upstream fixes (#5805, #5806, #5749). No breaking changes from 3.8.0. **Last reviewed:** 2026-03-20.
 
 **Why not alternatives:** NiceGUI was chosen for Python-native UI without a JS frontend build step. The project is deeply coupled to NiceGUI's component API, page routing, and storage system.
 
@@ -69,9 +69,23 @@ Each dependency lists: what it does, why it's here (not a stdlib/transitive alte
 **Why not alternatives:** pydantic-settings integrates natively with the existing Pydantic ecosystem (SQLModel, pydantic-ai). Provides type validation, SecretStr masking, and `.env` reading without manual `load_dotenv()`.
 **Classification:** Hard core. All application configuration flows through it.
 
-### ~~python-dotenv >= 1.0~~ (SUPERSEDED)
+### ~~python-dotenv >= 1.0~~ (REMOVED)
 
-Superseded 2026-02-13 by pydantic-settings, which reads `.env` files natively (using python-dotenv internally as a transitive dependency). Direct `load_dotenv()` calls eliminated. See design plan `2026-02-13-pydantic-settings-130.md`.
+Removed 2026-03-18 from `pyproject.toml`. Superseded 2026-02-13 by pydantic-settings, which uses python-dotenv internally as a transitive dependency. No direct imports existed. See design plan `2026-02-13-pydantic-settings-130.md`.
+
+### cryptography >= 46.0.5
+
+**Added:** pre-2026-03 (version floor pin)
+**Claim:** Version floor pin to ensure a minimum safe version across transitive dependency chains.
+**Evidence:** No direct imports in `src/promptgrimoire/`. Required transitively by authlib and google-auth. The explicit pin was added to address CVE-2026-26007 (commit `db48c343`).
+**Classification:** Protective belt. Version floor for supply-chain security.
+
+### pyasn1 >= 0.6.3
+
+**Added:** 2026-03-18 (version floor pin)
+**Claim:** Version floor pin to ensure CVE-2026-30922 patched version across transitive dependency chains.
+**Evidence:** No direct imports in `src/promptgrimoire/`. Required transitively via pydantic-ai → google-genai → google-auth → rsa → pyasn1.
+**Classification:** Protective belt. Version floor for supply-chain security.
 
 ### asyncpg >= 0.30
 
@@ -360,6 +374,7 @@ Removed 2026-02-10. Same replacement as pylatexenc above. The Lark lexer grammar
 **Claim:** Static site generator for HTML documentation. Renders guide markdown and screenshots into a themed HTML site deployable to GitHub Pages.
 **Evidence:** `mkdocs.yml` — site configuration. `src/promptgrimoire/cli.py` — `mkdocs build` invoked by `make_docs()`.
 **Serves:** Instructors and students (browsable user guides), developers (local preview via `mkdocs serve`).
+**Revised:** 2026-03-18 — mkdocs-material entering maintenance mode. Team focusing on Zensical successor. Critical bug fixes and security updates until November 2026. Evaluate migration path before that date.
 
 ### pip-audit
 
@@ -384,6 +399,7 @@ Removed 2026-02-10. Same replacement as pylatexenc above. The Lark lexer grammar
 **Claim:** Extracts structured Markdown from PDF files using AI-based layout analysis (via pymupdf.layout). Produces paragraph-aware output that pymupdf's raw text extraction does not.
 **Evidence:** `src/promptgrimoire/input_pipeline/converters.py` — `convert_pdf_to_html()` calls `pymupdf4llm.to_markdown()`.
 **Serves:** Runtime users (students/instructors uploading PDF files).
+**Revised:** 2026-03-18 — version jumped from 0.3.4 to 1.27.2.1 (pymupdf team realigned version scheme to match pymupdf parent). Same API, adds `tabulate` as transitive dep.
 
 ### pymupdf-layout
 
@@ -424,3 +440,22 @@ Removed 2026-02-10. Same replacement as pylatexenc above. The Lark lexer grammar
 **Evidence:** `from openpyxl import load_workbook` in `enrol/xlsx_parser.py` (to be created in Phase 2 of bulk-enrol-320).
 **Serves:** Runtime — admin CLI and instructor UI upload both depend on XLSX parsing.
 **Why not alternatives:** `pandas` is heavyweight for simple row iteration. `xlrd` only supports `.xls` (not `.xlsx`). openpyxl is the de facto standard for `.xlsx` in Python, read-only mode is memory-efficient.
+
+### shellcheck-py >= 0.11.0
+
+**Added:** 2026-03-17
+**Design plan:** docs/design-plans/2026-03-16-incident-analysis-tools.md
+**Claim:** Python-packaged ShellCheck binary for shell script linting. Used as a pre-commit hook to lint `deploy/*.sh` scripts (collect-telemetry.sh, restart.sh).
+**Evidence:** `.pre-commit-config.yaml` — shellcheck hook configured with `--severity=warning` and `files: ^deploy/.*\.sh$`.
+**Serves:** Developers (pre-commit lint gate for shell scripts).
+**Why not alternatives:** ShellCheck is the de facto standard for shell script static analysis. The Python-packaged version (`shellcheck-py`) avoids requiring a system-level ShellCheck install and integrates cleanly with the existing pre-commit framework.
+**Classification:** Protective belt. Dev-only pre-commit hook. No runtime dependency.
+
+### pgtoolkit
+
+**Added:** 2026-03-16
+**Design plan:** docs/design-plans/2026-03-16-incident-analysis-tools.md
+**Claim:** PostgreSQL log file parser. Used in `scripts/incident/parsers/pglog.py` to group multi-line PG log entries (ERROR + DETAIL + STATEMENT continuation lines) into single logical events.
+**Evidence:** `scripts/incident/parsers/pglog.py` imports `pgtoolkit.log`.
+**Serves:** Developers/operators (incident analysis tooling, dev-only dependency).
+**Why not alternatives:** Writing a PG log multi-line grouping state machine is error-prone. pgtoolkit is actively maintained by Dalibo and handles the format's edge cases (variable log_line_prefix, multi-line DETAIL/STATEMENT/HINT blocks).

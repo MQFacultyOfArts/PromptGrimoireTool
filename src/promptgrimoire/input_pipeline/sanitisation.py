@@ -96,7 +96,11 @@ def _is_empty_element(node: Any) -> bool:
     """
     if node.attributes.get("data-speaker"):
         return False
-    text = (node.text() or "").strip()
+    raw = node.text() or ""
+    # Use ASCII-only strip: Python's str.strip() treats U+00A0 (nbsp) as
+    # whitespace, but nbsp is semantically significant — ChatGPT exports
+    # use <span>&nbsp;</span> for inter-word spacing around bold/italic (#273).
+    text = raw.strip(" \t\n\r\f\v")
     if text:
         return False
     return all(child.tag == "br" for child in node.iter())

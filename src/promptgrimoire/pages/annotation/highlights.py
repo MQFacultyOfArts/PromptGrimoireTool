@@ -88,7 +88,7 @@ def _execute_pending_scroll(state: PageState) -> None:
 
     # Refresh before scrolling
     if state.refresh_annotations:
-        state.refresh_annotations()
+        state.refresh_annotations(trigger="highlight_add")
     _update_highlight_css(state)
 
     js = _render_js(
@@ -127,8 +127,8 @@ def _build_highlight_json(state: PageState) -> str:
     for hl in highlights:
         tag = hl.get("tag", "highlight")
         entry = {
-            "start_char": hl.get("start_char", 0),
-            "end_char": hl.get("end_char", 0),
+            "start_char": int(hl.get("start_char", 0)),
+            "end_char": int(hl.get("end_char", 0)),
             "id": hl.get("id", ""),
         }
         by_tag.setdefault(tag, []).append(entry)
@@ -307,7 +307,7 @@ async def _add_highlight(state: PageState, tag: str) -> None:
 
         # Refresh annotation cards to show new highlight
         if state.refresh_annotations:
-            state.refresh_annotations()
+            state.refresh_annotations(trigger="tag_apply")
 
         # Broadcast to other clients
         if state.broadcast_update:

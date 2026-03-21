@@ -14,6 +14,11 @@ from uuid import UUID, uuid4
 import pytest
 
 from promptgrimoire.config import get_settings
+from promptgrimoire.db.exceptions import (
+    SharePermissionError,
+    TagCreationDeniedError,
+    TagLockedError,
+)
 from promptgrimoire.db.models import Activity, Course
 
 pytestmark = pytest.mark.skipif(
@@ -105,6 +110,47 @@ class TestCreateTag:
         assert tag.locked is True
         assert tag.order_index == 0  # first tag gets index 0 from atomic counter
         assert tag.created_at is not None
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "bad_color",
+        [
+            "#",  # bare hash — the production incident trigger
+            "",  # empty string
+            "red",  # named colour, not hex
+            "#GGG000",  # invalid hex digits
+            "#1f77b",  # 5 hex digits (too short)
+            "#1f77b4a",  # 7 hex digits (too long)
+            "1f77b4",  # missing hash prefix
+        ],
+        ids=[
+            "bare-hash",
+            "empty",
+            "named-colour",
+            "invalid-hex-digits",
+            "too-short",
+            "too-long",
+            "missing-hash",
+        ],
+    )
+    async def test_create_tag_rejects_invalid_color(self, bad_color: str) -> None:
+        """create_tag() must reject colours not matching ^#[0-9a-fA-F]{6}$.
+
+        Regression test for 2026-03-20 production incident: a tag with
+        color='#' hit the DB check constraint (ck_tag_color_hex) and
+        raised IntegrityError instead of a clean BusinessLogicError.
+
+        The fix should validate at the application layer so the error
+        is raised as a ValueError (or BusinessLogicError subclass),
+        logged at WARNING, and never reaches the DB constraint.
+        """
+        from promptgrimoire.db.tags import create_tag
+
+        _, activity = await _make_course_week_activity()
+        ws_id = activity.template_workspace_id
+
+        with pytest.raises(ValueError, match=r"[Cc]olor"):
+            await create_tag(ws_id, name="Bad Colour", color=bad_color)
 
     @pytest.mark.asyncio
     async def test_create_tag_with_only_required_fields(self) -> None:
@@ -378,12 +424,12 @@ class TestLockEnforcement:
 
         tag = await create_tag(ws_id, name="Locked", color="#000000", locked=True)
 
-        with pytest.raises(ValueError, match="Tag is locked"):
+        with pytest.raises(TagLockedError, match="Tag is locked"):
             await update_tag(tag.id, name="New Name")
 
     @pytest.mark.asyncio
     async def test_delete_locked_tag_raises(self) -> None:
-        """Deleting a locked tag raises ValueError.
+        """Deleting a locked tag raises TagLockedError.
 
         Verifies AC2.8.
         """
@@ -394,7 +440,7 @@ class TestLockEnforcement:
 
         tag = await create_tag(ws_id, name="Locked", color="#000000", locked=True)
 
-        with pytest.raises(ValueError, match="Tag is locked"):
+        with pytest.raises(TagLockedError, match="Tag is locked"):
             await delete_tag(tag.id)
 
     @pytest.mark.asyncio
@@ -477,9 +523,9 @@ class TestPermissionEnforcement:
 
     @pytest.mark.asyncio
     async def test_create_tag_denied_when_tag_creation_false(self) -> None:
-        """create_tag raises PermissionError when allow_tag_creation resolves False.
+        """create_tag raises TagCreationDeniedError when denied.
 
-        Verifies AC2.9.
+        allow_tag_creation resolves False. Verifies AC2.9.
         """
         from promptgrimoire.db.tags import create_tag
         from promptgrimoire.db.workspaces import (
@@ -496,7 +542,7 @@ class TestPermissionEnforcement:
         ws = await create_workspace()
         await place_workspace_in_activity(ws.id, activity.id)
 
-        with pytest.raises(PermissionError, match="Tag creation not allowed"):
+        with pytest.raises(TagCreationDeniedError, match="Tag creation not allowed"):
             await create_tag(ws.id, name="Should Fail", color="#000000")
 
     @pytest.mark.asyncio
@@ -524,7 +570,7 @@ class TestPermissionEnforcement:
 
     @pytest.mark.asyncio
     async def test_create_tag_group_denied_when_tag_creation_false(self) -> None:
-        """create_tag_group raises PermissionError when denied.
+        """create_tag_group raises TagCreationDeniedError when denied.
 
         Verifies AC2.9.
         """
@@ -542,7 +588,7 @@ class TestPermissionEnforcement:
         ws = await create_workspace()
         await place_workspace_in_activity(ws.id, activity.id)
 
-        with pytest.raises(PermissionError, match="Tag creation not allowed"):
+        with pytest.raises(TagCreationDeniedError, match="Tag creation not allowed"):
             await create_tag_group(ws.id, name="Should Fail")
 
 
@@ -1801,21 +1847,23 @@ class TestDuplicateTagNameRejection:
     """
 
     @pytest.mark.asyncio
-    async def test_duplicate_name_raises_integrity_error(self) -> None:
-        """create_tag twice with same name and workspace_id raises IntegrityError.
+    async def test_duplicate_name_raises_duplicate_name_error(
+        self,
+    ) -> None:
+        """create_tag twice with same name raises DuplicateNameError.
 
-        Verifies AC2.7: duplicate name within same workspace is rejected.
+        Verifies AC2.7: duplicate name within same workspace is
+        rejected. Since #360, the DB layer catches IntegrityError
+        and raises DuplicateNameError instead.
         """
-        from sqlalchemy.exc import IntegrityError
-
-        from promptgrimoire.db.tags import create_tag
+        from promptgrimoire.db.tags import DuplicateNameError, create_tag
 
         _, activity = await _make_course_week_activity()
         ws_id = activity.template_workspace_id
 
         await create_tag(ws_id, name="Unique", color="#111111")
 
-        with pytest.raises(IntegrityError, match="uq_tag_workspace_name"):
+        with pytest.raises(DuplicateNameError, match="already exists"):
             await create_tag(ws_id, name="Unique", color="#222222")
 
 
@@ -2102,7 +2150,7 @@ class TestImportTagsFromWorkspace:
 
     @pytest.mark.asyncio
     async def test_import_no_access_raises_permission_error(self) -> None:
-        """Import from workspace user cannot access raises PermissionError."""
+        """Import from inaccessible workspace raises SharePermissionError."""
         from promptgrimoire.db.tags import import_tags_from_workspace
         from promptgrimoire.db.users import create_user
 
@@ -2118,7 +2166,7 @@ class TestImportTagsFromWorkspace:
             display_name="Outsider",
         )
 
-        with pytest.raises(PermissionError):
+        with pytest.raises(SharePermissionError):
             await import_tags_from_workspace(src_ws, tgt_ws, outsider.id)
 
 

@@ -498,6 +498,45 @@ Workspaces are isolated silos identified by UUID.
 
 **Delete order for Activity** (circular FK): delete Activity first (SET NULL on student workspaces), then delete orphaned template Workspace (safe because RESTRICT FK no longer points to it).
 
+## User Ban System
+
+**Schema:** `User.is_banned` (boolean, default false) and `User.banned_at` (timestamptz, nullable). Migration `7abc07630af3`.
+
+**DB API** (`db/users.py`): `set_banned(user_id, is_banned)` toggles ban status and timestamps. `is_user_banned(user_id)` is a lightweight boolean query used by the page-route guard. `get_banned_users()` returns all banned users for the CLI list command.
+
+**Page-route ban guard** (`pages/registry.py`): The `page_route` decorator checks `is_user_banned()` on every page load for any authenticated user (regardless of `requires_auth` flag), redirecting banned users to `/banned`. The `/banned` page (`pages/banned.py`) uses `@ui.page` directly (not `page_route`) to avoid redirect loops.
+
+**Client registry** (`auth/client_registry.py`): Module-level `dict[UUID, set[Client]]` mapping users to their connected NiceGUI clients. `page_route` registers each client on page load via `client_registry.register()`. `disconnect_user(user_id)` redirects all of a user's active clients to `/banned` via `run_javascript`. Auto-deregisters on `client.on_delete`.
+
+**Kick endpoint** (`POST /api/admin/kick`): Starlette route registered in `__init__.py`. Authenticated via `ADMIN__ADMIN_API_SECRET` bearer token (constant-time HMAC comparison). Calls `disconnect_user()` to force-redirect a banned user's active browser sessions. Returns 503 if secret not configured.
+
+**Auth protocol** (`auth/protocol.py`): `revoke_member_sessions(member_id)` method added to `AuthClientProtocol`. Revokes all Stytch sessions for a member during ban. Implemented in `auth/client.py` (production) and `auth/mock.py` (test).
+
+**CLI commands** (`cli/admin.py`): `admin ban <email>` orchestrates: DB flag, Stytch metadata update, session revocation, kick endpoint call. `admin unban <email>` reverses all steps. `admin ban --list` displays tabular list of banned users.
+
+**Config** (`config.py`): `AdminConfig` sub-model with `admin_api_secret: SecretStr`. Env var: `ADMIN__ADMIN_API_SECRET`. Generate with `python -c "import secrets; print(secrets.token_urlsafe(32))"`.
+
+## Business Exception Taxonomy
+
+All domain exceptions live in `db/exceptions.py` under a single base class `BusinessLogicError`. This enables `get_session()` to triage log levels: `BusinessLogicError` subclasses are expected rejections (logged at WARNING, no Discord alert); all other exceptions are unexpected failures (logged at ERROR, trigger Discord alert).
+
+**Hierarchy:**
+
+- `BusinessLogicError` -- base class for expected business logic rejections
+  - `SharePermissionError` -- sharing policy violation (non-owner share, sharing disabled, owner-grant)
+  - `OwnershipError` -- non-owner attempted owner-only operation (delete workspace/document)
+  - `TagCreationDeniedError` -- tag creation denied by placement context policy
+  - `DeletionBlockedError` -- force=False and student workspaces exist (carries `student_workspace_count`)
+  - `ProtectedDocumentError` -- attempted deletion of template-cloned document (carries `document_id`, `source_document_id`)
+  - `DuplicateNameError` -- tag/tag group name collision (pre-empts `IntegrityError`)
+  - `TagLockedError` -- tag/group modification denied because locked
+  - `DuplicateCodenameError` -- team codename collision within activity (carries `activity_id`, `codename`)
+  - `ZeroEditorError` -- grant/revoke would leave team with no `can_edit` member (carries `team_id`, `user_id`, permissions)
+  - `DuplicateEnrollmentError` -- user already enrolled (carries `course_id`, `user_id`)
+  - `StudentIdConflictError` -- roster import student ID mismatch (carries `conflicts` list)
+
+**Contract:** DB functions must raise `BusinessLogicError` subclasses for all anticipated user-facing error conditions. Raw `PermissionError`, `ValueError`, or `IntegrityError` must not leak through `get_session()` for business logic cases. UI `except` blocks should catch specific subclasses (not the base class) and display user-friendly messages.
+
 ## App Startup Database Bootstrap
 
 When `DATABASE__URL` is configured, `main()` automatically bootstraps the database before starting the server:

@@ -147,6 +147,7 @@ class TestOpenTagManagementDialog:
         await nicegui_user.should_see(content="Manage Tags")
 
         # Close dialog via Done button
+        await _should_see_testid(nicegui_user, "tag-management-done-btn")
         _click_testid(nicegui_user, "tag-management-done-btn")
 
         # Dialog should be closed
@@ -178,10 +179,12 @@ class TestCreateTagGroupAndTags:
         await _should_see_testid(nicegui_user, "tag-settings-btn")
 
         # Open tag management dialog
+        await _should_see_testid(nicegui_user, "tag-settings-btn")
         _click_testid(nicegui_user, "tag-settings-btn")
         await _should_see_testid(nicegui_user, "tag-management-dialog")
 
         # Click "+ Add group"
+        await _should_see_testid(nicegui_user, "add-tag-group-btn")
         _click_testid(nicegui_user, "add-tag-group-btn")
 
         # After adding a group, the dialog should show "New group" as default name.
@@ -222,6 +225,7 @@ class TestCreateTagGroupAndTags:
         await _should_see_testid(nicegui_user, f"tag-name-input-{tag.id}")
 
         # Close dialog
+        await _should_see_testid(nicegui_user, "tag-management-done-btn")
         _click_testid(nicegui_user, "tag-management-done-btn")
 
 
@@ -252,6 +256,7 @@ class TestChangeTagColor:
         await _should_see_testid(nicegui_user, "tag-settings-btn")
 
         # Open tag management dialog
+        await _should_see_testid(nicegui_user, "tag-settings-btn")
         _click_testid(nicegui_user, "tag-settings-btn")
         await _should_see_testid(nicegui_user, "tag-management-dialog")
 
@@ -282,6 +287,7 @@ class TestChangeTagColor:
         )
 
         # Close dialog
+        await _should_see_testid(nicegui_user, "tag-management-done-btn")
         _click_testid(nicegui_user, "tag-management-done-btn")
 
 
@@ -314,6 +320,7 @@ class TestLockToggle:
         await _should_see_testid(nicegui_user, "tag-settings-btn")
 
         # Open tag management dialog
+        await _should_see_testid(nicegui_user, "tag-settings-btn")
         _click_testid(nicegui_user, "tag-settings-btn")
         await _should_see_testid(nicegui_user, "tag-management-dialog")
 
@@ -348,6 +355,7 @@ class TestLockToggle:
         assert unlocked_tag.locked is False, "expected tag to be unlocked"
 
         # Close dialog
+        await _should_see_testid(nicegui_user, "tag-management-done-btn")
         _click_testid(nicegui_user, "tag-management-done-btn")
 
 
@@ -382,6 +390,7 @@ class TestGroupReorder:
         await _should_see_testid(nicegui_user, "tag-settings-btn")
 
         # Open tag management dialog
+        await _should_see_testid(nicegui_user, "tag-settings-btn")
         _click_testid(nicegui_user, "tag-settings-btn")
         await _should_see_testid(nicegui_user, "tag-management-dialog")
 
@@ -408,6 +417,7 @@ class TestGroupReorder:
         )
 
         # Close dialog
+        await _should_see_testid(nicegui_user, "tag-management-done-btn")
         _click_testid(nicegui_user, "tag-management-done-btn")
 
 
@@ -468,6 +478,7 @@ class TestImportTagsFromActivity:
         await _should_see_testid(nicegui_user, "tag-settings-btn")
 
         # Open tag management dialog
+        await _should_see_testid(nicegui_user, "tag-settings-btn")
         _click_testid(nicegui_user, "tag-settings-btn")
         await _should_see_testid(nicegui_user, "tag-management-dialog")
 
@@ -507,4 +518,5 @@ class TestImportTagsFromActivity:
         assert "Imported Tag B" in tag_names, f"missing 'Imported Tag B' in {tag_names}"
 
         # Close dialog
+        await _should_see_testid(nicegui_user, "tag-management-done-btn")
         _click_testid(nicegui_user, "tag-management-done-btn")

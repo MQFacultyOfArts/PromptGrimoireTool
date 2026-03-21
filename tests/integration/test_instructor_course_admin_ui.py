@@ -105,6 +105,7 @@ class TestCreateCourseValidation:
         await nicegui_user.should_see(content="Create New Unit")
 
         # Click Create without filling fields
+        await _should_see_testid(nicegui_user, "create-course-btn")
         _click_testid(nicegui_user, "create-course-btn")
 
         # Should see the validation notification
@@ -128,10 +129,14 @@ class TestCreateCourseValidation:
         uid = uuid4().hex[:8]
         code = f"NEW{uid.upper()}"
 
+        await _should_see_testid(nicegui_user, "course-code-input")
         _set_input_value(nicegui_user, "course-code-input", code)
+        await _should_see_testid(nicegui_user, "course-name-input")
         _set_input_value(nicegui_user, "course-name-input", f"New Unit {uid}")
+        await _should_see_testid(nicegui_user, "course-semester-input")
         _set_input_value(nicegui_user, "course-semester-input", "2026-S1")
 
+        await _should_see_testid(nicegui_user, "create-course-btn")
         _click_testid(nicegui_user, "create-course-btn")
 
         # Wait for the true boundary: the course exists in the database
@@ -198,9 +203,11 @@ class TestAddWeekAndPublish:
         await nicegui_user.should_see(content="Add Week")
 
         # Fill in the form (week_number already defaults to 1)
+        await _should_see_testid(nicegui_user, "week-title-input")
         _set_input_value(nicegui_user, "week-title-input", "Introduction Week")
 
         # Click Create
+        await _should_see_testid(nicegui_user, "create-week-btn")
         _click_testid(nicegui_user, "create-week-btn")
 
         # Wait for the true boundary: the week exists in the database
@@ -238,6 +245,7 @@ class TestAddWeekAndPublish:
         await nicegui_user.should_see(content="Draft")
 
         # Click Publish
+        await _should_see_testid(nicegui_user, "publish-week-btn")
         _click_testid(nicegui_user, "publish-week-btn")
 
         # Wait for true boundary: week state transitions to published in DB
@@ -292,7 +300,9 @@ class TestAddActivity:
         await nicegui_user.should_see(content="Add Activity")
 
         # Fill in the form
+        await _should_see_testid(nicegui_user, "activity-title-input")
         _set_input_value(nicegui_user, "activity-title-input", "Annotate Case Study")
+        await _should_see_testid(nicegui_user, "activity-description-input")
         _set_input_value(
             nicegui_user,
             "activity-description-input",
@@ -300,6 +310,7 @@ class TestAddActivity:
         )
 
         # Click Create
+        await _should_see_testid(nicegui_user, "create-activity-btn")
         _click_testid(nicegui_user, "create-activity-btn")
 
         # Wait for the true boundary: the activity exists in the database
@@ -365,12 +376,14 @@ class TestCourseSettingsCopyProtection:
         await _should_see_testid(nicegui_user, "course-settings-btn")
 
         # Click Unit Settings button
+        await _should_see_testid(nicegui_user, "course-settings-btn")
         _click_testid(nicegui_user, "course-settings-btn")
 
         # Settings dialog should be open with the title
         await _should_see_testid(nicegui_user, "course-settings-title")
 
         # Find the copy protection switch and read its current value
+        await _should_see_testid(nicegui_user, "course-default_copy_protection-switch")
         cp_switch = _find_value_element_by_testid(
             nicegui_user, "course-default_copy_protection-switch"
         )
@@ -378,6 +391,7 @@ class TestCourseSettingsCopyProtection:
         original_value = cp_switch.value
 
         # Click the switch to toggle it
+        await _should_see_testid(nicegui_user, "course-default_copy_protection-switch")
         _click_testid(nicegui_user, "course-default_copy_protection-switch")
 
         # Wait for the UI switch to reflect the change
@@ -398,6 +412,7 @@ class TestCourseSettingsCopyProtection:
         )
 
         # Click Save
+        await _should_see_testid(nicegui_user, "save-course-settings-btn")
         _click_testid(nicegui_user, "save-course-settings-btn")
 
         # Wait for the true boundary: DB update completes
@@ -426,6 +441,7 @@ class TestCourseSettingsCopyProtection:
         await nicegui_user.should_see("Unit settings saved")
 
         # Re-open settings to verify persistence
+        await _should_see_testid(nicegui_user, "course-settings-btn")
         _click_testid(nicegui_user, "course-settings-btn")
         await _should_see_testid(nicegui_user, "course-settings-title")
 
@@ -467,13 +483,20 @@ class TestEnrollStudent:
         # Fill in student email
         uid = uuid4().hex[:8]
         student_email = f"student-{uid}@test.example.edu.au"
+        await _should_see_testid(nicegui_user, "enrollment-email-input")
         _set_input_value(nicegui_user, "enrollment-email-input", student_email)
 
         # Click Add button
+        await _should_see_testid(nicegui_user, "add-enrollment-btn")
         _click_testid(nicegui_user, "add-enrollment-btn")
 
         # Should see success notification
         await nicegui_user.should_see("Enrollment added")
 
-        # The enrolled student should appear in the list
-        await nicegui_user.should_see(content=student_email)
+        # The enrolled student should appear in the table rows
+        from nicegui import ui
+
+        table = nicegui_user.find(ui.table).elements.pop()
+        assert any(row["email"] == student_email for row in table.rows), (
+            f"Expected {student_email} in table rows"
+        )

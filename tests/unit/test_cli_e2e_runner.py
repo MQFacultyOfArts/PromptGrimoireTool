@@ -276,6 +276,7 @@ async def test_retry_failed_files_in_isolation_classifies_flaky_and_genuine(
         worker_dir: Path,
         user_args: list[str],
         port: int | None = None,
+        browser: str | None = None,  # noqa: ARG001
     ) -> WorkerResult:
         assert port is None
         return await worker(test_file, db_url, worker_dir, user_args)
@@ -295,6 +296,77 @@ async def test_retry_failed_files_in_isolation_classifies_flaky_and_genuine(
     assert genuine_failures == [failed_genuine]
     assert (result_root / failed_flaky.stem / "retry").is_dir()
     assert (result_root / failed_genuine.stem / "retry").is_dir()
+
+
+@pytest.mark.asyncio
+async def test_retry_forwards_browser_to_run_worker_for_lane(
+    tmp_path: Path,
+) -> None:
+    """browser= must reach run_worker_for_lane during retry."""
+    from promptgrimoire.cli.e2e._lanes import (
+        PLAYWRIGHT_LANE,
+        WorkerResult,
+    )
+    from promptgrimoire.cli.e2e._retry import (
+        retry_failed_files_in_isolation,
+    )
+
+    result_root = tmp_path / "run"
+    failed_file = Path("tests/e2e/test_card_layout.py")
+    retry_dbs = [
+        (
+            "postgresql+asyncpg://u:p@localhost/retry0",
+            "retry0",
+        ),
+    ]
+
+    captured_browser: list[str | None] = []
+
+    async def _fake_worker(
+        *_a: object,
+        **_kw: object,
+    ) -> WorkerResult:
+        return WorkerResult(
+            file=failed_file,
+            exit_code=0,
+            duration_s=0.1,
+            artifact_dir=tmp_path / "art",
+        )
+
+    async def _spy_run_worker(
+        _lane: object,
+        _worker: object,
+        *,
+        test_file: Path,  # noqa: ARG001
+        db_url: str,  # noqa: ARG001
+        worker_dir: Path,  # noqa: ARG001
+        user_args: list[str],  # noqa: ARG001
+        port: int | None = None,  # noqa: ARG001
+        browser: str | None = None,
+    ) -> WorkerResult:
+        captured_browser.append(browser)
+        return WorkerResult(
+            file=failed_file,
+            exit_code=0,
+            duration_s=0.1,
+            artifact_dir=tmp_path / "art",
+        )
+
+    await retry_failed_files_in_isolation(
+        PLAYWRIGHT_LANE,
+        _fake_worker,
+        failed_files=[failed_file],
+        result_root=result_root,
+        user_args=[],
+        retry_dbs=retry_dbs,
+        retry_ports=[0],
+        run_worker_for_lane=_spy_run_worker,
+        browser="firefox",
+    )
+
+    assert captured_browser == ["firefox"], (
+        f"browser='firefox' must reach run_worker_for_lane, got {captured_browser}"
+    )
 
 
 def test_run_serial_playwright_e2e_selects_only_playwright_path(
@@ -439,6 +511,7 @@ def test_run_all_lanes_runs_playwright_then_nicegui_even_on_failure(
     monkeypatch.setattr("promptgrimoire.cli.e2e.run_playwright_lane", _fake_playwright)
     monkeypatch.setattr("promptgrimoire.cli.e2e.run_nicegui_lane", _fake_nicegui)
     monkeypatch.setattr("promptgrimoire.cli.testing._run_pytest", lambda **_kw: 0)
+    monkeypatch.setattr("promptgrimoire.cli.testing._run_bats", lambda: 0)
 
     exit_code = run_all_lanes(["-k", "combined_filter"])
 
@@ -483,6 +556,7 @@ def test_run_all_lanes_returns_zero_only_when_both_lanes_pass(
         "promptgrimoire.cli.e2e.run_nicegui_lane", _fake_nicegui_success
     )
     monkeypatch.setattr("promptgrimoire.cli.testing._run_pytest", lambda **_kw: 0)
+    monkeypatch.setattr("promptgrimoire.cli.testing._run_bats", lambda: 0)
     assert run_all_lanes([]) == 0
 
     monkeypatch.setattr(
@@ -491,13 +565,18 @@ def test_run_all_lanes_returns_zero_only_when_both_lanes_pass(
     assert run_all_lanes([]) == 1
 
 
-def test_run_slow_lanes_runs_playwright_then_latexmk_full_suite(
+def test_run_slow_lanes_runs_all_lanes_then_latexmk(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Slow lane runs Playwright first, then the compiled-PDF suite."""
+    """Slow lane runs all standard lanes first, then latexmk-specific lanes."""
     from promptgrimoire.cli.e2e import run_slow_lanes
+    from promptgrimoire.cli.e2e._lanes import LaneResult
 
     captured: dict[str, object] = {}
+
+    def _fake_all_lane_steps(user_args: list[str]) -> list[LaneResult]:
+        captured["all_lanes_args"] = user_args
+        return [LaneResult("unit", 0), LaneResult("playwright", 0)]
 
     def _fake_playwright(
         extra_args: list[str],
@@ -530,6 +609,9 @@ def test_run_slow_lanes_runs_playwright_then_latexmk_full_suite(
 
     monkeypatch.delenv("E2E_SKIP_LATEXMK", raising=False)
     monkeypatch.setattr(
+        "promptgrimoire.cli.e2e._run_all_lane_steps", _fake_all_lane_steps
+    )
+    monkeypatch.setattr(
         "promptgrimoire.cli.e2e._run_serial_playwright_e2e", _fake_playwright
     )
     monkeypatch.setattr("promptgrimoire.cli.e2e._run_pytest", _fake_run_pytest)
@@ -537,6 +619,7 @@ def test_run_slow_lanes_runs_playwright_then_latexmk_full_suite(
     exit_code = run_slow_lanes(["-k", "combined_filter"])
 
     assert exit_code == 0
+    assert captured["all_lanes_args"] == ["-k", "combined_filter"]
     assert captured["playwright_args"] == ["-k", "combined_filter"]
     assert captured["playwright_use_pyspy"] is False
     assert captured["playwright_reruns"] is True
@@ -551,25 +634,23 @@ def test_run_slow_lanes_runs_playwright_then_latexmk_full_suite(
 def test_run_slow_lanes_skips_latexmk_suite_for_explicit_test_paths(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Explicit test paths target only Playwright and do not run latexmk_full."""
+    """Explicit test paths skip phase 2 and only run standard lanes."""
     from promptgrimoire.cli.e2e import run_slow_lanes
+    from promptgrimoire.cli.e2e._lanes import LaneResult
 
-    def _fake_playwright(
-        extra_args: list[str],
-        *,
-        use_pyspy: bool,
-        reruns: bool,
-        clear_cache: bool = False,
-    ) -> int:
-        del extra_args, use_pyspy, reruns, clear_cache
-        return 0
+    def _fake_all_lane_steps(_user_args: list[str]) -> list[LaneResult]:
+        return [LaneResult("unit", 0)]
 
     monkeypatch.setattr(
-        "promptgrimoire.cli.e2e._run_serial_playwright_e2e", _fake_playwright
+        "promptgrimoire.cli.e2e._run_all_lane_steps", _fake_all_lane_steps
+    )
+    monkeypatch.setattr(
+        "promptgrimoire.cli.e2e._run_serial_playwright_e2e",
+        lambda *_, **__: pytest.fail("phase 2 should not run for explicit paths"),
     )
     monkeypatch.setattr(
         "promptgrimoire.cli.e2e._run_pytest",
-        lambda **_: pytest.fail("latexmk_full suite should not run for explicit paths"),
+        lambda **_: pytest.fail("latexmk suite should not run for explicit paths"),
     )
 
     exit_code = run_slow_lanes(["tests/e2e/test_browser_gate.py"])
@@ -582,10 +663,17 @@ def test_run_slow_lanes_treats_filtered_no_tests_as_non_fatal(
 ) -> None:
     """A filtered latexmk suite with no matches should not fail the slow command."""
     from promptgrimoire.cli.e2e import run_slow_lanes
+    from promptgrimoire.cli.e2e._lanes import LaneResult
+
+    def _fake_all_lane_steps(_user_args: list[str]) -> list[LaneResult]:
+        return [LaneResult("unit", 0)]
 
     monkeypatch.setattr(
+        "promptgrimoire.cli.e2e._run_all_lane_steps", _fake_all_lane_steps
+    )
+    monkeypatch.setattr(
         "promptgrimoire.cli.e2e._run_serial_playwright_e2e",
-        lambda *_, **__: 0,
+        lambda *_, **__: 5,
     )
     monkeypatch.setattr(
         "promptgrimoire.cli.e2e._run_pytest",

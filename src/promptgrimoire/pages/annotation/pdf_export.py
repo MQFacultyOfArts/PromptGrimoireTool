@@ -13,7 +13,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from datetime import date, datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import structlog
 from nicegui import ui
@@ -119,14 +119,14 @@ def anonymise_highlights(
     }
     result: list[dict[str, object]] = []
     for hl in highlights:
-        new_hl = _anonymise_dict_author(hl, **anon_kw)  # type: ignore[arg-type]
+        new_hl = _anonymise_dict_author(hl, **anon_kw)
         comments = hl.get("comments")
         if isinstance(comments, list):
             new_comments: list[object] = []
             for comment in comments:
                 if isinstance(comment, dict):
-                    typed: dict[str, object] = comment  # type: ignore[assignment]
-                    new_comments.append(_anonymise_dict_author(typed, **anon_kw))  # type: ignore[arg-type]
+                    typed = cast("dict[str, object]", comment)
+                    new_comments.append(_anonymise_dict_author(typed, **anon_kw))
                 else:
                     new_comments.append(comment)
             new_hl["comments"] = new_comments

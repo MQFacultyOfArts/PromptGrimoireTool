@@ -8,10 +8,10 @@ live in ``workspace.py``.
 
 from __future__ import annotations
 
-import logging
 import re
 from typing import TYPE_CHECKING, Any
 
+import structlog
 from nicegui import events, ui
 
 from promptgrimoire.crdt.persistence import get_persistence_manager
@@ -37,7 +37,7 @@ if TYPE_CHECKING:
 
     from promptgrimoire.pages.annotation.tab_state import DocumentTabState
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger()
 
 
 def _parse_sort_end_args(

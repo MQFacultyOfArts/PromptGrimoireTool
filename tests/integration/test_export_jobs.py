@@ -195,6 +195,16 @@ class TestClaimNextJob:
         await complete_job(claimed_b.id, "tok-b", "/tmp/b.pdf")
         await complete_job(claimed_c.id, "tok-c", "/tmp/c.pdf")
 
+    # NOTE: Fair-scheduling *priority ordering* (users with fewer running
+    # jobs claimed first) cannot be integration-tested with the current
+    # schema because the partial unique index ix_export_job_one_active_per_user
+    # prevents any user from having both a running AND a queued job
+    # simultaneously. The correlated subquery in claim_next_job() is
+    # correct (verified by code review, uses aliased() to avoid
+    # self-comparison tautology) but degenerates to FIFO when the
+    # per-user cap is 1. If the cap is ever raised, add a priority
+    # ordering test here.
+
     @pytest.mark.asyncio
     async def test_two_users_both_processed(self) -> None:
         """AC4.1: Two users submit exports — both are processed."""
@@ -456,4 +466,7 @@ class TestPartialUniqueIndex:
                 SAIntegrityError, match="ix_export_job_one_active_per_user"
             ):
                 await async_session.flush()
+            # Rollback required: the IntegrityError leaves the transaction
+            # in an error state. This rolls back both the session flush and
+            # the outer conn.begin() transaction.
             await conn.rollback()

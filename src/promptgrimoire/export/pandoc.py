@@ -15,6 +15,7 @@ import asyncio
 import logging
 import re
 import subprocess
+import tempfile
 from pathlib import Path
 
 import structlog
@@ -286,36 +287,47 @@ async def convert_html_to_latex(
     # Preprocess HTML to wrap styled <p> tags for Pandoc attribute preservation
     normalised_html = normalise_styled_paragraphs(html)
 
-    # Use +native_divs to preserve div attributes in Pandoc AST
-    # Use --no-highlight to avoid undefined syntax highlighting macros
-    cmd = [
-        "pandoc",
-        "-f",
-        "html+native_divs",
-        "-t",
-        "latex",
-        "--no-highlight",
-    ]
-    for fp in filter_paths or []:
-        cmd.extend(["--lua-filter", str(fp)])
+    with tempfile.NamedTemporaryFile(
+        mode="w", suffix=".html", delete=False
+    ) as html_file:
+        html_file.write(normalised_html)
+        html_path = Path(html_file.name)
 
-    proc = await asyncio.create_subprocess_exec(
-        *cmd,
-        stdin=asyncio.subprocess.PIPE,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-    )
-    stdout_bytes, stderr_bytes = await proc.communicate(input=normalised_html.encode())
-    # returncode is guaranteed to be set after communicate() returns
-    assert proc.returncode is not None
-    if proc.returncode != 0:
-        raise subprocess.CalledProcessError(proc.returncode, cmd, stderr_bytes.decode())
-    # Post-process Pandoc output
-    latex = stdout_bytes.decode()
-    latex = _fix_invalid_newlines(latex)  # Fix \newline{} in table contexts
-    latex = _strip_foreignlanguage(latex)  # Strip lang wrappers from HTML
-    latex = _strip_textquotesingle(latex)  # Replace fragile apostrophe (#372)
-    return latex
+    try:
+        # Use +native_divs to preserve div attributes in Pandoc AST
+        # Use --no-highlight to avoid undefined syntax highlighting macros
+        cmd = [
+            "pandoc",
+            "-f",
+            "html+native_divs",
+            "-t",
+            "latex",
+            "--no-highlight",
+            str(html_path),
+        ]
+        for fp in filter_paths or []:
+            cmd.extend(["--lua-filter", str(fp)])
+
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout_bytes, stderr_bytes = await proc.communicate()
+        # returncode is guaranteed to be set after communicate() returns
+        assert proc.returncode is not None
+        if proc.returncode != 0:
+            raise subprocess.CalledProcessError(
+                proc.returncode, cmd, stderr_bytes.decode()
+            )
+        # Post-process Pandoc output
+        latex = stdout_bytes.decode()
+        latex = _fix_invalid_newlines(latex)  # Fix \newline{} in table contexts
+        latex = _strip_foreignlanguage(latex)  # Strip lang wrappers from HTML
+        latex = _strip_textquotesingle(latex)  # Replace fragile apostrophe (#372)
+        return latex
+    finally:
+        html_path.unlink(missing_ok=True)
 
 
 async def convert_html_with_annotations(

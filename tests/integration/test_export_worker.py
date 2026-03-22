@@ -19,6 +19,7 @@ from unittest.mock import AsyncMock, patch
 from uuid import uuid4
 
 import pytest
+import pytest_asyncio
 
 from promptgrimoire.config import get_settings
 
@@ -47,6 +48,20 @@ async def _create_user_and_workspace() -> tuple:
 
 class TestProcessJob:
     """Tests for _process_job."""
+
+    @pytest_asyncio.fixture(autouse=True)
+    async def _clear_stale_jobs(self) -> None:
+        """Remove stale queued/running jobs to isolate claim_next_job calls."""
+        from sqlmodel import delete
+
+        from promptgrimoire.db.engine import get_session
+        from promptgrimoire.db.models import ExportJob
+
+        async with get_session() as session:
+            await session.exec(
+                delete(ExportJob).where(ExportJob.status.in_(["queued", "running"]))  # type: ignore[union-attr]
+            )
+            await session.commit()
 
     @pytest.mark.asyncio
     async def test_process_job_success(self, tmp_path: Path) -> None:

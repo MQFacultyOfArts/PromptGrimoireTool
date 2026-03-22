@@ -250,6 +250,7 @@ class TestPollingCallback:
             patch("promptgrimoire.pages.annotation.pdf_export.ui") as mock_ui,
         ):
             notification = MagicMock()
+            notification.props.return_value = notification  # .props() chains
             mock_ui.notification.return_value = notification
 
             timer = MagicMock()
@@ -283,6 +284,7 @@ class TestPollingCallback:
             ) as mock_download,
         ):
             notification = MagicMock()
+            notification.props.return_value = notification  # .props() chains
             mock_ui.notification.return_value = notification
 
             timer = MagicMock()
@@ -315,6 +317,7 @@ class TestPollingCallback:
             patch("promptgrimoire.pages.annotation.pdf_export.ui") as mock_ui,
         ):
             notification = MagicMock()
+            notification.props.return_value = notification  # .props() chains
             mock_ui.notification.return_value = notification
 
             timer = MagicMock()
@@ -342,6 +345,7 @@ class TestPollingCallback:
             patch("promptgrimoire.pages.annotation.pdf_export.ui") as mock_ui,
         ):
             notification = MagicMock()
+            notification.props.return_value = notification  # .props() chains
             mock_ui.notification.return_value = notification
 
             timer = MagicMock()

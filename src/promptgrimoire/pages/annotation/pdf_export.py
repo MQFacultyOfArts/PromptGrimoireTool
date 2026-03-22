@@ -315,7 +315,7 @@ def _start_export_polling(job_id: UUID, state: PageState) -> None:
         spinner=True,
         timeout=None,
         type="ongoing",
-    )
+    ).props('data-testid="export-status-spinner"')
 
     async def _poll_status() -> None:
         job = await get_job(job_id)
@@ -334,7 +334,7 @@ def _start_export_polling(job_id: UUID, state: PageState) -> None:
             notification.dismiss()
             timer.deactivate()
             ui.notification(
-                f"Export failed: {job.error_message}",
+                f"Export failed: {job.error_message or 'Unknown error'}",
                 type="negative",
                 timeout=10,
             )
@@ -457,7 +457,6 @@ async def _handle_pdf_export(state: PageState, workspace_id: UUID) -> None:
         "notes_latex": notes_latex,
         "word_to_legal_para": legal_para_map,
         "filename": filename,
-        "workspace_id": str(workspace_id),
         "word_count": export_word_count,
         "word_minimum": state.word_minimum,
         "word_limit": state.word_limit,

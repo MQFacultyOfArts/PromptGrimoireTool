@@ -2,16 +2,19 @@
 
 *Written: 2026-03-21*
 *Investigator: Claude (Opus 4.6)*
-*Status: Fix deployed (logging); issues filed (export, pool)*
+*Status: Fix deployed (logging + response_timeout); #403 falsified and closed; #402 open*
+*Corrected: 2026-03-22 — pool shrinkage claim falsified, export timeout mechanism corrected*
 
 ## Summary
 
 A LAWS5000 student attempted to export a large annotated workspace as PDF.
-The export compiled successfully (~85s) but the download never reached the
-browser because NiceGUI's 3.0s response timeout had already killed the
-client. The student retried 4 times, each retry triggering a cascade of
-CancelledError events that degraded the connection pool and caused 1,428
-annotation page timeouts across all users in a 15-minute window.
+The export compiled successfully (~85s) but `ui.download()` failed because
+the NiceGUI client had been deleted or disconnected during the long compile.
+The student retried 4 times. Concurrently, 1,428 annotation page load
+timeouts occurred across 68 users in a 15-minute window — caused by the
+3.0s `response_timeout` on page loads (now increased to 30s, commit `28eefd31`).
+
+**Correction:** The original summary claimed the export was "killed by response_timeout" and that retries "degraded the connection pool." Both are wrong. The export runs as a click handler (not subject to `response_timeout`). The pool shrinkage hypothesis was falsified (#403). The 1,428 page load timeouts were from the 3.0s `response_timeout` on page load handlers — a pre-existing problem under 68-user load, not caused by the export.
 
 During investigation, a separate critical issue was discovered: the
 structlog console handler was dumping student PII (names, document content,
@@ -21,7 +24,7 @@ tag data) into systemd journal via `RichTracebackFormatter(show_locals=True)`.
 
 | Time | Event |
 |------|-------|
-| 19:15 (est.) | Service last restarted Thu 2026-03-19 21:15. Pool overflow already at -29 (29 connections leaked over 46 hours). |
+| 19:15 (est.) | Service last restarted Thu 2026-03-19 21:15. Pool overflow at -29 (51 of 80 connections created — normal warm-up, ~~not~~ ~~leakage~~; see #403 falsification). |
 | 19:30 | Baseline: 2 annotation timeouts in 4 minutes. Pool: checked_in=49, checked_out=2, overflow=-29/15. |
 | 19:34:17 | Export attempt 1 starts. Pandoc converts (28s), TeX generates (27ms). |
 | 19:35:43 | LaTeX compiles (57s). `ui.download()` fails: `RuntimeError: The parent element this slot belongs to has been deleted.` Discord webhook fires. |
@@ -38,16 +41,20 @@ tag data) into systemd journal via `RichTracebackFormatter(show_locals=True)`.
 
 - **User-facing:** 1 student unable to download PDF (4 attempts, all compiled but download failed). PDF files existed on disk in PrivateTmp — manually retrieved and sent to student.
 - **Collateral:** 1,428 annotation page timeouts across 68 active users in 15 minutes. Pages that exceed 3s timeout are cancelled AND the client is deleted (NiceGUI behaviour), resulting in broken pages.
-- **Pool degradation:** 1,169 INVALIDATE events. Pool overflow went from -29 to -22 (net improvement as new connections were created, but absolute state was already degraded).
+- **Pool INVALIDATE churn:** 1,169 INVALIDATE events observed. Pool overflow went from -29 to -22. ~~Originally interpreted as degradation~~ — subsequent investigation (#403) showed `overflow=-29` is normal warm-up accounting (51 of 80 connections created), not capacity loss. The pool self-heals after invalidations.
 - **PII leak (discovered during investigation):** Student names, workspace UUIDs, document content, and tag data found in systemd journal via `show_locals=True` traceback dumps. 99 instances of a student name in a 15-minute journal window. Journal was 93.6% unparseable rich formatting garbage (39,638 of 42,335 lines).
 
 ## Contributing Factors
 
-### 1. PDF export runs inside NiceGUI client lifecycle
+### 1. PDF export depends on NiceGUI client surviving 85s
 
-`_run_pdf_export` executes pandoc + LaTeX compilation inside a handler context subject to `response_timeout`. After 3s, NiceGUI cancels the handler and deletes the client. The export continues in background and succeeds, but `ui.download()` at the end fails because the client is gone.
+`_run_pdf_export` is a button click handler, dispatched by NiceGUI as an independent `background_tasks.create()` task (see `nicegui/events.py:463`). It is **not** subject to `response_timeout` — that only governs the initial page load handler (`nicegui/page.py:179-186`). The export runs to completion (85s) regardless of page timeout.
 
-**Evidence grade:** Demonstrated. Stack trace directly shows `RuntimeError: The parent element this slot belongs to has been deleted` at `pdf_export.py:400`. Export timing (85s) far exceeds 3s timeout.
+However, `ui.download()` at the end requires a live client. If the client is deleted or disconnected during the 85s (user refreshes, navigates away, or NiceGUI prunes the client), `ui.download()` fails with `RuntimeError: The parent element this slot belongs to has been deleted`.
+
+**Evidence grade:** Stack trace at `pdf_export.py:400` is demonstrated. The click-handler dispatch path is code-verified (`nicegui/events.py:463`). The claim that exports are not cancelled by `response_timeout` is inference from this code path — not proven by production log correlation.
+
+**Correction (2026-03-22):** Original text incorrectly stated the export runs "inside a handler context subject to `response_timeout`" and that "NiceGUI cancels the handler." The page load handler and button click handler are separate asyncio tasks. `response_timeout` cancels the page load handler only.
 
 ### 2. NiceGUI response_timeout is 3.0s (default, never overridden)
 
@@ -55,11 +62,19 @@ tag data) into systemd journal via `RichTracebackFormatter(show_locals=True)`.
 
 **Evidence grade:** Demonstrated. Code verified at `registry.py:175`.
 
-### 3. CancelledError permanently shrinks connection pool
+### 3. ~~CancelledError permanently shrinks connection pool~~ FALSIFIED
 
-Each timeout triggers CancelledError on in-flight DB sessions. SQLAlchemy's greenlet bridge does not fully propagate BaseException during pool return (sqlalchemy#6652, #8145). The pool's overflow counter goes negative and never recovers. At baseline (before any exports), 29 of 80 pool connections had been permanently lost over 46 hours of uptime.
+**This claim is false.** Subsequent investigation (#403) demonstrated that:
 
-**Evidence grade:** Plausible. Pool state measurements are demonstrated (overflow=-29 at baseline, 51 of 80 connections alive). The CancelledError mechanism is documented in SQLAlchemy issues but the causal link between individual timeouts and pool shrinkage has not been directly measured with per-event pool snapshots. To upgrade: instrument `get_session()` to log pool state on CancelledError specifically.
+- `QueuePool.overflow()` is a connection-creation counter, not a capacity proxy. `overflow=-29` with `pool_size=80` means 51 connections were created (normal warm-up under ~50 concurrent students), not "29 slots lost."
+- Active-query cancellation triggers INVALIDATE events, but the pool recreates connections on next checkout. Full `pool_size` capacity is preserved after repeated cancellations.
+- A control test (normal session lifecycle, no cancellation) produces identical overflow shifts.
+
+The baseline pool state (`checked_in=49, checked_out=2, overflow=-29`) was consistent with normal operation, not degradation.
+
+**Evidence grade:** Falsified by 5 discriminating tests in `tests/integration/test_pool_cancellation.py`. See `docs/investigations/2026-03-21-pool-shrinkage-403.md`.
+
+**Correction (2026-03-22):** Original text described this as "Plausible." It is now falsified. The sqlalchemy#6652 and #8145 issues describe a different failure mode (connections not returned) that does not reproduce in our scenario — SQLAlchemy's `asyncio.shield` in `AsyncSession.__aexit__` handles the return correctly.
 
 ### 4. No user feedback on export progress
 
@@ -79,16 +94,16 @@ The student received no indication that the export was running or had failed. Th
 | 2 | Fix console handler: TTY guard + JSONRenderer for systemd + show_locals=False | Done (PR pending) | This branch |
 | 3 | Guard tests: AST scan for show_locals, isatty guard, functional PII test | Done (PR pending) | This branch |
 | 4 | File issue: decouple PDF export from NiceGUI client lifecycle | Done | #402 |
-| 5 | File issue: connection pool shrink under CancelledError | Done | #403 |
-| 6 | Increase response_timeout as immediate stopgap | Pending | #403 |
+| 5 | File issue: connection pool shrink under CancelledError | Done → **Falsified and closed** | #403 |
+| 6 | Increase response_timeout (3s→30s) | **Done** (commit `28eefd31`) | #403 |
 | 7 | Implement export compile queue with concurrency limit | Pending | #402 |
-| 8 | Add pool health monitoring/alerting | Pending | #403 |
+| 8 | ~~Add pool health monitoring/alerting~~ | Dropped — pool shrinkage falsified | #403 |
 
 ## Relation to Prior Incidents
 
 This is the second PDF-export-triggered cascade. The 2026-03-15 OOM (see `2026-03-15-production-oom.md`) was caused by orphaned lualatex processes consuming all RAM. This incident has a different mechanism (client lifecycle, not process leaks) but the same pattern: long-running LaTeX compilation interacts badly with the web framework's timeout assumptions, and student retries amplify the damage.
 
-The connection pool leak (#403) was first hypothesised in the #377 page load latency investigation (2026-03-18) but had not been confirmed with production data until this incident.
+The connection pool leak (#403) was first hypothesised in the #377 page load latency investigation (2026-03-18) but was subsequently **falsified** — see #403 investigation. The pool does not permanently shrink under CancelledError.
 
 ## Lessons
 

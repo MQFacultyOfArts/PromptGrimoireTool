@@ -268,6 +268,8 @@ _ALLOWED_TEST_OS_ENVIRON_GET = {
     _TESTS_DIR / "unit" / "test_make_docs.py",
     # clone test reads _CLONE_TEST_SOURCE_URL (set by CLI harness)
     _TESTS_DIR / "integration" / "test_db_cloning.py",
+    # pool cancellation reads DATABASE__URL for direct engine (skip if unset)
+    _TESTS_DIR / "integration" / "test_pool_cancellation.py",
 }
 
 

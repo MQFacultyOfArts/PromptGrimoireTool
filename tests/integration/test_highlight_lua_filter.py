@@ -60,9 +60,10 @@ def _run_pandoc_with_filter(
     """
     if filter_paths is None:
         filter_paths = [_FILTER_PATH]
-    with tempfile.NamedTemporaryFile(mode="w", suffix=".html", delete=True) as tmp:
+    tmp = tempfile.NamedTemporaryFile(mode="w", suffix=".html", delete=False)  # noqa: SIM115 — must outlive context manager; delete=False prevents xdist race
+    try:
         tmp.write(html)
-        tmp.flush()
+        tmp.close()
         cmd = [
             "pandoc",
             "-f",
@@ -81,6 +82,8 @@ def _run_pandoc_with_filter(
             check=True,
             timeout=30,
         )
+    finally:
+        Path(tmp.name).unlink(missing_ok=True)
     return result.stdout
 
 

@@ -46,6 +46,7 @@ from promptgrimoire.pages.annotation.document import (
     _render_document_with_highlights,
 )
 from promptgrimoire.pages.annotation.header import (
+    _wrap_refresh_with_stale_download_clear,
     inject_copy_protection,
     render_workspace_header,
 )
@@ -910,6 +911,11 @@ async def _render_workspace_view(
         elapsed_ms=round((t_panels - t_header) * 1000),
     )
     logger.debug("page_load_total", elapsed_ms=round((t_panels - t0) * 1000))
+
+    # Wrap refresh_annotations to clear stale download buttons (#402).
+    # Must happen AFTER _build_tab_panels sets state.refresh_annotations
+    # (document.py:371) — the header renders too early to wrap it.
+    _wrap_refresh_with_stale_download_clear(state)
 
     # Inject copy protection JS after tab container is built (Phase 4)
     if protect:

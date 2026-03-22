@@ -146,6 +146,32 @@ def _render_paragraph_toggle(state: PageState, document: WorkspaceDocument) -> N
     ).props('data-testid="paragraph-toggle"')
 
 
+def _wrap_refresh_with_stale_download_clear(state: PageState) -> None:
+    """Wrap state.refresh_annotations to also clear stale download buttons.
+
+    Any document change (highlight, tag, response edit) triggers
+    refresh_annotations. We wrap it to also clear the download
+    container and re-enable the export button, since the existing
+    PDF is now outdated.
+    """
+    original = state.refresh_annotations
+    if original is None:
+        return
+
+    def wrapped(*, trigger: str = "unknown") -> None:
+        # Clear stale download button
+        container = getattr(state, "export_download_container", None)
+        if container is not None:
+            container.clear()
+        export_btn = getattr(state, "export_btn", None)
+        if export_btn is not None:
+            export_btn.enable()
+        # Call the original refresh
+        original(trigger=trigger)
+
+    state.refresh_annotations = wrapped
+
+
 def _render_export_button(state: PageState, workspace_id: UUID) -> None:
     """Render the Export PDF button and download container.
 
@@ -280,6 +306,10 @@ async def render_workspace_header(
 
         # Recover any in-progress or completed export jobs (Phase 5, #402)
         await check_existing_export(state)
+
+        # NOTE: stale download cleanup is wired up in workspace.py
+        # AFTER state.refresh_annotations is set by document.py.
+        # See _wrap_refresh_with_stale_download_clear().
 
         # Manage Documents button (owners only)
         if state.is_owner:

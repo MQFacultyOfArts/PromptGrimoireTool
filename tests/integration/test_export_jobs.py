@@ -20,6 +20,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 import pytest
+import pytest_asyncio
 
 from promptgrimoire.config import get_settings
 from promptgrimoire.db.exceptions import BusinessLogicError
@@ -108,6 +109,26 @@ class TestCreateExportJob:
 
 class TestClaimNextJob:
     """Tests for claim_next_job (AC4.1, AC4.2)."""
+
+    @pytest_asyncio.fixture(autouse=True)
+    async def _clear_stale_jobs(self) -> None:
+        """Remove all queued/running export jobs so claim tests are isolated.
+
+        Other tests (and prior runs) may leave export jobs in the shared
+        test database. claim_next_job() is global — it picks the oldest
+        queued job regardless of who created it — so stale rows cause
+        spurious failures.
+        """
+        from sqlmodel import delete
+
+        from promptgrimoire.db.engine import get_session
+        from promptgrimoire.db.models import ExportJob
+
+        async with get_session() as session:
+            await session.exec(
+                delete(ExportJob).where(ExportJob.status.in_(["queued", "running"]))  # type: ignore[union-attr]
+            )
+            await session.commit()
 
     @pytest.mark.asyncio
     async def test_claims_queued_job(self) -> None:

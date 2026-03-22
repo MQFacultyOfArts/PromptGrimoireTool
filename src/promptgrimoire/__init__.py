@@ -424,9 +424,13 @@ def main() -> None:
     _static_dir = Path(__file__).parent / "static"
     app.add_static_files("/static", str(_static_dir))
 
+    import promptgrimoire.export.download
     import promptgrimoire.pages
 
     _ = promptgrimoire.pages  # side-effect import: registers routes
+    _ = (
+        promptgrimoire.export.download
+    )  # side-effect import: registers /export/{token}/download route
 
     # Health check endpoint for UptimeRobot (HEAD + GET)
     from starlette.responses import PlainTextResponse

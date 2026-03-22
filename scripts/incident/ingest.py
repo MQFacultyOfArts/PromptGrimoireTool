@@ -200,6 +200,10 @@ def run_ingest(tarball: Path, db_path: Path) -> None:
                 continue
 
             fmt = format_to_table(filename)
+            if not fmt:
+                print(f"  Skipping unknown file: {filename}", file=sys.stderr)
+                skipped += 1
+                continue
 
             source_path = file_entry.get("source_path")
             collection_method = file_entry.get("method")

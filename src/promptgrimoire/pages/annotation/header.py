@@ -164,7 +164,7 @@ def _wrap_refresh_with_stale_download_clear(state: PageState) -> None:
         poll_timer = getattr(state, "export_poll_timer", None)
         if poll_timer is not None:
             poll_timer.deactivate()
-            state.export_poll_timer = None  # type: ignore[attr-defined]
+            state.export_poll_timer = None
         # Clear stale download button
         container = getattr(state, "export_download_container", None)
         if container is not None:
@@ -194,8 +194,8 @@ def _render_export_button(state: PageState, workspace_id: UUID) -> None:
     # Container for the download button — lives next to the export button
     download_container = ui.row().classes("items-center gap-2")
     download_container.props('data-testid="export-download-container"')
-    state.export_download_container = download_container  # type: ignore[attr-defined]
-    state.export_btn = export_btn  # type: ignore[attr-defined]
+    state.export_download_container = download_container
+    state.export_btn = export_btn
 
     async def on_export_click() -> None:
         export_btn.disable()

@@ -47,6 +47,7 @@ async def download_export(token: str) -> Response:
             status_code=404,
         )
 
+    logger.info("export_pdf_served", export_job_id=str(job.id))
     return FileResponse(
         pdf_path,
         media_type="application/pdf",

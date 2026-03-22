@@ -396,16 +396,22 @@ def _register_db_lifecycle(app: object) -> None:
     @app.on_shutdown
     async def shutdown() -> None:
         nonlocal _search_worker_task, _deadline_worker_task, _export_worker_task
-        # Cancel background workers before shutdown
+        # Cancel background workers and await completion before DB teardown
+        tasks_to_cancel: list[asyncio.Task[None]] = []
         if _search_worker_task is not None:
             _search_worker_task.cancel()
+            tasks_to_cancel.append(_search_worker_task)
             _search_worker_task = None
         if _deadline_worker_task is not None:
             _deadline_worker_task.cancel()
+            tasks_to_cancel.append(_deadline_worker_task)
             _deadline_worker_task = None
         if _export_worker_task is not None:
             _export_worker_task.cancel()
+            tasks_to_cancel.append(_export_worker_task)
             _export_worker_task = None
+        if tasks_to_cancel:
+            await asyncio.gather(*tasks_to_cancel, return_exceptions=True)
         # Persist all dirty CRDT documents before closing DB
         mgr = get_persistence_manager()
         await mgr.persist_all_dirty_workspaces()

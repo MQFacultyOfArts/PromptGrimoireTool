@@ -370,7 +370,7 @@ def _start_export_polling(
                 export_btn.enable()
 
     timer = ui.timer(2, _poll_status)
-    state.export_poll_timer = timer  # type: ignore[attr-defined]
+    state.export_poll_timer = timer
 
 
 async def check_existing_export(state: PageState) -> None:
@@ -511,7 +511,8 @@ async def _handle_pdf_export(state: PageState, workspace_id: UUID) -> bool:
     except BusinessLogicError:  # only raised by per-user concurrency check
         logger.debug("export_job_rejected", user_id=state.user_id)
         ui.notify(
-            "A PDF export is already in progress. Please wait for it to complete.",
+            "An earlier export is still processing."
+            " Reload the page to check its status.",
             type="warning",
         )
         return False

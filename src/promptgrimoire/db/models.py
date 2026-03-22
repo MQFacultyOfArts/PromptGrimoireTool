@@ -839,6 +839,13 @@ class ExportJob(SQLModel, table=True):
 
     __tablename__ = "export_job"
     __table_args__ = (
+        # Per-user concurrency: at most one queued/running job per user.
+        sa.Index(
+            "ix_export_job_one_active_per_user",
+            "user_id",
+            unique=True,
+            postgresql_where=sa.text("status IN ('queued', 'running')"),
+        ),
         # Partial unique index: only non-NULL download tokens must be unique.
         sa.Index(
             "ix_export_job_download_token",

@@ -224,9 +224,9 @@ class TestConcurrentExportRejection:
 
             await _handle_pdf_export(state, workspace_id)
 
-            # Verify "already in progress" notification
+            # Verify "still processing" notification
             notify_calls = mock_ui.notify.call_args_list
-            assert any("already in progress" in str(c) for c in notify_calls)
+            assert any("still processing" in str(c) for c in notify_calls)
 
 
 # ---------------------------------------------------------------------------

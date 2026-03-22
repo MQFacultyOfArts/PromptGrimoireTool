@@ -240,32 +240,41 @@ async def cleanup_expired_jobs(cutoff: datetime) -> int:
         stmt = select(ExportJob).where(expired_filter)
         jobs = (await session.exec(stmt)).all()
 
+        count = len(jobs)
+        # Collect disk paths before deleting rows
+        disk_dirs: list[tuple[str, Path]] = []
         tmpdir = Path(tempfile.gettempdir())
         for job in jobs:
             if job.pdf_path:
                 parent = Path(job.pdf_path).parent
-                if not parent.is_relative_to(tmpdir):
+                if parent.is_relative_to(tmpdir):
+                    disk_dirs.append((str(job.id), parent))
+                else:
                     logger.warning(
                         "export_dir_outside_tmpdir",
                         path=str(parent),
                         job_id=str(job.id),
                     )
-                    continue
-                try:
-                    shutil.rmtree(parent)
-                except OSError:
-                    logger.warning(
-                        "failed to delete export directory",
-                        path=str(parent),
-                        job_id=str(job.id),
-                    )
 
-        count = len(jobs)
+        # DB delete first — orphaned files on disk are recoverable via
+        # OS tmpdir cleanup; orphaned DB rows pointing at missing files
+        # would never be cleaned up.
         if count:
             job_ids = [job.id for job in jobs]
             delete_stmt = sa.delete(ExportJob).where(
                 col(ExportJob.id).in_(job_ids),
             )
             await session.exec(delete_stmt)
+
+    # Disk cleanup after session commit (outside the session context)
+    for job_id, parent in disk_dirs:
+        try:
+            shutil.rmtree(parent)
+        except OSError:
+            logger.warning(
+                "failed to delete export directory",
+                path=str(parent),
+                job_id=job_id,
+            )
 
     return count

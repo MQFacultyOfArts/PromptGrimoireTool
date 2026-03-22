@@ -43,7 +43,9 @@ async def _process_job(job: ExportJob) -> None:
     Args:
         job: A claimed ExportJob with status='running'.
     """
-    log = logger.bind(job_id=str(job.id), workspace_id=str(job.workspace_id))
+    log = logger.bind(
+        job_id=str(job.id), workspace_id=str(job.workspace_id), user_id=str(job.user_id)
+    )
     log.info("export_worker_processing_job")
 
     # Create the output dir here so we can clean it up on failure.
@@ -74,9 +76,8 @@ async def _process_job(job: ExportJob) -> None:
         log.info("export_worker_job_completed", pdf_path=str(pdf_path))
 
     except Exception as exc:
-        # CancelledError is not a subclass of Exception (Python 3.8+),
-        # so it propagates to the outer loop which re-raises it for
-        # clean worker shutdown. Only true Exceptions are caught here.
+        # CancelledError is not a subclass of Exception, so it propagates
+        # to the outer loop for clean worker shutdown.
         log.exception("export_worker_job_failed")
         await fail_job(job.id, str(exc))
         # Clean up the temp dir — failed jobs have no pdf_path,

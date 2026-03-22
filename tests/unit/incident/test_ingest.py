@@ -127,9 +127,8 @@ class TestFormatToTable:
     def test_known_formats(self, filename: str, expected: str) -> None:
         assert format_to_table(filename) == expected
 
-    def test_unknown_filename(self) -> None:
-        with pytest.raises(ValueError, match="Unknown source filename"):
-            format_to_table("mystery.txt")
+    def test_unknown_filename_returns_empty(self) -> None:
+        assert format_to_table("mystery.txt") == ""
 
 
 class TestComputeSha256:

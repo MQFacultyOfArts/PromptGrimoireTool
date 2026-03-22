@@ -426,6 +426,11 @@ def _build_detail_section(
     # Tag select (annotators only)
     if state.can_annotate:
         tag_options = {ti.raw_key: ti.name for ti in (state.tag_info_list or [])}
+        # Defensive: if the highlight references a tag not in options
+        # (e.g. deleted tag group), add a recovery entry so ui.select
+        # doesn't raise ValueError.
+        if tag_str and tag_str not in tag_options:
+            tag_options[tag_str] = "\u26a0 recovered"
         on_change = _make_tag_change_handler(state, highlight_id, tag_str, card)
         ui.select(
             tag_options,

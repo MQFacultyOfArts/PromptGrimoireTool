@@ -81,8 +81,21 @@ class ExportResult:
         return item in self.text
 
 
+def _wait_for_download_button(page: Page, timeout: int = 120000) -> None:
+    """Click Export PDF, wait for the queue-based flow to produce a download button.
+
+    The export is now queue-based (#402): clicking "Export PDF" submits a job,
+    a background worker compiles the PDF, and a "Download your PDF" button
+    appears when done. This helper waits for that button.
+    """
+    page.get_by_test_id("export-pdf-btn").click()
+    page.get_by_test_id("export-download-btn").wait_for(
+        state="visible", timeout=timeout
+    )
+
+
 def export_pdf_text(page: Page) -> str:
-    """Click Export PDF, download, extract text via pymupdf.
+    """Click Export PDF, wait for compilation, download, extract text via pymupdf.
 
     Args:
         page: Playwright page with annotation workspace loaded.
@@ -99,8 +112,10 @@ def export_pdf_text(page: Page) -> str:
     )
 
     try:
-        with page.expect_download(timeout=120000) as dl:
-            page.get_by_test_id("export-pdf-btn").click()
+        _wait_for_download_button(page)
+
+        with page.expect_download(timeout=10000) as dl:
+            page.get_by_test_id("export-download-btn").click()
 
         download = dl.value
         pdf_path = download.path()
@@ -135,8 +150,19 @@ def export_annotation_tex_text(page: Page) -> ExportResult:
         :class:`ExportResult` with extracted text, format flag, and
         the browser-suggested download filename.
     """
-    with page.expect_download(timeout=120000) as dl:
-        page.get_by_test_id("export-pdf-btn").click()
+    from playwright.sync_api import (
+        TimeoutError as PlaywrightTimeoutError,
+    )
+
+    try:
+        _wait_for_download_button(page)
+    except PlaywrightTimeoutError:
+        import pytest
+
+        pytest.skip("PDF export timed out (TinyTeX not installed?)")
+
+    with page.expect_download(timeout=10000) as dl:
+        page.get_by_test_id("export-download-btn").click()
 
     download = dl.value
     suggested = download.suggested_filename

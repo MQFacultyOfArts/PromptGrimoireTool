@@ -185,9 +185,14 @@ class TestWordCountExport:
                 expect(export_anyway_btn).to_be_visible(timeout=10000)
 
             with subtests.test(msg="AC5.2: User can confirm and proceed"):
-                # Click Export Anyway and verify download starts
-                with page.expect_download(timeout=60000) as dl:
-                    page.get_by_test_id("wc-export-anyway-btn").click()
+                # Click Export Anyway — queues a job, wait for download button
+                page.get_by_test_id("wc-export-anyway-btn").click()
+                page.get_by_test_id("export-download-btn").wait_for(
+                    state="visible", timeout=120000
+                )
+
+                with page.expect_download(timeout=10000) as dl:
+                    page.get_by_test_id("export-download-btn").click()
 
                 download = dl.value
                 dl_path = download.path()

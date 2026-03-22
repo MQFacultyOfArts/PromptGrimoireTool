@@ -27,7 +27,10 @@ if TYPE_CHECKING:
     from promptgrimoire.db.workspaces import PlacementContext
     from promptgrimoire.pages.annotation import PageState
 
-from promptgrimoire.pages.annotation.pdf_export import _handle_pdf_export
+from promptgrimoire.pages.annotation.pdf_export import (
+    _handle_pdf_export,
+    check_existing_export,
+)
 from promptgrimoire.pages.annotation.placement import show_placement_dialog
 from promptgrimoire.pages.annotation.sharing import render_sharing_controls
 
@@ -255,6 +258,9 @@ async def render_workspace_header(
             )
 
         _render_export_button(state, workspace_id)
+
+        # Recover any in-progress or completed export jobs (Phase 5, #402)
+        await check_existing_export(state)
 
         # Manage Documents button (owners only)
         if state.is_owner:

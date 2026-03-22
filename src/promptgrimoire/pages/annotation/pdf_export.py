@@ -1,7 +1,11 @@
 """PDF export orchestration for the annotation page.
 
 Handles the PDF export flow: gathering highlights, document content,
-response markdown, and invoking the export pipeline.
+response markdown, and submitting an export job to the queue.
+
+The export job is processed asynchronously by the export worker (Phase 3).
+A ui.timer polls for status updates and transitions the UI through
+queued -> running -> completed/failed states.
 
 Includes pre-export word count enforcement (AC5, AC6):
 - Soft mode: warning dialog with "Export Anyway" / "Cancel"
@@ -14,12 +18,19 @@ import asyncio
 import logging
 from datetime import date, datetime
 from typing import TYPE_CHECKING
+from uuid import UUID
 
 import structlog
 from nicegui import ui
 from structlog.contextvars import bind_contextvars
 
 from promptgrimoire.auth.anonymise import anonymise_author
+from promptgrimoire.db.exceptions import BusinessLogicError
+from promptgrimoire.db.export_jobs import (
+    create_export_job,
+    get_active_job_for_user,
+    get_job,
+)
 from promptgrimoire.db.workspace_documents import get_document
 from promptgrimoire.db.workspaces import get_workspace_export_metadata
 from promptgrimoire.export.filename import (
@@ -27,7 +38,6 @@ from promptgrimoire.export.filename import (
     build_pdf_export_stem,
 )
 from promptgrimoire.export.pdf_export import (
-    export_annotation_pdf,
     markdown_to_latex_notes,
 )
 from promptgrimoire.word_count import word_count
@@ -38,24 +48,10 @@ from promptgrimoire.word_count_enforcement import (
 )
 
 if TYPE_CHECKING:
-    from uuid import UUID
-
     from promptgrimoire.pages.annotation import PageState
 
 logger = structlog.get_logger()
 logging.getLogger(__name__).setLevel(logging.INFO)
-
-# Per-user export locks: prevents a single user from stacking multiple
-# concurrent PDF exports (e.g. by retrying in multiple tabs).
-# Keys are user_id UUIDs, values are asyncio.Lock instances.
-_user_export_locks: dict[str, asyncio.Lock] = {}
-
-
-def _get_user_export_lock(user_id: str) -> asyncio.Lock:
-    """Get or create an asyncio.Lock for a user's PDF exports."""
-    if user_id not in _user_export_locks:
-        _user_export_locks[user_id] = asyncio.Lock()
-    return _user_export_locks[user_id]
 
 
 def _server_local_export_date() -> date:
@@ -119,14 +115,14 @@ def anonymise_highlights(
     }
     result: list[dict[str, object]] = []
     for hl in highlights:
-        new_hl = _anonymise_dict_author(hl, **anon_kw)  # type: ignore[arg-type]
+        new_hl = _anonymise_dict_author(hl, **anon_kw)
         comments = hl.get("comments")
         if isinstance(comments, list):
             new_comments: list[object] = []
             for comment in comments:
                 if isinstance(comment, dict):
                     typed: dict[str, object] = comment  # type: ignore[assignment]
-                    new_comments.append(_anonymise_dict_author(typed, **anon_kw))  # type: ignore[arg-type]
+                    new_comments.append(_anonymise_dict_author(typed, **anon_kw))
                 else:
                     new_comments.append(comment)
             new_hl["comments"] = new_comments
@@ -276,23 +272,114 @@ async def _check_word_count_enforcement(
     return should_proceed, count
 
 
+# ---------------------------------------------------------------------------
+# Job submission, polling, and download (Phase 5 — export queue #402)
+# ---------------------------------------------------------------------------
+
+
+def _show_download_button(download_token: str, _state: PageState) -> None:
+    """Show download button for a completed export.
+
+    Creates a notification and a persistent download button in the
+    current NiceGUI client context. The button triggers a browser
+    download from the token-based download URL (Phase 4 FastAPI route).
+    """
+    download_url = f"/export/{download_token}/download"
+
+    ui.notification(
+        "Your PDF is ready!",
+        type="positive",
+        timeout=5,
+    )
+
+    with ui.row().classes("items-center gap-2"):
+        ui.button(
+            "Download your PDF",
+            icon="download",
+            on_click=lambda: ui.download(download_url),
+        ).props('color=positive data-testid="export-download-btn"')
+
+
+def _start_export_polling(job_id: UUID, state: PageState) -> None:
+    """Start polling for export job status with UI transitions.
+
+    Creates a spinner notification and a 2-second timer that polls
+    the export job status. Status transitions:
+    - queued -> "Export queued..."
+    - running -> "Compiling PDF..."
+    - completed -> dismiss notification, show download button
+    - failed -> dismiss notification, show error notification
+    """
+    notification = ui.notification(
+        "Export queued...",
+        spinner=True,
+        timeout=None,
+        type="ongoing",
+    )
+
+    async def _poll_status() -> None:
+        job = await get_job(job_id)
+        if job is None:
+            notification.dismiss()
+            timer.deactivate()
+            return
+
+        if job.status == "running":
+            notification.message = "Compiling PDF..."
+        elif job.status == "completed" and job.download_token:
+            notification.dismiss()
+            timer.deactivate()
+            _show_download_button(job.download_token, state)
+        elif job.status == "failed":
+            notification.dismiss()
+            timer.deactivate()
+            ui.notification(
+                f"Export failed: {job.error_message}",
+                type="negative",
+                timeout=10,
+            )
+
+    timer = ui.timer(2, _poll_status)
+
+
+async def check_existing_export(state: PageState) -> None:
+    """On page load, recover state for any active or completed export.
+
+    Called from the annotation page header setup after the export button
+    is created. Checks for existing export jobs for this user+workspace
+    and starts polling or shows a download button as appropriate.
+    """
+    if state.user_id is None:
+        return
+
+    job = await get_active_job_for_user(
+        user_id=UUID(state.user_id),
+        workspace_id=state.workspace_id,
+    )
+
+    if job is None:
+        return
+
+    if job.status in ("queued", "running"):
+        _start_export_polling(job.id, state)
+    elif job.status == "completed" and job.download_token:
+        _show_download_button(job.download_token, state)
+
+
 async def _handle_pdf_export(state: PageState, workspace_id: UUID) -> None:
-    """Handle PDF export with loading notification."""
+    """Handle PDF export: gather data, submit job, start polling.
+
+    Replaces the former synchronous export with an async job submission.
+    The per-user concurrency check is handled by create_export_job()
+    (DB-level partial unique index), not an in-memory lock.
+    """
     bind_contextvars(workspace_id=str(workspace_id))
     if state.crdt_doc is None or state.document_id is None:
         ui.notify("No document to export", type="warning")
         return
 
-    # Per-user mutex: if this user already has an export running, reject
     if state.user_id is None:
         ui.notify("Not authenticated", type="warning")
-        return
-    lock = _get_user_export_lock(str(state.user_id))
-    if lock.locked():
-        ui.notify(
-            "A PDF export is already in progress. Please wait for it to complete.",
-            type="warning",
-        )
         return
 
     # --- Extract response markdown once (live JS path, with CRDT fallback) ---
@@ -308,119 +395,84 @@ async def _handle_pdf_export(state: PageState, workspace_id: UUID) -> None:
     if not should_proceed:
         return
 
-    # Show notification with spinner IMMEDIATELY
-    notification = ui.notification(
-        message="Generating PDF...",
-        spinner=True,
-        timeout=None,
-        type="ongoing",
-    )
-    # Force UI update before starting async work
-    await asyncio.sleep(0)
-
-    async with lock:
-        await _run_pdf_export(
-            state, workspace_id, notification, response_markdown, export_word_count
+    # --- Gather payload (all data from live client context) ---
+    highlights = state.crdt_doc.get_highlights_for_document(str(state.document_id))
+    if state.is_anonymous and state.user_id:
+        highlights = anonymise_highlights(
+            highlights,
+            viewing_user_id=state.user_id,
+            anonymous_sharing=True,
+            viewer_is_privileged=state.viewer_is_privileged,
+            privileged_user_ids=state.privileged_user_ids,
         )
 
-
-async def _run_pdf_export(
-    state: PageState,
-    workspace_id: UUID,
-    notification: ui.notification,
-    response_markdown: str,
-    export_word_count: int | None,
-) -> None:
-    """Execute the PDF export pipeline under the per-user lock."""
-    if state.crdt_doc is None or state.document_id is None:  # guarded by caller
-        return
-    try:
-        # Get highlights for this document, anonymising if needed
-        highlights = state.crdt_doc.get_highlights_for_document(str(state.document_id))
-        if state.is_anonymous and state.user_id:
-            highlights = anonymise_highlights(
-                highlights,
-                viewing_user_id=state.user_id,
-                anonymous_sharing=True,
-                viewer_is_privileged=state.viewer_is_privileged,
-                privileged_user_ids=state.privileged_user_ids,
-            )
-
-        # Enrich highlights with display names so the export pipeline renders
-        # human-readable tag names instead of UUIDs (DB-backed tags store UUIDs
-        # in the CRDT "tag" field).
-        tag_name_map = {ti.raw_key: ti.name for ti in (state.tag_info_list or [])}
-        # Detect dangling tag references — highlights whose tag UUID no
-        # longer exists in the workspace tags (e.g. after tag group
-        # deletion).  Any dangling reference is an error state: the
-        # highlight cannot be properly represented in the export and
-        # would crash LaTeX with "Undefined color".
-        valid = [hl for hl in highlights if hl.get("tag", "") in tag_name_map]
-        dangling_count = len(highlights) - len(valid)
-        if dangling_count > 0:
-            notification.dismiss()
-            ui.notify(
-                f"{dangling_count} annotation(s) reference deleted tags "
-                "and cannot be exported. Re-tag or remove them first.",
-                type="negative",
-            )
-            return
-        highlights = valid
-        highlights = [
-            {**hl, "tag_name": tag_name_map.get(str(hl.get("tag", "")))}
-            for hl in highlights
-        ]
-
-        doc = await get_document(state.document_id)
-        if doc is None or not doc.content:
-            notification.dismiss()
-            ui.notify(
-                "No document content to export. Please paste or upload content first.",
-                type="warning",
-            )
-            return
-        html_content = doc.content
-
-        # Convert markdown to LaTeX via Pandoc (no new dependencies).
-        # markdown_to_latex_notes() handles empty/whitespace-only input gracefully.
-        # response_markdown was extracted above, before enforcement.
-        notes_latex = await markdown_to_latex_notes(response_markdown)
-
-        # Convert string keys (from JSON) to int keys (expected by export pipeline)
-        doc_para_map = doc.paragraph_map
-        legal_para_map: dict[int, int | None] | None = (
-            {int(k): v for k, v in doc_para_map.items()} if doc_para_map else None
-        )
-
-        # Compute descriptive filename from placement metadata
-        filename = await _build_export_filename(workspace_id)
-
-        # Generate PDF with optional word count snitch badge
-        pdf_path = await export_annotation_pdf(
-            html_content=html_content,
-            highlights=highlights,
-            tag_colours=state.tag_colours(),
-            general_notes="",
-            notes_latex=notes_latex,
-            word_to_legal_para=legal_para_map,
-            filename=filename,
-            workspace_id=str(workspace_id),
-            word_count=export_word_count,
-            word_minimum=state.word_minimum,
-            word_limit=state.word_limit,
-        )
-
-        notification.dismiss()
-
-        # Trigger download
-        ui.download(pdf_path)
-        ui.notify("PDF exported successfully!", type="positive")
-    except Exception:
-        notification.dismiss()
-        logger.exception("Failed to export PDF")
+    # Detect dangling tag references — highlights whose tag UUID no
+    # longer exists in the workspace tags (e.g. after tag group
+    # deletion).  Any dangling reference is an error state: the
+    # highlight cannot be properly represented in the export and
+    # would crash LaTeX with "Undefined color".
+    tag_name_map = {ti.raw_key: ti.name for ti in (state.tag_info_list or [])}
+    valid = [hl for hl in highlights if hl.get("tag", "") in tag_name_map]
+    dangling_count = len(highlights) - len(valid)
+    if dangling_count > 0:
         ui.notify(
-            "PDF export failed. Please do not retry. "
-            "Contact your unit convenor for assistance.",
+            f"{dangling_count} annotation(s) reference deleted tags "
+            "and cannot be exported. Re-tag or remove them first.",
             type="negative",
-            timeout=0,
         )
+        return
+    highlights = valid
+
+    # Enrich highlights with display names (DB-backed tags store UUIDs)
+    highlights = [
+        {**hl, "tag_name": tag_name_map.get(str(hl.get("tag", "")))}
+        for hl in highlights
+    ]
+
+    doc = await get_document(state.document_id)
+    if doc is None or not doc.content:
+        ui.notify(
+            "No document content to export. Please paste or upload content first.",
+            type="warning",
+        )
+        return
+    html_content = doc.content
+
+    notes_latex = await markdown_to_latex_notes(response_markdown)
+
+    doc_para_map = doc.paragraph_map
+    legal_para_map: dict[int, int | None] | None = (
+        {int(k): v for k, v in doc_para_map.items()} if doc_para_map else None
+    )
+
+    filename = await _build_export_filename(workspace_id)
+
+    tag_colours = state.tag_colours()
+
+    payload = {
+        "html_content": html_content,
+        "highlights": highlights,
+        "tag_colours": tag_colours,
+        "general_notes": "",
+        "notes_latex": notes_latex,
+        "word_to_legal_para": legal_para_map,
+        "filename": filename,
+        "workspace_id": str(workspace_id),
+        "word_count": export_word_count,
+        "word_minimum": state.word_minimum,
+        "word_limit": state.word_limit,
+    }
+
+    # --- Submit job to queue ---
+    try:
+        job = await create_export_job(UUID(state.user_id), workspace_id, payload)
+    except BusinessLogicError:  # only raised by per-user concurrency check
+        logger.debug("export_job_rejected", user_id=state.user_id)
+        ui.notify(
+            "A PDF export is already in progress. Please wait for it to complete.",
+            type="warning",
+        )
+        return
+
+    # --- Start polling for status updates ---
+    _start_export_polling(job.id, state)

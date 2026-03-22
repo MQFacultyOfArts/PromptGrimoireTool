@@ -40,12 +40,12 @@ Two layers prevent LaTeX compilations from exhausting server memory (regression 
 
 1. **Server-wide semaphore** (`_compile_semaphore`, capacity 2) -- caps concurrent `latexmk` subprocesses. Each `lualatex` process uses 200-500 MB; on an 8 GB VM, 2 concurrent is the safe limit. The semaphore wraps the internal `_run_latexmk()` helper.
 2. **Process group isolation** -- `start_new_session=True` on subprocess creation puts `latexmk` in its own process group. On timeout, `os.killpg()` kills the entire group (latexmk + child lualatex), preventing orphaned processes from leaking memory.
-3. **Per-user export lock** (`_get_user_export_lock()` in `pages/annotation/pdf_export.py`) -- each user gets an `asyncio.Lock`. If a user's lock is already held (export in progress), the handler rejects the request immediately with a notification. Different users export independently.
+3. **Per-user concurrency guard** — a partial unique index on `export_jobs (user_id) WHERE status IN ('queued', 'running')` prevents duplicate active jobs at the database level. The page handler checks for an active job before inserting and raises `BusinessLogicError` with a friendly message if one exists. See [Export Queue](#export-queue) below.
 
 **Invariants:**
 - At most 2 concurrent LaTeX compilations server-wide (semaphore)
 - Timeout always kills the full process group, never just the parent
-- A single user cannot stack concurrent PDF exports (per-user lock)
+- A single user cannot have more than one active export job (DB partial unique index)
 
 ## Word Count Snitch Badge
 
@@ -141,6 +141,88 @@ Deterministic filenames for PDF exports: `{UnitCode}_{Last}_{First}_{Activity}_{
 **Deduplication:** When the raw workspace title equals the raw activity title (the default for freshly cloned workspaces), the workspace segment is suppressed.
 
 **Fallbacks:** `Unplaced` (no course), `Loose_Work` (no activity), `Workspace` (blank title), `Unknown_Unknown` (blank owner).
+
+## Export Queue
+
+*Added: 2026-03-22 (#402)*
+
+PDF export is decoupled from the page handler via a database-backed job queue. This eliminates the risk of long-running compilations blocking or timing out page requests.
+
+### Overview
+
+1. Page handler gathers export data (LaTeX source, metadata, filename) and INSERTs an `ExportJob` row with status `queued`
+2. A background worker claims jobs and runs the LaTeX pipeline
+3. The UI polls job status via `ui.timer(2s)` and shows a download button when complete
+4. Users download the PDF via a token-authenticated route
+
+### ExportJob Table
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | UUID | Primary key |
+| `user_id` | UUID | FK to users |
+| `workspace_id` | UUID | FK to workspaces |
+| `status` | text | `queued` → `running` → `completed` / `failed` |
+| `payload` | JSONB | LaTeX source, filename stem, preamble, metadata |
+| `download_token` | UUID | Unique token for download URL |
+| `token_expires_at` | timestamptz | 24h TTL from completion |
+| `error_message` | text | Populated on failure |
+| `created_at` | timestamptz | Job submission time |
+| `started_at` | timestamptz | Worker claim time |
+| `completed_at` | timestamptz | Completion or failure time |
+
+**Status lifecycle:** `queued` → `running` → `completed` (with download token + 24h TTL) or `failed` (with error message).
+
+### Data Flow
+
+```
+Page handler                    Database                     Worker
+─────────────                   ────────                     ──────
+gather_export_data() ──INSERT──→ ExportJob(queued)
+                                     │
+                                     ├──── SELECT ... FOR UPDATE
+                                     │     SKIP LOCKED ──────────→ claim_next_job()
+                                     │                             update status=running
+                                     │                             compile_latex()
+                                     │                             update status=completed
+                                     │                             set download_token, TTL
+UI polls via                         │
+ui.timer(2s) ──SELECT status──→ ExportJob(completed)
+                                     │
+/export/{token}/download ────────────┘
+```
+
+### Worker
+
+- Async polling loop with 5-second interval
+- Claims the oldest `queued` job using `FOR UPDATE SKIP LOCKED` for safe multi-worker scaling
+- Fair scheduling via correlated subquery: skips jobs whose user already has a `running` job
+- Cleanup sweep every 60 iterations: deletes completed/failed jobs older than 7 days and removes their output directories
+- Respects the server-wide `_compile_semaphore` (capacity 2)
+
+### Per-User Concurrency
+
+A partial unique index enforces at most one active job per user at the database level:
+
+```sql
+CREATE UNIQUE INDEX ix_export_jobs_one_active_per_user
+    ON export_jobs (user_id)
+    WHERE status IN ('queued', 'running');
+```
+
+The page handler checks for an existing active job before inserting. If one exists, it raises `BusinessLogicError` with a user-friendly message rather than relying on the DB constraint to fail.
+
+### Download Route
+
+- **Path:** `/export/{token}/download`
+- **Auth:** Token-only (no session required) — the token is unguessable (UUID4) and single-purpose
+- **Multi-use:** The same token can be used for multiple downloads within the 24h TTL
+- **Response:** `FileResponse` with the deterministic filename from the export metadata
+- **Expiry:** Returns 404 after `token_expires_at`
+
+### response_timeout
+
+The `page_route` decorator sets `response_timeout=60` (up from the NiceGUI default of 10s) to accommodate the period between export submission and worker completion. This prevents NiceGUI from killing the page connection while the user waits for a queued export.
 
 ## Highlight Pipeline (Pandoc + Lua Filter)
 

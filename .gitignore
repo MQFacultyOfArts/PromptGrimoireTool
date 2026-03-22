@@ -100,3 +100,4 @@ log/
 .playwright-mcp/
 luatex.*/
 node_modules/
+.tmp/

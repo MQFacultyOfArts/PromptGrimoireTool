@@ -159,6 +159,12 @@ def _wrap_refresh_with_stale_download_clear(state: PageState) -> None:
         return
 
     def wrapped(*, trigger: str = "unknown") -> None:
+        # Cancel any active polling timer — the PDF it's tracking
+        # is now stale due to the document change.
+        poll_timer = getattr(state, "export_poll_timer", None)
+        if poll_timer is not None:
+            poll_timer.deactivate()
+            state.export_poll_timer = None  # type: ignore[attr-defined]
         # Clear stale download button
         container = getattr(state, "export_download_container", None)
         if container is not None:

@@ -360,7 +360,7 @@ def _start_export_polling(
             notification.dismiss()
             timer.deactivate()
             ui.notification(
-                f"Export failed: {job.error_message or 'Unknown error'}",
+                f"Export failed: {(job.error_message or 'Unknown error')[:200]}",
                 type="negative",
                 timeout=10,
             )
@@ -370,6 +370,7 @@ def _start_export_polling(
                 export_btn.enable()
 
     timer = ui.timer(2, _poll_status)
+    state.export_poll_timer = timer  # type: ignore[attr-defined]
 
 
 async def check_existing_export(state: PageState) -> None:
@@ -378,6 +379,14 @@ async def check_existing_export(state: PageState) -> None:
     Called from the annotation page header setup after the export button
     is created. Checks for existing export jobs for this user+workspace
     and starts polling or shows a download button as appropriate.
+
+    **Design trade-off:** A completed export's download button is shown
+    even if the document was modified after the export. There is no
+    ``modified_at`` comparison between job and workspace. Within a
+    session, ``_wrap_refresh_with_stale_download_clear`` handles this
+    by clearing the button on any document change. Across page reloads,
+    the user may see a download button for a stale PDF. The 24-hour
+    token TTL limits exposure. Tracked as a known limitation.
     """
     if state.user_id is None:
         return

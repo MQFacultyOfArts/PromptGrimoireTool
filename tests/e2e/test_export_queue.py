@@ -16,7 +16,6 @@ Traceability:
 
 from __future__ import annotations
 
-import os
 import tempfile
 import uuid
 from datetime import UTC, datetime, timedelta
@@ -57,7 +56,9 @@ def _insert_completed_export_job(
     """
     from sqlalchemy import create_engine, text
 
-    db_url = os.environ.get("DATABASE__URL", "")
+    from promptgrimoire.config import get_settings
+
+    db_url = get_settings().database.url
     if not db_url:
         msg = "DATABASE__URL not configured"
         raise RuntimeError(msg)

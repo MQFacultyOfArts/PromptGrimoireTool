@@ -184,6 +184,9 @@ class TestWordCountExport:
                 export_anyway_btn = page.get_by_test_id("wc-export-anyway-btn")
                 expect(export_anyway_btn).to_be_visible(timeout=10000)
 
+            export_text: str | None = None
+            is_pdf = False
+
             with subtests.test(msg="AC5.2: User can confirm and proceed"):
                 # Click Export Anyway — queues a job, wait for download button
                 page.get_by_test_id("wc-export-anyway-btn").click()
@@ -212,6 +215,7 @@ class TestWordCountExport:
                     is_pdf = False
 
             with subtests.test(msg="AC5.3: TeX output contains snitch badge"):
+                assert export_text is not None, "AC5.2 must pass before checking badge"
                 if is_pdf:
                     # In rendered PDF, check for the visible badge text
                     assert "Exceeded" in export_text, (

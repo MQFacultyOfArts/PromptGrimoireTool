@@ -155,6 +155,7 @@ if os.environ.get("E2E_SKIP_LATEXMK", "1") == "1":
 
 from nicegui import app, ui
 import promptgrimoire.pages  # noqa: F401
+import promptgrimoire.export.download  # noqa: F401 — registers /export/{token}/download route
 
 # BrowserStack Local tunnel doesn't reliably forward WebSocket upgrades.
 # Force polling-only transport so Socket.IO connects through HTTP.
@@ -302,6 +303,26 @@ async def _cleanup():
         "tasks_after": tasks_after,
         "elapsed": elapsed_total,
     }
+
+
+# Start the export worker so queue-based export jobs get processed (#402)
+from promptgrimoire.export.worker import start_export_worker
+
+_export_worker_task: asyncio.Task | None = None
+
+
+@app.on_startup
+async def _start_export_worker():
+    global _export_worker_task
+    _export_worker_task = asyncio.create_task(start_export_worker())
+
+
+@app.on_shutdown
+async def _stop_export_worker():
+    global _export_worker_task
+    if _export_worker_task is not None:
+        _export_worker_task.cancel()
+        _export_worker_task = None
 
 
 # Hand the running event loop to the watchdog thread

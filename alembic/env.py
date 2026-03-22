@@ -18,25 +18,6 @@ if TYPE_CHECKING:
     from sqlalchemy.engine import Connection
 
 # Import all models to register them with SQLModel.metadata
-from promptgrimoire.db.models import (  # noqa: F401
-    ACLEntry,
-    Activity,
-    Course,
-    CourseEnrollment,
-    CourseRoleRef,
-    Permission,
-    StudentGroup,
-    StudentGroupMembership,
-    Tag,
-    TagGroup,
-    User,
-    WargameConfig,
-    WargameMessage,
-    WargameTeam,
-    Week,
-    Workspace,
-    WorkspaceDocument,
-)
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

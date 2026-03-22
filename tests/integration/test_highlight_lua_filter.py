@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import re
 import subprocess
-import tempfile
 from pathlib import Path
 
 import pytest
@@ -60,30 +59,24 @@ def _run_pandoc_with_filter(
     """
     if filter_paths is None:
         filter_paths = [_FILTER_PATH]
-    tmp = tempfile.NamedTemporaryFile(mode="w", suffix=".html", delete=False)  # noqa: SIM115 — must outlive context manager; delete=False prevents xdist race
-    try:
-        tmp.write(html)
-        tmp.close()
-        cmd = [
-            "pandoc",
-            "-f",
-            "html+native_divs",
-            "-t",
-            "latex",
-            "--no-highlight",
-        ]
-        for fp in filter_paths:
-            cmd.extend(["--lua-filter", str(fp)])
-        cmd.append(tmp.name)
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            check=True,
-            timeout=30,
-        )
-    finally:
-        Path(tmp.name).unlink(missing_ok=True)
+    cmd = [
+        "pandoc",
+        "-f",
+        "html+native_divs",
+        "-t",
+        "latex",
+        "--no-highlight",
+    ]
+    for fp in filter_paths:
+        cmd.extend(["--lua-filter", str(fp)])
+    result = subprocess.run(
+        cmd,
+        input=html,
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=30,
+    )
     return result.stdout
 
 

@@ -143,6 +143,30 @@ async def fail_job(job_id: UUID, error_message: str) -> None:
         session.add(job)
 
 
+async def fail_orphaned_jobs() -> int:
+    """Mark all queued/running jobs as failed on app startup.
+
+    After a server restart, any jobs left in 'queued' or 'running' state
+    are orphaned — no worker is processing them. Fail them with a clear
+    message so users see an error instead of a perpetual spinner.
+
+    Returns the count of failed jobs.
+    """
+    async with get_session() as session:
+        stmt = (
+            sa.update(ExportJob)
+            .where(col(ExportJob.status).in_(["queued", "running"]))
+            .values(
+                status="failed",
+                error_message="Export interrupted by server restart. Please try again.",
+                completed_at=datetime.now(UTC),
+            )
+        )
+        result = await session.exec(stmt)
+        count = result.rowcount
+    return count
+
+
 async def get_job(job_id: UUID) -> ExportJob | None:
     """Fetch an export job by ID."""
     async with get_session() as session:

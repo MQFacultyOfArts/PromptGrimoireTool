@@ -20,6 +20,7 @@ from promptgrimoire.db.export_jobs import (
     cleanup_expired_jobs,
     complete_job,
     fail_job,
+    fail_orphaned_jobs,
 )
 from promptgrimoire.export.pdf_export import export_annotation_pdf
 
@@ -88,6 +89,11 @@ async def start_export_worker(
         poll_interval: Sleep duration between polling cycles (seconds).
         cleanup_interval: Run cleanup every N iterations.
     """
+    # Fail any jobs orphaned by a previous server shutdown.
+    orphaned = await fail_orphaned_jobs()
+    if orphaned:
+        logger.warning("export_worker_orphaned_jobs_failed", count=orphaned)
+
     logger.info(
         "export_worker_started",
         poll_interval=poll_interval,

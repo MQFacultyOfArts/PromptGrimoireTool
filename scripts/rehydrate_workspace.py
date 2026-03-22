@@ -8,11 +8,15 @@ decoding base64 binary fields back to bytea. Existing rows are replaced
 The workspace is inserted standalone (activity_id and course_id set to NULL)
 regardless of the original placement, so no parent records are required.
 
+Database selection follows the same worktree-aware rules as the app: reads
+DATABASE__URL from get_settings(), which auto-suffixes the database name on
+feature branches. Override with PGDATABASE env var if needed.
+
 Usage:
     uv run scripts/rehydrate_workspace.py /tmp/workspace_<uuid>.json
 
     # Override connection (e.g. different database):
-    PGUSER=brian PGDATABASE=promptgrimoire uv run scripts/rehydrate_workspace.py <file>
+    PGDATABASE=promptgrimoire_other uv run scripts/rehydrate_workspace.py <file>
 """
 
 import argparse
@@ -21,9 +25,40 @@ import json
 import os
 import sys
 from pathlib import Path
+from urllib.parse import urlparse
 from uuid import UUID
 
 import psycopg
+
+from promptgrimoire.config import get_settings
+
+
+def _resolve_conninfo() -> str:
+    """Build psycopg conninfo using the same worktree-aware settings as the app.
+
+    Reads DATABASE__URL from get_settings() (which auto-suffixes the database
+    name on feature branches), then converts the asyncpg URL to psycopg
+    connection parameters. Falls back to PGDATABASE/PGUSER/PGHOST env vars
+    if get_settings() fails.
+    """
+    url = get_settings().database.url
+    if url:
+        parsed = urlparse(url)
+        user = parsed.username or os.environ.get("PGUSER", "brian")
+        dbname = parsed.path.lstrip("/") or "promptgrimoire"
+        host = parsed.hostname or os.environ.get("PGHOST", "/var/run/postgresql")
+        # query params may contain host for unix socket
+        if "host=" in (parsed.query or ""):
+            for param in parsed.query.split("&"):
+                if param.startswith("host="):
+                    host = param.split("=", 1)[1]
+        return f"user={user} dbname={dbname} host={host}"
+
+    # Fallback: raw libpq env vars
+    user = os.environ.get("PGUSER", "brian")
+    dbname = os.environ.get("PGDATABASE", "promptgrimoire")
+    host = os.environ.get("PGHOST", "/var/run/postgresql")
+    return f"user={user} dbname={dbname} host={host}"
 
 
 def _decode_binary(value: object) -> object:
@@ -192,10 +227,7 @@ def main() -> None:
         print("Invalid or missing workspace id", file=sys.stderr)
         sys.exit(1)
 
-    user = os.environ.get("PGUSER", "brian")
-    dbname = os.environ.get("PGDATABASE", "promptgrimoire")
-    host = os.environ.get("PGHOST", "/var/run/postgresql")
-    conninfo = f"user={user} dbname={dbname} host={host}"
+    conninfo = _resolve_conninfo()
 
     result = rehydrate(args.json_file, conninfo)
 

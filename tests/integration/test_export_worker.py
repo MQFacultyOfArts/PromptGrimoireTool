@@ -5,6 +5,10 @@ Requires a running PostgreSQL instance. Set DEV__TEST_DATABASE_URL.
 Acceptance Criteria:
 - AC1.1: Export initiated, client disconnects, PDF compiles successfully
 - AC1.3: Worker encounters LaTeX error -- job fails with error_message
+
+NOTE: All tests mock export_annotation_pdf to avoid requiring pandoc/latexmk.
+Real-pipeline testing (with @requires_pandoc/@requires_latexmk markers) is
+deferred to UAT and the smoke test lane (`uv run grimoire test smoke-export`).
 """
 
 from __future__ import annotations

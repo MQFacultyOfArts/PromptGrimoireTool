@@ -10,7 +10,6 @@ from __future__ import annotations
 import asyncio
 import logging
 import secrets
-import traceback
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 
@@ -53,6 +52,7 @@ async def _process_job(job: ExportJob) -> None:
             notes_latex=payload.get("notes_latex", ""),
             filename=payload.get("filename", "annotated_document"),
             workspace_id=str(job.workspace_id),
+            word_to_legal_para=payload.get("word_to_legal_para"),
             word_count=payload.get("word_count"),
             word_minimum=payload.get("word_minimum"),
             word_limit=payload.get("word_limit"),
@@ -62,10 +62,9 @@ async def _process_job(job: ExportJob) -> None:
         await complete_job(job.id, download_token, str(pdf_path))
         log.info("export_worker_job_completed", pdf_path=str(pdf_path))
 
-    except Exception:
+    except Exception as exc:
         log.exception("export_worker_job_failed")
-        error_msg = traceback.format_exc()
-        await fail_job(job.id, error_msg)
+        await fail_job(job.id, str(exc))
 
 
 async def _run_cleanup() -> None:

@@ -32,6 +32,41 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+
+# =============================================================================
+# Export Job Isolation
+# =============================================================================
+
+
+@pytest_asyncio.fixture(autouse=True)
+async def _clear_stale_export_jobs() -> None:
+    """Remove stale queued/running export jobs before each test.
+
+    claim_next_job() is global — it picks the oldest queued job regardless
+    of who created it. Under xdist, concurrent workers leave stale rows
+    that cause spurious assertion failures in tests that call claim_next_job().
+
+    This is autouse so ALL integration tests get isolation. The cost is one
+    DELETE query per test (~0.5ms). Only tests that create export jobs and
+    call claim_next_job() benefit, but the overhead for others is negligible.
+    """
+    from promptgrimoire.db.engine import get_session
+
+    try:
+        from sqlmodel import delete
+
+        from promptgrimoire.db.models import ExportJob
+
+        async with get_session() as session:
+            await session.exec(
+                delete(ExportJob).where(ExportJob.status.in_(["queued", "running"]))  # type: ignore[union-attr]
+            )
+            await session.commit()
+    except Exception:
+        # DB may not be initialised yet for non-DB tests
+        pass
+
+
 # =============================================================================
 # NiceGUI User Simulation Fixture
 # =============================================================================

@@ -147,19 +147,38 @@ def _render_paragraph_toggle(state: PageState, document: WorkspaceDocument) -> N
 
 
 def _render_export_button(state: PageState, workspace_id: UUID) -> None:
-    """Render the Export PDF button with loading state."""
+    """Render the Export PDF button and download container.
+
+    The download_container holds the download button (if any). It is
+    cleared and repopulated by _show_download_button / _start_export_polling.
+    Storing it on state.export_download_container makes it accessible to
+    the polling callback and page-load recovery.
+    """
     export_btn = ui.button(
         "Export PDF",
         icon="picture_as_pdf",
     ).props('color=primary data-testid="export-pdf-btn"')
 
+    # Container for the download button — lives next to the export button
+    download_container = ui.row().classes("items-center gap-2")
+    download_container.props('data-testid="export-download-container"')
+    state.export_download_container = download_container  # type: ignore[attr-defined]
+    state.export_btn = export_btn  # type: ignore[attr-defined]
+
     async def on_export_click() -> None:
         export_btn.disable()
         export_btn.props("loading")
+        # Clear any previous download button
+        download_container.clear()
         try:
-            await _handle_pdf_export(state, workspace_id)
-        finally:
+            job_submitted = await _handle_pdf_export(state, workspace_id)
+        except Exception:
             export_btn.props(remove="loading")
+            export_btn.enable()
+            raise
+        export_btn.props(remove="loading")
+        if not job_submitted:
+            # Early return (rejected, no document, etc.) — re-enable
             export_btn.enable()
 
     export_btn.on_click(on_export_click)

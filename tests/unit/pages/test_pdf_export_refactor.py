@@ -371,12 +371,19 @@ class TestDownloadButton:
         token = "abc-token-xyz"
 
         with patch("promptgrimoire.pages.annotation.pdf_export.ui") as mock_ui:
-            # Mock context managers for ui.row
-            mock_row = MagicMock()
-            mock_ui.row.return_value.__enter__ = MagicMock(return_value=mock_row)
-            mock_ui.row.return_value.__exit__ = MagicMock(return_value=False)
+            # Set up a stub with a container that supports context manager
+            container = MagicMock()
+            container.__enter__ = MagicMock(return_value=container)
+            container.__exit__ = MagicMock(return_value=False)
+            export_btn = MagicMock()
+            stub = _stub()
+            stub.export_download_container = container
+            stub.export_btn = export_btn
 
-            _show_download_button(token, _stub())
+            _show_download_button(token, stub)
+
+            # Verify container was cleared and entered
+            container.clear.assert_called_once()
 
             # Verify notification shown
             mock_ui.notification.assert_called_once()
@@ -387,10 +394,8 @@ class TestDownloadButton:
             btn_call = mock_ui.button.call_args
             assert "Download" in str(btn_call)
 
-            # Verify the button has correct props (data-testid)
-            mock_ui.button.return_value.props.assert_called()
-            props_str = str(mock_ui.button.return_value.props.call_args)
-            assert "export-download-btn" in props_str
+            # Verify export button re-enabled
+            export_btn.enable.assert_called_once()
 
 
 # ---------------------------------------------------------------------------

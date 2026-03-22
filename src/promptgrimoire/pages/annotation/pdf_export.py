@@ -277,12 +277,12 @@ async def _check_word_count_enforcement(
 # ---------------------------------------------------------------------------
 
 
-def _show_download_button(download_token: str, _state: PageState) -> None:
+def _show_download_button(download_token: str, state: PageState) -> None:
     """Show download button for a completed export.
 
-    Creates a notification and a persistent download button in the
-    current NiceGUI client context. The button triggers a browser
-    download from the token-based download URL (Phase 4 FastAPI route).
+    Clears the download container and adds a single download button.
+    Re-enables the export button so the user can start a new export.
+    The button triggers a browser download from the token-based URL.
     """
     download_url = f"/export/{download_token}/download"
 
@@ -292,12 +292,20 @@ def _show_download_button(download_token: str, _state: PageState) -> None:
         timeout=5,
     )
 
-    with ui.row().classes("items-center gap-2"):
-        ui.button(
-            "Download your PDF",
-            icon="download",
-            on_click=lambda: ui.download(download_url),
-        ).props('color=positive data-testid="export-download-btn"')
+    container = getattr(state, "export_download_container", None)
+    if container is not None:
+        container.clear()
+        with container:
+            ui.button(
+                "Download your PDF",
+                icon="download",
+                on_click=lambda: ui.download(download_url),
+            ).props('color=positive data-testid="export-download-btn"')
+
+    # Re-enable the export button for new exports
+    export_btn = getattr(state, "export_btn", None)
+    if export_btn is not None:
+        export_btn.enable()
 
 
 def _start_export_polling(job_id: UUID, state: PageState) -> None:
@@ -322,6 +330,10 @@ def _start_export_polling(job_id: UUID, state: PageState) -> None:
         if job is None:
             notification.dismiss()
             timer.deactivate()
+            # Re-enable export button — job was deleted
+            export_btn = getattr(state, "export_btn", None)
+            if export_btn is not None:
+                export_btn.enable()
             return
 
         if job.status == "running":
@@ -338,6 +350,10 @@ def _start_export_polling(job_id: UUID, state: PageState) -> None:
                 type="negative",
                 timeout=10,
             )
+            # Re-enable export button so user can retry
+            export_btn = getattr(state, "export_btn", None)
+            if export_btn is not None:
+                export_btn.enable()
 
     timer = ui.timer(2, _poll_status)
 
@@ -361,26 +377,30 @@ async def check_existing_export(state: PageState) -> None:
         return
 
     if job.status in ("queued", "running"):
+        # Disable export button while job is active
+        export_btn = getattr(state, "export_btn", None)
+        if export_btn is not None:
+            export_btn.disable()
         _start_export_polling(job.id, state)
     elif job.status == "completed" and job.download_token:
         _show_download_button(job.download_token, state)
 
 
-async def _handle_pdf_export(state: PageState, workspace_id: UUID) -> None:
+async def _handle_pdf_export(state: PageState, workspace_id: UUID) -> bool:
     """Handle PDF export: gather data, submit job, start polling.
 
-    Replaces the former synchronous export with an async job submission.
+    Returns True if a job was successfully submitted, False otherwise.
     The per-user concurrency check is handled by create_export_job()
     (DB-level partial unique index), not an in-memory lock.
     """
     bind_contextvars(workspace_id=str(workspace_id))
     if state.crdt_doc is None or state.document_id is None:
         ui.notify("No document to export", type="warning")
-        return
+        return False
 
     if state.user_id is None:
         ui.notify("Not authenticated", type="warning")
-        return
+        return False
 
     # --- Extract response markdown once (live JS path, with CRDT fallback) ---
     # This single extraction is shared by both enforcement and the export
@@ -393,7 +413,7 @@ async def _handle_pdf_export(state: PageState, workspace_id: UUID) -> None:
         state, response_markdown
     )
     if not should_proceed:
-        return
+        return False
 
     # --- Gather payload (all data from live client context) ---
     highlights = state.crdt_doc.get_highlights_for_document(str(state.document_id))
@@ -435,7 +455,7 @@ async def _handle_pdf_export(state: PageState, workspace_id: UUID) -> None:
             "No document content to export. Please paste or upload content first.",
             type="warning",
         )
-        return
+        return False
     html_content = doc.content
 
     notes_latex = await markdown_to_latex_notes(response_markdown)
@@ -471,7 +491,8 @@ async def _handle_pdf_export(state: PageState, workspace_id: UUID) -> None:
             "A PDF export is already in progress. Please wait for it to complete.",
             type="warning",
         )
-        return
+        return False
 
     # --- Start polling for status updates ---
     _start_export_polling(job.id, state)
+    return True

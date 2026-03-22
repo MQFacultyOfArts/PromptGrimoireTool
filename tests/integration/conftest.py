@@ -49,6 +49,9 @@ async def _clear_stale_export_jobs() -> None:
     This is autouse so ALL integration tests get isolation. The cost is one
     DELETE query per test (~0.5ms). Only tests that create export jobs and
     call claim_next_job() benefit, but the overhead for others is negligible.
+
+    KNOWN ISSUE: Under xdist, this fixture can delete another worker's
+    in-flight jobs. Needs a proper per-worker isolation strategy.
     """
     from promptgrimoire.db.engine import get_session
 

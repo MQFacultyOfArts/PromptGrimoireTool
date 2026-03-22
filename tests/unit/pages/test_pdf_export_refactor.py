@@ -432,7 +432,7 @@ class TestPageLoadRecovery:
             ),
         ):
             await check_existing_export(state)
-            mock_poll.assert_called_once_with(job.id, state)
+            mock_poll.assert_called_once_with(job.id, state, initial_status=job.status)
 
     @pytest.mark.anyio
     async def test_recovery_queued_job_starts_polling(self) -> None:
@@ -462,7 +462,7 @@ class TestPageLoadRecovery:
             ),
         ):
             await check_existing_export(state)
-            mock_poll.assert_called_once_with(job.id, state)
+            mock_poll.assert_called_once_with(job.id, state, initial_status=job.status)
 
     @pytest.mark.anyio
     async def test_recovery_completed_job_shows_download(self) -> None:

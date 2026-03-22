@@ -308,7 +308,12 @@ def _show_download_button(download_token: str, state: PageState) -> None:
         export_btn.enable()
 
 
-def _start_export_polling(job_id: UUID, state: PageState) -> None:
+def _start_export_polling(
+    job_id: UUID,
+    state: PageState,
+    *,
+    initial_status: str = "queued",
+) -> None:
     """Start polling for export job status with UI transitions.
 
     Creates a spinner notification and a 2-second timer that polls
@@ -317,13 +322,22 @@ def _start_export_polling(job_id: UUID, state: PageState) -> None:
     - running -> "Compiling PDF..."
     - completed -> dismiss notification, show download button
     - failed -> dismiss notification, show error notification
+
+    Args:
+        initial_status: Current job status for the initial notification
+            message. Use "running" on page-load recovery to avoid
+            briefly showing "Export queued..." for an already-running job.
     """
+    _STATUS_MESSAGES = {"running": "Compiling PDF...", "queued": "Export queued..."}
+    initial_message = _STATUS_MESSAGES.get(initial_status, "Export queued...")
+
     notification = ui.notification(
-        "Export queued...",
+        initial_message,
         spinner=True,
         timeout=None,
         type="ongoing",
-    ).props('data-testid="export-status-spinner"')
+    )
+    notification.props('data-testid="export-status-spinner"')
 
     async def _poll_status() -> None:
         job = await get_job(job_id)
@@ -381,7 +395,7 @@ async def check_existing_export(state: PageState) -> None:
         export_btn = getattr(state, "export_btn", None)
         if export_btn is not None:
             export_btn.disable()
-        _start_export_polling(job.id, state)
+        _start_export_polling(job.id, state, initial_status=job.status)
     elif job.status == "completed" and job.download_token:
         _show_download_button(job.download_token, state)
 

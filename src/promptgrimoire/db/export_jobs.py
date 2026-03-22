@@ -7,6 +7,7 @@ enqueue, claim (FOR UPDATE SKIP LOCKED), complete, fail, and cleanup.
 from __future__ import annotations
 
 import shutil
+import tempfile
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -239,9 +240,17 @@ async def cleanup_expired_jobs(cutoff: datetime) -> int:
         stmt = select(ExportJob).where(expired_filter)
         jobs = (await session.exec(stmt)).all()
 
+        tmpdir = Path(tempfile.gettempdir())
         for job in jobs:
             if job.pdf_path:
                 parent = Path(job.pdf_path).parent
+                if not parent.is_relative_to(tmpdir):
+                    logger.warning(
+                        "export_dir_outside_tmpdir",
+                        path=str(parent),
+                        job_id=str(job.id),
+                    )
+                    continue
                 try:
                     shutil.rmtree(parent)
                 except OSError:

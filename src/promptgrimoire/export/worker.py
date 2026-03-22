@@ -10,7 +10,10 @@ from __future__ import annotations
 import asyncio
 import logging
 import secrets
+import shutil
+import tempfile
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import structlog
@@ -43,6 +46,12 @@ async def _process_job(job: ExportJob) -> None:
     log = logger.bind(job_id=str(job.id), workspace_id=str(job.workspace_id))
     log.info("export_worker_processing_job")
 
+    # Create the output dir here so we can clean it up on failure.
+    # export_annotation_pdf creates a random tmpdir internally if not
+    # given one, and we'd have no reference to it on failure.
+    ws_prefix = str(job.workspace_id)[:8]
+    output_dir = Path(tempfile.mkdtemp(prefix=f"promptgrimoire_export_{ws_prefix}_"))
+
     try:
         payload = job.payload or {}
         pdf_path = await export_annotation_pdf(
@@ -52,6 +61,7 @@ async def _process_job(job: ExportJob) -> None:
             general_notes=payload.get("general_notes", ""),
             notes_latex=payload.get("notes_latex", ""),
             filename=payload.get("filename", "annotated_document"),
+            output_dir=output_dir,
             workspace_id=str(job.workspace_id),
             word_to_legal_para=payload.get("word_to_legal_para"),
             word_count=payload.get("word_count"),
@@ -59,13 +69,19 @@ async def _process_job(job: ExportJob) -> None:
             word_limit=payload.get("word_limit"),
         )
 
-        download_token = secrets.token_urlsafe(32)
+        download_token = secrets.token_urlsafe(48)
         await complete_job(job.id, download_token, str(pdf_path))
         log.info("export_worker_job_completed", pdf_path=str(pdf_path))
 
     except Exception as exc:
+        # CancelledError is not a subclass of Exception (Python 3.8+),
+        # so it propagates to the outer loop which re-raises it for
+        # clean worker shutdown. Only true Exceptions are caught here.
         log.exception("export_worker_job_failed")
         await fail_job(job.id, str(exc))
+        # Clean up the temp dir — failed jobs have no pdf_path,
+        # so cleanup_expired_jobs would never delete it.
+        shutil.rmtree(output_dir, ignore_errors=True)
 
 
 async def _run_cleanup() -> None:

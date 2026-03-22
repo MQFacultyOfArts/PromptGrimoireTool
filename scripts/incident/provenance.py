@@ -69,5 +69,4 @@ def format_to_table(filename: str) -> str:
     ):
         return "pglog"
 
-    known = ", ".join(sorted(_FILENAME_TO_FORMAT))
-    raise ValueError(f"Unknown source filename '{filename}'. Known: {known}")
+    return ""  # Unknown format — caller should skip

@@ -17,7 +17,8 @@ from sqlmodel import SQLModel
 if TYPE_CHECKING:
     from sqlalchemy.engine import Connection
 
-# Import all models to register them with SQLModel.metadata
+# Import all models to register them with SQLModel.metadata.
+# The db package re-exports every model, triggering SQLModel registration.
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

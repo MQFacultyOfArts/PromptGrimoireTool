@@ -73,6 +73,11 @@ async def claim_next_job() -> ExportJob | None:
 
     Fair scheduling: jobs from users with fewer running jobs are
     prioritised, then FIFO by created_at.
+
+    The returned object is detached from the session. All scalar columns
+    are loaded before return, but lazy-loaded relationships will raise
+    ``DetachedInstanceError``. Callers must access only pre-loaded fields
+    (id, user_id, workspace_id, payload, status, started_at, created_at).
     """
     async with get_session() as session:
         # Subquery: count running jobs for the same user as the outer row.

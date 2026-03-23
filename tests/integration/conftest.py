@@ -30,44 +30,53 @@ if TYPE_CHECKING:
 
     from nicegui.testing.user import User
 
+    from promptgrimoire.db.models import ExportJob
+
 logger = logging.getLogger(__name__)
 
 
 # =============================================================================
-# Export Job Isolation
+# Export Job Test Helpers
 # =============================================================================
 
 
-@pytest_asyncio.fixture(autouse=True)
-async def _clear_stale_export_jobs() -> None:
-    """Remove stale queued/running export jobs before each test.
+async def claim_own_job(our_ids: set) -> ExportJob | None:
+    """Claim the next queued job whose ID is in *our_ids*.
 
-    claim_next_job() is global — it picks the oldest queued job regardless
-    of who created it. Under xdist, concurrent workers leave stale rows
-    that cause spurious assertion failures in tests that call claim_next_job().
+    Production ``claim_next_job()`` is a global queue consumer — under xdist,
+    it can claim another worker's job.  This helper uses the same
+    ``FOR UPDATE SKIP LOCKED`` pattern but scopes the ``WHERE`` clause to
+    only consider jobs created by the calling test.
 
-    This is autouse so ALL integration tests get isolation. The cost is one
-    DELETE query per test (~0.5ms). Only tests that create export jobs and
-    call claim_next_job() benefit, but the overhead for others is negligible.
-
-    KNOWN ISSUE: Under xdist, this fixture can delete another worker's
-    in-flight jobs. Needs a proper per-worker isolation strategy.
+    Returns ``None`` when no matching job is queued.
     """
+    from datetime import UTC, datetime
+
+    from sqlmodel import col, select
+
     from promptgrimoire.db.engine import get_session
+    from promptgrimoire.db.models import ExportJob
 
-    try:
-        from sqlmodel import delete
-
-        from promptgrimoire.db.models import ExportJob
-
-        async with get_session() as session:
-            await session.exec(
-                delete(ExportJob).where(ExportJob.status.in_(["queued", "running"]))  # type: ignore[union-attr]
+    async with get_session() as session:
+        stmt = (
+            select(ExportJob)
+            .where(
+                ExportJob.status == "queued",
+                col(ExportJob.id).in_(our_ids),
             )
-            await session.commit()
-    except Exception:
-        # DB may not be initialised yet for non-DB tests
-        pass
+            .order_by(col(ExportJob.created_at).asc())
+            .limit(1)
+            .with_for_update(skip_locked=True)
+        )
+        job = (await session.exec(stmt)).first()
+        if job is None:
+            return None
+
+        job.status = "running"
+        job.started_at = datetime.now(UTC)
+        session.add(job)
+
+    return job
 
 
 # =============================================================================

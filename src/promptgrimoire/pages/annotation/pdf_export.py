@@ -417,12 +417,11 @@ async def _handle_pdf_export(state: PageState, workspace_id: UUID) -> bool:
     (DB-level partial unique index), not an in-memory lock.
     """
     bind_contextvars(workspace_id=str(workspace_id))
-    if state.crdt_doc is None or state.document_id is None:
-        ui.notify("No document to export", type="warning")
-        return False
-
-    if state.user_id is None:
-        ui.notify("Not authenticated", type="warning")
+    if state.crdt_doc is None or state.document_id is None or state.user_id is None:
+        ui.notify(
+            "Not authenticated" if state.user_id is None else "No document to export",
+            type="warning",
+        )
         return False
 
     # --- Extract response markdown once (live JS path, with CRDT fallback) ---
@@ -463,7 +462,7 @@ async def _handle_pdf_export(state: PageState, workspace_id: UUID) -> bool:
             "and cannot be exported. Re-tag or remove them first.",
             type="negative",
         )
-        return
+        return False
     highlights = valid
 
     # Enrich highlights with display names (DB-backed tags store UUIDs)

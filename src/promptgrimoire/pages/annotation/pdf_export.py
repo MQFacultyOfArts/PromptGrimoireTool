@@ -350,6 +350,16 @@ async def _run_pdf_export(
         # human-readable tag names instead of UUIDs (DB-backed tags store UUIDs
         # in the CRDT "tag" field).
         tag_name_map = {ti.raw_key: ti.name for ti in (state.tag_info_list or [])}
+        # Skip highlights with empty or dangling tag references — they have
+        # no colour definition and would crash LaTeX with "Undefined color".
+        highlights = [hl for hl in highlights if hl.get("tag", "") in tag_name_map]
+        if not highlights:
+            notification.dismiss()
+            ui.notify(
+                "No tagged annotations to export. Add highlights with tags first.",
+                type="warning",
+            )
+            return
         highlights = [
             {**hl, "tag_name": tag_name_map.get(str(hl.get("tag", "")))}
             for hl in highlights

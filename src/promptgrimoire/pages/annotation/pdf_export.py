@@ -350,6 +350,22 @@ async def _run_pdf_export(
         # human-readable tag names instead of UUIDs (DB-backed tags store UUIDs
         # in the CRDT "tag" field).
         tag_name_map = {ti.raw_key: ti.name for ti in (state.tag_info_list or [])}
+        # Detect dangling tag references — highlights whose tag UUID no
+        # longer exists in the workspace tags (e.g. after tag group
+        # deletion).  Any dangling reference is an error state: the
+        # highlight cannot be properly represented in the export and
+        # would crash LaTeX with "Undefined color".
+        valid = [hl for hl in highlights if hl.get("tag", "") in tag_name_map]
+        dangling_count = len(highlights) - len(valid)
+        if dangling_count > 0:
+            notification.dismiss()
+            ui.notify(
+                f"{dangling_count} annotation(s) reference deleted tags "
+                "and cannot be exported. Re-tag or remove them first.",
+                type="negative",
+            )
+            return
+        highlights = valid
         highlights = [
             {**hl, "tag_name": tag_name_map.get(str(hl.get("tag", "")))}
             for hl in highlights

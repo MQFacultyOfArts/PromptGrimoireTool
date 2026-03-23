@@ -52,11 +52,11 @@ class TestProcessJob:
     async def test_process_job_success(self, tmp_path: Path) -> None:
         """AC1.1: Successful export sets status to completed with download_token."""
         from promptgrimoire.db.export_jobs import (
-            claim_next_job,
             create_export_job,
             get_job,
         )
         from promptgrimoire.export.worker import _process_job
+        from tests.integration.conftest import claim_own_job
 
         user_id, workspace_id = await _create_user_and_workspace()
 
@@ -68,18 +68,9 @@ class TestProcessJob:
             "notes_latex": "",
             "filename": "test_doc",
         }
-        await create_export_job(user_id, workspace_id, payload)
+        created = await create_export_job(user_id, workspace_id, payload)
 
-        # Drain queue until we find our job
-        job = None
-        for _ in range(50):
-            candidate = await claim_next_job()
-            if candidate is None:
-                break
-            if candidate.workspace_id == workspace_id:
-                job = candidate
-                break
-
+        job = await claim_own_job({created.id})
         assert job is not None
 
         fake_pdf = tmp_path / "output.pdf"
@@ -103,11 +94,11 @@ class TestProcessJob:
     async def test_process_job_failure(self) -> None:
         """AC1.3: LaTeX error sets status to failed with error_message."""
         from promptgrimoire.db.export_jobs import (
-            claim_next_job,
             create_export_job,
             get_job,
         )
         from promptgrimoire.export.worker import _process_job
+        from tests.integration.conftest import claim_own_job
 
         user_id, workspace_id = await _create_user_and_workspace()
 
@@ -119,17 +110,9 @@ class TestProcessJob:
             "notes_latex": "",
             "filename": "bad_doc",
         }
-        await create_export_job(user_id, workspace_id, payload)
+        created = await create_export_job(user_id, workspace_id, payload)
 
-        job = None
-        for _ in range(50):
-            candidate = await claim_next_job()
-            if candidate is None:
-                break
-            if candidate.workspace_id == workspace_id:
-                job = candidate
-                break
-
+        job = await claim_own_job({created.id})
         assert job is not None
 
         with patch(

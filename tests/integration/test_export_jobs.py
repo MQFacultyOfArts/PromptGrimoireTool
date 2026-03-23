@@ -112,23 +112,13 @@ class TestClaimNextJob:
     @pytest.mark.asyncio
     async def test_claims_queued_job(self) -> None:
         """claim_next_job returns a queued job and sets status='running'."""
-        from promptgrimoire.db.export_jobs import (
-            claim_next_job,
-            create_export_job,
-        )
+        from promptgrimoire.db.export_jobs import create_export_job
+        from tests.integration.conftest import claim_own_job
 
         user_id, workspace_id = await _create_user_and_workspace()
         created = await create_export_job(user_id, workspace_id, {"format": "pdf"})
 
-        # Drain all queued jobs until we find ours (other tests may leave jobs)
-        claimed = None
-        for _ in range(50):
-            job = await claim_next_job()
-            if job is None:
-                break
-            if job.id == created.id:
-                claimed = job
-                break
+        claimed = await claim_own_job({created.id})
 
         assert claimed is not None
         assert claimed.status == "running"
@@ -153,11 +143,11 @@ class TestClaimNextJob:
         claimable.
         """
         from promptgrimoire.db.export_jobs import (
-            claim_next_job,
             complete_job,
             create_export_job,
             get_job,
         )
+        from tests.integration.conftest import claim_own_job
 
         uid1, wid1 = await _create_user_and_workspace()
         uid2, wid2 = await _create_user_and_workspace()
@@ -167,9 +157,11 @@ class TestClaimNextJob:
         job2 = await create_export_job(uid2, wid2, {"format": "pdf"})
         job3 = await create_export_job(uid3, wid3, {"format": "pdf"})
 
-        # Claim two slots — should get job1 and job2 (or any two of the three).
-        claimed_a = await claim_next_job()
-        claimed_b = await claim_next_job()
+        our_ids = {job1.id, job2.id, job3.id}
+
+        # Claim two of our three jobs (scoped to avoid xdist interference).
+        claimed_a = await claim_own_job(our_ids)
+        claimed_b = await claim_own_job(our_ids)
 
         assert claimed_a is not None
         assert claimed_b is not None
@@ -177,7 +169,7 @@ class TestClaimNextJob:
         claimed_ids = {claimed_a.id, claimed_b.id}
 
         # The unclaimed job must belong to the third user.
-        unclaimed_id = {job1.id, job2.id, job3.id} - claimed_ids
+        unclaimed_id = our_ids - claimed_ids
         assert len(unclaimed_id) == 1
         remaining_job = await get_job(next(iter(unclaimed_id)))
         assert remaining_job is not None
@@ -186,8 +178,8 @@ class TestClaimNextJob:
         # Complete one of the claimed jobs — third slot opens.
         await complete_job(claimed_a.id, "tok-a", "/tmp/a.pdf")
 
-        # Now claim again — the third user's job should be claimable.
-        claimed_c = await claim_next_job()
+        # Now claim the third job.
+        claimed_c = await claim_own_job(unclaimed_id)
         assert claimed_c is not None
         assert claimed_c.id == next(iter(unclaimed_id))
 
@@ -209,10 +201,10 @@ class TestClaimNextJob:
     async def test_two_users_both_processed(self) -> None:
         """AC4.1: Two users submit exports — both are processed."""
         from promptgrimoire.db.export_jobs import (
-            claim_next_job,
             complete_job,
             create_export_job,
         )
+        from tests.integration.conftest import claim_own_job
 
         uid1, wid1 = await _create_user_and_workspace()
         uid2, wid2 = await _create_user_and_workspace()
@@ -220,13 +212,14 @@ class TestClaimNextJob:
         job1 = await create_export_job(uid1, wid1, {"format": "pdf"})
         job2 = await create_export_job(uid2, wid2, {"format": "pdf"})
 
-        claimed1 = await claim_next_job()
-        claimed2 = await claim_next_job()
+        our_ids = {job1.id, job2.id}
+
+        claimed1 = await claim_own_job(our_ids)
+        claimed2 = await claim_own_job(our_ids)
 
         assert claimed1 is not None
         assert claimed2 is not None
-        claimed_ids = {claimed1.id, claimed2.id}
-        assert claimed_ids == {job1.id, job2.id}
+        assert {claimed1.id, claimed2.id} == our_ids
 
         # Complete both
         await complete_job(claimed1.id, "tok1", "/tmp/1.pdf")

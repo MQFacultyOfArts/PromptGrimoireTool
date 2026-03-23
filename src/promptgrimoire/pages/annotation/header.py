@@ -156,6 +156,9 @@ def _wrap_refresh_with_stale_download_clear(state: PageState) -> None:
     """
     original = state.refresh_annotations
     if original is None:
+        logger.warning(
+            "export_stale_clear_wrap_skipped", reason="refresh_annotations not set"
+        )
         return
 
     def wrapped(*, trigger: str = "unknown") -> None:

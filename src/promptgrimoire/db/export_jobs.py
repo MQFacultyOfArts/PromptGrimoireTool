@@ -15,7 +15,6 @@ from typing import TYPE_CHECKING
 import sqlalchemy as sa
 import structlog
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import aliased
 from sqlmodel import col, select
 
 from promptgrimoire.db.engine import get_session
@@ -71,8 +70,12 @@ async def create_export_job(
 async def claim_next_job() -> ExportJob | None:
     """Claim the next queued job using FOR UPDATE SKIP LOCKED.
 
-    Fair scheduling: jobs from users with fewer running jobs are
-    prioritised, then FIFO by created_at.
+    FIFO ordering by created_at.  The per-user concurrency cap is 1
+    (enforced by partial unique index), so a user can never have both
+    a running job and a queued job simultaneously.  Fair-scheduling
+    (deprioritising users with running jobs) is therefore a no-op
+    under this cap and has been removed to keep the query testable.
+    Re-introduce a correlated subquery if the cap is raised.
 
     The returned object is detached from the session. All scalar columns
     are loaded before return, but lazy-loaded relationships will raise
@@ -80,25 +83,10 @@ async def claim_next_job() -> ExportJob | None:
     (id, user_id, workspace_id, payload, status, started_at, created_at).
     """
     async with get_session() as session:
-        # Subquery: count running jobs for the same user as the outer row.
-        # aliased() is required so the inner ej2.user_id == ExportJob.user_id
-        # is a cross-table correlation, not a self-comparison tautology.
-        ej2 = aliased(ExportJob)
-        running_count = (
-            select(sa.func.count())
-            .select_from(ej2)
-            .where(
-                ej2.user_id == ExportJob.user_id,
-                ej2.status == "running",
-            )
-            .correlate(ExportJob)
-            .scalar_subquery()
-        )
-
         stmt = (
             select(ExportJob)
             .where(ExportJob.status == "queued")
-            .order_by(running_count.asc(), col(ExportJob.created_at).asc())
+            .order_by(col(ExportJob.created_at).asc())
             .limit(1)
             .with_for_update(skip_locked=True)
         )
@@ -225,22 +213,16 @@ async def get_job_by_token(token: str) -> ExportJob | None:
 async def cleanup_expired_jobs(cutoff: datetime) -> int:
     """Delete expired jobs and their PDF files from disk.
 
-    Deletes jobs where:
-    - completed_at < cutoff, OR
-    - status='failed' and created_at < cutoff
+    Deletes jobs where completed_at < cutoff (covers both completed
+    and failed jobs, since fail_job/fail_orphaned_jobs both set
+    completed_at).
 
     Returns the count of deleted rows.
     """
     async with get_session() as session:
-        expired_filter = sa.or_(
-            sa.and_(
-                col(ExportJob.completed_at).isnot(None),
-                col(ExportJob.completed_at) < cutoff,
-            ),
-            sa.and_(
-                col(ExportJob.status) == "failed",
-                col(ExportJob.created_at) < cutoff,
-            ),
+        expired_filter = sa.and_(
+            col(ExportJob.completed_at).isnot(None),
+            col(ExportJob.completed_at) < cutoff,
         )
         stmt = select(ExportJob).where(expired_filter)
         jobs = (await session.exec(stmt)).all()

@@ -19,6 +19,7 @@ if TYPE_CHECKING:
 
 # Import all models to register them with SQLModel.metadata.
 # The db package re-exports every model, triggering SQLModel registration.
+import promptgrimoire.db
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

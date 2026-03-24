@@ -8,8 +8,8 @@ live in ``workspace.py``.
 
 from __future__ import annotations
 
-import re
 import time
+from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, Any
 
 import structlog
@@ -29,6 +29,7 @@ from promptgrimoire.pages.annotation.document_render import (
     render_empty_template_toolbar,
 )
 from promptgrimoire.pages.annotation.highlights import (
+    _UUID_RE,
     _execute_pending_scroll,
     _push_highlights_to_client,
     _update_highlight_css,
@@ -39,10 +40,12 @@ from promptgrimoire.pages.annotation.respond import render_respond_tab
 from promptgrimoire.pages.annotation.tags import workspace_tags_from_crdt
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
     from uuid import UUID
 
     from promptgrimoire.pages.annotation.tab_state import DocumentTabState
+
+#: Async callback for tag toolbar actions (add tag, manage tags).
+TagCallback = Callable[[], Awaitable[None]]
 
 logger = structlog.get_logger()
 
@@ -349,12 +352,6 @@ async def _handle_respond_tab(state: PageState, workspace_id: UUID) -> None:
         state.refresh_respond_references()
 
 
-_UUID_RE = re.compile(
-    r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
-    re.IGNORECASE,
-)
-
-
 def _is_source_tab(tab_name: str) -> bool:
     """Check whether a tab name is a source document tab (UUID string)."""
     return bool(_UUID_RE.match(tab_name))
@@ -437,10 +434,10 @@ async def _render_source_tab_content(
     state: PageState,
     doc_tab: DocumentTabState,
     *,
-    on_add_tag: Any,
-    on_manage_tags: Any,
+    on_add_tag: TagCallback | None,
+    on_manage_tags: TagCallback,
     can_create_tags: bool,
-    footer: Any | None,
+    footer: ui.element | None,
 ) -> None:
     """Render document content in a source tab on first visit.
 
@@ -485,10 +482,10 @@ async def _handle_source_tab_switch(
     state: PageState,
     tab_name: str,
     *,
-    on_add_tag: Any,
-    on_manage_tags: Any,
+    on_add_tag: TagCallback | None,
+    on_manage_tags: TagCallback,
     can_create_tags: bool,
-    footer: Any | None,
+    footer: ui.element | None,
 ) -> None:
     """Handle switching to a source document tab.
 
@@ -542,11 +539,11 @@ def _make_tab_change_handler(
     state: PageState,
     workspace_id: UUID,
     *,
-    on_add_tag: Any = None,
-    on_manage_tags: Any = None,
-    can_create_tags: bool = False,
-    footer: Any | None = None,
-) -> Any:
+    on_add_tag: TagCallback | None,
+    on_manage_tags: TagCallback,
+    can_create_tags: bool,
+    footer: ui.element | None,
+) -> Callable[[events.ValueChangeEventArguments], Awaitable[None]]:
     """Create the tab-change callback for the workspace tab UI.
 
     Handles source tabs (UUID-named), Organise, and Respond.
@@ -623,10 +620,10 @@ async def _build_first_source_panel(
     state: PageState,
     workspace_id: UUID,
     *,
-    on_add_tag: Any,
-    on_manage_tags: Any,
+    on_add_tag: TagCallback | None,
+    on_manage_tags: TagCallback,
     can_create_tags: bool,
-    footer: Any | None,
+    footer: ui.element | None,
 ) -> None:
     """Build the first source document panel content.
 
@@ -690,13 +687,13 @@ async def _build_tab_panels(
     state: PageState,
     workspace_id: UUID,
     tabs: ui.tabs,
-    on_tab_change: Any,
+    on_tab_change: Callable[[events.ValueChangeEventArguments], Awaitable[None]],
     documents: list[Any],
     *,
-    on_add_tag: Any,
-    on_manage_tags: Any,
+    on_add_tag: TagCallback | None,
+    on_manage_tags: TagCallback,
     can_create_tags: bool,
-    footer: Any | None = None,
+    footer: ui.element | None = None,
 ) -> None:
     """Build tab panels for source documents, Organise, and Respond.
 

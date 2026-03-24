@@ -76,7 +76,7 @@ class TestTagDeletionGuards:
         # Assert warning notification appears with tag count.
         # Quasar notifications render as role="alert" elements.
         # "Case ID" group has 4 seeded tags.
-        alert = page.get_by_role("alert").filter(has_text="tag")
+        alert = page.get_by_role("alert").filter(has_text="tag")  # noqa: PG002 — Quasar ui.notify() renders as role="alert", no data-testid injectable
         expect(alert).to_be_visible(timeout=5000)
         # Verify it mentions a count (the word "4" for 4 tags)
         expect(alert).to_contain_text("4")
@@ -137,7 +137,7 @@ class TestTagDeletionGuards:
         confirm_btn.click()
 
         # Assert warning notification with highlight count
-        alert = page.get_by_role("alert").filter(has_text="highlight")
+        alert = page.get_by_role("alert").filter(has_text="highlight")  # noqa: PG002 — Quasar ui.notify() renders as role="alert", no data-testid injectable
         expect(alert).to_be_visible(timeout=5000)
         # Should mention "1" highlight
         expect(alert).to_contain_text("1")

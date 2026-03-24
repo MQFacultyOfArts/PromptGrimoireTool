@@ -1,10 +1,10 @@
 # Causal Analysis: NiceGUI Slot Deletion Race (#369)
 
-Date: 2026-03-20 (updated 2026-03-21)
+Date: 2026-03-20 (updated 2026-03-24)
 Investigator: Claude (Opus 4.6)
-Status: Category 1 analysis added (2026-03-21), peer reviewed (3 Important resolved)
+Status: **Resolved.** All four annotation-package categories dropped to zero post-deploy. Issue #369 closed.
 Codebase: branch `debug/369-slot-deletion-race`, NiceGUI 3.9.0. Line numbers verified against 3.9.0; events.py shifted +5 lines from 3.8.0, all other files unchanged.
-Data sources: `telemetry-20260319-2123.tar.gz` (original, Mar 15-19) and `telemetry-20260321-1820.tar.gz` (Mar 19-21, ingested 2026-03-21). Note: re-ingesting the second tarball replaced the first's journal data in `incident.db`; original 550 error-seconds would need re-ingestion of the first tarball.
+Data sources: `telemetry-20260319-2123.tar.gz` (original, Mar 15-19), `telemetry-20260321-1820.tar.gz` (Mar 19-21), and `telemetry-20260324-1643.tar.gz` (Mar 14-24, full window including post-deploy observation).
 
 ## Summary
 
@@ -401,6 +401,34 @@ uv run scripts/incident_db.py breakdown --db incident.db
 # Compare against baseline ≈ 2.1 per 10k requests.
 # Prediction holds if post-deploy rate < 0.5 per 10k requests.
 ```
+
+## Experiment Results (2026-03-24)
+
+**Data source:** `telemetry-20260324-1643.tar.gz` (Mar 14-24). Deploy at 2026-03-21T12:40:10Z (systemd journal `Started promptgrimoire.service`).
+
+**Pre-deploy:** 91,482 HAProxy requests, 639 annotation-package slot error-seconds.
+**Post-deploy:** 122,582 HAProxy requests, 0 annotation-package slot error-seconds.
+
+| Category | Pre-deploy (error-sec) | Pre (per 10k req) | Post-deploy (error-sec) | Post (per 10k req) | Change |
+|----------|----------------------|-------------------|------------------------|--------------------|--------|
+| **Cat1** (cards.py:558) | 153 | 16.7 | **0** | 0.0 | **-100%** |
+| **Cat2** (cards.py:404→highlights.py:172) | 94 | 10.3 | **0** | 0.0 | -100% |
+| **Cat3** (tag_management.py:53) | 92 | 10.1 | **0** | 0.0 | -100% |
+| **Cat4** (css.py:377→workspace.py:453) | 36 | 3.9 | **0** | 0.0 | -100% |
+| NiceGUI-internal only | 35 | 3.8 | 83 | 6.8 | +77% |
+| **Total annotation-package** | **604** | **66.0** | **0** | **0.0** | **-100%** |
+
+**Primary endpoint:** Cat1 error-seconds per 10k requests: 16.7 → 0.0. Prediction was < 0.5. **Prediction holds.**
+
+**Baseline correction:** The preregistered baseline estimate of ≈ 2.1/10k was wrong — actual was 16.7/10k. The HAProxy request count for the Mar 19-21 window was overestimated. The directional prediction (>75% reduction) is strongly corroborated regardless.
+
+**Negative control (Cat4):** Unexpectedly also dropped to zero. Cat4 had no explicit fix on the branch. Possible explanations: (a) Cat4 shared a concurrent-rebuild trigger with the other categories and was fixed incidentally by the same timing changes; (b) Cat4 was traffic-pattern-dependent and the pattern changed; (c) Cat4's sample was small (36 error-seconds) and the absence post-deploy may be noise over a longer observation period.
+
+**Deploy confirmation (Cat2, Cat3):** Both dropped to zero as expected, confirming the deploy took effect.
+
+**NiceGUI-internal errors:** 83 error-seconds post-deploy (up from 35), with no `promptgrimoire/pages/annotation/` frames. These are a different class of issue — the same `RuntimeError: parent element deleted` but in NiceGUI's own code paths. Not part of #369.
+
+**Evidence grade update:** Category 1 Part 1 (missing JS guard) upgraded from **speculative** to **corroborated** — the production experiment is positive across 122k requests. Not "demonstrated" — the guard changes the executed JS and timing, so it could mask other browser-side failure modes. The specific `TypeError` from `requestAnimationFrame(undefined)` has not been observed directly.
 
 ## References
 

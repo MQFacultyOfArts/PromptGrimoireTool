@@ -68,6 +68,21 @@ def _pool_snapshot(pool: QueuePool) -> dict[str, int]:
     }
 
 
+async def _poll_until(predicate, *, timeout: float = 5.0, interval: float = 0.05):
+    """Poll *predicate* until truthy. *predicate* may be sync or async."""
+    deadline = asyncio.get_event_loop().time() + timeout
+    while True:
+        result = predicate()
+        if asyncio.iscoroutine(result):
+            result = await result
+        if result:
+            return
+        if asyncio.get_event_loop().time() > deadline:
+            msg = f"Condition not met within {timeout}s"
+            raise TimeoutError(msg)
+        await asyncio.sleep(interval)  # noqa: PG001 -- poll loop, not a fixed wait
+
+
 async def test_active_query_cancellation_self_heals(pool_engine):
     """Cancelling tasks during active pg_sleep triggers INVALIDATE,
     but the pool still serves full pool_size simultaneous connections.
@@ -86,6 +101,12 @@ async def test_active_query_cancellation_self_heals(pool_engine):
     )
 
     # Cancel 5 active server-side queries sequentially
+    prev_invalidation_count = 0
+    pg_sleep_query = text(
+        "SELECT 1 FROM pg_stat_activity "
+        "WHERE state = 'active' AND query LIKE '%pg_sleep%' "
+        "AND pid != pg_backend_pid()"
+    )
     for _ in range(5):
 
         async def active_query():
@@ -94,11 +115,28 @@ async def test_active_query_cancellation_self_heals(pool_engine):
                 await session.commit()
 
         task = asyncio.create_task(active_query())
-        await asyncio.sleep(0.3)  # Let query start on server
+
+        # Wait until pg_sleep is visible in pg_stat_activity
+        async with sf() as check_session:
+
+            async def _query_is_active(_q=pg_sleep_query, _s=check_session):
+                result = await _s.execute(_q)
+                return result.first() is not None
+
+            await _poll_until(_query_is_active)
+
         task.cancel()
         with pytest.raises(asyncio.CancelledError):
             await task
-        await asyncio.sleep(0.5)  # Let cleanup propagate
+
+        # Wait until pool invalidation event fires for this iteration
+        _expected = prev_invalidation_count + 1
+
+        def _invalidation_fired(_n=_expected):
+            return len(invalidations) >= _n
+
+        await _poll_until(_invalidation_fired)
+        prev_invalidation_count = len(invalidations)
 
     after_cancels = _pool_snapshot(pool)
 

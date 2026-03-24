@@ -451,6 +451,7 @@ _NICEGUI_UI_FILES: frozenset[str] = frozenset(
         "test_multi_doc_tabs.py",
         "test_organise_charac.py",
         "test_respond_charac.py",
+        "test_slot_deletion_race_369.py",
         "test_tag_management_crdt_sync.py",
     }
 )

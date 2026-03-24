@@ -132,7 +132,7 @@ ignore = [
 ]
 "src/promptgrimoire/pages/annotation/tab_bar.py" = [
     "S101",     # Type-narrowing asserts moved from workspace.py
-    "PLC0415",  # Late import to break circular dependency with workspace.py
+    "PLC0415",  # Runtime imports of TYPE_CHECKING-only symbols (UUID, DocumentTabState)
 ]
 "src/promptgrimoire/pages/annotation/paste_script.py" = [
     "S608",     # False positive: f-string constructs HTML/JS, not SQL

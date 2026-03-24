@@ -356,16 +356,22 @@ class TestDeleteTagGroup:
     """Tests for delete_tag_group."""
 
     @pytest.mark.asyncio
-    async def test_delete_group_ungroups_tags(self) -> None:
-        """Delete a TagGroup; its tags remain with group_id=None.
+    async def test_delete_group_with_tag_blocked_then_ungroups_after_removal(
+        self,
+    ) -> None:
+        """Deleting a group with tags is blocked; after removing tags it succeeds.
 
-        Verifies AC2.5.
+        Tags get group_id=None via FK SET NULL when the group is deleted.
+        Previously (AC2.5) this happened unconditionally; now the guard
+        requires the group to be empty first.
         """
+        from promptgrimoire.db.exceptions import HasChildTagsError
         from promptgrimoire.db.tags import (
             create_tag,
             create_tag_group,
             delete_tag_group,
             get_tag,
+            update_tag,
         )
 
         _, activity = await _make_course_week_activity()
@@ -375,6 +381,13 @@ class TestDeleteTagGroup:
         tag = await create_tag(
             ws_id, name="Grouped", color="#aabbcc", group_id=group.id
         )
+
+        # Guard blocks deletion while tag is in the group
+        with pytest.raises(HasChildTagsError):
+            await delete_tag_group(group.id)
+
+        # Ungroup the tag
+        await update_tag(tag.id, group_id=None)
 
         deleted = await delete_tag_group(group.id)
         assert deleted is True
@@ -391,6 +404,99 @@ class TestDeleteTagGroup:
 
         result = await delete_tag_group(uuid4())
         assert result is False
+
+    @pytest.mark.asyncio
+    async def test_delete_empty_group_succeeds(self) -> None:
+        """Deleting a group with zero tags succeeds.
+
+        Verifies tag-deletion-guards-413.AC1.1.
+        """
+        from promptgrimoire.db.tags import create_tag_group, delete_tag_group
+
+        _, activity = await _make_course_week_activity()
+        ws_id = activity.template_workspace_id
+
+        group = await create_tag_group(ws_id, name="Empty Group")
+        deleted = await delete_tag_group(group.id)
+        assert deleted is True
+
+    @pytest.mark.asyncio
+    async def test_delete_group_with_tags_raises(self) -> None:
+        """Deleting a group containing tags raises HasChildTagsError.
+
+        Verifies tag-deletion-guards-413.AC1.2.
+        """
+        from promptgrimoire.db.exceptions import HasChildTagsError
+        from promptgrimoire.db.tags import (
+            create_tag,
+            create_tag_group,
+            delete_tag_group,
+        )
+
+        _, activity = await _make_course_week_activity()
+        ws_id = activity.template_workspace_id
+
+        group = await create_tag_group(ws_id, name="Has Tags")
+        await create_tag(ws_id, name="Tag A", color="#aa0000", group_id=group.id)
+        await create_tag(ws_id, name="Tag B", color="#bb0000", group_id=group.id)
+
+        with pytest.raises(HasChildTagsError) as exc_info:
+            await delete_tag_group(group.id)
+        assert exc_info.value.tag_count == 2
+        assert exc_info.value.group_id == group.id
+
+    @pytest.mark.asyncio
+    async def test_delete_group_after_moving_tags_succeeds(self) -> None:
+        """Group deletion succeeds after all tags are moved to another group.
+
+        Verifies tag-deletion-guards-413.AC1.4.
+        """
+        from promptgrimoire.db.tags import (
+            create_tag,
+            create_tag_group,
+            delete_tag_group,
+            update_tag,
+        )
+
+        _, activity = await _make_course_week_activity()
+        ws_id = activity.template_workspace_id
+
+        group_a = await create_tag_group(ws_id, name="Group A")
+        group_b = await create_tag_group(ws_id, name="Group B")
+        tag = await create_tag(
+            ws_id, name="Movable", color="#cc0000", group_id=group_a.id
+        )
+
+        # Move the tag to group B
+        await update_tag(tag.id, group_id=group_b.id)
+
+        # Group A is now empty and can be deleted
+        deleted = await delete_tag_group(group_a.id)
+        assert deleted is True
+
+    @pytest.mark.asyncio
+    async def test_delete_group_after_deleting_tags_succeeds(self) -> None:
+        """Group deletion succeeds after all its tags are deleted.
+
+        Verifies tag-deletion-guards-413.AC1.4.
+        """
+        from promptgrimoire.db.tags import (
+            create_tag,
+            create_tag_group,
+            delete_tag,
+            delete_tag_group,
+        )
+
+        _, activity = await _make_course_week_activity()
+        ws_id = activity.template_workspace_id
+
+        group = await create_tag_group(ws_id, name="Will Empty")
+        tag = await create_tag(ws_id, name="Doomed", color="#dd0000", group_id=group.id)
+
+        await delete_tag(tag.id)
+
+        deleted = await delete_tag_group(group.id)
+        assert deleted is True
 
 
 class TestDeleteTag:

@@ -13,11 +13,12 @@ from typing import TYPE_CHECKING
 import structlog
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
-from sqlmodel import select
+from sqlmodel import func, select
 
 from promptgrimoire.db.engine import get_session
 from promptgrimoire.db.exceptions import (
     DuplicateNameError,
+    HasChildTagsError,
     SharePermissionError,
     TagCreationDeniedError,
     TagLockedError,
@@ -257,6 +258,13 @@ async def delete_tag_group(
         group = await session.get(TagGroup, group_id)
         if not group:
             return False
+
+        tag_count_result = await session.exec(
+            select(func.count()).select_from(Tag).where(Tag.group_id == group_id)
+        )
+        tag_count = tag_count_result.one()
+        if tag_count > 0:
+            raise HasChildTagsError(group_id, tag_count)
 
         await session.delete(group)
 

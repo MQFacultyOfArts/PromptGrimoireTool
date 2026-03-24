@@ -2483,13 +2483,27 @@ class TestImportTagsFromWorkspace:
 
         Verifies AC4.6: all-or-nothing atomicity.
 
-        Injects a RuntimeError into ``_import_tags`` after groups have
-        been inserted, proving the single ``get_session()`` block rolls
-        back both groups and tags on any exception.
+        Uses a real DB-level constraint violation to trigger rollback.
+        ``list_tags_for_workspace`` is patched to return an in-memory Tag
+        object with ``color="INVALID"`` (bypassing Python validation in
+        ``create_tag``).  When ``_import_tags`` passes this value to
+        ``pg_insert``, the DB fires the ``ck_tag_color_hex`` CHECK
+        constraint and raises a real ``IntegrityError`` — no mock
+        exception, no ``side_effect``.
+
+        ``import_tags_from_workspace`` runs all mutations inside a single
+        ``async with get_session()`` block (see ``engine.py``).  Any
+        unhandled exception inside that block causes the entire transaction
+        to roll back — groups inserted by ``_import_groups`` earlier in
+        the same session are also discarded.  The zero-row assertion on
+        the target workspace proves full rollback, not partial commit.
         """
         from unittest.mock import AsyncMock, patch
 
+        from sqlalchemy.exc import IntegrityError
+
         from promptgrimoire.db.acl import grant_permission
+        from promptgrimoire.db.models import Tag as TagModel
         from promptgrimoire.db.tags import (
             create_tag,
             create_tag_group,
@@ -2502,9 +2516,9 @@ class TestImportTagsFromWorkspace:
         _, src_activity = await _make_course_week_activity()
         src_ws = src_activity.template_workspace_id
         src_group = await create_tag_group(src_ws, name="AtomicGroup")
-        await create_tag(
+        src_tag = await create_tag(
             src_ws,
-            name="GoodTag",
+            name="BadColorTag",
             color="#aabbcc",
             group_id=src_group.id,
         )
@@ -2518,15 +2532,32 @@ class TestImportTagsFromWorkspace:
         )
         await grant_permission(src_ws, user.id, "viewer")
 
-        # Patch _import_tags to raise after groups are already inserted
-        boom = AsyncMock(side_effect=RuntimeError("injected"))
+        # Build a poisoned Tag object in-memory: color violates ck_tag_color_hex.
+        # model_construct skips Pydantic validation so "INVALID" is accepted
+        # without raising ValueError — it only hits the DB CHECK constraint when
+        # _import_tags calls pg_insert(), producing a real IntegrityError.
+        poisoned = TagModel.model_construct(
+            id=src_tag.id,
+            workspace_id=src_ws,
+            group_id=src_group.id,
+            name=src_tag.name,
+            color="INVALID",
+            locked=False,
+            order_index=src_tag.order_index,
+            description=None,
+        )
+        fake_list_tags = AsyncMock(return_value=[poisoned])
+
+        # The DB fires ck_tag_color_hex during the tag insert.
+        # The get_session() context manager rolls back the entire transaction,
+        # including the group already inserted by _import_groups.
         with (
-            patch("promptgrimoire.db.tags._import_tags", boom),
-            pytest.raises(RuntimeError, match="injected"),
+            patch("promptgrimoire.db.tags.list_tags_for_workspace", fake_list_tags),
+            pytest.raises(IntegrityError),
         ):
             await import_tags_from_workspace(src_ws, tgt_ws, user.id)
 
-        # Verify nothing was created — full rollback
+        # Full rollback — target has zero groups and zero tags
         tgt_tags = await list_tags_for_workspace(tgt_ws)
         tgt_groups = await list_tag_groups_for_workspace(tgt_ws)
         assert len(tgt_tags) == 0

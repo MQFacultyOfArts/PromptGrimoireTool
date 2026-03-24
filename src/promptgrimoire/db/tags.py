@@ -9,7 +9,9 @@ from __future__ import annotations
 import logging
 import re
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING
+from uuid import uuid4
 
 import structlog
 from sqlalchemy import text
@@ -754,9 +756,6 @@ async def _import_groups(
 
     Populates *result_obj* and *group_id_map* in place.
     """
-    from datetime import UTC, datetime
-    from uuid import uuid4
-
     for idx, src_group in enumerate(source_groups):
         new_id = uuid4()
         stmt = (
@@ -804,9 +803,6 @@ async def _import_tags(
 
     Populates *result_obj* in place.
     """
-    from datetime import UTC, datetime
-    from uuid import uuid4
-
     tag_offset = 0
     for src_tag in source_tags:
         new_group_id = group_id_map.get(src_tag.group_id) if src_tag.group_id else None

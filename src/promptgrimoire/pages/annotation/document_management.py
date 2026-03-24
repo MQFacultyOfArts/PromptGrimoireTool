@@ -106,6 +106,33 @@ def _get_annotation_count(state: PageState, doc_id: UUID) -> int:
     return len(state.crdt_doc.get_highlights_for_document(str(doc_id)))
 
 
+def _render_delete_button(
+    doc: WorkspaceDocument,
+    state: PageState,
+    dialog: ui.dialog,
+    annotation_count: int,
+) -> None:
+    """Render delete button for a user-uploaded document.
+
+    The button is always shown for owner-uploaded documents but disabled
+    with a tooltip when the document has annotations, so the user
+    understands the precondition for deletion.
+    """
+    deletable = can_delete_document(
+        doc, is_owner=state.is_owner, annotation_count=annotation_count
+    )
+    btn = ui.button(
+        icon="delete",
+        on_click=lambda d=doc: _handle_delete_document(d, state, dialog),
+    ).props(
+        f'flat round dense size=sm color=negative data-testid="delete-doc-btn-{doc.id}"'
+    )
+    if not deletable:
+        btn.disable()
+        suffix = "s" if annotation_count != 1 else ""
+        btn.tooltip(f"Remove {annotation_count} annotation{suffix} before deleting")
+
+
 def _render_document_row(
     doc: WorkspaceDocument,
     state: PageState,
@@ -134,18 +161,8 @@ def _render_document_row(
                     "flat round dense size=sm color=primary"
                     f' data-testid="edit-document-btn-{doc.id}"'
                 )
-            if can_delete_document(
-                doc,
-                is_owner=state.is_owner,
-                annotation_count=annotation_count,
-            ):
-                ui.button(
-                    icon="delete",
-                    on_click=lambda d=doc: _handle_delete_document(d, state, dialog),
-                ).props(
-                    "flat round dense size=sm color=negative"
-                    f' data-testid="delete-doc-btn-{doc.id}"'
-                )
+            if doc.source_document_id is None:
+                _render_delete_button(doc, state, dialog, annotation_count)
 
 
 async def open_manage_documents_dialog(state: PageState) -> None:

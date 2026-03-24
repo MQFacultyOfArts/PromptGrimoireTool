@@ -244,6 +244,14 @@ sudo -u postgres createdb -O promptgrimoire promptgrimoire
 sudo -u postgres psql -d promptgrimoire -c "SELECT 1;"
 ```
 
+Set a safety net for connection leaks — any connection idle in a transaction for more than 60 seconds is terminated by PostgreSQL. This prevents a leaked session from exhausting the connection pool and taking down the app.
+
+```bash
+sudo -u postgres psql -c "ALTER DATABASE promptgrimoire SET idle_in_transaction_session_timeout = '60s';"
+```
+
+> **Incident (2026-03-24):** A deploy leaked sessions that sat idle-in-transaction indefinitely, exhausting the pool (69/80 checked out) and causing 60s timeouts on all page loads. This setting would have automatically killed the leaked connections before the pool was exhausted.
+
 The `promptgrimoire` system user (created in Step 8) authenticates via `peer` — no password needed for local Unix socket connections. Peer auth verification:
 
 ```bash
@@ -1151,6 +1159,23 @@ Then click the bell icon on the production server's card to set alert thresholds
 
 For the current single-server setup, system-level metrics are sufficient — the 2026-03-15 OOM would have been caught by a memory > 80% alert minutes before the crash.
 
+### PostgreSQL connection monitoring — cron
+
+Beszel can't monitor PostgreSQL internals, so a cron job fills the gap. `deploy/check-pg-connections.sh` queries `pg_stat_activity` and posts a Discord alert when idle-in-transaction connections exceed a threshold (default: 5).
+
+```bash
+# Install the cron job (runs every 2 minutes as the promptgrimoire user)
+sudo crontab -u promptgrimoire -l 2>/dev/null | {
+  cat
+  echo "*/2 * * * * /opt/promptgrimoire/deploy/check-pg-connections.sh"
+} | sudo crontab -u promptgrimoire -
+
+# Verify
+sudo crontab -u promptgrimoire -l
+```
+
+> **Incident (2026-03-24):** 25 idle-in-transaction connections accumulated silently after a deploy, exhausting the pool before anyone noticed. This monitor would have alerted within 2 minutes.
+
 > **Ref:** [Beszel docs](https://beszel.dev/guide/getting-started), [Beszel security model](https://beszel.dev/guide/security)
 
 ---
@@ -1274,6 +1299,17 @@ The deploy script (`deploy/restart.sh`) runs: `git pull` → `uv sync --no-dev` 
 
 Alembic migrations run automatically on app start.
 
+**Post-deploy verification** — after every deploy, check for connection leaks:
+
+```bash
+# Wait ~30 seconds for users to reconnect, then:
+sudo -u promptgrimoire psql -c "SELECT state, count(*) FROM pg_stat_activity WHERE datname = 'promptgrimoire' GROUP BY state ORDER BY count DESC;"
+```
+
+Expected: `idle` + `active` only. If `idle in transaction` appears and climbs, the deploy introduced a connection leak — restart immediately (`sudo systemctl restart promptgrimoire`) and investigate before redeploying.
+
+> **Incident (2026-03-24):** A deploy introduced a session leak that accumulated 25 idle-in-transaction connections, exhausting the pool (69/80 checked out) and causing 60s timeouts on all page loads. The app had to be restarted. See postmortem (forthcoming).
+
 **One-time setup** (after first deploy of the script):
 
 ```bash
@@ -1334,6 +1370,9 @@ echo | openssl s_client -connect grimoire.drbbs.org:443 -servername grimoire.drb
 
 # Database?
 sudo -u promptgrimoire psql -d promptgrimoire -c "SELECT 1;"
+
+# Connection pool health? (idle in transaction = leak)
+sudo -u promptgrimoire psql -c "SELECT state, count(*) FROM pg_stat_activity WHERE datname = 'promptgrimoire' GROUP BY state ORDER BY count DESC;"
 
 # Certbot auto-renewal?
 sudo certbot renew --dry-run

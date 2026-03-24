@@ -549,6 +549,17 @@ def lookup_para_ref(
     return f"[{start_para}]-[{end_para}]"
 
 
+def inject_paragraph_markers_for_export(
+    html: str,
+    word_to_legal_para: dict[int, int | None] | None,
+) -> str:
+    """Inject ``<span data-paranumber="N">`` markers into export HTML.
+
+    Stub — implementation in Task 2.
+    """
+    raise NotImplementedError("Task 2: implement inject_paragraph_markers_for_export")
+
+
 def detect_source_numbering(html: str) -> bool:
     """Detect whether *html* uses explicit source paragraph numbering.
 

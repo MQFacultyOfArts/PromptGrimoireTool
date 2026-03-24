@@ -9,7 +9,6 @@ Connection: close
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta http-equiv="refresh" content="5">
 <title>PromptGrimoire — Restarting</title>
 <style>
   body {
@@ -46,5 +45,11 @@ Connection: close
   <div class="spinner"></div>
   <p>This page will reload automatically in a few seconds.</p>
 </div>
+<script>
+  // Jittered reload: 5–35 seconds to prevent thundering herd on restart.
+  // Without this, all clients refresh at the same instant and overwhelm
+  // the connection pool. See #419.
+  setTimeout(function() { location.reload(); }, 5000 + Math.random() * 30000);
+</script>
 </body>
 </html>

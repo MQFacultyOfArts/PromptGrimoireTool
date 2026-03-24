@@ -22,7 +22,11 @@ import structlog
 from nicegui import ui
 from selectolax.lexbor import LexborHTMLParser
 
-from promptgrimoire.db.exceptions import OwnershipError, ProtectedDocumentError
+from promptgrimoire.db.exceptions import (
+    HasAnnotationsError,
+    OwnershipError,
+    ProtectedDocumentError,
+)
 from promptgrimoire.db.workspace_documents import (
     count_document_clones,
     delete_document,
@@ -345,6 +349,20 @@ async def _do_delete_document(doc: WorkspaceDocument, state: PageState) -> None:
     except ProtectedDocumentError:
         logger.warning("protected_document_delete", operation="delete_document")
         ui.notify("This document is protected and cannot be deleted", type="negative")
+        return
+    except HasAnnotationsError as exc:
+        logger.warning(
+            "document_delete_blocked",
+            operation="delete_document",
+            document_id=str(doc.id),
+            highlight_count=exc.highlight_count,
+        )
+        ui.notify(
+            f"Cannot delete: {exc.highlight_count} "
+            f"annotation{'s' if exc.highlight_count != 1 else ''} "
+            "on this document",
+            type="warning",
+        )
         return
 
     ui.notify("Document deleted. You can upload a replacement.", type="positive")

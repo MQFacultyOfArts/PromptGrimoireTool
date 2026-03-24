@@ -8,6 +8,7 @@ on tab_bar.py.
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, Any
 
 import structlog
@@ -23,10 +24,12 @@ from promptgrimoire.pages.annotation.respond import word_count
 from promptgrimoire.pages.annotation.word_count_badge import format_word_count_badge
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
     from uuid import UUID
 
     from promptgrimoire.pages.annotation import PageState
+
+#: Async callback for tag toolbar actions (add tag, manage tags).
+TagCallback = Callable[[], Awaitable[None]]
 
 logger = structlog.get_logger()
 
@@ -67,9 +70,9 @@ async def render_document_container(
     doc: Any,
     crdt_doc: Any,
     *,
-    on_add_tag: Any | None,
-    on_manage_tags: Any,
-    footer: Any | None,
+    on_add_tag: TagCallback | None,
+    on_manage_tags: TagCallback,
+    footer: ui.element | None,
 ) -> None:
     """Render a document with highlights and initialise the word count badge."""
     logger.debug("[RENDER] rendering document with highlights")
@@ -97,10 +100,10 @@ async def render_document_container(
 def render_empty_template_toolbar(
     state: PageState,
     *,
-    on_add_tag: Any | None,
-    on_manage_tags: Any,
+    on_add_tag: TagCallback | None,
+    on_manage_tags: TagCallback,
     can_create_tags: bool,
-    footer: Any | None,
+    footer: ui.element | None,
 ) -> None:
     """Render tag toolbar for empty template workspaces.
 

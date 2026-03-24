@@ -18,6 +18,8 @@ from typing import TYPE_CHECKING, Any
 import structlog
 from nicegui import ui
 
+from promptgrimoire.db.exceptions import BusinessLogicError
+
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
     from uuid import UUID
@@ -420,6 +422,16 @@ def _open_confirm_delete(
             async def _do_delete() -> None:
                 try:
                     await delete_fn()
+                except BusinessLogicError as exc:
+                    logger.warning(
+                        "delete_entity_blocked",
+                        operation="delete_entity",
+                        entity_name=entity_name,
+                        reason=str(exc),
+                    )
+                    ui.notify(str(exc), type="warning")
+                    dlg.close()
+                    return
                 except Exception as exc:
                     logger.exception(
                         "delete_entity_failed",

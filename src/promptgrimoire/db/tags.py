@@ -19,6 +19,7 @@ from promptgrimoire.db.engine import get_session
 from promptgrimoire.db.exceptions import (
     DuplicateNameError,
     HasChildTagsError,
+    HasHighlightsError,
     SharePermissionError,
     TagCreationDeniedError,
     TagLockedError,
@@ -546,6 +547,24 @@ async def delete_tag(
 
         workspace_id = tag.workspace_id
         tag_id_for_cleanup = tag.id
+
+        # Guard: count highlights from DB-persisted CRDT state (same session)
+        from promptgrimoire.db.models import Workspace
+
+        workspace = await session.get(Workspace, workspace_id)
+        if workspace and workspace.crdt_state:
+            from promptgrimoire.crdt.annotation_doc import (
+                AnnotationDocument as AnnotationDocumentCls,
+            )
+
+            guard_doc = AnnotationDocumentCls("guard-tmp")
+            guard_doc.apply_update(workspace.crdt_state)
+            tag_str = str(tag_id_for_cleanup)
+            highlight_count = sum(
+                1 for hl in guard_doc.get_all_highlights() if hl.get("tag") == tag_str
+            )
+            if highlight_count > 0:
+                raise HasHighlightsError(tag_id_for_cleanup, highlight_count)
 
     # CRDT cleanup before row deletion (separate session)
     await _cleanup_crdt_highlights_for_tag(

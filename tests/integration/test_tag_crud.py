@@ -513,6 +513,118 @@ class TestDeleteTag:
         result = await delete_tag(uuid4())
         assert result is False
 
+    @pytest.mark.asyncio
+    async def test_delete_tag_with_zero_highlights_succeeds(self) -> None:
+        """Tag with zero CRDT highlights deletes successfully.
+
+        Verifies tag-deletion-guards-413.AC2.1.
+        """
+        from promptgrimoire.crdt.annotation_doc import AnnotationDocument
+        from promptgrimoire.db.tags import create_tag, delete_tag, get_tag
+        from promptgrimoire.db.workspaces import (
+            create_workspace,
+            place_workspace_in_activity,
+            save_workspace_crdt_state,
+        )
+
+        _, activity = await _make_course_week_activity()
+        ws = await create_workspace()
+        await place_workspace_in_activity(ws.id, activity.id)
+
+        tag = await create_tag(ws.id, name="NoHL", color="#ff0000")
+
+        # Persist empty CRDT state (no highlights)
+        doc = AnnotationDocument("test")
+        await save_workspace_crdt_state(ws.id, doc.get_full_state())
+
+        deleted = await delete_tag(tag.id)
+        assert deleted is True
+        assert await get_tag(tag.id) is None
+
+    @pytest.mark.asyncio
+    async def test_delete_tag_with_highlights_raises(self) -> None:
+        """Tag with CRDT highlights raises HasHighlightsError.
+
+        Verifies tag-deletion-guards-413.AC2.2.
+        """
+        from promptgrimoire.crdt.annotation_doc import AnnotationDocument
+        from promptgrimoire.db.exceptions import HasHighlightsError
+        from promptgrimoire.db.tags import create_tag, delete_tag
+        from promptgrimoire.db.workspaces import (
+            create_workspace,
+            place_workspace_in_activity,
+            save_workspace_crdt_state,
+        )
+
+        _, activity = await _make_course_week_activity()
+        ws = await create_workspace()
+        await place_workspace_in_activity(ws.id, activity.id)
+
+        tag = await create_tag(ws.id, name="HasHL", color="#ff0000")
+
+        # Build CRDT state with 3 highlights for this tag
+        doc = AnnotationDocument("test")
+        tag_str = str(tag.id)
+        for i in range(3):
+            doc.add_highlight(
+                start_char=i * 10,
+                end_char=(i + 1) * 10,
+                tag=tag_str,
+                text=f"text{i}",
+                author="test",
+            )
+        await save_workspace_crdt_state(ws.id, doc.get_full_state())
+
+        with pytest.raises(HasHighlightsError) as exc_info:
+            await delete_tag(tag.id)
+        assert exc_info.value.highlight_count == 3
+        assert exc_info.value.tag_id == tag.id
+
+    @pytest.mark.asyncio
+    async def test_delete_tag_after_removing_highlights_succeeds(self) -> None:
+        """Tag deletion succeeds after all highlights are removed from CRDT.
+
+        Verifies tag-deletion-guards-413.AC2.4.
+        """
+        from promptgrimoire.crdt.annotation_doc import AnnotationDocument
+        from promptgrimoire.db.tags import create_tag, delete_tag, get_tag
+        from promptgrimoire.db.workspaces import (
+            create_workspace,
+            place_workspace_in_activity,
+            save_workspace_crdt_state,
+        )
+
+        _, activity = await _make_course_week_activity()
+        ws = await create_workspace()
+        await place_workspace_in_activity(ws.id, activity.id)
+
+        tag = await create_tag(ws.id, name="WillClear", color="#ff0000")
+
+        # Build CRDT state with highlights
+        doc = AnnotationDocument("test")
+        tag_str = str(tag.id)
+        hl_ids = []
+        for i in range(2):
+            hl_id = doc.add_highlight(
+                start_char=i * 10,
+                end_char=(i + 1) * 10,
+                tag=tag_str,
+                text=f"text{i}",
+                author="test",
+            )
+            hl_ids.append(hl_id)
+        await save_workspace_crdt_state(ws.id, doc.get_full_state())
+
+        # Remove all highlights
+        for hl_id in hl_ids:
+            doc.remove_highlight(hl_id)
+        await save_workspace_crdt_state(ws.id, doc.get_full_state())
+
+        # Now deletion succeeds
+        deleted = await delete_tag(tag.id)
+        assert deleted is True
+        assert await get_tag(tag.id) is None
+
 
 class TestLockEnforcement:
     """Tests for tag lock enforcement."""
@@ -797,28 +909,34 @@ class TestReorderTagGroups:
 
 
 class TestDeleteTagCrdtCleanup:
-    """Tests for CRDT highlight cleanup on tag deletion."""
+    """Tests for CRDT highlight cleanup on tag deletion.
+
+    With the HasHighlightsError guard (tag-deletion-guards-413), tags with
+    persisted CRDT highlights are now blocked from deletion. The guard fires
+    before the CRDT cleanup path. Tests verify that:
+    - Tags with DB-persisted highlights are blocked
+    - After highlights are removed from persisted state, deletion succeeds
+      and residual CRDT cleanup still runs
+    """
 
     @pytest.mark.asyncio
-    async def test_delete_tag_removes_crdt_highlights(self) -> None:
-        """Deleting a tag removes its CRDT highlights.
+    async def test_delete_tag_blocked_when_crdt_highlights_persisted(self) -> None:
+        """Deleting a tag with persisted CRDT highlights raises HasHighlightsError.
 
-        Verifies AC2.3.
+        Verifies tag-deletion-guards-413.AC2.2 (supersedes old AC2.3
+        which expected silent cleanup).
         """
         from promptgrimoire.crdt.annotation_doc import AnnotationDocument
+        from promptgrimoire.db.exceptions import HasHighlightsError
         from promptgrimoire.db.tags import create_tag, delete_tag
         from promptgrimoire.db.workspaces import (
             create_workspace,
-            get_workspace,
+            place_workspace_in_activity,
             save_workspace_crdt_state,
         )
 
         _, activity = await _make_course_week_activity()
         ws = await create_workspace()
-
-        # Place workspace in activity so tag creation is permitted
-        from promptgrimoire.db.workspaces import place_workspace_in_activity
-
         await place_workspace_in_activity(ws.id, activity.id)
 
         tag = await create_tag(ws.id, name="ToDelete", color="#ff0000")
@@ -826,40 +944,28 @@ class TestDeleteTagCrdtCleanup:
         # Build CRDT state with 3 highlights for this tag
         doc = AnnotationDocument("test")
         tag_str = str(tag.id)
-        hl_ids = []
         for i in range(3):
-            hl_id = doc.add_highlight(
+            doc.add_highlight(
                 start_char=i * 10,
                 end_char=(i + 1) * 10,
                 tag=tag_str,
                 text=f"text{i}",
                 author="test",
             )
-            hl_ids.append(hl_id)
-
-        # Save CRDT state to workspace
         await save_workspace_crdt_state(ws.id, doc.get_full_state())
 
-        # Delete tag
-        deleted = await delete_tag(tag.id)
-        assert deleted is True
-
-        # Verify CRDT state is cleaned up
-        ws_after = await get_workspace(ws.id)
-        assert ws_after is not None
-        assert ws_after.crdt_state is not None
-
-        doc2 = AnnotationDocument("verify")
-        doc2.apply_update(ws_after.crdt_state)
-        assert doc2.get_all_highlights() == []
+        with pytest.raises(HasHighlightsError) as exc_info:
+            await delete_tag(tag.id)
+        assert exc_info.value.highlight_count == 3
 
     @pytest.mark.asyncio
-    async def test_delete_tag_preserves_other_highlights(self) -> None:
-        """Deleting tag A removes only its highlights; tag B remains.
+    async def test_delete_tag_blocked_preserves_other_highlights(self) -> None:
+        """Deleting tag A is blocked; tag B highlights are untouched.
 
-        Verifies AC2.3.
+        Verifies tag-deletion-guards-413.AC2.2: guard fires per-tag.
         """
         from promptgrimoire.crdt.annotation_doc import AnnotationDocument
+        from promptgrimoire.db.exceptions import HasHighlightsError
         from promptgrimoire.db.tags import create_tag, delete_tag
         from promptgrimoire.db.workspaces import (
             create_workspace,
@@ -896,33 +1002,31 @@ class TestDeleteTagCrdtCleanup:
         )
         await save_workspace_crdt_state(ws.id, doc.get_full_state())
 
-        # Delete tag A only
-        await delete_tag(tag_a.id)
+        # Delete tag A blocked by guard
+        with pytest.raises(HasHighlightsError):
+            await delete_tag(tag_a.id)
 
-        # Verify tag B highlights remain
+        # Both highlights untouched (guard raised before cleanup)
         ws_after = await get_workspace(ws.id)
         assert ws_after is not None
         assert ws_after.crdt_state is not None
 
         doc2 = AnnotationDocument("verify")
         doc2.apply_update(ws_after.crdt_state)
-
         remaining = doc2.get_all_highlights()
-        assert len(remaining) == 1
-        assert remaining[0]["tag"] == b_str
+        assert len(remaining) == 2
 
     @pytest.mark.asyncio
-    async def test_delete_tag_no_crdt_tag_entry(self) -> None:
-        """Cleanup succeeds when tag has highlights but no tags Map entry.
+    async def test_delete_tag_blocked_with_highlights_no_tags_map_entry(self) -> None:
+        """Guard fires even when tag has highlights but no tags Map entry.
 
-        Verifies AC2.3 edge case: highlights are still removed even
-        when the tag has no entry in the CRDT tags Map.
+        Verifies tag-deletion-guards-413.AC2.2 edge case.
         """
         from promptgrimoire.crdt.annotation_doc import AnnotationDocument
+        from promptgrimoire.db.exceptions import HasHighlightsError
         from promptgrimoire.db.tags import create_tag, delete_tag
         from promptgrimoire.db.workspaces import (
             create_workspace,
-            get_workspace,
             place_workspace_in_activity,
             save_workspace_crdt_state,
         )
@@ -943,21 +1047,11 @@ class TestDeleteTagCrdtCleanup:
             text="hi",
             author="test",
         )
-
         await save_workspace_crdt_state(ws.id, doc.get_full_state())
 
-        # Delete tag -- should not error
-        deleted = await delete_tag(tag.id)
-        assert deleted is True
-
-        # Verify highlights removed
-        ws_after = await get_workspace(ws.id)
-        assert ws_after is not None
-        assert ws_after.crdt_state is not None
-
-        doc2 = AnnotationDocument("verify")
-        doc2.apply_update(ws_after.crdt_state)
-        assert doc2.get_all_highlights() == []
+        with pytest.raises(HasHighlightsError) as exc_info:
+            await delete_tag(tag.id)
+        assert exc_info.value.highlight_count == 1
 
 
 class TestAtomicTagCounter:
@@ -1409,16 +1503,17 @@ class TestDeleteTagCrdt:
         assert doc.get_tag(tag.id) is None
 
     @pytest.mark.asyncio
-    async def test_delete_tag_without_crdt_doc_uses_db_cleanup(self) -> None:
-        """delete_tag without crdt_doc still does DB-based CRDT cleanup.
+    async def test_delete_tag_without_crdt_doc_blocked_by_guard(self) -> None:
+        """delete_tag without crdt_doc is blocked when DB has persisted highlights.
 
-        Regression test for existing TestDeleteTagCrdtCleanup behaviour.
+        With tag-deletion-guards-413, the guard reads DB-persisted CRDT
+        state and raises HasHighlightsError before cleanup runs.
         """
         from promptgrimoire.crdt.annotation_doc import AnnotationDocument
+        from promptgrimoire.db.exceptions import HasHighlightsError
         from promptgrimoire.db.tags import create_tag, delete_tag
         from promptgrimoire.db.workspaces import (
             create_workspace,
-            get_workspace,
             place_workspace_in_activity,
             save_workspace_crdt_state,
         )
@@ -1441,18 +1536,10 @@ class TestDeleteTagCrdt:
         )
         await save_workspace_crdt_state(ws.id, doc.get_full_state())
 
-        # Delete without crdt_doc — should use DB-based cleanup
-        deleted = await delete_tag(tag.id)
-        assert deleted is True
-
-        # Verify DB-saved CRDT state is cleaned up
-        ws_after = await get_workspace(ws.id)
-        assert ws_after is not None
-        assert ws_after.crdt_state is not None
-
-        doc2 = AnnotationDocument("verify")
-        doc2.apply_update(ws_after.crdt_state)
-        assert doc2.get_all_highlights() == []
+        # Guard blocks deletion when DB-persisted highlights exist
+        with pytest.raises(HasHighlightsError) as exc_info:
+            await delete_tag(tag.id)
+        assert exc_info.value.highlight_count == 1
 
     @pytest.mark.asyncio
     async def test_delete_tag_no_crdt_entry_no_crash(self) -> None:

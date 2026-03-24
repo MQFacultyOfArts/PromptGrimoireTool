@@ -351,11 +351,13 @@ class TestCleanupExpiredJobs:
         job = await create_export_job(user_id, workspace_id, {"format": "pdf"})
         await complete_job(job.id, "tok", "/tmp/nonexistent.pdf")
 
-        # Cutoff in the future — should delete
+        # Cutoff in the future — should delete our job.
+        # Don't assert exact count — under xdist, another worker may have
+        # already swept our job, or we may sweep theirs. Only assert our
+        # specific job is gone.
         cutoff = datetime.now(UTC) + timedelta(hours=1)
-        count = await cleanup_expired_jobs(cutoff)
+        await cleanup_expired_jobs(cutoff)
 
-        assert count >= 1
         assert await get_job(job.id) is None
 
     @pytest.mark.asyncio
@@ -396,10 +398,11 @@ class TestCleanupExpiredJobs:
         job = await create_export_job(user_id, workspace_id, {"format": "pdf"})
         await fail_job(job.id, "error")
 
+        # Same xdist caveat as test_deletes_expired_completed_jobs —
+        # only assert our specific job is gone.
         cutoff = datetime.now(UTC) + timedelta(hours=1)
-        count = await cleanup_expired_jobs(cutoff)
+        await cleanup_expired_jobs(cutoff)
 
-        assert count >= 1
         assert await get_job(job.id) is None
 
     @pytest.mark.asyncio

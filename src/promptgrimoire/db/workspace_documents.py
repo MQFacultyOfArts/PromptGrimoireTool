@@ -12,7 +12,11 @@ from sqlalchemy import func
 from sqlmodel import select
 
 from promptgrimoire.db.engine import get_session
-from promptgrimoire.db.exceptions import OwnershipError, ProtectedDocumentError
+from promptgrimoire.db.exceptions import (
+    HasAnnotationsError,
+    OwnershipError,
+    ProtectedDocumentError,
+)
 from promptgrimoire.db.models import ACLEntry, Workspace, WorkspaceDocument
 from promptgrimoire.input_pipeline import build_paragraph_map_for_json
 
@@ -245,6 +249,21 @@ async def delete_document(document_id: UUID, *, user_id: UUID) -> bool:
                 document_id=doc.id,
                 source_document_id=doc.source_document_id,
             )
+
+        # Guard: count annotations from DB-persisted CRDT state (same session)
+        workspace = await session.get(Workspace, doc.workspace_id)
+        if workspace and workspace.crdt_state:
+            from promptgrimoire.crdt.annotation_doc import (
+                AnnotationDocument as AnnotationDocumentCls,
+            )
+
+            count_doc = AnnotationDocumentCls("count-doc-tmp")
+            count_doc.apply_update(workspace.crdt_state)
+            annotation_count = len(
+                count_doc.get_highlights_for_document(str(document_id))
+            )
+            if annotation_count > 0:
+                raise HasAnnotationsError(document_id, annotation_count)
 
         # Check literal ownership via ACLEntry (NOT resolve_permission)
         owner_entry = await session.exec(

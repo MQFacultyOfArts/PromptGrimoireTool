@@ -144,12 +144,18 @@ async def create_tag_group(
         raise DuplicateNameError(msg)
 
     if crdt_doc is not None:
-        crdt_doc.set_tag_group(
-            group_id=group.id,
-            name=group.name,
-            order_index=group.order_index,
-            colour=group.color,
-        )
+        try:
+            crdt_doc.set_tag_group(
+                group_id=group.id,
+                name=group.name,
+                order_index=group.order_index,
+                colour=group.color,
+            )
+        except Exception:
+            logger.exception(
+                "crdt_dual_write_failed",
+                operation="create_tag_group",
+            )
 
     return group
 
@@ -375,15 +381,21 @@ async def create_tag(
         raise DuplicateNameError(msg)
 
     if crdt_doc is not None:
-        crdt_doc.set_tag(
-            tag_id=tag.id,
-            name=tag.name,
-            colour=tag.color,
-            order_index=tag.order_index,
-            group_id=tag.group_id,
-            description=tag.description,
-            highlights=[],
-        )
+        try:
+            crdt_doc.set_tag(
+                tag_id=tag.id,
+                name=tag.name,
+                colour=tag.color,
+                order_index=tag.order_index,
+                group_id=tag.group_id,
+                description=tag.description,
+                highlights=[],
+            )
+        except Exception:
+            logger.exception(
+                "crdt_dual_write_failed",
+                operation="create_tag",
+            )
 
     return tag
 
@@ -953,8 +965,14 @@ async def import_tags_from_workspace(
                 },
             )
 
-        if crdt_doc is not None:
+    if crdt_doc is not None:
+        try:
             _import_crdt_dual_write(crdt_doc, result_obj)
+        except Exception:
+            logger.exception(
+                "crdt_dual_write_failed",
+                operation="import_tags",
+            )
 
     return result_obj
 

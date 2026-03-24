@@ -21,14 +21,14 @@ def test_all_models_registered() -> None:
     """
     from sqlmodel import SQLModel
 
-    import promptgrimoire.db.models  # noqa: F401 - import registers tables
-
     expected_tables = {
         "acl_entry",
         "activity",
         "course",
         "course_enrollment",
         "course_role",
+        "export_job",
+        "export_job_status",
         "permission",
         "student_group",
         "student_group_membership",
@@ -54,12 +54,12 @@ def test_all_models_registered() -> None:
 
 
 def test_get_expected_tables_returns_all_tables() -> None:
-    """get_expected_tables() returns all 17 table names."""
+    """get_expected_tables() returns all 19 table names."""
     from promptgrimoire.db import get_expected_tables
 
     tables = get_expected_tables()
 
-    assert len(tables) == 17
+    assert len(tables) == 19
     assert "acl_entry" in tables
     assert "activity" in tables
     assert "course" in tables
@@ -84,8 +84,6 @@ def test_activity_metadata_includes_discriminator_check_constraints() -> None:
     from sqlalchemy import CheckConstraint
     from sqlmodel import SQLModel
 
-    import promptgrimoire.db.models  # noqa: F401 - import registers tables
-
     activity_table = SQLModel.metadata.tables["activity"]
     check_names = {
         constraint.name
@@ -104,8 +102,6 @@ def test_activity_metadata_includes_composite_unique_key() -> None:
     """Activity metadata exposes the composite key needed by subtype FKs."""
     from sqlalchemy import UniqueConstraint
     from sqlmodel import SQLModel
-
-    import promptgrimoire.db.models  # noqa: F401 - import registers tables
 
     activity_table = SQLModel.metadata.tables["activity"]
     unique_names = {

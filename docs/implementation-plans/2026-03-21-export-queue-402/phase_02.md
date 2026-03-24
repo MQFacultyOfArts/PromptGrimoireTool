@@ -1,0 +1,288 @@
+# PDF Export Queue Implementation Plan — Phase 2
+
+**Goal:** Database table and CRUD operations for export jobs with fair scheduling and per-user concurrency limit.
+
+**Architecture:** ExportJob SQLModel class with ExportJobStatus reference table (string PK), Alembic migration, CRUD module following existing `get_session()` pattern. Partial unique index enforces per-user concurrency at the database level.
+
+**Tech Stack:** SQLModel, Alembic, PostgreSQL (FOR UPDATE SKIP LOCKED, partial unique index)
+
+**Scope:** 2 of 6 phases from original design (Phase 2)
+
+**Codebase verified:** 2026-03-21
+
+---
+
+## Acceptance Criteria Coverage
+
+This phase implements and tests:
+
+### export-queue-402.AC4: Queue with per-user concurrency limit
+- **export-queue-402.AC4.1 Success:** Two users submit exports — both are processed (concurrency cap 2)
+- **export-queue-402.AC4.2 Success:** Three users submit exports — first two run concurrently, third waits, gets processed when a slot frees
+- **export-queue-402.AC4.3 Failure:** User with an active export submits a second — rejected with "already in progress" notification
+
+### export-queue-402.AC6: No cascade from retry-spam
+- **export-queue-402.AC6.1 Success:** User's concurrent export attempt is rejected at the database level — no LaTeX process spawned, no pool impact
+- **export-queue-402.AC6.2 Success:** Expired jobs and PDF files are cleaned up within 24 hours
+
+---
+
+<!-- START_SUBCOMPONENT_A (tasks 1-2) -->
+<!-- START_TASK_1 -->
+### Task 1: ExportJobStatus reference table and ExportJob model
+
+**Verifies:** None (model definition — verified by migration and CRUD tests)
+
+**Files:**
+- Modify: `src/promptgrimoire/db/models.py`
+- Modify: `src/promptgrimoire/db/__init__.py`
+
+**Implementation:**
+
+Add to `src/promptgrimoire/db/models.py`:
+
+1. `ExportJobStatus` reference table — string PK, follows Permission/CourseRoleRef pattern:
+
+```python
+class ExportJobStatus(SQLModel, table=True):
+    __tablename__ = "export_job_status"
+    name: str = Field(primary_key=True, max_length=20)
+    description: str = Field(default="", max_length=100)
+```
+
+2. `ExportJob` entity table:
+
+```python
+class ExportJob(SQLModel, table=True):
+    __tablename__ = "export_job"
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    user_id: UUID = Field(sa_column=_cascade_fk_column("user.id"))
+    workspace_id: UUID = Field(sa_column=_cascade_fk_column("workspace.id"))
+    status: str = Field(
+        default="queued",
+        sa_column=Column(
+            String(20),
+            ForeignKey("export_job_status.name", ondelete="RESTRICT"),
+            nullable=False,
+        ),
+    )
+    payload: dict = Field(sa_column=Column(sa.JSON(), nullable=False))
+    download_token: str | None = Field(default=None, max_length=64)
+    token_expires_at: datetime | None = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), nullable=True),
+    )
+    pdf_path: str | None = Field(default=None, max_length=500)
+    error_message: str | None = Field(default=None, sa_column=Column(sa.Text(), nullable=True))
+    created_at: datetime = Field(
+        default_factory=_utcnow, sa_column=_timestamptz_column()
+    )
+    started_at: datetime | None = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), nullable=True),
+    )
+    completed_at: datetime | None = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), nullable=True),
+    )
+```
+
+3. Add `ExportJob` and `ExportJobStatus` to the imports and `__all__` in `src/promptgrimoire/db/__init__.py`.
+
+**Verification:**
+
+Run: `uvx ty check`
+Expected: No type errors
+
+**Commit:** `feat: add ExportJob and ExportJobStatus models (#402)`
+<!-- END_TASK_1 -->
+
+<!-- START_TASK_2 -->
+### Task 2: Alembic migration for export_job tables
+
+**Verifies:** None (infrastructure — verified operationally by migration apply)
+
+**Files:**
+- Create: `alembic/versions/<auto>_add_export_job_tables.py`
+
+**Implementation:**
+
+Generate migration with: `cd /home/brian/people/Brian/PromptGrimoireTool/.worktrees/402-pdf-export-fix && uv run alembic revision --autogenerate -m "add export job tables"`
+
+The migration must:
+
+1. Create `export_job_status` reference table with string PK
+2. Seed the 4 status values: `queued`, `running`, `completed`, `failed`
+3. Create `export_job` table with all columns
+4. Create index on `export_job.user_id` for per-user queries
+5. Create index on `export_job.status` for worker polling
+6. Create partial unique index for per-user concurrency enforcement:
+
+```python
+op.create_index(
+    "ix_export_job_one_active_per_user",
+    "export_job",
+    ["user_id"],
+    unique=True,
+    postgresql_where=sa.text("status IN ('queued', 'running')"),
+)
+```
+
+7. Create index on `created_at` for FIFO ordering
+8. Create index on `token_expires_at` for cleanup queries
+
+Review the autogenerated migration and adjust:
+- Add seed data insert for `export_job_status`
+- Add partial unique index (autogenerate won't produce this)
+- Verify FK constraints match the model
+
+Seed data:
+```python
+op.execute(
+    sa.text(
+        "INSERT INTO export_job_status (name, description) VALUES "
+        "('queued', 'Job waiting to be picked up by worker'), "
+        "('running', 'Job currently being processed'), "
+        "('completed', 'Job finished successfully'), "
+        "('failed', 'Job encountered an error')"
+    )
+)
+```
+
+**Verification:**
+
+Run: `cd /home/brian/people/Brian/PromptGrimoireTool/.worktrees/402-pdf-export-fix && uv run alembic upgrade head`
+Expected: Migration applies without errors
+
+Run: `uv run alembic downgrade -1 && uv run alembic upgrade head`
+Expected: Downgrade and re-upgrade work cleanly
+
+**Commit:** `feat: add Alembic migration for export_job tables (#402)`
+<!-- END_TASK_2 -->
+<!-- END_SUBCOMPONENT_A -->
+
+<!-- START_SUBCOMPONENT_B (tasks 3-4) -->
+<!-- START_TASK_3 -->
+### Task 3: ExportJob CRUD module
+
+**Verifies:** export-queue-402.AC4.1, export-queue-402.AC4.2, export-queue-402.AC4.3, export-queue-402.AC6.1, export-queue-402.AC6.2
+
+**Files:**
+- Create: `src/promptgrimoire/db/export_jobs.py`
+
+**Implementation:**
+
+Create CRUD module following the `get_session()` pattern from `db/activities.py`. Functions needed:
+
+1. `create_export_job(user_id: UUID, workspace_id: UUID, payload: dict) -> ExportJob`
+   - Check for existing `queued` or `running` jobs for this user
+   - If found, raise `BusinessLogicError("A PDF export is already in progress")`
+   - Insert new ExportJob with status `queued`
+   - Wrap the INSERT in a try/except that catches `sqlalchemy.exc.IntegrityError` — if the constraint name matches `ix_export_job_one_active_per_user`, re-raise as `BusinessLogicError("A PDF export is already in progress")`. This handles the TOCTOU race where two concurrent requests both pass the SELECT check.
+   - The partial unique index is the real guard; application check provides a friendly error
+
+2. `claim_next_job() -> ExportJob | None`
+   - FOR UPDATE SKIP LOCKED query with fair scheduling:
+   ```sql
+   SELECT * FROM export_job
+   WHERE status = 'queued'
+   ORDER BY (
+       SELECT COUNT(*) FROM export_job ej2
+       WHERE ej2.user_id = export_job.user_id
+       AND ej2.status = 'running'
+   ) ASC, created_at ASC
+   FOR UPDATE SKIP LOCKED
+   LIMIT 1
+   ```
+   - Update claimed job status to `running`, set `started_at`
+   - Return the job or None if queue empty
+
+3. `complete_job(job_id: UUID, download_token: str, pdf_path: str) -> None`
+   - Update status to `completed`, set `download_token`, `pdf_path`, `token_expires_at` (24h from now), `completed_at`
+
+4. `fail_job(job_id: UUID, error_message: str) -> None`
+   - Update status to `failed`, set `error_message`, `completed_at`
+
+5. `get_job(job_id: UUID) -> ExportJob | None`
+   - Simple select by ID
+
+6. `get_active_job_for_user(user_id: UUID, workspace_id: UUID) -> ExportJob | None`
+   - Find the most recent `queued`, `running`, or `completed` (with valid token) job for this user+workspace
+
+7. `get_job_by_token(token: str) -> ExportJob | None`
+   - Find job by download_token where token hasn't expired
+
+8. `cleanup_expired_jobs(cutoff: datetime) -> int`
+   - Query jobs where `completed_at < cutoff` or (`status = 'failed'` and `created_at < cutoff`)
+   - For each job with a non-null `pdf_path`, delete the PDF file and its parent directory from disk: `Path(job.pdf_path).parent` via `shutil.rmtree(parent, ignore_errors=True)` (the parent is the per-export temp dir)
+   - Log a warning if file deletion fails (do not raise — the DB row should still be deleted)
+   - Delete the DB rows
+   - Return count of deleted rows
+
+Use `from promptgrimoire.db.engine import get_session` and `async with get_session() as session:` for all functions.
+
+For the FOR UPDATE SKIP LOCKED query, use SQLAlchemy's `with_for_update(skip_locked=True)` on the select statement.
+
+**Testing:**
+
+Tests must verify each AC listed above:
+- export-queue-402.AC4.1: Create jobs for two different users, call `claim_next_job()` twice, verify both jobs claimed
+- export-queue-402.AC4.2: Create jobs for three users, verify claim order respects FIFO with fair scheduling
+- export-queue-402.AC4.3: Create a queued job for user A, attempt `create_export_job()` for user A again — verify BusinessLogicError raised
+- export-queue-402.AC6.1: Verify the partial unique index rejects concurrent inserts — bypass the application check and INSERT directly, verify `IntegrityError` is raised. Also test that `create_export_job()` catches this `IntegrityError` and converts it to `BusinessLogicError`.
+- export-queue-402.AC6.2: Create expired jobs with PDF files on disk, call `cleanup_expired_jobs()`, verify DB rows are deleted AND PDF files/directories are removed from disk
+
+These are integration tests requiring a real database. Place in `tests/integration/test_export_jobs.py`. Include the skip guard for `TEST_DATABASE_URL`.
+
+**Verification:**
+
+Run: `uv run grimoire test run tests/integration/test_export_jobs.py`
+Expected: All tests pass
+
+**Commit:** `feat: add ExportJob CRUD with fair scheduling and per-user rejection (#402)`
+<!-- END_TASK_3 -->
+
+<!-- START_TASK_4 -->
+### Task 4: Unit tests for ExportJob model constraints
+
+**Verifies:** export-queue-402.AC4.3
+
+**Files:**
+- Create: `tests/unit/test_export_job_model.py`
+
+**Testing:**
+
+Unit-level tests for the model itself (no database needed):
+- ExportJob instantiates with required fields and correct defaults (status='queued', timestamps set)
+- ExportJobStatus instantiates with name field
+
+These are simple validation tests ensuring the model definitions are correct before they hit the database.
+
+**Verification:**
+
+Run: `uv run grimoire test run tests/unit/test_export_job_model.py`
+Expected: All tests pass
+
+**Commit:** `test: add ExportJob model unit tests (#402)`
+<!-- END_TASK_4 -->
+<!-- END_SUBCOMPONENT_B -->
+
+---
+
+## Phase Verification
+
+Run: `uv run complexipy src/promptgrimoire/db/models.py src/promptgrimoire/db/export_jobs.py --max-complexity-allowed 15`
+Expected: No functions exceed threshold
+
+## UAT Steps
+
+1. [ ] Run migration: `uv run alembic upgrade head`
+2. [ ] Verify migration applied: `uv run alembic current`
+3. [ ] Run integration tests: `uv run grimoire test run tests/integration/test_export_jobs.py`
+4. [ ] Run unit tests: `uv run grimoire test run tests/unit/test_export_job_model.py`
+
+## Evidence Required
+- [ ] Migration applies without errors
+- [ ] All integration tests pass (CRUD, fair scheduling, per-user rejection, cleanup)
+- [ ] All unit tests pass (model instantiation)

@@ -180,12 +180,18 @@ async def init_db() -> None:
         pool_kwargs["poolclass"] = NullPool
         logger.info("Using NullPool (test environment detected)")
     else:
+        db_config = get_settings().database
         pool_kwargs |= {
-            "pool_size": 80,
-            "max_overflow": 15,
-            "pool_pre_ping": True,
-            "pool_recycle": 3600,
+            "pool_size": db_config.pool_size,
+            "max_overflow": db_config.max_overflow,
+            "pool_pre_ping": db_config.pool_pre_ping,
+            "pool_recycle": db_config.pool_recycle,
         }
+        logger.info(
+            "pool_configured",
+            pool_size=db_config.pool_size,
+            max_overflow=db_config.max_overflow,
+        )
 
     _state.engine = create_async_engine(get_database_url(), **pool_kwargs)
 

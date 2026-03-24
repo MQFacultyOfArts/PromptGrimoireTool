@@ -1,6 +1,6 @@
 # Git Worktrees
 
-*Last updated: 2026-02-15*
+*Last updated: 2026-03-21*
 
 This project uses git worktrees for parallel feature development. Worktrees are located in `.worktrees/`.
 
@@ -10,12 +10,19 @@ This project uses git worktrees for parallel feature development. Worktrees are 
 # Create a new worktree for a feature branch
 git worktree add .worktrees/<branch-name> <branch-name>
 
+# Install dependencies (worktrees do NOT share .venv or node_modules)
+cd .worktrees/<branch-name>
+uv sync
+npm ci
+
 # List all worktrees
 git worktree list
 
 # Remove a worktree when done
 git worktree remove .worktrees/<branch-name>
 ```
+
+**Important:** Each worktree has its own `.venv/` and `node_modules/`. You must run `uv sync` and `npm ci` after creating a worktree, otherwise `grimoire test all` will fail on the JS lane (vitest not found).
 
 ## Serena Memory Management
 

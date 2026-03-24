@@ -202,25 +202,40 @@ def _setup_logging() -> None:
     # Set file permissions to 0o644
     log_file.chmod(0o644)
 
-    # --- Console handler (human-readable) ---
-    # Note: format_exc_info is intentionally omitted here — ConsoleRenderer
-    # (via rich) handles exception rendering itself. Including format_exc_info
-    # before ConsoleRenderer triggers a UserWarning on every ERROR/CRITICAL log.
-    console_formatter = structlog.stdlib.ProcessorFormatter(
-        foreign_pre_chain=[
-            *shared_processors,
-            add_global_fields,
-            level_gated_traceback,
-            _clean_for_console,
-        ],
-        processors=[
-            structlog.stdlib.ProcessorFormatter.remove_processors_meta,
-            _clean_for_console,
-            structlog.dev.ConsoleRenderer(
-                sort_keys=False,
-            ),
-        ],
-    )
+    # --- Console handler ---
+    # Under systemd (no TTY), use JSONRenderer so journal entries are
+    # machine-parseable and free of ANSI escapes, rich box-drawing, and
+    # local-variable dumps (which leak student PII via show_locals=True).
+    # Under a TTY (dev), keep ConsoleRenderer for human readability but
+    # disable show_locals to avoid PII in local variable dumps.
+    if sys.stderr.isatty():
+        console_formatter = structlog.stdlib.ProcessorFormatter(
+            foreign_pre_chain=[
+                *shared_processors,
+                add_global_fields,
+                level_gated_traceback,
+                _clean_for_console,
+            ],
+            processors=[
+                structlog.stdlib.ProcessorFormatter.remove_processors_meta,
+                _clean_for_console,
+                structlog.dev.ConsoleRenderer(
+                    sort_keys=False,
+                    exception_formatter=structlog.dev.RichTracebackFormatter(
+                        show_locals=False,
+                    ),
+                ),
+            ],
+        )
+    else:
+        console_formatter = structlog.stdlib.ProcessorFormatter(
+            foreign_pre_chain=full_pre_chain,
+            processors=[
+                structlog.stdlib.ProcessorFormatter.remove_processors_meta,
+                structlog.processors.format_exc_info,
+                structlog.processors.JSONRenderer(),
+            ],
+        )
     console_handler = logging.StreamHandler(sys.stderr)
     console_handler.setLevel(logging.INFO)
     console_handler.setFormatter(console_formatter)
@@ -331,6 +346,78 @@ async def kick_user_handler(request: Request) -> JSONResponse:
     return JSONResponse({"kicked": 0, "was_banned": False})
 
 
+def _register_db_lifecycle(app: object) -> None:
+    """Register database startup/shutdown hooks and background workers.
+
+    Extracted from main() to keep statement count within linter limits.
+    """
+    import asyncio
+
+    from nicegui import app as _app_module
+
+    # Narrow the type so that .on_startup / .on_shutdown are visible
+    assert isinstance(app, type(_app_module))  # noqa: S101 — runtime guard
+
+    from promptgrimoire.crdt.persistence import (
+        get_persistence_manager,
+    )
+    from promptgrimoire.db import (
+        close_db,
+        get_engine,
+        init_db,
+        verify_schema,
+    )
+    from promptgrimoire.deadline_worker import (
+        start_deadline_worker,
+    )
+    from promptgrimoire.export.worker import start_export_worker
+    from promptgrimoire.search_worker import start_search_worker
+
+    _search_worker_task: asyncio.Task[None] | None = None
+    _deadline_worker_task: asyncio.Task[None] | None = None
+    _export_worker_task: asyncio.Task[None] | None = None
+
+    @app.on_startup
+    async def startup() -> None:
+        nonlocal _search_worker_task, _deadline_worker_task, _export_worker_task
+        await init_db()
+        await verify_schema(get_engine())
+        _search_worker_task = asyncio.create_task(
+            start_search_worker(),
+        )
+        _deadline_worker_task = asyncio.create_task(
+            start_deadline_worker(),
+        )
+        _export_worker_task = asyncio.create_task(
+            start_export_worker(),
+        )
+        log.info("database_connected")
+
+    @app.on_shutdown
+    async def shutdown() -> None:
+        nonlocal _search_worker_task, _deadline_worker_task, _export_worker_task
+        # Cancel background workers and await completion before DB teardown
+        tasks_to_cancel: list[asyncio.Task[None]] = []
+        if _search_worker_task is not None:
+            _search_worker_task.cancel()
+            tasks_to_cancel.append(_search_worker_task)
+            _search_worker_task = None
+        if _deadline_worker_task is not None:
+            _deadline_worker_task.cancel()
+            tasks_to_cancel.append(_deadline_worker_task)
+            _deadline_worker_task = None
+        if _export_worker_task is not None:
+            _export_worker_task.cancel()
+            tasks_to_cancel.append(_export_worker_task)
+            _export_worker_task = None
+        if tasks_to_cancel:
+            await asyncio.gather(*tasks_to_cancel, return_exceptions=True)
+        # Persist all dirty CRDT documents before closing DB
+        mgr = get_persistence_manager()
+        await mgr.persist_all_dirty_workspaces()
+        await close_db()
+
+
 def main() -> None:
     """Entry point for the PromptGrimoire application."""
     from nicegui import app, ui
@@ -343,9 +430,13 @@ def main() -> None:
     _static_dir = Path(__file__).parent / "static"
     app.add_static_files("/static", str(_static_dir))
 
+    import promptgrimoire.export.download
     import promptgrimoire.pages
 
     _ = promptgrimoire.pages  # side-effect import: registers routes
+    _ = (
+        promptgrimoire.export.download
+    )  # side-effect import: registers /export/{token}/download route
 
     # Health check endpoint for UptimeRobot (HEAD + GET)
     from starlette.responses import PlainTextResponse
@@ -366,52 +457,7 @@ def main() -> None:
 
     # Database lifecycle hooks (only if DATABASE__URL is configured)
     if settings.database.url:
-        import asyncio
-
-        from promptgrimoire.crdt.persistence import (
-            get_persistence_manager,
-        )
-        from promptgrimoire.db import (
-            close_db,
-            get_engine,
-            init_db,
-            verify_schema,
-        )
-        from promptgrimoire.deadline_worker import (
-            start_deadline_worker,
-        )
-        from promptgrimoire.search_worker import start_search_worker
-
-        _search_worker_task: asyncio.Task[None] | None = None
-        _deadline_worker_task: asyncio.Task[None] | None = None
-
-        @app.on_startup
-        async def startup() -> None:
-            nonlocal _search_worker_task, _deadline_worker_task
-            await init_db()
-            await verify_schema(get_engine())
-            _search_worker_task = asyncio.create_task(
-                start_search_worker(),
-            )
-            _deadline_worker_task = asyncio.create_task(
-                start_deadline_worker(),
-            )
-            log.info("database_connected")
-
-        @app.on_shutdown
-        async def shutdown() -> None:
-            nonlocal _search_worker_task, _deadline_worker_task
-            # Cancel background workers before shutdown
-            if _search_worker_task is not None:
-                _search_worker_task.cancel()
-                _search_worker_task = None
-            if _deadline_worker_task is not None:
-                _deadline_worker_task.cancel()
-                _deadline_worker_task = None
-            # Persist all dirty CRDT documents before closing DB
-            mgr = get_persistence_manager()
-            await mgr.persist_all_dirty_workspaces()
-            await close_db()
+        _register_db_lifecycle(app)
 
     port = settings.app.port
     storage_secret = settings.app.storage_secret.get_secret_value()

@@ -531,8 +531,13 @@ def _build_tag_crud_callbacks(
 
     async def _on_tag_deleted(tag_name: str) -> None:
         await _refresh_tag_state(state, reload_crdt=True)
-        await render_tag_list()
+        # Notify BEFORE render_tag_list: the rebuild clears the container
+        # holding the confirm-delete dialog's canary element, which triggers
+        # dialog.delete() via weakref.finalize, staling the slot context
+        # held by NiceGUI's event dispatch wrapper (events.py:452).
+        # See docs/postmortems/2026-03-20-slot-deletion-investigation-369.md
         ui.notify(f"Tag '{tag_name}' deleted", type="positive")
+        await render_tag_list()
 
     async def _add_tag_in_group(group_id: UUID | None) -> None:
         existing_names = (

@@ -244,6 +244,74 @@ sudo -u postgres createdb -O promptgrimoire promptgrimoire
 sudo -u postgres psql -d promptgrimoire -c "SELECT 1;"
 ```
 
+Set a safety net for connection leaks — any connection idle in a transaction for more than 60 seconds is terminated by PostgreSQL. This prevents a leaked session from exhausting the connection pool and taking down the app. Set this **globally** (not just per-database) so it catches any connection.
+
+```bash
+sudo -u postgres psql -c "ALTER SYSTEM SET idle_in_transaction_session_timeout = '60s';"
+sudo -u postgres psql -c "ALTER SYSTEM SET statement_timeout = '30s';"
+sudo -u postgres psql -c "SELECT pg_reload_conf();"
+```
+
+These settings are reload-settable — `pg_reload_conf()` activates them immediately without a restart. The performance tuning section below includes a full restart (needed for `shared_buffers` and `max_connections`), which also picks up these settings.
+
+> **Incident (2026-03-24):** A deploy leaked sessions that sat idle-in-transaction indefinitely, exhausting the pool (69/80 checked out) and causing 60s timeouts on all page loads. The per-database `ALTER DATABASE ... SET` was in place but `SHOW idle_in_transaction_session_timeout` returned `0` outside the database context — `ALTER SYSTEM` ensures the setting applies globally.
+
+### Performance tuning
+
+The default PostgreSQL configuration is tuned for compatibility, not performance. These settings are critical for an SSD-backed OLTP workload serving 500+ concurrent users.
+
+```bash
+sudo -u postgres psql <<'SQL'
+-- Memory: entire DB fits in shared_buffers; tell planner about OS cache
+ALTER SYSTEM SET shared_buffers = '2GB';
+ALTER SYSTEM SET effective_cache_size = '6GB';
+ALTER SYSTEM SET work_mem = '16MB';
+
+-- SSD: random reads are nearly as fast as sequential
+ALTER SYSTEM SET random_page_cost = 1.1;
+ALTER SYSTEM SET effective_io_concurrency = 200;
+
+-- WAL: spread checkpoint I/O, reduce frequency
+ALTER SYSTEM SET checkpoint_completion_target = 0.9;
+ALTER SYSTEM SET max_wal_size = '2GB';
+ALTER SYSTEM SET min_wal_size = '512MB';
+ALTER SYSTEM SET wal_buffers = '16MB';
+
+-- Connections: sized for PgBouncer (Step 7a) + worker + reserves
+ALTER SYSTEM SET max_connections = 120;
+
+-- Slow query logging (queries > 1s)
+ALTER SYSTEM SET log_min_duration_statement = 1000;
+SQL
+```
+
+Restart PostgreSQL to apply (`shared_buffers` and `max_connections` require restart):
+
+```bash
+sudo systemctl restart postgresql
+```
+
+Verify non-default settings:
+
+```bash
+sudo -u postgres psql -c "SELECT name, setting, source FROM pg_settings WHERE source = 'override' ORDER BY name;"
+```
+
+| Setting | Default | Tuned | Why |
+|---------|---------|-------|-----|
+| `shared_buffers` | 128 MB | 2 GB | Entire DB fits in RAM; default wastes 7.8 GB |
+| `effective_cache_size` | 4 GB | 6 GB | Tells planner to prefer index scans (shared_buffers + OS cache) |
+| `work_mem` | 4 MB | 16 MB | Safe with PgBouncer limiting real connections to ~80 |
+| `random_page_cost` | 4.0 | 1.1 | Default assumes spinning disk; SSD random ≈ sequential |
+| `effective_io_concurrency` | 1 | 200 | SSD can service many parallel reads |
+| `checkpoint_completion_target` | 0.5 | 0.9 | Spreads checkpoint I/O over 90% of interval, less spike |
+| `max_wal_size` | 1 GB | 2 GB | Reduces checkpoint frequency |
+| `max_connections` | 100 | 120 | 80 from PgBouncer + worker + vacuum + backup + psql |
+| `statement_timeout` | 0 | 30s | Kills runaway queries; override per-session for long jobs |
+| `log_min_duration_statement` | -1 | 1000ms | Logs slow queries for diagnosis |
+
+> **Ref:** [PostgreSQL 16 resource consumption](https://www.postgresql.org/docs/16/runtime-config-resource.html), [PostgreSQL 16 WAL configuration](https://www.postgresql.org/docs/16/wal-configuration.html), [PostgreSQL wiki: tuning](https://wiki.postgresql.org/wiki/Tuning_Your_PostgreSQL_Server), [pgtune](https://pgtune.leopard.in.ua/)
+
 The `promptgrimoire` system user (created in Step 8) authenticates via `peer` — no password needed for local Unix socket connections. Peer auth verification:
 
 ```bash
@@ -252,6 +320,146 @@ sudo -u promptgrimoire psql -d promptgrimoire -c "SELECT 1;"
 ```
 
 > **Ref:** [PostgreSQL 16 createuser](https://www.postgresql.org/docs/16/app-createuser.html), [pg_hba.conf auth methods](https://www.postgresql.org/docs/16/auth-pg-hba-conf.html)
+
+## 7a. PgBouncer
+
+PgBouncer is a lightweight connection pooler that sits between the application and PostgreSQL. It queues connection requests during bursts (preventing pool exhaustion) and multiplexes many client connections over fewer real PostgreSQL connections.
+
+> **Incident (2026-03-24):** Without PgBouncer, a thundering herd after deploy restart filled the 80-connection pool with idle-in-transaction sessions. PgBouncer's queuing breaks the retry amplification loop — failed connections queue instead of generating new retries.
+
+```bash
+sudo apt install pgbouncer
+```
+
+### Run PgBouncer as the application user
+
+The Debian package runs PgBouncer as `postgres` by default. PostgreSQL uses `peer` auth (OS user must match PG role), so PgBouncer must run as the `promptgrimoire` system user for peer auth to work. Override the systemd unit:
+
+```bash
+sudo systemctl edit pgbouncer
+```
+
+Add:
+
+```ini
+[Service]
+User=promptgrimoire
+Group=promptgrimoire
+RuntimeDirectory=pgbouncer
+RuntimeDirectoryMode=0750
+PIDFile=/run/pgbouncer/pgbouncer.pid
+```
+
+`RuntimeDirectory=pgbouncer` tells systemd to create `/run/pgbouncer/` with correct ownership automatically and clean it up on shutdown. This avoids permission issues with `/var/run/postgresql/` (owned by `postgres`).
+
+Create the log directory:
+
+```bash
+sudo mkdir -p /var/log/pgbouncer
+sudo chown promptgrimoire:promptgrimoire /var/log/pgbouncer
+```
+
+> **Ref:** [PgBouncer systemd service](https://github.com/pgbouncer/pgbouncer/blob/master/etc/pgbouncer.service), [EDB: running multiple PgBouncer instances with systemd](https://www.enterprisedb.com/blog/running-multiple-pgbouncer-instances-systemd)
+
+### Configure PgBouncer
+
+Edit `/etc/pgbouncer/pgbouncer.ini`:
+
+```ini
+[databases]
+promptgrimoire = host=/var/run/postgresql port=5432 dbname=promptgrimoire
+; Bootstrap needs the postgres maintenance database for ensure_database_exists()
+postgres = host=/var/run/postgresql port=5432 dbname=postgres
+
+[pgbouncer]
+; Listen on Unix socket only — no network exposure.
+; Socket lives in /run/pgbouncer/ (managed by systemd RuntimeDirectory).
+listen_addr =
+listen_port = 6432
+unix_socket_dir = /run/pgbouncer
+
+; Transaction pooling: connection returned to pool after each transaction
+pool_mode = transaction
+
+; Client-facing limits (app + worker + admin)
+max_client_conn = 500
+default_pool_size = 80
+reserve_pool_size = 10
+reserve_pool_timeout = 3
+
+; Prepared statement support (PgBouncer 1.21+)
+; Intercepts PREPARE commands and maintains LRU cache per server connection.
+; asyncpg prepared statements work transparently — no code changes needed.
+max_prepared_statements = 200
+
+; Auth: trust on Unix socket (no network exposure).
+; auth_file is required even with trust — PgBouncer must know valid users.
+auth_type = trust
+auth_file = /etc/pgbouncer/userlist.txt
+
+; Timeouts
+server_lifetime = 3600
+server_idle_timeout = 600
+client_login_timeout = 15
+
+; Admin access for SHOW POOLS/STATS monitoring
+admin_users = promptgrimoire
+stats_users = promptgrimoire
+
+; Logging and PID (paths match systemd RuntimeDirectory)
+logfile = /var/log/pgbouncer/pgbouncer.log
+pidfile = /run/pgbouncer/pgbouncer.pid
+```
+
+Set file ownership and register the application user:
+
+```bash
+sudo chown promptgrimoire:promptgrimoire /etc/pgbouncer/pgbouncer.ini /etc/pgbouncer/userlist.txt
+echo '"promptgrimoire" ""' | sudo tee /etc/pgbouncer/userlist.txt
+```
+
+PgBouncer runs as `promptgrimoire` and connects to PostgreSQL via Unix socket. PostgreSQL's `peer` auth sees OS user `promptgrimoire` matching PG role `promptgrimoire` — no password, no `pg_hba.conf` changes needed.
+
+> **Ref:** [PgBouncer configuration](https://www.pgbouncer.org/config.html), [PgBouncer 1.21 prepared statement support](https://www.postgresql.org/about/news/pgbouncer-1210-released-now-with-prepared-statements-2735/), [PgBouncer auth file format](https://www.pgbouncer.org/config.html#auth_file)
+
+### Start and enable
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable pgbouncer
+sudo systemctl start pgbouncer
+
+# Verify: connect through PgBouncer
+sudo -u promptgrimoire psql -h /run/pgbouncer -p 6432 -d promptgrimoire -c "SELECT 1;"
+```
+
+### Monitoring
+
+Connect to PgBouncer's admin console to check pool health:
+
+```bash
+sudo -u promptgrimoire psql -h /run/pgbouncer -p 6432 -d pgbouncer
+```
+
+```sql
+-- Pool status: cl_active (busy clients), cl_waiting (queued), sv_active (busy PG conns)
+SHOW POOLS;
+
+-- Aggregate statistics
+SHOW STATS;
+
+-- Connected clients
+SHOW CLIENTS;
+
+-- Reload config without dropping connections
+RELOAD;
+```
+
+**Key health indicators:**
+- `cl_waiting > 0` sustained → increase `default_pool_size`
+- `sv_active = default_pool_size` sustained → pool saturated, check for slow queries
+
+> **Ref:** [PgBouncer usage (SHOW commands)](https://www.pgbouncer.org/usage.html)
 
 ## 8. Application Setup
 
@@ -316,8 +524,12 @@ sudo -u promptgrimoire cp .env.example .env
 Edit `/opt/promptgrimoire/.env`:
 
 ```bash
-# Database — Unix socket (peer auth, no password)
-DATABASE__URL=postgresql+asyncpg://promptgrimoire@/promptgrimoire?host=/var/run/postgresql
+# Database — via PgBouncer Unix socket (Step 7a)
+# PgBouncer handles connection pooling and prepared statement caching.
+# To bypass PgBouncer (e.g., for migrations), use host=/var/run/postgresql (no port).
+DATABASE__URL=postgresql+asyncpg://promptgrimoire@/promptgrimoire?host=/run/pgbouncer&port=6432
+# Pool defaults (DATABASE__POOL_SIZE=80, etc.) match PgBouncer's default_pool_size.
+# See .env.example to override.
 
 # Stytch — use LIVE keys, not test keys
 STYTCH__PROJECT_ID=project-live-...
@@ -1151,6 +1363,23 @@ Then click the bell icon on the production server's card to set alert thresholds
 
 For the current single-server setup, system-level metrics are sufficient — the 2026-03-15 OOM would have been caught by a memory > 80% alert minutes before the crash.
 
+### PostgreSQL connection monitoring — cron
+
+Beszel can't monitor PostgreSQL internals, so a cron job fills the gap. `deploy/check-pg-connections.sh` queries `pg_stat_activity` and posts a Discord alert when idle-in-transaction connections exceed a threshold (default: 5).
+
+```bash
+# Install the cron job (runs every 2 minutes as the promptgrimoire user)
+sudo crontab -u promptgrimoire -l 2>/dev/null | {
+  cat
+  echo "*/2 * * * * /opt/promptgrimoire/deploy/check-pg-connections.sh"
+} | sudo crontab -u promptgrimoire -
+
+# Verify
+sudo crontab -u promptgrimoire -l
+```
+
+> **Incident (2026-03-24):** 25 idle-in-transaction connections accumulated silently after a deploy, exhausting the pool before anyone noticed. This monitor would have alerted within 2 minutes.
+
 > **Ref:** [Beszel docs](https://beszel.dev/guide/getting-started), [Beszel security model](https://beszel.dev/guide/security)
 
 ---
@@ -1274,6 +1503,17 @@ The deploy script (`deploy/restart.sh`) runs: `git pull` → `uv sync --no-dev` 
 
 Alembic migrations run automatically on app start.
 
+**Post-deploy verification** — after every deploy, check for connection leaks:
+
+```bash
+# Wait ~30 seconds for users to reconnect, then:
+sudo -u promptgrimoire psql -c "SELECT state, count(*) FROM pg_stat_activity WHERE datname = 'promptgrimoire' GROUP BY state ORDER BY count DESC;"
+```
+
+Expected: `idle` + `active` only. If `idle in transaction` appears and climbs, the deploy introduced a connection leak — restart immediately (`sudo systemctl restart promptgrimoire`) and investigate before redeploying.
+
+> **Incident (2026-03-24):** A deploy introduced a session leak that accumulated 25 idle-in-transaction connections, exhausting the pool (69/80 checked out) and causing 60s timeouts on all page loads. The app had to be restarted. See postmortem (forthcoming).
+
 **One-time setup** (after first deploy of the script):
 
 ```bash
@@ -1323,7 +1563,7 @@ sudo tail -f /var/log/promptgrimoire-backup.log
 
 ```bash
 # All services running?
-sudo systemctl status postgresql promptgrimoire haproxy fail2ban
+sudo systemctl status postgresql pgbouncer promptgrimoire haproxy fail2ban
 
 # App responds? (/healthz supports HEAD + GET for UptimeRobot)
 curl -s -o /dev/null -w "%{http_code}" https://grimoire.drbbs.org/healthz
@@ -1334,6 +1574,12 @@ echo | openssl s_client -connect grimoire.drbbs.org:443 -servername grimoire.drb
 
 # Database?
 sudo -u promptgrimoire psql -d promptgrimoire -c "SELECT 1;"
+
+# PgBouncer pool health? (cl_waiting > 0 sustained = pool saturated)
+sudo -u promptgrimoire psql -h /run/pgbouncer -p 6432 -d pgbouncer -c "SHOW POOLS;"
+
+# Connection pool health? (idle in transaction = leak)
+sudo -u promptgrimoire psql -c "SELECT state, count(*) FROM pg_stat_activity WHERE datname = 'promptgrimoire' GROUP BY state ORDER BY count DESC;"
 
 # Certbot auto-renewal?
 sudo certbot renew --dry-run
@@ -1380,6 +1626,8 @@ Idempotent — safe to run multiple times.
 | Certbot deploy hook | `/etc/letsencrypt/renewal-hooks/deploy/50-haproxy.sh` |
 | Certbot renewal config | `/etc/letsencrypt/renewal/grimoire.drbbs.org.conf` |
 | fail2ban config | `/etc/fail2ban/jail.local` |
+| PgBouncer config | `/etc/pgbouncer/pgbouncer.ini` |
+| PgBouncer log | `/var/log/pgbouncer/pgbouncer.log` |
 | PostgreSQL data | `/var/lib/postgresql/` (default) |
 | TinyTeX | `/home/promptgrimoire/.TinyTeX/` |
 | Backup script | `/usr/local/bin/promptgrimoire-backup` |
@@ -1390,7 +1638,7 @@ Idempotent — safe to run multiple times.
 ## Known Limitations
 
 - **Hot reload** is on by default (`PROMPTGRIMOIRE_RELOAD=1`). `run_prod.py` disables it. `run.py` (dev) keeps it.
-- **Single process.** NiceGUI + uvicorn handles connections asynchronously. No horizontal scaling. Fine for 30-60 concurrent students.
+- **Single process.** NiceGUI + uvicorn handles connections asynchronously. No horizontal scaling. PgBouncer handles connection pooling for up to 500 concurrent clients.
 - **PDF export blocks briefly.** LaTeX compilation is CPU-bound. Under heavy concurrent export load, consider `asyncio.to_thread()` wrapping (tracked in perf epic #142).
 - **Initial cert only uses port 80 standalone.** The first `certbot certonly --standalone` requires port 80 free (HAProxy not yet running). All subsequent renewals use standalone on port 8402 behind HAProxy with zero downtime.
 
@@ -1408,6 +1656,13 @@ Idempotent — safe to run multiple times.
 | UFW | https://manpages.ubuntu.com/manpages/noble/en/man8/ufw.8.html |
 | unattended-upgrades | https://documentation.ubuntu.com/server/how-to/software/automatic-updates/ |
 | OpenSSH hardening | https://man.openbsd.org/sshd_config |
+| PostgreSQL tuning | https://wiki.postgresql.org/wiki/Tuning_Your_PostgreSQL_Server |
+| PostgreSQL resource config | https://www.postgresql.org/docs/16/runtime-config-resource.html |
+| PostgreSQL WAL config | https://www.postgresql.org/docs/16/wal-configuration.html |
+| pgtune | https://pgtune.leopard.in.ua/ |
+| PgBouncer configuration | https://www.pgbouncer.org/config.html |
+| PgBouncer usage (SHOW) | https://www.pgbouncer.org/usage.html |
+| PgBouncer 1.21 prepared statements | https://www.postgresql.org/about/news/pgbouncer-1210-released-now-with-prepared-statements-2735/ |
 | PostgreSQL pg_dump | https://www.postgresql.org/docs/16/app-pgdump.html |
 | pg_restore | https://www.postgresql.org/docs/16/app-pgrestore.html |
 | rclone SharePoint | https://rclone.org/onedrive/ |

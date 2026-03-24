@@ -4,9 +4,12 @@ from __future__ import annotations
 
 import asyncio
 import os
-import subprocess
 import sys
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    import subprocess
 
 import typer
 
@@ -135,6 +138,7 @@ def _run_all_lane_steps(user_args: list[str]) -> list[LaneResult]:
         _NON_UI_MARKER_EXPRESSION,
         _TEST_ALL_MARKER_EXPRESSION,
         _run_bats,
+        _run_js,
         _run_pytest,
         _xdist_worker_count,
     )
@@ -145,10 +149,7 @@ def _run_all_lane_steps(user_args: list[str]) -> list[LaneResult]:
 
     # --- Lane 0: JS (vitest) ---
     console.print("[blue]Running JS unit tests...[/]")
-    js_exit = subprocess.run(
-        ["npx", "vitest", "run"],
-        check=False,
-    ).returncode
+    js_exit = _run_js()
     lane_results.append(LaneResult("js", js_exit, log_path=None))
 
     # --- Lane 0.5: BATS (shell script tests) ---

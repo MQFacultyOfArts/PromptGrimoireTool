@@ -5,7 +5,7 @@ from __future__ import annotations
 from unittest.mock import patch
 
 import promptgrimoire.pages
-from promptgrimoire.pages.registry import get_visible_pages
+from promptgrimoire.pages.registry import get_visible_pages, page_route
 
 
 def _privileged_user() -> dict[str, object]:
@@ -39,6 +39,26 @@ def _visible_routes(
         roleplay_enabled=roleplay_enabled,
     )
     return {page.route for page in pages}
+
+
+class TestPageRouteResponseTimeout:
+    """Verify page_route passes response_timeout to ui.page()."""
+
+    def test_page_route_passes_response_timeout_60(self) -> None:
+        """page_route passes response_timeout=60 to ui.page(), not the 3s default."""
+        captured_kwargs: dict[str, object] = {}
+
+        def fake_ui_page(_route: str, **kwargs: object) -> object:
+            captured_kwargs.update(kwargs)
+            return lambda fn: fn
+
+        with patch("promptgrimoire.pages.registry.ui.page", side_effect=fake_ui_page):
+
+            @page_route("/test-response-timeout", title="Test", icon="bug_report")
+            async def _handler() -> None:
+                pass
+
+        assert captured_kwargs.get("response_timeout") == 60
 
 
 class TestPageRegistryRoleplayVisibility:

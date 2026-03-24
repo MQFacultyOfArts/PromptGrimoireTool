@@ -172,6 +172,9 @@ ignore = [
 "src/promptgrimoire/cli/seed.py" = [
     "PLC0415",  # Late imports to avoid heavy DB modules at CLI load time
 ]
+"alembic/env.py" = [
+    "F401",  # Side-effect import: promptgrimoire.db registers SQLModel tables
+]
 "src/promptgrimoire/cli/_shared.py" = [
     "PLC0415",  # Deferred imports in _pre_test_db_cleanup to avoid heavy DB modules at CLI load time
 ]

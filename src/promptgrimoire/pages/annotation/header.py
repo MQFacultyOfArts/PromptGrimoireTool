@@ -27,7 +27,10 @@ if TYPE_CHECKING:
     from promptgrimoire.db.workspaces import PlacementContext
     from promptgrimoire.pages.annotation import PageState
 
-from promptgrimoire.pages.annotation.pdf_export import _handle_pdf_export
+from promptgrimoire.pages.annotation.pdf_export import (
+    _handle_pdf_export,
+    check_existing_export,
+)
 from promptgrimoire.pages.annotation.placement import show_placement_dialog
 from promptgrimoire.pages.annotation.sharing import render_sharing_controls
 
@@ -150,20 +153,74 @@ def _render_paragraph_toggle(state: PageState, document: WorkspaceDocument) -> N
     ).props('data-testid="paragraph-toggle"')
 
 
+def _wrap_refresh_with_stale_download_clear(state: PageState) -> None:
+    """Wrap state.refresh_annotations to also clear stale download buttons.
+
+    Any document change (highlight, tag, response edit) triggers
+    refresh_annotations. We wrap it to also clear the download
+    container and re-enable the export button, since the existing
+    PDF is now outdated.
+    """
+    original = state.refresh_annotations
+    if original is None:
+        logger.warning(
+            "export_stale_clear_wrap_skipped", reason="refresh_annotations not set"
+        )
+        return
+
+    def wrapped(*, trigger: str = "unknown") -> None:
+        # Cancel any active polling timer — the PDF it's tracking
+        # is now stale due to the document change.
+        poll_timer = getattr(state, "export_poll_timer", None)
+        if poll_timer is not None:
+            poll_timer.deactivate()
+            state.export_poll_timer = None
+        # Clear stale download button
+        container = getattr(state, "export_download_container", None)
+        if container is not None:
+            container.clear()
+        export_btn = getattr(state, "export_btn", None)
+        if export_btn is not None:
+            export_btn.enable()
+        # Call the original refresh
+        original(trigger=trigger)
+
+    state.refresh_annotations = wrapped
+
+
 def _render_export_button(state: PageState, workspace_id: UUID) -> None:
-    """Render the Export PDF button with loading state."""
+    """Render the Export PDF button and download container.
+
+    The download_container holds the download button (if any). It is
+    cleared and repopulated by _show_download_button / _start_export_polling.
+    Storing it on state.export_download_container makes it accessible to
+    the polling callback and page-load recovery.
+    """
     export_btn = ui.button(
         "Export PDF",
         icon="picture_as_pdf",
     ).props('color=primary data-testid="export-pdf-btn"')
 
+    # Container for the download button — lives next to the export button
+    download_container = ui.row().classes("items-center gap-2")
+    download_container.props('data-testid="export-download-container"')
+    state.export_download_container = download_container
+    state.export_btn = export_btn
+
     async def on_export_click() -> None:
         export_btn.disable()
         export_btn.props("loading")
+        # Clear any previous download button
+        download_container.clear()
         try:
-            await _handle_pdf_export(state, workspace_id)
-        finally:
+            job_submitted = await _handle_pdf_export(state, workspace_id)
+        except Exception:
             export_btn.props(remove="loading")
+            export_btn.enable()
+            raise
+        export_btn.props(remove="loading")
+        if not job_submitted:
+            # Early return (rejected, no document, etc.) — re-enable
             export_btn.enable()
 
     export_btn.on_click(on_export_click)
@@ -262,6 +319,13 @@ async def render_workspace_header(
             )
 
         _render_export_button(state, workspace_id)
+
+        # Recover any in-progress or completed export jobs (Phase 5, #402)
+        await check_existing_export(state)
+
+        # NOTE: stale download cleanup is wired up in workspace.py
+        # AFTER state.refresh_annotations is set by document.py.
+        # See _wrap_refresh_with_stale_download_clear().
 
         # Manage Documents button (owners only)
         if state.is_owner:

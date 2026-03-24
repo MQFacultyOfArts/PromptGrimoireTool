@@ -9,12 +9,14 @@
 #   1. git pull (as promptgrimoire)
 #   2. uv sync --no-dev (as promptgrimoire)
 #   3. unit tests (optional, e-stop on failure)
-#   4. HAProxy drain (stop new connections, let in-flight finish)
-#   5. Wait for active connections to drain
-#   6. HAProxy maintenance mode (serves friendly 503)
-#   7. systemctl restart
-#   8. Wait for /healthz
-#   9. HAProxy back to ready
+#   4. Update HAProxy 503 page
+#   5. HAProxy drain (stop new connections, let in-flight finish)
+#   6. Wait for active connections to drain
+#   7. HAProxy maintenance mode (serves friendly 503 with jittered reload)
+#   8. systemctl restart
+#   9. Wait for /healthz
+#  10. Stagger delay (let clients land on 503 and get jittered timers)
+#  11. HAProxy back to ready
 set -euo pipefail
 
 SOCK=/run/haproxy/admin.sock
@@ -78,7 +80,11 @@ else
     step "Skipping tests (--skip-tests)"
 fi
 
-# 4. Drain — stop sending new connections, let in-flight requests finish
+# 4. Update HAProxy 503 page (picks up jittered reload, etc.)
+step "Updating HAProxy 503 page"
+cp "$APP_DIR/deploy/503.http" /etc/haproxy/errors/503.http
+
+# 5. Drain — stop sending new connections, let in-flight requests finish
 haproxy_touched=true
 step "HAProxy → drain (new connections blocked, in-flight finishing)"
 echo "set server be_promptgrimoire/app state drain" | socat stdio "$SOCK"
@@ -124,7 +130,14 @@ until curl -sf "$HEALTHZ" > /dev/null 2>&1; do
     fi
 done
 
-# 9. Back to ready
+# 10. Stagger delay — hold maintenance mode while clients land on the
+#     jittered 503 page (5–35s random reload). This prevents thundering
+#     herd when HAProxy switches back to ready. See #419.
+STAGGER_WAIT=20
+step "Stagger delay (${STAGGER_WAIT}s — clients landing on jittered 503)"
+sleep "$STAGGER_WAIT"
+
+# 11. Back to ready
 step "HAProxy → ready"
 echo "set server be_promptgrimoire/app state ready" | socat stdio "$SOCK"
 haproxy_touched=false

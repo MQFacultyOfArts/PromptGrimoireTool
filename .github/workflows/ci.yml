@@ -43,7 +43,7 @@ jobs:
         run: uv run pip-audit
 
       - name: Run ty type check
-        run: uvx ty@0.0.20 check
+        run: uvx ty@0.0.24 check
 
   test-all:
     runs-on: ubuntu-latest

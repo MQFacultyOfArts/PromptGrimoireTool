@@ -73,17 +73,21 @@ def can_edit_document(doc: WorkspaceDocument, *, annotation_count: int) -> bool:
     return annotation_count == 0 and doc.source_document_id is None
 
 
-def can_delete_document(doc: WorkspaceDocument, *, is_owner: bool) -> bool:
+def can_delete_document(
+    doc: WorkspaceDocument, *, is_owner: bool, annotation_count: int
+) -> bool:
     """Whether a document is eligible for deletion in the UI.
 
     A document can be deleted when:
     1. The viewer is the workspace owner, AND
-    2. The document is user-uploaded (source_document_id IS NULL).
+    2. The document is user-uploaded (source_document_id IS NULL), AND
+    3. The document has zero annotations (highlights).
 
     Template-cloned documents (source_document_id IS NOT NULL) never show
-    a delete button (AC4.3).
+    a delete button. Documents with annotations must have annotations
+    removed before deletion (defence-in-depth -- DB guard also blocks).
     """
-    return is_owner and doc.source_document_id is None
+    return is_owner and doc.source_document_id is None and annotation_count == 0
 
 
 def _get_annotation_count(state: PageState, doc_id: UUID) -> int:
@@ -130,13 +134,18 @@ def _render_document_row(
                     "flat round dense size=sm color=primary"
                     f' data-testid="edit-document-btn-{doc.id}"'
                 )
-            ui.button(
-                icon="delete",
-                on_click=lambda d=doc: _handle_delete_document(d, state, dialog),
-            ).props(
-                "flat round dense size=sm color=negative"
-                f' data-testid="delete-doc-btn-{doc.id}"'
-            )
+            if can_delete_document(
+                doc,
+                is_owner=state.is_owner,
+                annotation_count=annotation_count,
+            ):
+                ui.button(
+                    icon="delete",
+                    on_click=lambda d=doc: _handle_delete_document(d, state, dialog),
+                ).props(
+                    "flat round dense size=sm color=negative"
+                    f' data-testid="delete-doc-btn-{doc.id}"'
+                )
 
 
 async def open_manage_documents_dialog(state: PageState) -> None:

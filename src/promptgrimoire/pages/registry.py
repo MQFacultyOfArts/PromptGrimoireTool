@@ -173,7 +173,7 @@ def page_route(
             await func(*args, **kwargs)
 
         # Default 3s causes client deletion on slow pages (#377, #402, #403)
-        return ui.page(route, response_timeout=30)(_with_log_context)
+        return ui.page(route, response_timeout=60)(_with_log_context)
 
     return decorator
 

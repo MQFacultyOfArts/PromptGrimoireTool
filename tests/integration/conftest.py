@@ -30,7 +30,54 @@ if TYPE_CHECKING:
 
     from nicegui.testing.user import User
 
+    from promptgrimoire.db.models import ExportJob
+
 logger = logging.getLogger(__name__)
+
+
+# =============================================================================
+# Export Job Test Helpers
+# =============================================================================
+
+
+async def claim_own_job(our_ids: set) -> ExportJob | None:
+    """Claim the next queued job whose ID is in *our_ids*.
+
+    Production ``claim_next_job()`` is a global queue consumer — under xdist,
+    it can claim another worker's job.  This helper uses the same
+    ``FOR UPDATE SKIP LOCKED`` pattern but scopes the ``WHERE`` clause to
+    only consider jobs created by the calling test.
+
+    Returns ``None`` when no matching job is queued.
+    """
+    from datetime import UTC, datetime
+
+    from sqlmodel import col, select
+
+    from promptgrimoire.db.engine import get_session
+    from promptgrimoire.db.models import ExportJob
+
+    async with get_session() as session:
+        stmt = (
+            select(ExportJob)
+            .where(
+                ExportJob.status == "queued",
+                col(ExportJob.id).in_(our_ids),
+            )
+            .order_by(col(ExportJob.created_at).asc())
+            .limit(1)
+            .with_for_update(skip_locked=True)
+        )
+        job = (await session.exec(stmt)).first()
+        if job is None:
+            return None
+
+        job.status = "running"
+        job.started_at = datetime.now(UTC)
+        session.add(job)
+
+    return job
+
 
 # =============================================================================
 # NiceGUI User Simulation Fixture

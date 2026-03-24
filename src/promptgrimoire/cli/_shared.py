@@ -119,7 +119,9 @@ def _pre_test_db_cleanup() -> None:
     # is part of the schema, not transient test data.
     from sqlalchemy import create_engine, text
 
-    _REFERENCE_TABLES = frozenset({"alembic_version", "permission", "course_role"})
+    _REFERENCE_TABLES = frozenset(
+        {"alembic_version", "permission", "course_role", "export_job_status"}
+    )
 
     sync_url = test_database_url.replace(
         "postgresql+asyncpg://", "postgresql+psycopg://"

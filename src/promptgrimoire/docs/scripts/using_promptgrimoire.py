@@ -420,8 +420,13 @@ def _entry_export_pdf(page: Page, guide: Guide) -> None:
     with guide.step("I want to export my work as PDF", level=3) as g:
         g.note(
             "On the Annotate tab, click the **Export PDF** button. "
-            "The export includes your conversation with highlights, "
-            "comments, and written response."
+            "A progress indicator shows the export status "
+            '("Export queued…" → "Compiling PDF…"). '
+            "When compilation finishes, a **Download your PDF** button appears. "
+            "Click it to download your PDF.\n\n"
+            "You can close or reload the page while the PDF is compiling — "
+            "the download button will appear when you return. "
+            "The download link is available for 24 hours."
         )
         page.get_by_test_id("export-pdf-btn").wait_for(state="visible", timeout=5000)
         g.screenshot(

@@ -295,6 +295,10 @@ class PageState:
     refresh_documents: Any | None = None  # Callable[[], object]
     # Page-level Quasar footer for tag toolbar — hidden on non-Annotate tabs
     footer: Any | None = None
+    # Export queue state (set by pdf_export module)
+    export_poll_timer: Any | None = None
+    export_download_container: Any | None = None
+    export_btn: Any | None = None
 
     def __post_init__(self) -> None:
         """Derive capability booleans from effective_permission."""

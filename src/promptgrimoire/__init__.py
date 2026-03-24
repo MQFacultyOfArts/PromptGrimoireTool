@@ -346,6 +346,78 @@ async def kick_user_handler(request: Request) -> JSONResponse:
     return JSONResponse({"kicked": 0, "was_banned": False})
 
 
+def _register_db_lifecycle(app: object) -> None:
+    """Register database startup/shutdown hooks and background workers.
+
+    Extracted from main() to keep statement count within linter limits.
+    """
+    import asyncio
+
+    from nicegui import app as _app_module
+
+    # Narrow the type so that .on_startup / .on_shutdown are visible
+    assert isinstance(app, type(_app_module))  # noqa: S101 — runtime guard
+
+    from promptgrimoire.crdt.persistence import (
+        get_persistence_manager,
+    )
+    from promptgrimoire.db import (
+        close_db,
+        get_engine,
+        init_db,
+        verify_schema,
+    )
+    from promptgrimoire.deadline_worker import (
+        start_deadline_worker,
+    )
+    from promptgrimoire.export.worker import start_export_worker
+    from promptgrimoire.search_worker import start_search_worker
+
+    _search_worker_task: asyncio.Task[None] | None = None
+    _deadline_worker_task: asyncio.Task[None] | None = None
+    _export_worker_task: asyncio.Task[None] | None = None
+
+    @app.on_startup
+    async def startup() -> None:
+        nonlocal _search_worker_task, _deadline_worker_task, _export_worker_task
+        await init_db()
+        await verify_schema(get_engine())
+        _search_worker_task = asyncio.create_task(
+            start_search_worker(),
+        )
+        _deadline_worker_task = asyncio.create_task(
+            start_deadline_worker(),
+        )
+        _export_worker_task = asyncio.create_task(
+            start_export_worker(),
+        )
+        log.info("database_connected")
+
+    @app.on_shutdown
+    async def shutdown() -> None:
+        nonlocal _search_worker_task, _deadline_worker_task, _export_worker_task
+        # Cancel background workers and await completion before DB teardown
+        tasks_to_cancel: list[asyncio.Task[None]] = []
+        if _search_worker_task is not None:
+            _search_worker_task.cancel()
+            tasks_to_cancel.append(_search_worker_task)
+            _search_worker_task = None
+        if _deadline_worker_task is not None:
+            _deadline_worker_task.cancel()
+            tasks_to_cancel.append(_deadline_worker_task)
+            _deadline_worker_task = None
+        if _export_worker_task is not None:
+            _export_worker_task.cancel()
+            tasks_to_cancel.append(_export_worker_task)
+            _export_worker_task = None
+        if tasks_to_cancel:
+            await asyncio.gather(*tasks_to_cancel, return_exceptions=True)
+        # Persist all dirty CRDT documents before closing DB
+        mgr = get_persistence_manager()
+        await mgr.persist_all_dirty_workspaces()
+        await close_db()
+
+
 def main() -> None:
     """Entry point for the PromptGrimoire application."""
     from nicegui import app, ui
@@ -358,9 +430,13 @@ def main() -> None:
     _static_dir = Path(__file__).parent / "static"
     app.add_static_files("/static", str(_static_dir))
 
+    import promptgrimoire.export.download
     import promptgrimoire.pages
 
     _ = promptgrimoire.pages  # side-effect import: registers routes
+    _ = (
+        promptgrimoire.export.download
+    )  # side-effect import: registers /export/{token}/download route
 
     # Health check endpoint for UptimeRobot (HEAD + GET)
     from starlette.responses import PlainTextResponse
@@ -381,52 +457,7 @@ def main() -> None:
 
     # Database lifecycle hooks (only if DATABASE__URL is configured)
     if settings.database.url:
-        import asyncio
-
-        from promptgrimoire.crdt.persistence import (
-            get_persistence_manager,
-        )
-        from promptgrimoire.db import (
-            close_db,
-            get_engine,
-            init_db,
-            verify_schema,
-        )
-        from promptgrimoire.deadline_worker import (
-            start_deadline_worker,
-        )
-        from promptgrimoire.search_worker import start_search_worker
-
-        _search_worker_task: asyncio.Task[None] | None = None
-        _deadline_worker_task: asyncio.Task[None] | None = None
-
-        @app.on_startup
-        async def startup() -> None:
-            nonlocal _search_worker_task, _deadline_worker_task
-            await init_db()
-            await verify_schema(get_engine())
-            _search_worker_task = asyncio.create_task(
-                start_search_worker(),
-            )
-            _deadline_worker_task = asyncio.create_task(
-                start_deadline_worker(),
-            )
-            log.info("database_connected")
-
-        @app.on_shutdown
-        async def shutdown() -> None:
-            nonlocal _search_worker_task, _deadline_worker_task
-            # Cancel background workers before shutdown
-            if _search_worker_task is not None:
-                _search_worker_task.cancel()
-                _search_worker_task = None
-            if _deadline_worker_task is not None:
-                _deadline_worker_task.cancel()
-                _deadline_worker_task = None
-            # Persist all dirty CRDT documents before closing DB
-            mgr = get_persistence_manager()
-            await mgr.persist_all_dirty_workspaces()
-            await close_db()
+        _register_db_lifecycle(app)
 
     port = settings.app.port
     storage_secret = settings.app.storage_secret.get_secret_value()

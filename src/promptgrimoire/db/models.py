@@ -812,6 +812,87 @@ class StudentGroup(SQLModel, table=True):
     )
 
 
+class ExportJobStatus(SQLModel, table=True):
+    """Reference table for export job statuses.
+
+    String PK — the name is the identity. Rows seeded by migration.
+    """
+
+    __tablename__ = "export_job_status"
+
+    name: str = Field(
+        sa_column=Column(String(20), primary_key=True, nullable=False),
+    )
+    description: str = Field(default="", max_length=100)
+
+
+class ExportJob(SQLModel, table=True):
+    """Queued PDF export job with per-user concurrency enforcement.
+
+    The partial unique index ``ix_export_job_one_active_per_user``
+    ensures at most one ``queued`` or ``running`` job per user.
+
+    The partial unique index ``ix_export_job_download_token``
+    ensures ``get_job_by_token()`` never returns an ambiguous result
+    on token collision (only non-NULL tokens are indexed).
+    """
+
+    __tablename__ = "export_job"
+    __table_args__ = (
+        # Per-user concurrency: at most one queued/running job per user.
+        sa.Index(
+            "ix_export_job_one_active_per_user",
+            "user_id",
+            unique=True,
+            postgresql_where=sa.text("status IN ('queued', 'running')"),
+        ),
+        # Partial unique index: only non-NULL download tokens must be unique.
+        sa.Index(
+            "ix_export_job_download_token",
+            "download_token",
+            unique=True,
+            postgresql_where=sa.text("download_token IS NOT NULL"),
+        ),
+        # Index on workspace_id FK to avoid seq scans on CASCADE deletes.
+        sa.Index("ix_export_job_workspace_id", "workspace_id"),
+    )
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    user_id: UUID = Field(sa_column=_cascade_fk_column("user.id"))
+    workspace_id: UUID = Field(sa_column=_cascade_fk_column("workspace.id"))
+    status: str = Field(
+        default="queued",
+        sa_column=Column(
+            String(20),
+            ForeignKey("export_job_status.name", ondelete="RESTRICT"),
+            nullable=False,
+        ),
+    )
+    payload: dict[str, Any] = Field(
+        sa_column=Column(JSONB, nullable=False),
+    )
+    download_token: str | None = Field(default=None, max_length=64)
+    token_expires_at: datetime | None = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), nullable=True),
+    )
+    pdf_path: str | None = Field(default=None, max_length=500)
+    error_message: str | None = Field(
+        default=None, sa_column=Column(sa.Text(), nullable=True)
+    )
+    created_at: datetime = Field(
+        default_factory=_utcnow, sa_column=_timestamptz_column()
+    )
+    started_at: datetime | None = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), nullable=True),
+    )
+    completed_at: datetime | None = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), nullable=True),
+    )
+
+
 class StudentGroupMembership(SQLModel, table=True):
     """Maps a User to a StudentGroup."""
 

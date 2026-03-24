@@ -26,6 +26,9 @@ from promptgrimoire.export.html_normaliser import (
     strip_scripts_and_styles,
 )
 from promptgrimoire.export.list_normalizer import normalize_list_values
+from promptgrimoire.input_pipeline.paragraph_map import (
+    inject_paragraph_markers_for_export,
+)
 
 logger = structlog.get_logger()
 logging.getLogger(__name__).setLevel(logging.INFO)
@@ -382,6 +385,9 @@ async def convert_html_with_annotations(
         tag_colours,
         word_to_legal_para=word_to_legal_para,
     )
+
+    # Inject paragraph number markers for PDF margin display
+    span_html = inject_paragraph_markers_for_export(span_html, word_to_legal_para)
 
     # Build filter list: always include highlight.lua, plus caller's filters
     filters: list[Path] = [_HIGHLIGHT_FILTER]

@@ -81,7 +81,7 @@ class TestAC1_1_MarkersInserted:
 
     def test_two_paragraphs(self) -> None:
         html = "<p>First paragraph text.</p><p>Second paragraph text.</p>"
-        para_map: dict[int, int | None] = {0: 1, 22: 2}
+        para_map: dict[int, int | None] = {0: 1, 21: 2}
         result = inject_paragraph_markers_for_export(html, para_map)
         markers = _find_markers(result)
         assert len(markers) == 2
@@ -163,7 +163,7 @@ class TestBrBrPseudoParagraphs:
         # <span data-para="N">. The regex should match this span too.
         html = "<p>First part.<br><br>Second part.</p>"
         # char offsets: "First part." = 0, "Second part." starts after br-br
-        para_map: dict[int, int | None] = {0: 1, 11: 2}
+        para_map: dict[int, int | None] = {0: 1, 13: 2}
         result = inject_paragraph_markers_for_export(html, para_map)
         numbers = _marker_numbers(result)
         assert len(numbers) >= 1

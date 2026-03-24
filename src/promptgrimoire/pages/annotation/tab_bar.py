@@ -16,14 +16,20 @@ import structlog
 from nicegui import events, ui
 
 from promptgrimoire.crdt.persistence import get_persistence_manager
-from promptgrimoire.db.workspace_documents import list_documents
+from promptgrimoire.db.workspace_documents import get_document, list_documents
 from promptgrimoire.pages.annotation import (
     PageState,
     _workspace_presence,
     _workspace_registry,
 )
 from promptgrimoire.pages.annotation.broadcast import _broadcast_yjs_update
+from promptgrimoire.pages.annotation.document_render import (
+    render_content_form_outside_refreshable,
+    render_document_container,
+    render_empty_template_toolbar,
+)
 from promptgrimoire.pages.annotation.highlights import (
+    _execute_pending_scroll,
     _push_highlights_to_client,
     _update_highlight_css,
     _warp_to_highlight,
@@ -442,12 +448,6 @@ async def _render_source_tab_content(
     highlights inside the tab panel, and saves the resulting
     card state back to ``doc_tab``.
     """
-    # Late imports to avoid circular dependency
-    from promptgrimoire.db.workspace_documents import get_document
-    from promptgrimoire.pages.annotation.workspace import (
-        _render_document_container,
-    )
-
     doc = await get_document(doc_tab.document_id)
     if doc is None:
         logger.warning(
@@ -466,7 +466,7 @@ async def _render_source_tab_content(
     # (e.g. after invalidate_card_cache set rendered=False).
     doc_tab.panel.clear()
     with doc_tab.panel:
-        await _render_document_container(
+        await render_document_container(
             state,
             doc,
             state.crdt_doc,
@@ -523,10 +523,6 @@ async def _handle_source_tab_switch(
 
     # Execute pending scroll from _warp_to_highlight (if any).
     # Must run AFTER render/refresh so the DOM exists.
-    from promptgrimoire.pages.annotation.highlights import (
-        _execute_pending_scroll,
-    )
-
     _execute_pending_scroll(state)
 
 
@@ -637,13 +633,6 @@ async def _build_first_source_panel(
     Contains the CRDT-backed document renderer wrapped in
     ``@ui.refreshable`` for in-place re-render on document upload.
     """
-    # Late import to break circular dependency
-    from promptgrimoire.pages.annotation.workspace import (
-        _render_content_form_outside_refreshable,
-        _render_document_container,
-        _render_empty_template_toolbar,
-    )
-
     assert state.crdt_doc is not None
     crdt_doc = state.crdt_doc
 
@@ -665,7 +654,7 @@ async def _build_first_source_panel(
         logger.debug("[RENDER] documents loaded: count=%d", len(docs))
 
         if docs:
-            await _render_document_container(
+            await render_document_container(
                 state,
                 docs[0],
                 crdt_doc,
@@ -674,7 +663,7 @@ async def _build_first_source_panel(
                 footer=footer,
             )
         elif state.can_upload:
-            _render_empty_template_toolbar(
+            render_empty_template_toolbar(
                 state,
                 on_add_tag=on_add_tag if can_create_tags else None,
                 on_manage_tags=on_manage_tags,
@@ -689,7 +678,7 @@ async def _build_first_source_panel(
     await document_container()
     state.refresh_documents = document_container.refresh
 
-    _render_content_form_outside_refreshable(
+    render_content_form_outside_refreshable(
         state,
         workspace_id,
         has_documents=has_documents,

@@ -138,3 +138,54 @@ class StudentIdConflictError(BusinessLogicError):
             f"{email}: existing={old!r}, new={new!r}" for email, old, new in conflicts
         )
         super().__init__(f"Student ID conflicts: {details}")
+
+
+class HasChildTagsError(BusinessLogicError):
+    """Tag group cannot be deleted because it contains tags.
+
+    Attributes:
+        group_id: The tag group that was attempted to be deleted.
+        tag_count: Number of tags in the group.
+    """
+
+    def __init__(self, group_id: UUID, tag_count: int) -> None:
+        self.group_id = group_id
+        self.tag_count = tag_count
+        super().__init__(
+            f"Tag group {group_id} has {tag_count} "
+            f"tag{'s' if tag_count != 1 else ''} and cannot be deleted"
+        )
+
+
+class HasHighlightsError(BusinessLogicError):
+    """Tag cannot be deleted because highlights reference it.
+
+    Attributes:
+        tag_id: The tag that was attempted to be deleted.
+        highlight_count: Number of CRDT highlights referencing this tag.
+    """
+
+    def __init__(self, tag_id: UUID, highlight_count: int) -> None:
+        self.tag_id = tag_id
+        self.highlight_count = highlight_count
+        super().__init__(
+            f"Tag {tag_id} has {highlight_count} "
+            f"highlight{'s' if highlight_count != 1 else ''} and cannot be deleted"
+        )
+
+
+class HasAnnotationsError(BusinessLogicError):
+    """Document cannot be deleted because it has annotations.
+
+    Attributes:
+        document_id: The document that was attempted to be deleted.
+        highlight_count: Number of CRDT highlights on this document.
+    """
+
+    def __init__(self, document_id: UUID, highlight_count: int) -> None:
+        self.document_id = document_id
+        self.highlight_count = highlight_count
+        super().__init__(
+            f"Document {document_id} has {highlight_count} "
+            f"annotation{'s' if highlight_count != 1 else ''} and cannot be deleted"
+        )

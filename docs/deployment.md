@@ -331,6 +331,36 @@ PgBouncer is a lightweight connection pooler that sits between the application a
 sudo apt install pgbouncer
 ```
 
+### Run PgBouncer as the application user
+
+The Debian package runs PgBouncer as `postgres` by default. PostgreSQL uses `peer` auth (OS user must match PG role), so PgBouncer must run as the `promptgrimoire` system user for peer auth to work. Override the systemd unit:
+
+```bash
+sudo systemctl edit pgbouncer
+```
+
+Add:
+
+```ini
+[Service]
+User=promptgrimoire
+Group=promptgrimoire
+RuntimeDirectory=pgbouncer
+RuntimeDirectoryMode=0750
+PIDFile=/run/pgbouncer/pgbouncer.pid
+```
+
+`RuntimeDirectory=pgbouncer` tells systemd to create `/run/pgbouncer/` with correct ownership automatically and clean it up on shutdown. This avoids permission issues with `/var/run/postgresql/` (owned by `postgres`).
+
+Create the log directory:
+
+```bash
+sudo mkdir -p /var/log/pgbouncer
+sudo chown promptgrimoire:promptgrimoire /var/log/pgbouncer
+```
+
+> **Ref:** [PgBouncer systemd service](https://github.com/pgbouncer/pgbouncer/blob/master/etc/pgbouncer.service), [EDB: running multiple PgBouncer instances with systemd](https://www.enterprisedb.com/blog/running-multiple-pgbouncer-instances-systemd)
+
 ### Configure PgBouncer
 
 Edit `/etc/pgbouncer/pgbouncer.ini`:
@@ -338,12 +368,15 @@ Edit `/etc/pgbouncer/pgbouncer.ini`:
 ```ini
 [databases]
 promptgrimoire = host=/var/run/postgresql port=5432 dbname=promptgrimoire
+; Bootstrap needs the postgres maintenance database for ensure_database_exists()
+postgres = host=/var/run/postgresql port=5432 dbname=postgres
 
 [pgbouncer]
-; Listen on Unix socket only — no network exposure
+; Listen on Unix socket only — no network exposure.
+; Socket lives in /run/pgbouncer/ (managed by systemd RuntimeDirectory).
 listen_addr =
 listen_port = 6432
-unix_socket_dir = /var/run/postgresql
+unix_socket_dir = /run/pgbouncer
 
 ; Transaction pooling: connection returned to pool after each transaction
 pool_mode = transaction
@@ -359,8 +392,10 @@ reserve_pool_timeout = 3
 ; asyncpg prepared statements work transparently — no code changes needed.
 max_prepared_statements = 200
 
-; Auth: trust on Unix socket (no network exposure), peer to PG backend
+; Auth: trust on Unix socket (no network exposure).
+; auth_file is required even with trust — PgBouncer must know valid users.
 auth_type = trust
+auth_file = /etc/pgbouncer/userlist.txt
 
 ; Timeouts
 server_lifetime = 3600
@@ -371,23 +406,31 @@ client_login_timeout = 15
 admin_users = promptgrimoire
 stats_users = promptgrimoire
 
-; Logging
+; Logging and PID (paths match systemd RuntimeDirectory)
 logfile = /var/log/pgbouncer/pgbouncer.log
-pidfile = /var/run/pgbouncer/pgbouncer.pid
+pidfile = /run/pgbouncer/pgbouncer.pid
 ```
 
-PgBouncer connects to PostgreSQL as the `promptgrimoire` Unix user via peer auth (same as the app did directly). Clients connect to PgBouncer via Unix socket on port 6432 — no passwords needed since `auth_type = trust` and the socket is local-only.
+Set file ownership and register the application user:
 
-> **Ref:** [PgBouncer configuration](https://www.pgbouncer.org/config.html), [PgBouncer 1.21 prepared statement support](https://www.postgresql.org/about/news/pgbouncer-1210-released-now-with-prepared-statements-2735/)
+```bash
+sudo chown promptgrimoire:promptgrimoire /etc/pgbouncer/pgbouncer.ini /etc/pgbouncer/userlist.txt
+echo '"promptgrimoire" ""' | sudo tee /etc/pgbouncer/userlist.txt
+```
+
+PgBouncer runs as `promptgrimoire` and connects to PostgreSQL via Unix socket. PostgreSQL's `peer` auth sees OS user `promptgrimoire` matching PG role `promptgrimoire` — no password, no `pg_hba.conf` changes needed.
+
+> **Ref:** [PgBouncer configuration](https://www.pgbouncer.org/config.html), [PgBouncer 1.21 prepared statement support](https://www.postgresql.org/about/news/pgbouncer-1210-released-now-with-prepared-statements-2735/), [PgBouncer auth file format](https://www.pgbouncer.org/config.html#auth_file)
 
 ### Start and enable
 
 ```bash
+sudo systemctl daemon-reload
 sudo systemctl enable pgbouncer
 sudo systemctl start pgbouncer
 
 # Verify: connect through PgBouncer
-sudo -u promptgrimoire psql -h /var/run/postgresql -p 6432 -d promptgrimoire -c "SELECT 1;"
+sudo -u promptgrimoire psql -h /run/pgbouncer -p 6432 -d promptgrimoire -c "SELECT 1;"
 ```
 
 ### Monitoring
@@ -395,7 +438,7 @@ sudo -u promptgrimoire psql -h /var/run/postgresql -p 6432 -d promptgrimoire -c 
 Connect to PgBouncer's admin console to check pool health:
 
 ```bash
-sudo -u promptgrimoire psql -h /var/run/postgresql -p 6432 -d pgbouncer
+sudo -u promptgrimoire psql -h /run/pgbouncer -p 6432 -d pgbouncer
 ```
 
 ```sql
@@ -481,10 +524,10 @@ sudo -u promptgrimoire cp .env.example .env
 Edit `/opt/promptgrimoire/.env`:
 
 ```bash
-# Database — via PgBouncer Unix socket on port 6432 (Step 7a)
+# Database — via PgBouncer Unix socket (Step 7a)
 # PgBouncer handles connection pooling and prepared statement caching.
-# To bypass PgBouncer (e.g., for migrations), connect directly on port 5432.
-DATABASE__URL=postgresql+asyncpg://promptgrimoire@/promptgrimoire?host=/var/run/postgresql&port=6432
+# To bypass PgBouncer (e.g., for migrations), use host=/var/run/postgresql (no port).
+DATABASE__URL=postgresql+asyncpg://promptgrimoire@/promptgrimoire?host=/run/pgbouncer&port=6432
 # Pool defaults (DATABASE__POOL_SIZE=80, etc.) match PgBouncer's default_pool_size.
 # See .env.example to override.
 
@@ -1533,7 +1576,7 @@ echo | openssl s_client -connect grimoire.drbbs.org:443 -servername grimoire.drb
 sudo -u promptgrimoire psql -d promptgrimoire -c "SELECT 1;"
 
 # PgBouncer pool health? (cl_waiting > 0 sustained = pool saturated)
-sudo -u promptgrimoire psql -h /var/run/postgresql -p 6432 -d pgbouncer -c "SHOW POOLS;"
+sudo -u promptgrimoire psql -h /run/pgbouncer -p 6432 -d pgbouncer -c "SHOW POOLS;"
 
 # Connection pool health? (idle in transaction = leak)
 sudo -u promptgrimoire psql -c "SELECT state, count(*) FROM pg_stat_activity WHERE datname = 'promptgrimoire' GROUP BY state ORDER BY count DESC;"

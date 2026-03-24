@@ -55,9 +55,21 @@ class StytchConfig(BaseModel):
 
 
 class DatabaseConfig(BaseModel):
-    """Database connection configuration."""
+    """Database connection configuration.
+
+    Pool settings are tuned for PgBouncer in transaction mode.
+    PgBouncer handles connection queuing and multiplexing, so the
+    app-side pool only needs enough connections for concurrent async
+    queries, not one per user.
+
+    Override via env vars: DATABASE__POOL_SIZE, DATABASE__MAX_OVERFLOW, etc.
+    """
 
     url: str | None = None
+    pool_size: int = 80
+    max_overflow: int = 15
+    pool_pre_ping: bool = True
+    pool_recycle: int = 3600
 
 
 class LlmConfig(BaseModel):

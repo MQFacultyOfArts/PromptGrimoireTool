@@ -113,6 +113,91 @@ def _create_workspace_via_db(
     return workspace_id
 
 
+def _create_multi_doc_workspace(
+    user_email: str,
+    documents: list[tuple[str, str]],
+    *,
+    seed_tags: bool = True,
+) -> str:
+    """Create a workspace with multiple documents via direct DB.
+
+    Args:
+        user_email: Owner email (must exist in DB).
+        documents: List of (title, html_content) pairs.
+        seed_tags: If True, seed Legal Case Brief tags.
+
+    Returns:
+        workspace_id as string.
+    """
+    from sqlalchemy import create_engine, text
+
+    db_url = os.environ.get("DATABASE__URL", "")
+    if not db_url:
+        msg = "DATABASE__URL not configured"
+        raise RuntimeError(msg)
+    sync_url = db_url.replace("postgresql+asyncpg://", "postgresql+psycopg://")
+    engine = create_engine(sync_url)
+
+    workspace_id = str(uuid.uuid4())
+
+    with engine.begin() as conn:
+        row = conn.execute(
+            text('SELECT id FROM "user" WHERE email = :email'),
+            {"email": user_email},
+        ).first()
+        if not row:
+            msg = f"User not found in DB: {user_email}"
+            raise RuntimeError(msg)
+        user_id = row[0]
+
+        conn.execute(
+            text(
+                "INSERT INTO workspace"
+                " (id, enable_save_as_draft, created_at, updated_at)"
+                " VALUES (CAST(:id AS uuid), false, now(), now())"
+            ),
+            {"id": workspace_id},
+        )
+
+        for i, (title, html_content) in enumerate(documents):
+            doc_id = str(uuid.uuid4())
+            conn.execute(
+                text(
+                    "INSERT INTO workspace_document"
+                    " (id, workspace_id, type, title, content,"
+                    "  source_type, order_index, created_at)"
+                    " VALUES (CAST(:id AS uuid), CAST(:ws AS uuid),"
+                    " :type, :title, :content, :source_type, :order_index, now())"
+                ),
+                {
+                    "id": doc_id,
+                    "ws": workspace_id,
+                    "type": "source",
+                    "title": title,
+                    "content": html_content,
+                    "source_type": "text",
+                    "order_index": i,
+                },
+            )
+
+        conn.execute(
+            text(
+                "INSERT INTO acl_entry"
+                " (id, workspace_id, user_id, permission, created_at)"
+                " VALUES (gen_random_uuid(),"
+                " CAST(:ws AS uuid), :uid, 'owner', now())"
+            ),
+            {"ws": workspace_id, "uid": user_id},
+        )
+
+    engine.dispose()
+
+    if seed_tags:
+        _seed_tags_for_workspace(workspace_id)
+
+    return workspace_id
+
+
 def _create_workspace_no_tag_permission(user_email: str) -> str:
     """Create a workspace under an activity with tag creation disabled.
 

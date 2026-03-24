@@ -75,7 +75,7 @@ class TestStructuralCssProperties:
 
     def test_highlight_menu_z_index(self, annotation_page: Page) -> None:
         """Highlight menu z-index is above toolbar (110 > 100)."""
-        menu = annotation_page.locator("#highlight-menu")
+        menu = annotation_page.get_by_test_id("highlight-menu")
         expect(menu).to_have_css("z-index", "110")
 
     def test_sidebar_position_relative(self, annotation_page: Page) -> None:

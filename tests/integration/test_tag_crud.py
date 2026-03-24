@@ -2180,44 +2180,45 @@ class TestQuickCreateDefaultGroup:
 
 
 class TestImportTagsFromWorkspace:
-    """Tests for import_tags_from_workspace.
+    """Tests for import_tags_from_workspace with ImportResult.
 
-    Verifies AC3.1-AC3.5, AC3.7, and permission enforcement.
+    Verifies AC4.1-AC4.7 and permission enforcement.
     """
 
     @pytest.mark.asyncio
-    async def test_import_workspace_creates_tags(self) -> None:
-        """Import from accessible workspace creates tags.
+    async def test_import_creates_groups_and_tags(self) -> None:
+        """Import from source with groups + tags creates all items.
 
-        Verifies AC3.1: user can import tags from a workspace with read access.
+        Verifies AC4.1: all groups and tags created in target.
+        Verifies AC4.4: ImportResult carries correct counts.
         """
         from promptgrimoire.db.acl import grant_permission
         from promptgrimoire.db.tags import (
             create_tag,
             create_tag_group,
             import_tags_from_workspace,
+            list_tag_groups_for_workspace,
             list_tags_for_workspace,
         )
         from promptgrimoire.db.users import create_user
 
-        # Source workspace with tags (standalone, not template)
         _, src_activity = await _make_course_week_activity()
         src_ws = src_activity.template_workspace_id
-        src_group = await create_tag_group(src_ws, name="Legal")
+        src_g1 = await create_tag_group(src_ws, name="Legal")
+        src_g2 = await create_tag_group(src_ws, name="Facts")
         await create_tag(
             src_ws,
             name="Jurisdiction",
             color="#1f77b4",
-            group_id=src_group.id,
+            group_id=src_g1.id,
             description="Court jurisdiction",
         )
-        await create_tag(src_ws, name="Facts", color="#ff7f0e")
+        await create_tag(src_ws, name="Evidence", color="#ff7f0e", group_id=src_g2.id)
+        await create_tag(src_ws, name="Ungrouped", color="#2ca02c")
 
-        # Target: separate workspace
         _, tgt_activity = await _make_course_week_activity()
         tgt_ws = tgt_activity.template_workspace_id
 
-        # User with explicit read access to source
         tag = uuid4().hex[:8]
         user = await create_user(
             email=f"importer-{tag}@test.local", display_name=f"Imp {tag}"
@@ -2226,35 +2227,38 @@ class TestImportTagsFromWorkspace:
 
         result = await import_tags_from_workspace(src_ws, tgt_ws, user.id)
 
-        assert len(result) == 2
+        assert len(result.created_groups) == 2
+        assert len(result.created_tags) == 3
+        assert result.skipped_groups == 0
+        assert result.skipped_tags == 0
+
         tgt_tags = await list_tags_for_workspace(tgt_ws)
-        imported_names = {t.name for t in tgt_tags}
-        assert "Jurisdiction" in imported_names
-        assert "Facts" in imported_names
+        assert {t.name for t in tgt_tags} == {"Jurisdiction", "Evidence", "Ungrouped"}
+        tgt_groups = await list_tag_groups_for_workspace(tgt_ws)
+        assert {g.name for g in tgt_groups} == {"Legal", "Facts"}
 
     @pytest.mark.asyncio
-    async def test_import_preserves_existing_tags(self) -> None:
-        """Existing tags in target are preserved after import.
+    async def test_reimport_skips_all_existing(self) -> None:
+        """Re-importing the same source skips all items.
 
-        Verifies AC3.2: additive merge.
+        Verifies AC4.2: idempotent — zero new, all skipped.
         """
         from promptgrimoire.db.acl import grant_permission
         from promptgrimoire.db.tags import (
             create_tag,
+            create_tag_group,
             import_tags_from_workspace,
-            list_tags_for_workspace,
         )
         from promptgrimoire.db.users import create_user
 
-        # Source with one tag
         _, src_activity = await _make_course_week_activity()
         src_ws = src_activity.template_workspace_id
-        await create_tag(src_ws, name="NewTag", color="#aabbcc")
+        src_g = await create_tag_group(src_ws, name="Group1")
+        await create_tag(src_ws, name="Tag1", color="#111111", group_id=src_g.id)
+        await create_tag(src_ws, name="Tag2", color="#222222")
 
-        # Target with existing tag (different activity so no overlap)
         _, tgt_activity = await _make_course_week_activity()
         tgt_ws = tgt_activity.template_workspace_id
-        await create_tag(tgt_ws, name="Existing", color="#112233")
 
         tag = uuid4().hex[:8]
         user = await create_user(
@@ -2262,18 +2266,23 @@ class TestImportTagsFromWorkspace:
         )
         await grant_permission(src_ws, user.id, "viewer")
 
-        await import_tags_from_workspace(src_ws, tgt_ws, user.id)
+        # First import
+        first = await import_tags_from_workspace(src_ws, tgt_ws, user.id)
+        assert len(first.created_tags) == 2
+        assert len(first.created_groups) == 1
 
-        tgt_tags = await list_tags_for_workspace(tgt_ws)
-        names = {t.name for t in tgt_tags}
-        assert "Existing" in names
-        assert "NewTag" in names
+        # Re-import
+        second = await import_tags_from_workspace(src_ws, tgt_ws, user.id)
+        assert second.created_tags == []
+        assert second.skipped_tags == 2
+        assert second.created_groups == []
+        assert second.skipped_groups == 1
 
     @pytest.mark.asyncio
-    async def test_import_skips_duplicate_names(self) -> None:
-        """Tags with duplicate names (case-insensitive) are skipped.
+    async def test_partial_overlap_creates_new_skips_existing(self) -> None:
+        """Partial tag overlap correctly creates new and skips existing.
 
-        Verifies AC3.3.
+        Verifies AC4.3: mixed created/skipped counts.
         """
         from promptgrimoire.db.acl import grant_permission
         from promptgrimoire.db.tags import (
@@ -2290,7 +2299,7 @@ class TestImportTagsFromWorkspace:
 
         _, tgt_activity = await _make_course_week_activity()
         tgt_ws = tgt_activity.template_workspace_id
-        await create_tag(tgt_ws, name="overlap", color="#333333")  # case mismatch
+        await create_tag(tgt_ws, name="Overlap", color="#333333")
 
         tag = uuid4().hex[:8]
         user = await create_user(
@@ -2300,19 +2309,60 @@ class TestImportTagsFromWorkspace:
 
         result = await import_tags_from_workspace(src_ws, tgt_ws, user.id)
 
-        # Only "Unique" should be imported; "Overlap" skipped
-        assert len(result) == 1
-        assert result[0].name == "Unique"
+        assert len(result.created_tags) == 1
+        assert result.created_tags[0].name == "Unique"
+        assert result.skipped_tags == 1
 
         tgt_tags = await list_tags_for_workspace(tgt_ws)
-        overlap_tags = [t for t in tgt_tags if t.name.lower() == "overlap"]
+        overlap_tags = [t for t in tgt_tags if t.name == "Overlap"]
         assert len(overlap_tags) == 1  # original preserved, dupe not added
+
+    @pytest.mark.asyncio
+    async def test_existing_group_name_remaps_tags(self) -> None:
+        """Source tags remap to existing target group with same name.
+
+        Verifies AC4.3a: group name collision remaps source tags.
+        """
+        from promptgrimoire.db.acl import grant_permission
+        from promptgrimoire.db.tags import (
+            create_tag,
+            create_tag_group,
+            import_tags_from_workspace,
+            list_tags_for_workspace,
+        )
+        from promptgrimoire.db.users import create_user
+
+        _, src_activity = await _make_course_week_activity()
+        src_ws = src_activity.template_workspace_id
+        src_group = await create_tag_group(src_ws, name="SharedGroup")
+        await create_tag(src_ws, name="SrcTag", color="#aaaaaa", group_id=src_group.id)
+
+        _, tgt_activity = await _make_course_week_activity()
+        tgt_ws = tgt_activity.template_workspace_id
+        tgt_group = await create_tag_group(tgt_ws, name="SharedGroup")
+
+        tag = uuid4().hex[:8]
+        user = await create_user(
+            email=f"imp-{tag}@test.local", display_name=f"Imp {tag}"
+        )
+        await grant_permission(src_ws, user.id, "viewer")
+
+        result = await import_tags_from_workspace(src_ws, tgt_ws, user.id)
+
+        assert result.skipped_groups == 1
+        assert result.created_groups == []
+        assert len(result.created_tags) == 1
+
+        # Verify the tag was remapped to the existing target group
+        tgt_tags = await list_tags_for_workspace(tgt_ws)
+        imported_tag = next(t for t in tgt_tags if t.name == "SrcTag")
+        assert imported_tag.group_id == tgt_group.id
 
     @pytest.mark.asyncio
     async def test_import_preserves_group_ordering(self) -> None:
         """Imported groups and tags are appended after existing.
 
-        Verifies AC3.4.
+        Verifies ordering is preserved.
         """
         from promptgrimoire.db.acl import grant_permission
         from promptgrimoire.db.tags import (
@@ -2349,22 +2399,17 @@ class TestImportTagsFromWorkspace:
         groups = await list_tag_groups_for_workspace(tgt_ws)
         tags = await list_tags_for_workspace(tgt_ws)
 
-        # Existing group should have lower order_index than imported
         existing_g = next(g for g in groups if g.name == "ExistingGroup")
         imported_g = next(g for g in groups if g.name == "ImportedGroup")
         assert existing_g.order_index < imported_g.order_index
 
-        # Existing tag should have lower order_index than imported
         existing_t = next(t for t in tags if t.name == "ExistingTag")
         imported_t = next(t for t in tags if t.name == "ImportedTag")
         assert existing_t.order_index < imported_t.order_index
 
     @pytest.mark.asyncio
     async def test_import_unlocks_locked_tags(self) -> None:
-        """Imported tags default to unlocked regardless of source status.
-
-        Verifies AC3.5.
-        """
+        """Imported tags default to unlocked regardless of source status."""
         from promptgrimoire.db.acl import grant_permission
         from promptgrimoire.db.tags import (
             create_tag,
@@ -2387,22 +2432,18 @@ class TestImportTagsFromWorkspace:
 
         result = await import_tags_from_workspace(src_ws, tgt_ws, user.id)
 
-        assert len(result) == 1
-        assert result[0].locked is False
+        assert len(result.created_tags) == 1
+        assert result.created_tags[0].locked is False
 
     @pytest.mark.asyncio
-    async def test_import_empty_workspace_no_error(self) -> None:
-        """Importing from workspace with no tags produces no error.
-
-        Verifies AC3.7.
-        """
+    async def test_import_empty_workspace_returns_empty_result(self) -> None:
+        """Importing from workspace with no tags returns empty ImportResult."""
         from promptgrimoire.db.acl import grant_permission
-        from promptgrimoire.db.tags import import_tags_from_workspace
+        from promptgrimoire.db.tags import ImportResult, import_tags_from_workspace
         from promptgrimoire.db.users import create_user
 
         _, src_activity = await _make_course_week_activity()
         src_ws = src_activity.template_workspace_id
-        # No tags created in source
 
         _, tgt_activity = await _make_course_week_activity()
         tgt_ws = tgt_activity.template_workspace_id
@@ -2414,7 +2455,7 @@ class TestImportTagsFromWorkspace:
         await grant_permission(src_ws, user.id, "viewer")
 
         result = await import_tags_from_workspace(src_ws, tgt_ws, user.id)
-        assert result == []
+        assert result == ImportResult()
 
     @pytest.mark.asyncio
     async def test_import_no_access_raises_permission_error(self) -> None:
@@ -2428,7 +2469,6 @@ class TestImportTagsFromWorkspace:
         _, tgt_activity = await _make_course_week_activity()
         tgt_ws = tgt_activity.template_workspace_id
 
-        # User with no enrollment or ACL at all
         outsider = await create_user(
             email=f"outsider-{uuid4().hex[:8]}@test.local",
             display_name="Outsider",
@@ -2436,6 +2476,111 @@ class TestImportTagsFromWorkspace:
 
         with pytest.raises(SharePermissionError):
             await import_tags_from_workspace(src_ws, tgt_ws, outsider.id)
+
+    @pytest.mark.asyncio
+    async def test_atomicity_rollback_on_failure(self) -> None:
+        """Failed tag insert rolls back entire transaction (groups too).
+
+        Verifies AC4.6: all-or-nothing atomicity.
+
+        Injects a RuntimeError into ``_import_tags`` after groups have
+        been inserted, proving the single ``get_session()`` block rolls
+        back both groups and tags on any exception.
+        """
+        from unittest.mock import AsyncMock, patch
+
+        from promptgrimoire.db.acl import grant_permission
+        from promptgrimoire.db.tags import (
+            create_tag,
+            create_tag_group,
+            import_tags_from_workspace,
+            list_tag_groups_for_workspace,
+            list_tags_for_workspace,
+        )
+        from promptgrimoire.db.users import create_user
+
+        _, src_activity = await _make_course_week_activity()
+        src_ws = src_activity.template_workspace_id
+        src_group = await create_tag_group(src_ws, name="AtomicGroup")
+        await create_tag(
+            src_ws,
+            name="GoodTag",
+            color="#aabbcc",
+            group_id=src_group.id,
+        )
+
+        _, tgt_activity = await _make_course_week_activity()
+        tgt_ws = tgt_activity.template_workspace_id
+
+        tag = uuid4().hex[:8]
+        user = await create_user(
+            email=f"imp-{tag}@test.local", display_name=f"Imp {tag}"
+        )
+        await grant_permission(src_ws, user.id, "viewer")
+
+        # Patch _import_tags to raise after groups are already inserted
+        boom = AsyncMock(side_effect=RuntimeError("injected"))
+        with (
+            patch("promptgrimoire.db.tags._import_tags", boom),
+            pytest.raises(RuntimeError, match="injected"),
+        ):
+            await import_tags_from_workspace(src_ws, tgt_ws, user.id)
+
+        # Verify nothing was created — full rollback
+        tgt_tags = await list_tags_for_workspace(tgt_ws)
+        tgt_groups = await list_tag_groups_for_workspace(tgt_ws)
+        assert len(tgt_tags) == 0
+        assert len(tgt_groups) == 0
+
+    @pytest.mark.asyncio
+    async def test_concurrent_imports_no_integrity_error(self) -> None:
+        """Two concurrent imports to the same target don't raise IntegrityError.
+
+        Verifies AC4.7: ON CONFLICT DO NOTHING handles concurrency.
+        """
+        from promptgrimoire.db.acl import grant_permission
+        from promptgrimoire.db.tags import (
+            create_tag,
+            create_tag_group,
+            import_tags_from_workspace,
+            list_tags_for_workspace,
+        )
+        from promptgrimoire.db.users import create_user
+
+        _, src_activity = await _make_course_week_activity()
+        src_ws = src_activity.template_workspace_id
+        src_g = await create_tag_group(src_ws, name="ConcGroup")
+        await create_tag(src_ws, name="ConcTag", color="#abcdef", group_id=src_g.id)
+
+        _, tgt_activity = await _make_course_week_activity()
+        tgt_ws = tgt_activity.template_workspace_id
+
+        tag = uuid4().hex[:8]
+        user = await create_user(
+            email=f"imp-{tag}@test.local", display_name=f"Imp {tag}"
+        )
+        await grant_permission(src_ws, user.id, "viewer")
+
+        # Run two imports concurrently
+        r1, r2 = await asyncio.gather(
+            import_tags_from_workspace(src_ws, tgt_ws, user.id),
+            import_tags_from_workspace(src_ws, tgt_ws, user.id),
+        )
+
+        # Combined: exactly one created, one skipped for both tag and group
+        total_created_tags = len(r1.created_tags) + len(r2.created_tags)
+        total_skipped_tags = r1.skipped_tags + r2.skipped_tags
+        assert total_created_tags == 1
+        assert total_skipped_tags == 1
+
+        total_created_groups = len(r1.created_groups) + len(r2.created_groups)
+        total_skipped_groups = r1.skipped_groups + r2.skipped_groups
+        assert total_created_groups == 1
+        assert total_skipped_groups == 1
+
+        # Only one tag in target
+        tgt_tags = await list_tags_for_workspace(tgt_ws)
+        assert len(tgt_tags) == 1
 
 
 class TestListImportableWorkspaces:

@@ -196,6 +196,7 @@ def _render_tag_row(
     total_tags: int = 1,
     row_collector: dict[UUID, TagRowInputs] | None = None,
     on_field_save: (Callable[[UUID], Awaitable[None]] | None) = None,
+    highlight_count: int = 0,
 ) -> None:
     """Render a single tag row with inline editing controls.
 
@@ -227,6 +228,9 @@ def _render_tag_row(
         Mutable dict to store model dicts for batch save.
     on_field_save:
         Async callback for immediate save (colour debounce).
+    highlight_count:
+        Number of CRDT highlights referencing this tag.  When > 0 the
+        delete button is disabled with a tooltip explaining the precondition.
     """
     # Model dict — bind_value keeps this in sync with inputs
     model: TagRowInputs = {
@@ -269,16 +273,19 @@ def _render_tag_row(
             on_lock_toggle=on_lock_toggle,
         )
 
-        del_btn = (
-            ui.button(
-                icon="delete",
-                on_click=lambda _e, t=tag: on_delete(t.id, t.name),
+        del_btn = ui.button(
+            icon="delete",
+            on_click=lambda _e, t=tag: on_delete(t.id, t.name),
+        ).props(f"flat round dense color=negative data-testid=tag-delete-btn-{tag.id}")
+
+        if highlight_count > 0:
+            del_btn.disable()
+            s = "s" if highlight_count != 1 else ""
+            del_btn.tooltip(
+                f"Has {highlight_count} highlight{s} — remove highlights first"
             )
-            .props(
-                f"flat round dense color=negative data-testid=tag-delete-btn-{tag.id}"
-            )
-            .tooltip("Delete tag")
-        )
+        else:
+            del_btn.tooltip("Delete tag")
 
         if not can_edit:
             del_btn.props("disable")
@@ -327,11 +334,32 @@ def _render_group_header(
     total_groups: int = 1,
     row_collector: dict[UUID, dict[str, Any]] | None = None,
     on_group_field_save: (Callable[[UUID], Awaitable[None]] | None) = None,
+    tag_count: int = 0,
 ) -> None:
     """Render a group header with name input, colour, and delete.
 
     Values are stored in a model dict kept in sync via
     ``bind_value()``.
+
+    Parameters
+    ----------
+    group:
+        The TagGroup model instance.
+    on_delete_group:
+        Sync callback ``(group_id, group_name) -> None``.
+    on_move_group:
+        Async callback ``(group_id, direction) -> None``.
+    group_index:
+        Zero-based position within the group list.
+    total_groups:
+        Total number of groups.
+    row_collector:
+        Mutable dict to store model dicts for batch save.
+    on_group_field_save:
+        Async callback for immediate save (colour debounce).
+    tag_count:
+        Number of tags in this group.  When > 0 the delete button is
+        disabled with a tooltip explaining the precondition.
     """
     model: dict[str, Any] = {
         "name": group.name,
@@ -367,12 +395,18 @@ def _render_group_header(
             "color",
             testid=f"group-color-input-{group.id}",
         )
-        ui.button(
+        del_group_btn = ui.button(
             icon="delete",
             on_click=lambda _e, g=group: on_delete_group(g.id, g.name),
         ).props(
             f"flat round dense color=negative data-testid=group-delete-btn-{group.id}"
-        ).tooltip("Delete group")
+        )
+        if tag_count > 0:
+            del_group_btn.disable()
+            s = "s" if tag_count != 1 else ""
+            del_group_btn.tooltip(f"Has {tag_count} tag{s} — delete tags first")
+        else:
+            del_group_btn.tooltip("Delete group")
 
         # Debounced colour save for immediate visual feedback
         if on_group_field_save is not None:
@@ -463,6 +497,7 @@ def _render_group_tags(
     on_move_tag: (Callable[[UUID, int], Awaitable[None]] | None) = None,
     tag_row_collector: (dict[UUID, TagRowInputs] | None) = None,
     on_field_save: (Callable[[UUID], Awaitable[None]] | None) = None,
+    highlight_counts: dict[UUID, int] | None = None,
 ) -> None:
     """Render tags within a group in a Sortable."""
     from promptgrimoire.elements.sortable.sortable import (  # noqa: PLC0415
@@ -492,6 +527,7 @@ def _render_group_tags(
                 total_tags=total_tags,
                 row_collector=tag_row_collector,
                 on_field_save=on_field_save,
+                highlight_count=(highlight_counts or {}).get(tag.id, 0),
             )
 
 
@@ -516,6 +552,7 @@ def _render_tag_list_content(
     group_row_collector: dict[UUID, dict[str, Any]],
     on_field_save: (Callable[[UUID], Awaitable[None]] | None) = None,
     on_group_field_save: (Callable[[UUID], Awaitable[None]] | None) = None,
+    highlight_counts: dict[UUID, int] | None = None,
 ) -> None:
     """Render all tag groups and ungrouped tags.
 
@@ -551,6 +588,7 @@ def _render_tag_list_content(
                     total_groups=total_groups,
                     row_collector=group_row_collector,
                     on_group_field_save=on_group_field_save,
+                    tag_count=len(group_tags),
                 )
                 _render_group_tags(
                     group_tags=group_tags,
@@ -565,6 +603,7 @@ def _render_tag_list_content(
                     on_move_tag=on_move_tag,
                     tag_row_collector=tag_row_collector,
                     on_field_save=on_field_save,
+                    highlight_counts=highlight_counts,
                 )
                 ui.button(
                     "+ Add tag",
@@ -591,6 +630,7 @@ def _render_tag_list_content(
             on_move_tag=on_move_tag,
             tag_row_collector=tag_row_collector,
             on_field_save=on_field_save,
+            highlight_counts=highlight_counts,
         )
         ui.button(
             "+ Add tag",

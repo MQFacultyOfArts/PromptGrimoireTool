@@ -296,6 +296,12 @@ async def open_tag_management(
             all_tags = await list_tags_for_workspace(state.workspace_id)
             group_options: dict[str, str] = {str(g.id): g.name for g in groups}
 
+            # Pre-compute highlight counts for disable-with-tooltip on delete buttons
+            highlight_counts: dict[UUID, int] = {
+                tag.id: _highlight_count_for_tag(state.crdt_doc, tag.id)
+                for tag in all_tags
+            }
+
             tags_by_group: dict[UUID | None, list[Tag]] = {}
             for tag in all_tags:
                 tags_by_group.setdefault(tag.group_id, []).append(tag)
@@ -355,6 +361,7 @@ async def open_tag_management(
                     group_row_collector=group_row_inputs,
                     on_field_save=_save_tag_field,
                     on_group_field_save=_save_group_field,
+                    highlight_counts=highlight_counts,
                 )
 
                 # Import section -- available to all users (AC3.6)

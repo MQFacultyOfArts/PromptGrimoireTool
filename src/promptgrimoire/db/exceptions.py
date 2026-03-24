@@ -152,8 +152,8 @@ class HasChildTagsError(BusinessLogicError):
         self.group_id = group_id
         self.tag_count = tag_count
         super().__init__(
-            f"Tag group {group_id} has {tag_count} "
-            f"tag{'s' if tag_count != 1 else ''} and cannot be deleted"
+            f"Cannot delete group: {tag_count} "
+            f"tag{'s' if tag_count != 1 else ''} still present"
         )
 
 
@@ -169,8 +169,8 @@ class HasHighlightsError(BusinessLogicError):
         self.tag_id = tag_id
         self.highlight_count = highlight_count
         super().__init__(
-            f"Tag {tag_id} has {highlight_count} "
-            f"highlight{'s' if highlight_count != 1 else ''} and cannot be deleted"
+            f"Cannot delete tag: {highlight_count} "
+            f"highlight{'s' if highlight_count != 1 else ''} still present"
         )
 
 
@@ -186,6 +186,6 @@ class HasAnnotationsError(BusinessLogicError):
         self.document_id = document_id
         self.highlight_count = highlight_count
         super().__init__(
-            f"Document {document_id} has {highlight_count} "
-            f"annotation{'s' if highlight_count != 1 else ''} and cannot be deleted"
+            f"Cannot delete document: {highlight_count} "
+            f"annotation{'s' if highlight_count != 1 else ''} still present"
         )

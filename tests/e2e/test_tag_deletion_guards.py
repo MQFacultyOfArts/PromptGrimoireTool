@@ -1,16 +1,16 @@
-"""E2E tests: deletion guard notifications for tags, groups, and documents.
+"""E2E tests: deletion guard UI for tags, groups, and documents.
 
-Verifies that the UI surfaces warning notifications or disabled states
+Verifies that delete buttons are disabled with explanatory tooltips
 when deletion is blocked by business rules (tags have highlights,
 groups have tags, documents have annotations).
 
 Acceptance Criteria:
-- tag-deletion-guards-413.AC1.3: Delete a group with tags -> warning
-  notification naming the tag count
-- tag-deletion-guards-413.AC2.3: Delete a tag with highlights -> warning
-  notification naming the highlight count
-- tag-deletion-guards-413.AC3.3: Delete a document with annotations ->
-  delete button disabled with tooltip naming the annotation count
+- tag-deletion-guards-413.AC1.3: Group with tags -> delete button
+  disabled with tooltip naming the tag count
+- tag-deletion-guards-413.AC2.3: Tag with highlights -> delete button
+  disabled with tooltip naming the highlight count
+- tag-deletion-guards-413.AC3.3: Document with annotations -> delete
+  button disabled with tooltip naming the annotation count
 
 Traceability:
 - Issue: #413
@@ -32,20 +32,19 @@ if TYPE_CHECKING:
 class TestTagDeletionGuards:
     """Deletion guard notifications in the annotation UI."""
 
-    def test_delete_group_with_tags_shows_warning(
+    def test_delete_group_with_tags_button_disabled(
         self,
         two_annotation_contexts: tuple[Page, Page, str],
     ) -> None:
-        """Deleting a group that has tags shows an amber warning notification.
+        """Group delete button is disabled when the group has tags.
 
         Steps:
         1. Open tag management dialog
-        2. Click delete on the "Case ID" group (has 4 seeded tags)
-        3. Confirm deletion in the dialog
-        4. Assert warning notification appears with tag count text
-        5. Assert group still exists (dialog still shows it)
+        2. Find delete button for the "Case ID" group (has 4 seeded tags)
+        3. Assert button is disabled
+        4. Hover to verify tooltip mentions tag count
 
-        AC1.3: UI shows warning notification naming the tag count.
+        AC1.3: UI prevents deletion, naming the tag count.
         """
         from tests.e2e.tag_helpers import seed_group_id
 
@@ -62,44 +61,33 @@ class TestTagDeletionGuards:
         done_btn = page.get_by_test_id("tag-management-done-btn")
         expect(done_btn).to_be_visible(timeout=15000)
 
-        # Click the delete button for "Case ID" group
+        # Find the delete button for "Case ID" group
         delete_btn = page.get_by_test_id(f"group-delete-btn-{group_id}")
         expect(delete_btn).to_be_visible(timeout=5000)
-        delete_btn.click()
 
-        # Confirm deletion in the confirmation dialog
-        # The dialog has a "Delete" button (color=negative)
-        confirm_btn = page.locator("button").filter(has_text="Delete").last
-        expect(confirm_btn).to_be_visible(timeout=5000)
-        confirm_btn.click()
+        # Button should be disabled (group has 4 tags)
+        expect(delete_btn).to_be_disabled(timeout=5000)
 
-        # Assert warning notification appears with tag count.
-        # Quasar notifications render as role="alert" elements.
-        # "Case ID" group has 4 seeded tags.
-        alert = page.get_by_role("alert").filter(has_text="tag")  # noqa: PG002 — Quasar ui.notify() renders as role="alert", no data-testid injectable
-        expect(alert).to_be_visible(timeout=5000)
-        # Verify it mentions a count (the word "4" for 4 tags)
-        expect(alert).to_contain_text("4")
+        # Hover to trigger tooltip and verify it mentions tag count
+        delete_btn.hover()
+        tooltip = page.locator(".q-tooltip").filter(has_text="tag")
+        expect(tooltip).to_be_visible(timeout=5000)
+        expect(tooltip).to_contain_text("4")
 
-        # Group should still exist in the management dialog
-        group_name_input = page.get_by_test_id(f"group-name-input-{group_id}")
-        expect(group_name_input).to_be_visible(timeout=5000)
-
-    def test_delete_tag_with_highlights_shows_warning(
+    def test_delete_tag_with_highlights_button_disabled(
         self,
         two_annotation_contexts: tuple[Page, Page, str],
     ) -> None:
-        """Deleting a tag that has highlights shows an amber warning notification.
+        """Tag delete button is disabled when the tag has highlights.
 
         Steps:
         1. Create a highlight using the first seeded tag (Jurisdiction)
         2. Open tag management dialog
-        3. Click delete on the Jurisdiction tag
-        4. Confirm deletion in the dialog
-        5. Assert warning notification appears with highlight count text
-        6. Assert tag still visible in toolbar
+        3. Find delete button for the Jurisdiction tag
+        4. Assert button is disabled
+        5. Hover to verify tooltip mentions highlight count
 
-        AC2.3: UI shows warning notification naming the highlight count.
+        AC2.3: UI prevents deletion, naming the highlight count.
         """
         from tests.e2e.highlight_tools import create_highlight_with_tag, find_text_range
         from tests.e2e.tag_helpers import seed_tag_id
@@ -126,30 +114,18 @@ class TestTagDeletionGuards:
         done_btn = page.get_by_test_id("tag-management-done-btn")
         expect(done_btn).to_be_visible(timeout=15000)
 
-        # Click delete on the Jurisdiction tag
+        # Find delete button for the Jurisdiction tag
         delete_btn = page.get_by_test_id(f"tag-delete-btn-{tag_id}")
         expect(delete_btn).to_be_visible(timeout=5000)
-        delete_btn.click()
 
-        # Confirm deletion in the confirmation dialog
-        confirm_btn = page.locator("button").filter(has_text="Delete").last
-        expect(confirm_btn).to_be_visible(timeout=5000)
-        confirm_btn.click()
+        # Button should be disabled (tag has 1 highlight)
+        expect(delete_btn).to_be_disabled(timeout=5000)
 
-        # Assert warning notification with highlight count
-        alert = page.get_by_role("alert").filter(has_text="highlight")  # noqa: PG002 — Quasar ui.notify() renders as role="alert", no data-testid injectable
-        expect(alert).to_be_visible(timeout=5000)
-        # Should mention "1" highlight
-        expect(alert).to_contain_text("1")
-
-        # Close the management dialog
-        done_btn = page.get_by_test_id("tag-management-done-btn")
-        if done_btn.is_visible():
-            done_btn.click()
-
-        # Tag should still be visible in the toolbar
-        tag_btn = page.get_by_test_id(f"tag-btn-{tag_id}")
-        expect(tag_btn).to_be_visible(timeout=5000)
+        # Hover to trigger tooltip and verify it mentions highlight count
+        delete_btn.hover()
+        tooltip = page.locator(".q-tooltip").filter(has_text="highlight")
+        expect(tooltip).to_be_visible(timeout=5000)
+        expect(tooltip).to_contain_text("1")
 
     def test_delete_document_with_annotations_button_disabled(
         self,

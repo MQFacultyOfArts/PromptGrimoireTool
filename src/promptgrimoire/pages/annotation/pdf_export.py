@@ -107,22 +107,26 @@ def anonymise_highlights(
     Applies ``anonymise_author`` to both highlight-level and comment-level
     author fields. Does not mutate the input list.
     """
-    anon_kw = {
-        "viewing_user_id": viewing_user_id,
-        "anonymous_sharing": anonymous_sharing,
-        "viewer_is_privileged": viewer_is_privileged,
-        "privileged_user_ids": privileged_user_ids,
-    }
+
+    def _anon(d: dict[str, object]) -> dict[str, object]:
+        return _anonymise_dict_author(
+            d,
+            viewing_user_id=viewing_user_id,
+            anonymous_sharing=anonymous_sharing,
+            viewer_is_privileged=viewer_is_privileged,
+            privileged_user_ids=privileged_user_ids,
+        )
+
     result: list[dict[str, object]] = []
     for hl in highlights:
-        new_hl = _anonymise_dict_author(hl, **anon_kw)
+        new_hl = _anon(hl)
         comments = hl.get("comments")
         if isinstance(comments, list):
             new_comments: list[object] = []
             for comment in comments:
                 if isinstance(comment, dict):
                     typed: dict[str, object] = comment  # type: ignore[assignment]
-                    new_comments.append(_anonymise_dict_author(typed, **anon_kw))
+                    new_comments.append(_anon(typed))
                 else:
                     new_comments.append(comment)
             new_hl["comments"] = new_comments

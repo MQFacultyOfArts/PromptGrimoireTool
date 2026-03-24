@@ -156,7 +156,7 @@ ignore = [
     "PLC0415",  # Late imports to avoid circular dependencies with workspaces/crdt
 ]
 "src/promptgrimoire/db/workspace_documents.py" = [
-    "PLC0415",  # Late import to avoid circular dependency with crdt
+    "PLC0415",  # Late import inside guard block to avoid loading CRDT module at import time
 ]
 "src/promptgrimoire/crdt/persistence.py" = [
     "PLC0415",  # Late imports to avoid circular dependencies with db

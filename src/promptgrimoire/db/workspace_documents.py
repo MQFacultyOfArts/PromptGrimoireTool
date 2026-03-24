@@ -235,6 +235,12 @@ async def delete_document(document_id: UUID, *, user_id: UUID) -> bool:
     Raises:
         ProtectedDocumentError: If the document is a template clone.
         PermissionError: If ``user_id`` is not the workspace owner.
+        HasAnnotationsError: If the document has one or more CRDT highlights.
+
+    Guard behaviour: The annotation count is read from the persisted CRDT
+    state inside the same session as the document load. If ``crdt_state``
+    is None (workspace has no persisted annotations), the guard is skipped
+    and deletion proceeds normally.
     """
     async with get_session() as session:
         result = await session.exec(

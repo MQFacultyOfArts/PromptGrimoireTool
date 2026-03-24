@@ -1053,6 +1053,81 @@ class TestDeleteTagCrdtCleanup:
             await delete_tag(tag.id)
         assert exc_info.value.highlight_count == 1
 
+    @pytest.mark.asyncio
+    async def test_delete_tag_crdt_cleanup_runs_after_guard_passes(self) -> None:
+        """CRDT cleanup runs and removes tag from tags Map when guard passes.
+
+        Creates a tag with highlights and a tags Map entry. Removes the
+        highlights from persisted state (so the guard finds zero highlights
+        and passes). Calls delete_tag() and verifies that:
+        - The tag row is deleted from the DB.
+        - The workspace CRDT state no longer contains an entry for the tag
+          in the tags Map (cleanup ran and called delete_tag on the doc).
+
+        Verifies tag-deletion-guards-413.AC2.4 and that the CRDT cleanup
+        path is exercised after a guard pass.
+        """
+        from promptgrimoire.crdt.annotation_doc import AnnotationDocument
+        from promptgrimoire.db.tags import create_tag, delete_tag, get_tag
+        from promptgrimoire.db.workspaces import (
+            create_workspace,
+            get_workspace,
+            place_workspace_in_activity,
+            save_workspace_crdt_state,
+        )
+
+        _, activity = await _make_course_week_activity()
+        ws = await create_workspace()
+        await place_workspace_in_activity(ws.id, activity.id)
+
+        tag = await create_tag(ws.id, name="Cleanup", color="#123456")
+        tag_str = str(tag.id)
+
+        # Build CRDT state: tag appears in both highlights array and tags Map
+        doc = AnnotationDocument("test")
+        doc.add_highlight(
+            start_char=0,
+            end_char=5,
+            tag=tag_str,
+            text="hello",
+            author="test",
+        )
+        doc.set_tag(
+            tag_str,
+            "Cleanup",
+            "#123456",
+            0,
+            group_id=None,
+        )
+        await save_workspace_crdt_state(ws.id, doc.get_full_state())
+
+        # Remove highlights from persisted state so guard finds zero highlights,
+        # but leave the tag entry in the tags Map to confirm cleanup removes it.
+        empty_doc = AnnotationDocument("stripped")
+        empty_doc.set_tag(
+            tag_str,
+            "Cleanup",
+            "#123456",
+            0,
+            group_id=None,
+        )
+        await save_workspace_crdt_state(ws.id, empty_doc.get_full_state())
+
+        # delete_tag should succeed: guard passes (0 highlights), cleanup runs
+        result = await delete_tag(tag.id)
+        assert result is True
+
+        # Tag row deleted from DB
+        assert await get_tag(tag.id) is None
+
+        # CRDT cleanup removed the tag from the tags Map
+        ws_after = await get_workspace(ws.id)
+        assert ws_after is not None
+        assert ws_after.crdt_state is not None
+        verify_doc = AnnotationDocument("verify")
+        verify_doc.apply_update(ws_after.crdt_state)
+        assert tag_str not in verify_doc.list_tags()
+
 
 class TestAtomicTagCounter:
     """Tests for atomic counter-based order_index assignment.

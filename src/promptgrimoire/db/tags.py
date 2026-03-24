@@ -535,6 +535,11 @@ async def delete_tag(
     and row deletion, the tag row survives but its highlights are already
     removed. This is recoverable by re-calling delete_tag(). The split is
     intentional to avoid holding a transaction across the CRDT serialisation.
+
+    Guard behaviour: The highlight count is read from the persisted CRDT
+    state inside the first session. If ``crdt_state`` is None (workspace
+    has no persisted annotations), the guard is skipped and deletion
+    proceeds directly to CRDT cleanup and row deletion.
     """
     async with get_session() as session:
         tag = await session.get(Tag, tag_id)
@@ -885,6 +890,9 @@ async def _cleanup_crdt_highlights_from_db(
                 logger.warning(
                     "Failed to remove highlight %s during tag cleanup", hl_id
                 )
+
+        # Remove the tag from the tags Map (matches _cleanup_crdt_highlights_on_doc)
+        doc.delete_tag(tag_id)
 
         # Save updated state
         workspace.crdt_state = doc.get_full_state()

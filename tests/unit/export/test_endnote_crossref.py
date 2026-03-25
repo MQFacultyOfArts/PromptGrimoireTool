@@ -166,19 +166,23 @@ class TestLinkAffordance:
             "\\linkicon" in long_path
         ), "Inline superscript needs visible link affordance"
 
-    def test_see_endnotes_stub_has_link_icon(self) -> None:
-        r"""The 'see endnotes' margin stub has a visible link icon."""
+    def test_see_endnotes_stub_no_false_affordance(self) -> None:
+        r"""The 'see endnotes' margin stub must NOT have \linkicon.
+
+        The margin stub is not a hyperlink, so a link icon would be
+        false affordance — suggesting clickability that doesn't exist.
+        """
         sty = _read_sty()
         annot = _extract_macro(sty, "annot")
         long_path = annot.split(r"\else")[0]
-        # The margin note for long annotations must contain a
-        # link icon so users know they can navigate to the endnote
         assert "see endnotes" in long_path
-        # Find the marginalia block containing "see endnotes"
+        # Extract only the marginalia block (up to the next %}%)
         margin_start = long_path.find(r"\marginalia")
-        margin_section = long_path[margin_start:]
-        assert r"\linkicon" in margin_section, (
-            "Margin stub needs visible link affordance"
+        # The marginalia block ends at \global\annothasendnotes
+        margin_end = long_path.find(r"\global\annothasendnotes", margin_start)
+        margin_block = long_path[margin_start:margin_end]
+        assert r"\linkicon" not in margin_block, (
+            "Margin stub must not have link icon (false affordance)"
         )
 
     def test_endnote_back_link_has_icon(self) -> None:

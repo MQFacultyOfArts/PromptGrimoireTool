@@ -147,6 +147,10 @@
     \input{\jobname.endnotes}%
   \fi
 }
+% Link affordance icon: small blue arrow signalling a clickable cross-reference.
+% Placed inside \hyperref blocks so users discover the bidirectional links.
+\newcommand{\linkicon}{{\scriptsize\textcolor{blue!60}{↗}}}
+
 \newcommand{\annot}[2]{%
   \stepcounter{annotnum}%
   % Measure content height at margin width.
@@ -156,7 +160,10 @@
   \setbox\annotbox=\vbox{\hsize=4.3cm\footnotesize\textbf{\theannotnum.} #2}%
   \ifdim\ht\annotbox>\annotmaxht
     % Long annotation → write to endnotes file, show stub in margin
-    \textsuperscript{\textcolor{#1}{\textbf{\theannotnum}}}%
+    \phantomsection\label{annot-inline:\theannotnum}%
+    \hyperref[annot-endnote:\theannotnum]{%
+      \textsuperscript{\textcolor{#1}{\textbf{\theannotnum}}}\,\linkicon
+    }%
     \marginalia[ysep=3pt]{%
       \fcolorbox{#1}{#1!20}{%
         \parbox{4.3cm}{\footnotesize\textbf{\theannotnum.} (see endnotes)}%
@@ -164,8 +171,12 @@
     }%
     \global\annothasendnotestrue
     \immediate\write\annotendfile{%
+      \noexpand\phantomsection
+      \noexpand\label{annot-endnote:\theannotnum}%
       \noexpand\par\noexpand\noindent
-      \noexpand\textcolor{#1}{\noexpand\textbf{\theannotnum.}}
+      \noexpand\hyperref[annot-inline:\theannotnum]{%
+        \noexpand\textcolor{#1}{\noexpand\textbf{\theannotnum.}}\noexpand\linkicon
+      }%
       \unexpanded{#2}%
       \noexpand\par\noexpand\medskip
     }%
@@ -185,7 +196,10 @@
 % Usage: \annotref{colour-name}
 \newcommand{\annotref}[1]{%
   \stepcounter{annotnum}%
-  \textsuperscript{\textcolor{#1}{\textbf{endnote \theannotnum}}}%
+  \phantomsection\label{annot-inline:\theannotnum}%
+  \hyperref[annot-endnote:\theannotnum]{%
+    \textsuperscript{\textcolor{#1}{\textbf{endnote \theannotnum}}}\,\linkicon
+  }%
 }
 
 % Table-safe annotation endnote: writes annotation body to the endnotes file.
@@ -194,11 +208,27 @@
 \newcommand{\annotendnote}[3]{%
   \global\annothasendnotestrue
   \immediate\write\annotendfile{%
+    \noexpand\phantomsection
+    \noexpand\label{annot-endnote:#2}%
     \noexpand\par\noexpand\noindent
-    \noexpand\textcolor{#1}{\noexpand\textbf{#2.}}
+    \noexpand\hyperref[annot-inline:#2]{%
+      \noexpand\textcolor{#1}{\noexpand\textbf{#2.}}\noexpand\linkicon
+    }%
     \unexpanded{#3}%
     \noexpand\par\noexpand\medskip
   }%
+}
+
+% =============================================================================
+% Paragraph numbering (left-margin display for auto-numbered paragraphs)
+% =============================================================================
+
+% \paranumber{N} — places a small grey paragraph number in the left margin.
+% Uses \llap to move the number left of the current position without consuming
+% horizontal space.  \leavevmode ensures we are in horizontal mode (required
+% at paragraph start before \llap).
+\newcommand{\paranumber}[1]{%
+  \leavevmode\llap{\textcolor{gray}{\scriptsize\textsf{#1}\quad}}%
 }
 
 % =============================================================================

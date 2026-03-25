@@ -16,6 +16,7 @@ recommend which mode to use.
 from __future__ import annotations
 
 import bisect
+import re
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -547,6 +548,49 @@ def lookup_para_ref(
     if start_para == end_para:
         return f"[{start_para}]"
     return f"[{start_para}]-[{end_para}]"
+
+
+def inject_paragraph_markers_for_export(
+    html: str,
+    word_to_legal_para: dict[int, int | None] | None,
+) -> str:
+    """Inject ``<span data-paranumber="N">`` markers into export HTML.
+
+    Converts *word_to_legal_para* to the string-keyed format expected by
+    ``inject_paragraph_attributes()``, calls it to add ``data-para``
+    attributes to block elements, then regex-inserts
+    ``<span data-paranumber="N"></span>`` after each opening tag that
+    has a ``data-para="N"`` attribute.
+
+    The empty ``<span>`` markers carry paragraph numbers through Pandoc's
+    AST for the Lua filter (Phase 2) to render as margin numbers.
+
+    Args:
+        html: Document HTML (may already contain highlight spans).
+        word_to_legal_para: Mapping of char offset to paragraph number
+            (or ``None`` for skipped elements).  ``None`` or empty dict
+            disables marker injection.
+
+    Returns:
+        Modified HTML with ``<span data-paranumber="N"></span>`` markers.
+    """
+    if not word_to_legal_para:
+        return html
+
+    # Convert to string-keyed format, filtering out None values (skipped elements).
+    paragraph_map: dict[str, int] = {
+        str(k): v for k, v in word_to_legal_para.items() if v is not None
+    }
+    if not paragraph_map:
+        return html
+
+    attributed_html = inject_paragraph_attributes(html, paragraph_map)
+
+    return re.sub(
+        r'(<[^>]+\sdata-para="(\d+)"[^>]*>)',
+        r'\1<span data-paranumber="\2"></span>',
+        attributed_html,
+    )
 
 
 def detect_source_numbering(html: str) -> bool:

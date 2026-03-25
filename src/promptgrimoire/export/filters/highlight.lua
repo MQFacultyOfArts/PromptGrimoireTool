@@ -101,6 +101,14 @@ end
 function Span(el)
   if FORMAT ~= "latex" then return el end
 
+  -- Paragraph number marker: emit \paranumber{N} and return.
+  -- Must be checked BEFORE the hl nil-guard because paranumber spans
+  -- have no hl attribute and would otherwise be returned unchanged.
+  local paranumber = el.attributes["paranumber"]
+  if paranumber ~= nil and paranumber ~= "" then
+    return pandoc.RawInline("latex", "\\paranumber{" .. paranumber .. "}")
+  end
+
   -- Guard: no hl attribute means pass through unchanged
   local hl = el.attributes["hl"]
   if hl == nil or hl == "" then

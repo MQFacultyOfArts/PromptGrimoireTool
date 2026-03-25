@@ -569,14 +569,14 @@ class TestAC6_ParaRefInMarginNotes:
 
         assert not re.search(r"\[\d+\]", annots_raw)
 
-    def test_highlight_on_unnumbered_offset(self) -> None:
-        """Highlight starting at an offset not in the map produces no para_ref.
+    def test_highlight_within_paragraph_gets_para_ref(self) -> None:
+        """Highlight mid-paragraph gets the containing paragraph's ref.
 
-        When the highlight's start_char is not a key in word_to_legal_para,
-        no [N] reference should appear.
+        lookup_para_ref uses bisect to find the containing paragraph,
+        so a highlight at offset 5 within paragraph 1 (starting at 0)
+        correctly gets [1].
         """
         html = "<p>some text here</p>"
-        # Map only has offset 0; highlight starts at offset 5 (not in map)
         word_to_legal_para: dict[int, int | None] = {0: 1}
         hl = _make_hl(5, 9, tag="jurisdiction", author="Alice")
         result = compute_highlight_spans(
@@ -585,9 +585,7 @@ class TestAC6_ParaRefInMarginNotes:
         annot_spans = [s for s in _find_spans(result) if "data-annots" in s]
         assert len(annot_spans) == 1
         annots_raw = annot_spans[0]["data-annots"]
-        import re
-
-        assert not re.search(r"\[\d+\]", annots_raw)
+        assert "[1]" in annots_raw
 
     def test_pandoc_block_elements_constant(self) -> None:
         """PANDOC_BLOCK_ELEMENTS contains all required elements."""

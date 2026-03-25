@@ -202,6 +202,18 @@
 }
 
 % =============================================================================
+% Paragraph numbering (left-margin display for auto-numbered paragraphs)
+% =============================================================================
+
+% \paranumber{N} — places a small grey paragraph number in the left margin.
+% Uses \llap to move the number left of the current position without consuming
+% horizontal space.  \leavevmode ensures we are in horizontal mode (required
+% at paragraph start before \llap).
+\newcommand{\paranumber}[1]{%
+  \leavevmode\llap{\textcolor{gray}{\scriptsize\textsf{#1}\quad}}%
+}
+
+% =============================================================================
 % Font setup (static portion -- dynamic font chain built by build_font_preamble())
 % =============================================================================
 

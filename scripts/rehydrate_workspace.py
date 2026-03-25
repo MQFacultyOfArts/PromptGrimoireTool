@@ -19,12 +19,15 @@ Usage:
     PGDATABASE=promptgrimoire_other uv run scripts/rehydrate_workspace.py <file>
 """
 
+from __future__ import annotations
+
 import argparse
 import base64
 import json
 import os
 import sys
 from pathlib import Path
+from typing import Any
 from urllib.parse import urlparse
 from uuid import UUID
 
@@ -72,7 +75,121 @@ def _decode_binary(value: object) -> object:
     return value
 
 
-def rehydrate(path: Path, conninfo: str) -> dict:
+def _clean_existing_rows(cur: Any, workspace_id: str) -> None:
+    """Delete existing rows for workspace (idempotent). FK order matters."""
+    cur.execute("DELETE FROM tag WHERE workspace_id = %s", (workspace_id,))
+    cur.execute("DELETE FROM tag_group WHERE workspace_id = %s", (workspace_id,))
+    cur.execute(
+        "DELETE FROM workspace_document WHERE workspace_id = %s", (workspace_id,)
+    )
+    cur.execute("DELETE FROM workspace WHERE id = %s", (workspace_id,))
+
+
+def _insert_workspace_data(
+    cur: Any,
+    ws: dict,
+    docs: list[dict],
+    tag_groups: list[dict],
+    tags: list[dict],
+) -> None:
+    """Insert workspace, documents, tag groups, and tags."""
+    cur.execute(
+        """
+        INSERT INTO workspace (
+            id, crdt_state, created_at, updated_at,
+            activity_id, course_id,
+            enable_save_as_draft, title, shared_with_class,
+            next_tag_order, next_group_order,
+            search_text, search_dirty
+        ) VALUES (
+            %(id)s, %(crdt_state)s, %(created_at)s, %(updated_at)s,
+            NULL, NULL,
+            %(enable_save_as_draft)s, %(title)s, %(shared_with_class)s,
+            %(next_tag_order)s, %(next_group_order)s,
+            %(search_text)s, %(search_dirty)s
+        )
+        """,
+        ws,
+    )
+
+    for doc in docs:
+        if isinstance(doc.get("paragraph_map"), dict):
+            doc["paragraph_map"] = json.dumps(doc["paragraph_map"])
+        doc["source_document_id"] = None
+        cur.execute(
+            """
+            INSERT INTO workspace_document (
+                id, workspace_id, type, content, order_index, title,
+                created_at, source_type, auto_number_paragraphs,
+                paragraph_map, source_document_id
+            ) VALUES (
+                %(id)s, %(workspace_id)s, %(type)s, %(content)s,
+                %(order_index)s, %(title)s, %(created_at)s,
+                %(source_type)s, %(auto_number_paragraphs)s,
+                %(paragraph_map)s, %(source_document_id)s
+            )
+            """,
+            doc,
+        )
+
+    for group in tag_groups:
+        cur.execute(
+            """
+            INSERT INTO tag_group (
+                id, workspace_id, name, order_index,
+                created_at, color
+            ) VALUES (
+                %(id)s, %(workspace_id)s, %(name)s, %(order_index)s,
+                %(created_at)s, %(color)s
+            )
+            """,
+            group,
+        )
+
+    for tag in tags:
+        cur.execute(
+            """
+            INSERT INTO tag (
+                id, workspace_id, group_id, name, description,
+                color, locked, order_index, created_at
+            ) VALUES (
+                %(id)s, %(workspace_id)s, %(group_id)s, %(name)s,
+                %(description)s, %(color)s, %(locked)s,
+                %(order_index)s, %(created_at)s
+            )
+            """,
+            tag,
+        )
+
+
+def _grant_owner_acl(
+    cur: Any,
+    workspace_id: str,
+    owner_email: str,
+) -> None:
+    """Grant owner ACL if user exists."""
+    cur.execute(
+        'SELECT id FROM "user" WHERE email = %s',
+        (owner_email,),
+    )
+    owner_row = cur.fetchone()
+    if owner_row:
+        cur.execute(
+            """
+            INSERT INTO acl_entry (
+                id, workspace_id, user_id,
+                permission, created_at
+            ) VALUES (
+                gen_random_uuid(),
+                %s, %s, 'owner', now()
+            )
+            ON CONFLICT DO NOTHING
+            """,
+            (workspace_id, owner_row[0]),
+        )
+
+
+def rehydrate(path: Path, conninfo: str, *, owner_email: str | None = None) -> dict:
     """Load workspace JSON and insert into the database.
 
     Returns summary dict with counts.
@@ -85,104 +202,15 @@ def rehydrate(path: Path, conninfo: str) -> dict:
 
     workspace_id = ws["id"]
 
-    # Decode binary fields
     for key, val in ws.items():
         ws[key] = _decode_binary(val)
 
     with psycopg.connect(conninfo) as conn:
         with conn.cursor() as cur:
-            # Clean existing rows (idempotent) — order matters for FKs
-            cur.execute(
-                "DELETE FROM tag WHERE workspace_id = %s",
-                (workspace_id,),
-            )
-            cur.execute(
-                "DELETE FROM tag_group WHERE workspace_id = %s",
-                (workspace_id,),
-            )
-            cur.execute(
-                "DELETE FROM workspace_document WHERE workspace_id = %s",
-                (workspace_id,),
-            )
-            cur.execute(
-                "DELETE FROM workspace WHERE id = %s",
-                (workspace_id,),
-            )
-
-            # Insert workspace — standalone (no activity/course parent)
-            cur.execute(
-                """
-                INSERT INTO workspace (
-                    id, crdt_state, created_at, updated_at,
-                    activity_id, course_id,
-                    enable_save_as_draft, title, shared_with_class,
-                    next_tag_order, next_group_order,
-                    search_text, search_dirty
-                ) VALUES (
-                    %(id)s, %(crdt_state)s, %(created_at)s, %(updated_at)s,
-                    NULL, NULL,
-                    %(enable_save_as_draft)s, %(title)s, %(shared_with_class)s,
-                    %(next_tag_order)s, %(next_group_order)s,
-                    %(search_text)s, %(search_dirty)s
-                )
-                """,
-                ws,
-            )
-
-            # Insert documents
-            for doc in docs:
-                # Encode paragraph_map to JSON string for the json column
-                if isinstance(doc.get("paragraph_map"), dict):
-                    doc["paragraph_map"] = json.dumps(doc["paragraph_map"])
-                # NULL out source_document_id — template doc won't exist
-                # in standalone rehydration.
-                doc["source_document_id"] = None
-                cur.execute(
-                    """
-                    INSERT INTO workspace_document (
-                        id, workspace_id, type, content, order_index, title,
-                        created_at, source_type, auto_number_paragraphs,
-                        paragraph_map, source_document_id
-                    ) VALUES (
-                        %(id)s, %(workspace_id)s, %(type)s, %(content)s,
-                        %(order_index)s, %(title)s, %(created_at)s,
-                        %(source_type)s, %(auto_number_paragraphs)s,
-                        %(paragraph_map)s, %(source_document_id)s
-                    )
-                    """,
-                    doc,
-                )
-
-            # Insert tag groups (before tags, since tags FK to groups)
-            for group in tag_groups:
-                cur.execute(
-                    """
-                    INSERT INTO tag_group (
-                        id, workspace_id, name, order_index,
-                        created_at, color
-                    ) VALUES (
-                        %(id)s, %(workspace_id)s, %(name)s, %(order_index)s,
-                        %(created_at)s, %(color)s
-                    )
-                    """,
-                    group,
-                )
-
-            # Insert tags
-            for tag in tags:
-                cur.execute(
-                    """
-                    INSERT INTO tag (
-                        id, workspace_id, group_id, name, description,
-                        color, locked, order_index, created_at
-                    ) VALUES (
-                        %(id)s, %(workspace_id)s, %(group_id)s, %(name)s,
-                        %(description)s, %(color)s, %(locked)s,
-                        %(order_index)s, %(created_at)s
-                    )
-                    """,
-                    tag,
-                )
+            _clean_existing_rows(cur, workspace_id)
+            _insert_workspace_data(cur, ws, docs, tag_groups, tags)
+            if owner_email:
+                _grant_owner_acl(cur, workspace_id, owner_email)
 
         conn.commit()
 
@@ -205,6 +233,10 @@ def main() -> None:
         "json_file",
         type=Path,
         help="Path to workspace JSON file from extract_workspace.py",
+    )
+    parser.add_argument(
+        "--owner",
+        help="Email of user to grant owner ACL (must already exist in DB)",
     )
     args = parser.parse_args()
 
@@ -229,7 +261,7 @@ def main() -> None:
 
     conninfo = _resolve_conninfo()
 
-    result = rehydrate(args.json_file, conninfo)
+    result = rehydrate(args.json_file, conninfo, owner_email=args.owner)
 
     print(f"Loaded workspace {result['workspace_id']}")
     print(f"  title: {result['title']}")

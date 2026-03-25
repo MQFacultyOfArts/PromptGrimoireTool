@@ -90,7 +90,13 @@ async def _run_worker_for_lane(
     if lane.needs_server:
         assert port is not None  # noqa: S101 - lane contract guarantees a port
         return await worker(
-            test_file, port, db_url, worker_dir, user_args, browser=browser
+            test_file,
+            port,
+            db_url,
+            worker_dir,
+            user_args,
+            browser=browser,
+            marker_expr=lane.marker_expr or "e2e",
         )
 
     return await worker(test_file, db_url, worker_dir, user_args)

@@ -189,6 +189,7 @@ async def run_playwright_file(
     user_args: list[str],
     *,
     browser: str | None = None,
+    marker_expr: str = "e2e",
 ) -> WorkerResult:
     """Run one Playwright-backed E2E file with a dedicated server and DB."""
     worker_dir.mkdir(parents=True, exist_ok=True)
@@ -226,7 +227,7 @@ async def run_playwright_file(
                 "pytest",
                 str(test_file),
                 "-m",
-                "e2e",
+                marker_expr,
                 *browser_args,
                 "--tb=short",
                 f"--junitxml={junit_path}",

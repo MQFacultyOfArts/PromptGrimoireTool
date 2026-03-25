@@ -30,13 +30,19 @@ app = typer.Typer(
 
 @app.command()
 def ingest(
-    tarball: Path = typer.Argument(..., help="Path to telemetry tarball (.tar.gz)"),
+    source: Path = typer.Argument(
+        ...,
+        help="Telemetry tarball (.tar.gz) or extracted directory",
+    ),
     db: Path = typer.Option(Path("incident.db"), help="SQLite database path"),
 ) -> None:
-    """Ingest a telemetry tarball into the SQLite database."""
+    """Ingest telemetry from a tarball or directory."""
     from scripts.incident.ingest import run_ingest
 
-    run_ingest(tarball, db)
+    if not source.exists():
+        typer.echo(f"Error: {source} not found", err=True)
+        raise SystemExit(1)
+    run_ingest(source, db)
 
 
 # ---------------------------------------------------------------------------
@@ -267,6 +273,7 @@ def _analyse_epochs(
         query_epoch_errors,
         query_epoch_haproxy,
         query_epoch_journal_anomalies,
+        query_epoch_js_timeouts,
         query_epoch_pg,
         query_epoch_resources,
         query_epoch_users,
@@ -286,6 +293,12 @@ def _analyse_epochs(
             "pg": query_epoch_pg(conn, start, end),
             "journal_anomalies": query_epoch_journal_anomalies(conn, start, end),
             "users": query_epoch_users(conn, start, end),
+            "js_timeouts": query_epoch_js_timeouts(
+                conn,
+                start,
+                end,
+                dur,
+            ),
             "pool_config": pool_config,
         }
         total_requests = analysis["haproxy"]["total_requests"]
@@ -513,6 +526,171 @@ def review(
         typer.echo(f"Report written to {output}", err=True)
     else:
         typer.echo(report)
+
+
+@app.command(name="js-timeouts")
+def js_timeouts(
+    db: Path = typer.Option(
+        Path("incident.db"),
+        help="SQLite database path",
+    ),
+    output: Path | None = typer.Option(
+        None,
+        help="Output file (stdout if omitted)",
+    ),
+    top_n: int = typer.Option(
+        5,
+        help="Top N call sites per epoch",
+    ),
+) -> None:
+    """Epoch-split JS timeout analysis with call site breakdown."""
+    from scripts.incident.analysis import (
+        enrich_epochs_github,
+        enrich_epochs_journal,
+        enrich_restart_gaps,
+        enrich_restart_reasons,
+        extract_epochs,
+        query_epoch_js_timeouts,
+    )
+    from scripts.incident.schema import create_schema
+
+    conn = sqlite3.connect(db)
+    create_schema(conn)
+
+    epochs = extract_epochs(conn)
+    if not epochs:
+        typer.echo("No epochs found.")
+        conn.close()
+        return
+
+    enrich_restart_reasons(conn, epochs)
+    enrich_epochs_journal(conn, epochs)
+    enrich_epochs_github(conn, epochs)
+    enrich_restart_gaps(epochs)
+
+    # Collect per-epoch JS timeout data
+    epoch_data: list[tuple[dict, dict]] = []
+    for epoch in epochs:
+        start = str(epoch["start_utc"])
+        end = str(epoch["end_utc"])
+        dur_raw = epoch["duration_seconds"]
+        dur = float(str(dur_raw))
+        result = query_epoch_js_timeouts(
+            conn,
+            start,
+            end,
+            dur,
+        )
+        epoch_data.append((epoch, result))
+
+    conn.close()
+
+    report = _render_js_timeout_report(
+        epoch_data,
+        top_n=top_n,
+    )
+    if output:
+        output.write_text(report)
+        typer.echo(
+            f"Report written to {output}",
+            err=True,
+        )
+    else:
+        typer.echo(report)
+
+
+def _fmt_epoch_summary_row(
+    index: int,
+    epoch: dict,
+    result: dict,
+) -> str:
+    """Format one row of the JS timeout summary table."""
+    commit = str(epoch.get("commit", ""))[:8]
+    pr_num = epoch.get("pr_number")
+    pr_title = str(epoch.get("pr_title", ""))
+    pr_col = f"#{pr_num} {pr_title}" if pr_num else pr_title
+    dur_s = float(str(epoch.get("duration_seconds", 0)))
+    hours = dur_s / 3600
+    dur_str = f"{hours:.1f}h" if hours >= 1 else f"{dur_s / 60:.0f}m"
+    per_hr = result["per_hour"]
+    per_hr_str = f"{per_hr:.1f}" if per_hr is not None else "—"
+    reason = str(epoch.get("restart_reason", ""))
+    if epoch.get("is_crash_bounce"):
+        reason = f"⚡ {reason}"
+    return (
+        f"| {index} | {commit} | {pr_col}"
+        f" | {dur_str} | {result['total']}"
+        f" | {per_hr_str} | {reason} |"
+    )
+
+
+def _render_epoch_callsites(
+    index: int,
+    epoch: dict,
+    result: dict,
+    *,
+    top_n: int = 5,
+) -> list[str]:
+    """Render call site breakdown for a single epoch."""
+    commit = str(epoch.get("commit", ""))[:8]
+    pr_num = epoch.get("pr_number")
+    pr_title = str(epoch.get("pr_title", ""))
+    heading = f"#{pr_num} {pr_title}" if pr_num else commit
+
+    lines: list[str] = []
+    lines.append(f"### Epoch {index}: {commit} ({heading})")
+    lines.append("")
+    per_hr = result["per_hour"]
+    per_hr_str = f"{per_hr:.1f}/hr" if per_hr is not None else "—"
+    lines.append(f"**{result['total']} timeouts** ({per_hr_str})")
+    lines.append("")
+    lines.append("| Call Site | Count | % |")
+    lines.append("| --- | ---: | ---: |")
+    total = result["total"]
+    for cs in result["by_callsite"][:top_n]:
+        pct = cs["count"] / total * 100
+        lines.append(f"| `{cs['callsite']}` | {cs['count']} | {pct:.0f}% |")
+    shown = sum(cs["count"] for cs in result["by_callsite"][:top_n])
+    if shown < total:
+        lines.append(
+            f"| *(other)* | {total - shown} | {(total - shown) / total * 100:.0f}% |"
+        )
+    lines.append("")
+    return lines
+
+
+def _render_js_timeout_report(
+    epoch_data: list[tuple[dict, dict]],
+    *,
+    top_n: int = 5,
+) -> str:
+    """Render JS timeout epoch-split report as markdown."""
+    lines: list[str] = [
+        "# JS Timeout Epoch Analysis",
+        "",
+        "## Summary",
+        "",
+        "| # | Commit | PR | Duration | Timeouts | /hr | Restart |",
+        "| --- | --- | --- | ---: | ---: | ---: | --- |",
+    ]
+
+    grand_total = 0
+    for i, (epoch, result) in enumerate(epoch_data):
+        lines.append(_fmt_epoch_summary_row(i + 1, epoch, result))
+        grand_total += result["total"]
+
+    lines.append("")
+    lines.append(f"**Grand total: {grand_total} JS timeouts**")
+    lines.append("")
+    lines.append("## Per-Epoch Call Sites")
+    lines.append("")
+
+    for i, (epoch, result) in enumerate(epoch_data):
+        if result["total"] == 0:
+            continue
+        lines.extend(_render_epoch_callsites(i + 1, epoch, result, top_n=top_n))
+
+    return "\n".join(lines)
 
 
 if __name__ == "__main__":

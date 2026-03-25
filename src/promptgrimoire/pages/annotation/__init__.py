@@ -40,7 +40,6 @@ Package structure (26 authored modules):
 from __future__ import annotations
 
 import json
-import logging
 from dataclasses import dataclass, field
 from string.templatelib import Interpolation, Template
 from typing import TYPE_CHECKING, Any, Literal
@@ -74,7 +73,6 @@ if TYPE_CHECKING:
     from promptgrimoire.pages.annotation.tags import TagInfo
 
 logger = structlog.get_logger()
-logging.getLogger(__name__).setLevel(logging.INFO)
 
 # ---------------------------------------------------------------------------
 # WARNING: Definition-before-import ordering is CRITICAL in this file.

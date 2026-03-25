@@ -66,6 +66,9 @@ ALLOWED_JS_FILES = {
     # interact with it. JS native setter injection is the only reliable way
     # to programmatically set the colour value and trigger Vue reactivity.
     "test_tag_colour.py",
+    # Performance instrumentation (#377): evaluate() reads
+    # window.__annotationCardsEpoch for rebuild-epoch pattern.
+    "test_browser_perf_377.py",
 }
 
 

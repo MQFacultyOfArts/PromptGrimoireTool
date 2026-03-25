@@ -285,6 +285,7 @@ Detailed subsystem docs live in `docs/`. Key references:
 | [worktrees.md](docs/worktrees.md) | Git worktree setup, Serena memory management |
 | [logging.md](docs/logging.md) | Structured logging, log format, jq queries, Discord alerting |
 | [ARCHITECTURE.md](docs/ARCHITECTURE.md) | Data flow diagrams, integration patterns |
+| [postmortems/incident-analysis-playbook.md](docs/postmortems/incident-analysis-playbook.md) | Incident analysis: telemetry collection, dataset building, `incident_db.py` CLI reference |
 
 ### Documentation Caching
 

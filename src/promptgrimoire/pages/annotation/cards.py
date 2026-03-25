@@ -10,8 +10,8 @@ tag select, text preview, and comments.
 
 from __future__ import annotations
 
-import logging
 import re
+import time
 from typing import TYPE_CHECKING, Any
 
 import structlog
@@ -30,7 +30,6 @@ from promptgrimoire.pages.annotation.highlights import (
 )
 
 logger = structlog.get_logger()
-logging.getLogger(__name__).setLevel(logging.INFO)
 
 
 def _author_initials(name: str) -> str:
@@ -383,12 +382,14 @@ def _build_compact_header(
         )
 
         # Locate button (available to all)
-        async def goto_highlight(sc: int = start_char, ec: int = end_char) -> None:
+        def goto_highlight(sc: int = start_char, ec: int = end_char) -> None:
             js = _render_js(
                 t"scrollToCharOffset(window._textNodes, {sc}, {ec});"
                 t"throbHighlight(window._textNodes, {sc}, {ec}, 800);"
             )
-            await ui.run_javascript(js)
+            # Fire-and-forget — scroll/throb are visual-only, void return.
+            # See #377.
+            ui.run_javascript(js)
 
         ui.button(icon="my_location", on_click=goto_highlight).props(
             "flat dense size=xs"
@@ -547,7 +548,7 @@ def _build_annotation_card(
             chevron.props('icon="expand_less"')
 
         # Wire expand/collapse toggle — click anywhere on header row
-        async def toggle_detail(
+        def toggle_detail(
             d: ui.element = detail,
             ch: ui.button = chevron,
             hid: str = highlight_id,
@@ -560,7 +561,12 @@ def _build_annotation_card(
                 d.set_visibility(True)
                 ch.props('icon="expand_less"')
                 state.expanded_cards.add(hid)
-            await ui.run_javascript(
+            # Fire-and-forget — rAF returns an unused int ID, and the
+            # MutationObserver already triggers positionCards on visibility
+            # change.  Previously awaited with 1.0s timeout, causing ~2,100
+            # TimeoutErrors when the browser could not respond in time
+            # (queued behind NiceGUI element batch).  See #377.
+            ui.run_javascript(
                 "if (window._positionCards)"
                 " requestAnimationFrame(window._positionCards)"
             )
@@ -581,6 +587,8 @@ def _refresh_annotation_cards(state: PageState, *, trigger: str = "unknown") -> 
     )
     if state.annotations_container is None or state.crdt_doc is None:
         return
+
+    _t0 = time.monotonic()
 
     if state.annotation_cards is None:
         state.annotation_cards = {}
@@ -615,3 +623,11 @@ def _refresh_annotation_cards(state: PageState, *, trigger: str = "unknown") -> 
 
         state.cards_epoch += 1
         ui.run_javascript(f"window.__annotationCardsEpoch = {state.cards_epoch}")
+
+    logger.debug(
+        "render_phase",
+        phase="refresh_annotation_cards",
+        elapsed_ms=round((time.monotonic() - _t0) * 1000, 1),
+        trigger=trigger,
+        highlight_count=len(highlights),
+    )

@@ -8,7 +8,6 @@ protection live in ``header.py``.
 
 from __future__ import annotations
 
-import logging
 import time
 from typing import TYPE_CHECKING, Any, cast
 from urllib.parse import urlencode
@@ -72,7 +71,6 @@ if TYPE_CHECKING:
     from promptgrimoire.pages.annotation import PermissionLevel
 
 logger = structlog.get_logger()
-logging.getLogger(__name__).setLevel(logging.INFO)
 
 
 def _get_current_username() -> str:
@@ -699,13 +697,17 @@ async def _build_tab_panels(
 
         with ui.tab_panel("Annotate"):
             # Load CRDT document for this workspace
-            logger.debug("[RENDER] loading CRDT doc")
+            _t_crdt = time.monotonic()
             crdt_doc = await _workspace_registry.get_or_create_for_workspace(
                 workspace_id
             )
             state.crdt_doc = crdt_doc
             state.tag_info_list = workspace_tags_from_crdt(crdt_doc)
-            logger.debug("[RENDER] CRDT doc loaded, tag_info_list populated")
+            logger.debug(
+                "page_phase",
+                phase="load_crdt_and_tags",
+                elapsed_ms=round((time.monotonic() - _t_crdt) * 1000),
+            )
 
             # WARNING — @ui.refreshable destroys the entire subtree and
             # recreates it on .refresh().  The document renderer is complex:
@@ -746,6 +748,7 @@ async def _build_tab_panels(
                 logger.debug("[RENDER] documents loaded: count=%d", len(documents))
 
                 if documents:
+                    _t_doc = time.monotonic()
                     await _render_document_container(
                         state,
                         documents[0],
@@ -753,6 +756,11 @@ async def _build_tab_panels(
                         on_add_tag=on_add_tag if can_create_tags else None,
                         on_manage_tags=on_manage_tags,
                         footer=footer,
+                    )
+                    logger.debug(
+                        "page_phase",
+                        phase="render_document_container",
+                        elapsed_ms=round((time.monotonic() - _t_doc) * 1000),
                     )
                 elif state.can_upload:
                     _render_empty_template_toolbar(

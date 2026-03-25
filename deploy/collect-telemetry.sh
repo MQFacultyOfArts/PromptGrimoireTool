@@ -16,6 +16,29 @@ APP_DIR="${APP_DIR:-/opt/promptgrimoire}"
 JSONL_LOG="${JSONL_LOG:-$APP_DIR/logs/sessions/promptgrimoire.jsonl}"
 HAPROXY_LOG="${HAPROXY_LOG:-/var/log/haproxy.log}"
 PG_LOG_DIR="${PG_LOG_DIR:-/var/log/postgresql}"
+PGBOUNCER_LOG="${PGBOUNCER_LOG:-/var/log/pgbouncer/pgbouncer.log}"
+# PostgreSQL logging_collector writes to log_directory relative to the data
+# directory (default: "log" → /var/lib/postgresql/*/main/log/).  Detect this
+# automatically so we collect jsonlog output regardless of configuration.
+PG_COLLECTOR_DIR="${PG_COLLECTOR_DIR:-}"
+if [[ -z "$PG_COLLECTOR_DIR" ]]; then
+    # Ask the running cluster for its data directory + log_directory.
+    # Connect via Unix socket directly to PG (not through PgBouncer) using
+    # the postgres superuser.  -h /var/run/postgresql ensures we bypass
+    # PgBouncer even if PGHOST or .pg_service.conf redirect the default.
+    _pg_data=$(sudo -u postgres psql -h /var/run/postgresql -qtAX -c "SHOW data_directory;" 2>/dev/null || true)
+    _pg_logdir=$(sudo -u postgres psql -h /var/run/postgresql -qtAX -c "SHOW log_directory;" 2>/dev/null || true)
+    if [[ -n "$_pg_data" ]] && [[ -n "$_pg_logdir" ]]; then
+        if [[ "$_pg_logdir" == /* ]]; then
+            # Absolute path
+            PG_COLLECTOR_DIR="$_pg_logdir"
+        else
+            # Relative to data directory
+            PG_COLLECTOR_DIR="$_pg_data/$_pg_logdir"
+        fi
+        [[ -d "$PG_COLLECTOR_DIR" ]] || PG_COLLECTOR_DIR=""
+    fi
+fi
 UNIT_NAME="${UNIT_NAME:-promptgrimoire.service}"
 DB_NAME="${DB_NAME:-promptgrimoire}"
 DB_USER="${DB_USER:-promptgrimoire}"
@@ -182,33 +205,126 @@ else
 fi
 
 # -------------------------------------------------------------------
-# 4. Copy PostgreSQL log (most recent .json or .log)
+# 4. Collect PostgreSQL logs (current + rotated, within time window)
 # -------------------------------------------------------------------
-step "Copying PostgreSQL logs..."
+step "Collecting PostgreSQL logs..."
 PG_METHOD="not collected"
 PG_SOURCE=""
 PG_COUNT=0
-PG_LATEST_JSON=$(find "$PG_LOG_DIR" -name "*.json" -type f -printf '%T@ %p\n' 2>/dev/null | sort -rn | head -1 | cut -d' ' -f2-)
-PG_LATEST_LOG=$(find "$PG_LOG_DIR" -name "*.log" -type f -printf '%T@ %p\n' 2>/dev/null | sort -rn | head -1 | cut -d' ' -f2-)
 
-if [[ -n "$PG_LATEST_JSON" ]]; then
-    cp "$PG_LATEST_JSON" "$WORKDIR/postgresql.json"
-    PG_SOURCE="${PG_SOURCE:+$PG_SOURCE, }$PG_LATEST_JSON"
+# Search two directories:
+#   PG_LOG_DIR      — syslog/logrotate-managed (e.g., /var/log/postgresql/)
+#                     Files: postgresql-16-main.log, .log.1, .log.2.gz, etc.
+#   PG_COLLECTOR_DIR — PostgreSQL logging_collector output
+#                     (e.g., /var/lib/postgresql/16/main/log/)
+#                     Files: postgresql-YYYY-MM-DD_HHMMSS.json/.log (daily)
+#
+# Concatenate all matching files in chronological order into one output file
+# per extension (.json, .log).  Decompress .gz on the fly.
+
+_pg_collect_from_dir() {
+    local dir="$1" ext="$2" output="$3"
+    [[ -d "$dir" ]] || return 1
+
+    local found=0
+    # Find all files matching *.${ext}* (includes rotated: .1, .2.gz, etc.)
+    # Sort by name (works for both logrotate numbering and date-stamped names)
+    while IFS= read -r f; do
+        [[ -n "$f" ]] || continue
+        if [[ "$f" == *.gz ]]; then
+            zcat "$f" >> "$output" 2>/dev/null && found=1
+        else
+            # Skip empty files (e.g., current .log after rotation)
+            [[ -s "$f" ]] || continue
+            cat "$f" >> "$output" 2>/dev/null && found=1
+        fi
+        PG_SOURCE="${PG_SOURCE:+$PG_SOURCE, }$f"
+    done < <(find "$dir" -maxdepth 1 -name "postgresql*.${ext}*" -type f 2>/dev/null | sort)
+
+    return $((1 - found))
+}
+
+_pg_collect() {
+    local ext="$1" output="$2"
+    local found=0
+    # Collect from syslog-managed directory
+    _pg_collect_from_dir "$PG_LOG_DIR" "$ext" "$output" && found=1
+    # Collect from logging_collector directory (if different)
+    if [[ -n "${PG_COLLECTOR_DIR:-}" ]] && [[ "$PG_COLLECTOR_DIR" != "$PG_LOG_DIR" ]]; then
+        _pg_collect_from_dir "$PG_COLLECTOR_DIR" "$ext" "$output" && found=1
+    fi
+    return $((1 - found))
+}
+
+# Collect JSON logs (PostgreSQL jsonlog destination)
+if _pg_collect "json" "$WORKDIR/postgresql.json"; then
     PG_COUNT=$((PG_COUNT + 1))
 fi
-if [[ -n "$PG_LATEST_LOG" ]]; then
-    cp "$PG_LATEST_LOG" "$WORKDIR/postgresql.log"
-    PG_SOURCE="${PG_SOURCE:+$PG_SOURCE, }$PG_LATEST_LOG"
+
+# Collect plain text logs (syslog/stderr destination)
+if _pg_collect "log" "$WORKDIR/postgresql.log"; then
     PG_COUNT=$((PG_COUNT + 1))
 fi
+
+# Remove empty output files
+for f in "$WORKDIR/postgresql.json" "$WORKDIR/postgresql.log"; do
+    if [[ -f "$f" ]] && [[ ! -s "$f" ]]; then
+        rm -f "$f"
+        PG_COUNT=$((PG_COUNT - 1))
+    fi
+done
 
 if [[ $PG_COUNT -gt 0 ]]; then
-    PG_METHOD="full copy ($PG_COUNT files)"
-    step "  Copied $PG_COUNT PostgreSQL log file(s)"
+    PG_METHOD="concatenated rotated logs"
+    step "  Collected PostgreSQL logs from: $PG_SOURCE"
 else
-    warn "No PostgreSQL log found in $PG_LOG_DIR"
+    warn "No PostgreSQL log content found in $PG_LOG_DIR"
     PG_METHOD="missing"
     PG_SOURCE="none"
+fi
+
+# -------------------------------------------------------------------
+# 4b. Copy PgBouncer log
+# -------------------------------------------------------------------
+step "Collecting PgBouncer log..."
+PGBOUNCER_METHOD="not collected"
+PGBOUNCER_SOURCE="none"
+
+if [[ -f "$PGBOUNCER_LOG" ]] && [[ -s "$PGBOUNCER_LOG" ]]; then
+    cp "$PGBOUNCER_LOG" "$WORKDIR/pgbouncer.log"
+    PGBOUNCER_METHOD="full copy"
+    PGBOUNCER_SOURCE="$PGBOUNCER_LOG"
+    step "  Collected PgBouncer log from: $PGBOUNCER_LOG"
+else
+    # Check for rotated logs
+    _pgb_dir=$(dirname "$PGBOUNCER_LOG")
+    _pgb_base=$(basename "$PGBOUNCER_LOG")
+    if [[ -d "$_pgb_dir" ]]; then
+        _pgb_found=0
+        while IFS= read -r f; do
+            [[ -n "$f" ]] || continue
+            if [[ "$f" == *.gz ]]; then
+                zcat "$f" >> "$WORKDIR/pgbouncer.log" 2>/dev/null && _pgb_found=1
+            else
+                [[ -s "$f" ]] || continue
+                cat "$f" >> "$WORKDIR/pgbouncer.log" 2>/dev/null && _pgb_found=1
+            fi
+            PGBOUNCER_SOURCE="${PGBOUNCER_SOURCE:+$PGBOUNCER_SOURCE, }$f"
+        done < <(find "$_pgb_dir" -maxdepth 1 -name "${_pgb_base}*" -type f 2>/dev/null | sort)
+        if [[ $_pgb_found -eq 1 ]]; then
+            PGBOUNCER_METHOD="concatenated rotated logs"
+            step "  Collected PgBouncer logs from: $PGBOUNCER_SOURCE"
+        fi
+    fi
+    if [[ "$PGBOUNCER_METHOD" == "not collected" ]]; then
+        warn "PgBouncer log not found at $PGBOUNCER_LOG"
+    fi
+fi
+
+# Remove empty output file
+if [[ -f "$WORKDIR/pgbouncer.log" ]] && [[ ! -s "$WORKDIR/pgbouncer.log" ]]; then
+    rm -f "$WORKDIR/pgbouncer.log"
+    PGBOUNCER_METHOD="empty"
 fi
 
 # -------------------------------------------------------------------
@@ -338,6 +454,7 @@ for f in "$WORKDIR"/*; do
         structlog.jsonl)  FILES_JSON+=$(file_entry "$f" "${JSONL_SOURCES:-$JSONL_LOG}" "$JSONL_METHOD") ;;
         haproxy.log)      FILES_JSON+=$(file_entry "$f" "${HAPROXY_SOURCES:-$HAPROXY_LOG}" "$HAPROXY_METHOD") ;;
         postgresql*)      FILES_JSON+=$(file_entry "$f" "${PG_SOURCE:-unknown}" "$PG_METHOD") ;;
+        pgbouncer.log)    FILES_JSON+=$(file_entry "$f" "${PGBOUNCER_SOURCE:-unknown}" "$PGBOUNCER_METHOD") ;;
         db-snapshot.json) FILES_JSON+=$(file_entry "$f" "$DB_NAME" "$DB_METHOD") ;;
         *)                FILES_JSON+=$(file_entry "$f" "unknown" "unknown") ;;
     esac

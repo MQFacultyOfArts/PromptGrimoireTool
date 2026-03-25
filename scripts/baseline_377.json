@@ -1,0 +1,322 @@
+{
+  "workspace_id": "0e5e9b04-de94-4728-a8c9-e625c141fea3",
+  "server_url": "http://localhost:8080",
+  "iterations": 5,
+  "load_results": [
+    {
+      "iteration": 0,
+      "walkerReady": true,
+      "timing": {
+        "wallClockTotalMs": 3670,
+        "wallClockDomMs": 3507,
+        "wallClockNetworkMs": 3507,
+        "wallClockWalkerMs": 163
+      },
+      "browser": {
+        "navigation": {
+          "responseEnd": 1438.5,
+          "requestStart": 1.2999999523162842,
+          "serverResponseMs": 1437,
+          "domContentLoadedMs": 3197,
+          "domInteractiveMs": 1857,
+          "loadEventMs": 3500,
+          "transferSizeBytes": 283077,
+          "encodedBodySizeBytes": 282777,
+          "decodedBodySizeBytes": 1832099
+        },
+        "paint": {
+          "firstPaintMs": 3512,
+          "firstContentfulPaintMs": 3512
+        },
+        "lcp": {
+          "startTimeMs": 3512,
+          "size": 114872,
+          "element": "P"
+        },
+        "resourceCount": 24
+      },
+      "document": {
+        "docContainerExists": true,
+        "docContainerHtml": 425788,
+        "textNodeCount": 5020,
+        "highlightCount": 0
+      }
+    },
+    {
+      "iteration": 1,
+      "walkerReady": true,
+      "timing": {
+        "wallClockTotalMs": 7331,
+        "wallClockDomMs": 6888,
+        "wallClockNetworkMs": 6890,
+        "wallClockWalkerMs": 441
+      },
+      "browser": {
+        "navigation": {
+          "responseEnd": 3498.100000023842,
+          "requestStart": 2.3000000715255737,
+          "serverResponseMs": 3496,
+          "domContentLoadedMs": 6243,
+          "domInteractiveMs": 4077,
+          "loadEventMs": 6879,
+          "transferSizeBytes": 283523,
+          "encodedBodySizeBytes": 283223,
+          "decodedBodySizeBytes": 1836992
+        },
+        "paint": {
+          "firstPaintMs": 6900,
+          "firstContentfulPaintMs": 6900
+        },
+        "lcp": {
+          "startTimeMs": 6900,
+          "size": 114872,
+          "element": "P"
+        },
+        "resourceCount": 24
+      },
+      "document": {
+        "docContainerExists": true,
+        "docContainerHtml": 425788,
+        "textNodeCount": 5020,
+        "highlightCount": 0
+      }
+    },
+    {
+      "iteration": 2,
+      "walkerReady": true,
+      "timing": {
+        "wallClockTotalMs": 4016,
+        "wallClockDomMs": 3796,
+        "wallClockNetworkMs": 3796,
+        "wallClockWalkerMs": 219
+      },
+      "browser": {
+        "navigation": {
+          "responseEnd": 1983.2000000476837,
+          "requestStart": 0.7000000476837158,
+          "serverResponseMs": 1983,
+          "domContentLoadedMs": 3482,
+          "domInteractiveMs": 2362,
+          "loadEventMs": 3791,
+          "transferSizeBytes": 284008,
+          "encodedBodySizeBytes": 283708,
+          "decodedBodySizeBytes": 1841887
+        },
+        "paint": {
+          "firstPaintMs": 3804,
+          "firstContentfulPaintMs": 3804
+        },
+        "lcp": {
+          "startTimeMs": 3804,
+          "size": 114872,
+          "element": "P"
+        },
+        "resourceCount": 24
+      },
+      "document": {
+        "docContainerExists": true,
+        "docContainerHtml": 425788,
+        "textNodeCount": 5020,
+        "highlightCount": 0
+      }
+    },
+    {
+      "iteration": 3,
+      "walkerReady": true,
+      "timing": {
+        "wallClockTotalMs": 7726,
+        "wallClockDomMs": 7538,
+        "wallClockNetworkMs": 7539,
+        "wallClockWalkerMs": 186
+      },
+      "browser": {
+        "navigation": {
+          "responseEnd": 5749.699999928474,
+          "requestStart": 0.5999999046325684,
+          "serverResponseMs": 5749,
+          "domContentLoadedMs": 7215,
+          "domInteractiveMs": 6184,
+          "loadEventMs": 7535,
+          "transferSizeBytes": 284532,
+          "encodedBodySizeBytes": 284232,
+          "decodedBodySizeBytes": 1846781
+        },
+        "paint": {
+          "firstPaintMs": 7548,
+          "firstContentfulPaintMs": 7548
+        },
+        "lcp": {
+          "startTimeMs": 7548,
+          "size": 114872,
+          "element": "P"
+        },
+        "resourceCount": 24
+      },
+      "document": {
+        "docContainerExists": true,
+        "docContainerHtml": 425788,
+        "textNodeCount": 5020,
+        "highlightCount": 0
+      }
+    },
+    {
+      "iteration": 4,
+      "walkerReady": true,
+      "timing": {
+        "wallClockTotalMs": 6869,
+        "wallClockDomMs": 6574,
+        "wallClockNetworkMs": 6575,
+        "wallClockWalkerMs": 295
+      },
+      "browser": {
+        "navigation": {
+          "responseEnd": 4070.2000000476837,
+          "requestStart": 1.2000000476837158,
+          "serverResponseMs": 4069,
+          "domContentLoadedMs": 6082,
+          "domInteractiveMs": 4532,
+          "loadEventMs": 6567,
+          "transferSizeBytes": 284958,
+          "encodedBodySizeBytes": 284658,
+          "decodedBodySizeBytes": 1851676
+        },
+        "paint": {
+          "firstPaintMs": 6584,
+          "firstContentfulPaintMs": 6584
+        },
+        "lcp": {
+          "startTimeMs": 6584,
+          "size": 114872,
+          "element": "P"
+        },
+        "resourceCount": 24
+      },
+      "document": {
+        "docContainerExists": true,
+        "docContainerHtml": 425788,
+        "textNodeCount": 5020,
+        "highlightCount": 0
+      }
+    }
+  ],
+  "load_summary": {
+    "wallClockTotalMs": {
+      "count": 5,
+      "min": 3670,
+      "max": 7726,
+      "mean": 5922.4,
+      "median": 6869,
+      "stdev": 1926.2
+    },
+    "serverResponseMs": {
+      "count": 5,
+      "min": 1437,
+      "max": 5749,
+      "mean": 3346.8,
+      "median": 3496,
+      "stdev": 1719.1
+    },
+    "domContentLoadedMs": {
+      "count": 5,
+      "min": 3197,
+      "max": 7215,
+      "mean": 5243.8,
+      "median": 6082,
+      "stdev": 1794.4
+    },
+    "firstContentfulPaintMs": {
+      "count": 5,
+      "min": 3512,
+      "max": 7548,
+      "mean": 5669.6,
+      "median": 6584,
+      "stdev": 1871.8
+    },
+    "lcpMs": {
+      "count": 5,
+      "min": 3512,
+      "max": 7548,
+      "mean": 5669.6,
+      "median": 6584,
+      "stdev": 1871.8
+    },
+    "decodedBodySizeBytes": {
+      "count": 5,
+      "min": 1832099,
+      "max": 1851676,
+      "mean": 1841887,
+      "median": 1841887,
+      "stdev": 7738.6
+    }
+  },
+  "interaction_results": [
+    {
+      "iteration": 0,
+      "tagButtonCount": 11,
+      "selectionText": "2 of 2021\n\nJudgment of: WIGNEY J\n\nDate of judgment: 15 ",
+      "selectionLength": 55,
+      "selectionBound": true,
+      "highlightMenuMs": 470,
+      "tagApplyMs": 2277,
+      "tagApplied": null
+    },
+    {
+      "iteration": 1,
+      "tagButtonCount": 11,
+      "selectionText": "2 of 2021\n\nJudgment of: WIGNEY J\n\nDate of judgment: 15 ",
+      "selectionLength": 55,
+      "selectionBound": true,
+      "highlightMenuMs": 814,
+      "tagApplyMs": 5499,
+      "tagApplied": null
+    },
+    {
+      "iteration": 2,
+      "tagButtonCount": 11,
+      "selectionText": "2 of 2021\n\nJudgment of: WIGNEY J\n\nDate of judgment: 15 ",
+      "selectionLength": 55,
+      "selectionBound": true,
+      "highlightMenuMs": 670,
+      "tagApplyMs": 4370,
+      "tagApplied": null
+    },
+    {
+      "iteration": 3,
+      "tagButtonCount": 11,
+      "selectionText": "2 of 2021\n\nJudgment of: WIGNEY J\n\nDate of judgment: 15 ",
+      "selectionLength": 55,
+      "selectionBound": true,
+      "highlightMenuMs": 599,
+      "tagApplyMs": 3931,
+      "tagApplied": null
+    },
+    {
+      "iteration": 4,
+      "tagButtonCount": 11,
+      "selectionText": "2 of 2021\n\nJudgment of: WIGNEY J\n\nDate of judgment: 15 ",
+      "selectionLength": 55,
+      "selectionBound": true,
+      "highlightMenuMs": 641,
+      "tagApplyMs": 5626,
+      "tagApplied": null
+    }
+  ],
+  "interaction_summary": {
+    "highlightMenuMs": {
+      "count": 5,
+      "min": 470,
+      "max": 814,
+      "mean": 638.8,
+      "median": 641,
+      "stdev": 124.2
+    },
+    "tagApplyMs": {
+      "count": 5,
+      "min": 2277,
+      "max": 5626,
+      "mean": 4340.6,
+      "median": 4370,
+      "stdev": 1362.1
+    }
+  }
+}

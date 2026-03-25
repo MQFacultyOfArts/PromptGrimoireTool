@@ -1,6 +1,6 @@
 # Incident Analysis Library
 
-Freshness: 2026-03-19
+Freshness: 2026-03-24
 
 ## Purpose
 
@@ -24,6 +24,7 @@ Standalone post-incident telemetry analysis tooling. Ingests production log tarb
 - `analysis.compute_error_landscape(conn, epochs)` -- per-epoch appeared/resolved error class sets
 - `analysis.detect_pool_config(conn, start_utc, end_utc)` -- extract pool_size and max_overflow from INVALIDATE events
 - `analysis.enrich_restart_gaps(epochs)` -- compute downtime duration between consecutive epochs
+- `analysis.query_epoch_js_timeouts(conn, start, end, duration)` -- JS timeout events by call site, extracted from exception tracebacks
 - `analysis.query_epoch_errors(conn, start, end, duration)` -- JSONL errors by level/event, normalised to per-hour
 - `analysis.query_epoch_haproxy(conn, start, end, duration)` -- HAProxy status codes and percentiles
 - `analysis.query_epoch_resources(conn, start, end)` -- Beszel mean/max CPU, memory, load

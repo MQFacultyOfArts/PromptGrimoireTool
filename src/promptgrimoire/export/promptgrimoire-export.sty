@@ -156,7 +156,10 @@
   \setbox\annotbox=\vbox{\hsize=4.3cm\footnotesize\textbf{\theannotnum.} #2}%
   \ifdim\ht\annotbox>\annotmaxht
     % Long annotation → write to endnotes file, show stub in margin
-    \textsuperscript{\textcolor{#1}{\textbf{\theannotnum}}}%
+    \phantomsection\label{annot-inline:\theannotnum}%
+    \hyperref[annot-endnote:\theannotnum]{%
+      \textsuperscript{\textcolor{#1}{\textbf{\theannotnum}}}%
+    }%
     \marginalia[ysep=3pt]{%
       \fcolorbox{#1}{#1!20}{%
         \parbox{4.3cm}{\footnotesize\textbf{\theannotnum.} (see endnotes)}%
@@ -164,8 +167,12 @@
     }%
     \global\annothasendnotestrue
     \immediate\write\annotendfile{%
+      \noexpand\phantomsection
+      \noexpand\label{annot-endnote:\theannotnum}%
       \noexpand\par\noexpand\noindent
-      \noexpand\textcolor{#1}{\noexpand\textbf{\theannotnum.}}
+      \noexpand\hyperref[annot-inline:\theannotnum]{%
+        \noexpand\textcolor{#1}{\noexpand\textbf{\theannotnum.}}%
+      }%
       \unexpanded{#2}%
       \noexpand\par\noexpand\medskip
     }%
@@ -185,7 +192,10 @@
 % Usage: \annotref{colour-name}
 \newcommand{\annotref}[1]{%
   \stepcounter{annotnum}%
-  \textsuperscript{\textcolor{#1}{\textbf{endnote \theannotnum}}}%
+  \phantomsection\label{annot-inline:\theannotnum}%
+  \hyperref[annot-endnote:\theannotnum]{%
+    \textsuperscript{\textcolor{#1}{\textbf{endnote \theannotnum}}}%
+  }%
 }
 
 % Table-safe annotation endnote: writes annotation body to the endnotes file.
@@ -194,8 +204,12 @@
 \newcommand{\annotendnote}[3]{%
   \global\annothasendnotestrue
   \immediate\write\annotendfile{%
+    \noexpand\phantomsection
+    \noexpand\label{annot-endnote:#2}%
     \noexpand\par\noexpand\noindent
-    \noexpand\textcolor{#1}{\noexpand\textbf{#2.}}
+    \noexpand\hyperref[annot-inline:#2]{%
+      \noexpand\textcolor{#1}{\noexpand\textbf{#2.}}%
+    }%
     \unexpanded{#3}%
     \noexpand\par\noexpand\medskip
   }%

@@ -69,6 +69,7 @@ async def _process_job(job: ExportJob) -> None:
             word_count=payload.get("word_count"),
             word_minimum=payload.get("word_minimum"),
             word_limit=payload.get("word_limit"),
+            documents=payload.get("documents"),
         )
 
         download_token = secrets.token_urlsafe(48)

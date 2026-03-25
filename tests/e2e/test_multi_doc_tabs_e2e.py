@@ -331,19 +331,12 @@ class TestMultiDocAnnotateBothDocuments:
 
 
 class TestMultiDocExport:
-    """Verify PDF export from a multi-doc workspace.
+    """Verify PDF export includes all source documents."""
 
-    NOTE: The export pipeline currently exports the *active* document
-    only (pdf_export.py uses ``state.document_id``).  Multi-document
-    export (all sources in one PDF) is a future feature.  These tests
-    verify single-document export works correctly when the workspace
-    has multiple documents.
-    """
-
-    def test_export_active_document(
+    def test_export_contains_all_documents(
         self, browser: Browser, app_server: str, subtests: SubTests
     ) -> None:
-        """Export from Source 1, verify it contains only that document's content."""
+        """Export a 2-doc workspace and verify both appear in the output."""
         context = browser.new_context()
         page = context.new_page()
 
@@ -364,8 +357,11 @@ class TestMultiDocExport:
                 result = export_annotation_tex_text(page)
                 assert result.size_bytes and result.size_bytes > 0
 
-            with subtests.test(msg="export_contains_active_doc"):
+            with subtests.test(msg="export_contains_doc1"):
                 assert "UNIQUEINTRO" in result
+
+            with subtests.test(msg="export_contains_doc2"):
+                assert "UNIQUEANALYSIS" in result
 
         finally:
             page.goto("about:blank")
@@ -458,6 +454,9 @@ class TestMultiDocExport:
 
             with subtests.test(msg="export_has_case_summary"):
                 assert "Ms Bennett" in result
+
+            with subtests.test(msg="export_has_statutory_framework"):
+                assert "Civil Liability Act" in result
 
             with subtests.test(msg="export_has_reflection"):
                 assert "inspection methodology" in result

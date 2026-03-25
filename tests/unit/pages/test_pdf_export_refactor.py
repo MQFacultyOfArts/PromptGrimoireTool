@@ -108,9 +108,9 @@ class TestJobSubmission:
                 return_value=mock_job,
             ) as mock_create,
             patch(
-                "promptgrimoire.pages.annotation.pdf_export.get_document",
+                "promptgrimoire.pages.annotation.pdf_export.list_documents",
                 new_callable=AsyncMock,
-            ) as mock_get_doc,
+            ) as mock_list_docs,
             patch(
                 "promptgrimoire.pages.annotation.pdf_export.markdown_to_latex_notes",
                 new_callable=AsyncMock,
@@ -129,11 +129,14 @@ class TestJobSubmission:
                 "promptgrimoire.pages.annotation.pdf_export.bind_contextvars",
             ),
         ):
-            # Set up document mock
+            # Set up document list mock
             mock_doc = MagicMock()
+            mock_doc.id = document_id
+            mock_doc.type = "source"
+            mock_doc.title = "Test Doc"
             mock_doc.content = "<p>Test content</p>"
             mock_doc.paragraph_map = None
-            mock_get_doc.return_value = mock_doc
+            mock_list_docs.return_value = [mock_doc]
 
             await _handle_pdf_export(state, workspace_id)
 
@@ -143,8 +146,7 @@ class TestJobSubmission:
             assert call_args[0][0] == user_id  # user_id as UUID
             assert call_args[0][1] == workspace_id
             payload = call_args[0][2]
-            assert "html_content" in payload
-            assert "highlights" in payload
+            assert "documents" in payload
             assert "tag_colours" in payload
             assert "filename" in payload
 
@@ -201,9 +203,9 @@ class TestConcurrentExportRejection:
                 side_effect=BusinessLogicError("A PDF export is already in progress"),
             ),
             patch(
-                "promptgrimoire.pages.annotation.pdf_export.get_document",
+                "promptgrimoire.pages.annotation.pdf_export.list_documents",
                 new_callable=AsyncMock,
-            ) as mock_get_doc,
+            ) as mock_list_docs,
             patch(
                 "promptgrimoire.pages.annotation.pdf_export.markdown_to_latex_notes",
                 new_callable=AsyncMock,
@@ -218,9 +220,12 @@ class TestConcurrentExportRejection:
             patch("promptgrimoire.pages.annotation.pdf_export.bind_contextvars"),
         ):
             mock_doc = MagicMock()
+            mock_doc.id = document_id
+            mock_doc.type = "source"
+            mock_doc.title = "Test"
             mock_doc.content = "<p>Test</p>"
             mock_doc.paragraph_map = None
-            mock_get_doc.return_value = mock_doc
+            mock_list_docs.return_value = [mock_doc]
 
             await _handle_pdf_export(state, workspace_id)
 

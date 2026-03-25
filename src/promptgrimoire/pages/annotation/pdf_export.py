@@ -17,7 +17,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from datetime import date, datetime
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Any, cast
 from uuid import UUID
 
 import structlog
@@ -31,7 +31,7 @@ from promptgrimoire.db.export_jobs import (
     get_active_job_for_user,
     get_job,
 )
-from promptgrimoire.db.workspace_documents import get_document
+from promptgrimoire.db.workspace_documents import list_documents
 from promptgrimoire.db.workspaces import get_workspace_export_metadata
 from promptgrimoire.export.filename import (
     PdfExportFilenameContext,
@@ -441,67 +441,69 @@ async def _handle_pdf_export(state: PageState, workspace_id: UUID) -> bool:
     if not should_proceed:
         return False
 
-    # --- Gather payload (all data from live client context) ---
-    highlights = state.crdt_doc.get_highlights_for_document(str(state.document_id))
-    if state.is_anonymous and state.user_id:
-        highlights = anonymise_highlights(
-            highlights,
-            viewing_user_id=state.user_id,
-            anonymous_sharing=True,
-            viewer_is_privileged=state.viewer_is_privileged,
-            privileged_user_ids=state.privileged_user_ids,
-        )
-
-    # Detect dangling tag references — highlights whose tag UUID no
-    # longer exists in the workspace tags (e.g. after tag group
-    # deletion).  Any dangling reference is an error state: the
-    # highlight cannot be properly represented in the export and
-    # would crash LaTeX with "Undefined color".
+    # --- Gather payload: all source documents + their highlights ---
     tag_name_map = {ti.raw_key: ti.name for ti in (state.tag_info_list or [])}
-    valid = [hl for hl in highlights if hl.get("tag", "") in tag_name_map]
-    dangling_count = len(highlights) - len(valid)
-    if dangling_count > 0:
-        ui.notify(
-            f"{dangling_count} annotation(s) reference deleted tags "
-            "and cannot be exported. Re-tag or remove them first.",
-            type="negative",
-        )
-        return False
-    highlights = valid
+    tag_colours = state.tag_colours()
 
-    # Enrich highlights with display names (DB-backed tags store UUIDs)
-    highlights = [
-        {**hl, "tag_name": tag_name_map.get(str(hl.get("tag", "")))}
-        for hl in highlights
-    ]
-
-    doc = await get_document(state.document_id)
-    if doc is None or not doc.content:
+    all_docs = await list_documents(workspace_id)
+    source_docs = [d for d in all_docs if d.type == "source" and d.content]
+    if not source_docs:
         ui.notify(
             "No document content to export. Please paste or upload content first.",
             type="warning",
         )
         return False
-    html_content = doc.content
+
+    documents: list[dict[str, Any]] = []
+    total_dangling = 0
+    for doc in source_docs:
+        doc_highlights = state.crdt_doc.get_highlights_for_document(str(doc.id))
+        if state.is_anonymous and state.user_id:
+            doc_highlights = anonymise_highlights(
+                doc_highlights,
+                viewing_user_id=state.user_id,
+                anonymous_sharing=True,
+                viewer_is_privileged=state.viewer_is_privileged,
+                privileged_user_ids=state.privileged_user_ids,
+            )
+
+        valid = [hl for hl in doc_highlights if hl.get("tag", "") in tag_name_map]
+        total_dangling += len(doc_highlights) - len(valid)
+
+        enriched = [
+            {**hl, "tag_name": tag_name_map.get(str(hl.get("tag", "")))} for hl in valid
+        ]
+
+        doc_para_map = doc.paragraph_map
+        legal_para_map: dict[int, int | None] | None = (
+            {int(k): v for k, v in doc_para_map.items()} if doc_para_map else None
+        )
+
+        documents.append(
+            {
+                "title": doc.title or f"Source {len(documents) + 1}",
+                "html_content": doc.content,
+                "highlights": enriched,
+                "word_to_legal_para": legal_para_map,
+            }
+        )
+
+    if total_dangling > 0:
+        ui.notify(
+            f"{total_dangling} annotation(s) reference deleted tags "
+            "and cannot be exported. Re-tag or remove them first.",
+            type="negative",
+        )
+        return False
 
     notes_latex = await markdown_to_latex_notes(response_markdown)
-
-    doc_para_map = doc.paragraph_map
-    legal_para_map: dict[int, int | None] | None = (
-        {int(k): v for k, v in doc_para_map.items()} if doc_para_map else None
-    )
-
     filename = await _build_export_filename(workspace_id)
 
-    tag_colours = state.tag_colours()
-
-    payload = {
-        "html_content": html_content,
-        "highlights": highlights,
+    payload: dict[str, Any] = {
+        "documents": documents,
         "tag_colours": tag_colours,
         "general_notes": "",
         "notes_latex": notes_latex,
-        "word_to_legal_para": legal_para_map,
         "filename": filename,
         "word_count": export_word_count,
         "word_minimum": state.word_minimum,

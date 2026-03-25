@@ -34,6 +34,16 @@ logging.getLogger(__name__).setLevel(logging.INFO)
 _HIGHLIGHT_FILTER = Path(__file__).parent / "filters" / "highlight.lua"
 
 
+# C0 controls (except \t \n \r), DEL, and C1 controls — all invalid in LaTeX.
+# Incident 2026-03-25: students paste PDF content containing U+0008 BACKSPACE.
+_CONTROL_CHAR_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]")
+
+
+def _strip_control_chars(text: str) -> str:
+    """Strip C0/C1 control characters that cause LaTeX 'invalid character' errors."""
+    return _CONTROL_CHAR_RE.sub("", text)
+
+
 def _fix_invalid_newlines(latex: str) -> str:
     """Remove \\newline{} commands in invalid table contexts.
 
@@ -318,6 +328,7 @@ async def convert_html_to_latex(
         raise subprocess.CalledProcessError(proc.returncode, cmd, stderr_text)
     # Post-process Pandoc output
     latex = stdout_bytes.decode()
+    latex = _strip_control_chars(latex)  # Strip C0/C1 controls (incident 2026-03-25)
     latex = _fix_invalid_newlines(latex)  # Fix \newline{} in table contexts
     latex = _strip_foreignlanguage(latex)  # Strip lang wrappers from HTML
     latex = _strip_textquotesingle(latex)  # Replace fragile apostrophe (#372)

@@ -59,6 +59,16 @@
     flex-direction: column !important;
 }
 
+/* NiceGUI injects a .nicegui-content wrapper between .q-page and
+   our layout columns.  It defaults to flex: 0 1 auto which breaks
+   the flex chain.  Force it to stretch. */
+.q-page > .nicegui-content {
+    flex: 1 !important;
+    display: flex !important;
+    flex-direction: column !important;
+    min-height: 0 !important;
+}
+
 /* ── Quasar chat message overrides ───────────────────────────────── */
 .roleplay-chat .q-message {
     color: rgb(220, 220, 210);
@@ -133,6 +143,13 @@
 .roleplay-char-name {
     color: rgb(220, 220, 210);
     text-align: center;
+    text-shadow: 0 2px 8px rgba(0, 0, 0, 0.8), 0 0 4px rgba(0, 0, 0, 0.6);
+}
+
+/* ── Input row: make message field fill available width ───────────── */
+.roleplay-card .nicegui-row .nicegui-input.flex-grow {
+    flex: 1 1 0% !important;
+    min-width: 0 !important;
 }
 
 /* ── Upload card styling ─────────────────────────────────────────── */

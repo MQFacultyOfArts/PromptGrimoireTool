@@ -364,7 +364,9 @@ def _build_chat_header(
             .classes("items-center gap-3")
             .props('data-testid="roleplay-chat-header"')
         ):
-            ui.avatar(_AI_AVATAR, size="40px").classes("roleplay-chat-header-avatar")
+            ui.avatar(icon=f"img:{_AI_AVATAR}", color=None, size="40px").classes(
+                "roleplay-chat-header-avatar"
+            )
             char_name_label = (
                 ui.label("").classes("text-h5").style("color: rgb(220, 220, 210);")
             )
@@ -676,7 +678,10 @@ async def roleplay_page() -> None:
             with (
                 ui.row()
                 .classes("roleplay-main-row w-full")
-                .style("flex: 1; min-height: 0;")
+                .style(
+                    "flex: 1; min-height: 0; display: flex;"
+                    " flex-wrap: nowrap; align-items: stretch;"
+                )
             ):
                 _build_char_panel(widgets)
 
@@ -710,12 +715,19 @@ async def roleplay_page() -> None:
                     widgets["scroll_area"] = scroll_area
                     widgets["chat_container"] = chat_container
 
-                    with ui.row().classes("w-full mt-4"):
+                    with (
+                        ui.row()
+                        .classes("w-full mt-4 items-center")
+                        .style("flex-wrap: nowrap;")
+                    ):
                         message_input = (
                             ui.input(placeholder="Type your message...")
                             .classes("flex-grow")
                             .props('outlined data-testid="roleplay-message-input"')
-                            .style("color: rgb(220, 220, 210) !important;")
+                            .style(
+                                "color: rgb(220, 220, 210) !important;"
+                                " flex: 1; min-width: 0;"
+                            )
                         )
 
                         async def on_send(text: str) -> None:

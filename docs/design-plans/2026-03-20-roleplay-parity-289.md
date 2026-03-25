@@ -121,7 +121,10 @@ The roleplay page becomes a two-panel layout:
 class StreamChunk:
     text: str
     ended: bool = False
+    thinking: str | None = None
 ```
+
+The `thinking` field carries extended thinking content from the existing client's thinking event handling. It is `None` when thinking is disabled or for non-thinking chunks.
 
 Normal chunks have `ended=False`. When the marker is detected, it is stripped and the final chunk carries `ended=True`. The UI checks each chunk's `ended` flag. This preserves true streaming (no waiting for full response).
 

@@ -26,7 +26,7 @@ def wait_for_text_walker(page: Page, *, timeout: int = 15000) -> None:
     """
     try:
         page.wait_for_function(
-            "() => document.querySelector('.doc-container')"
+            "() => document.querySelector('[data-testid=\"doc-container\"]')"
             " && window._textNodes && window._textNodes.length > 0",
             timeout=timeout,
         )
@@ -37,7 +37,7 @@ def wait_for_text_walker(page: Page, *, timeout: int = 15000) -> None:
         url = page.url
         diag = page.evaluate(
             "() => {"
-            " const d = document.querySelector('.doc-container');"
+            " const d = document.querySelector('[data-testid=\"doc-container\"]');"
             " return {"
             "   doc: d ? d.innerHTML.substring(0, 200) : 'NO #doc-container',"
             "   walkDefined: typeof walkTextNodes !== 'undefined',"
@@ -80,7 +80,7 @@ def select_chars(page: Page, start_char: int, end_char: int) -> None:
     # have getBoundingClientRect()).
     coords = page.evaluate(
         """([startChar, endChar]) => {
-            const container = document.querySelector('.doc-container');
+            const container = document.querySelector('[data-testid=\"doc-container\"]');
             if (!container || typeof walkTextNodes === 'undefined') return null;
             const nodes = walkTextNodes(container);
             const startRect = charOffsetToRect(nodes, startChar);
@@ -110,7 +110,7 @@ def select_chars(page: Page, start_char: int, end_char: int) -> None:
     # renders outside the viewport (e.g. AustLII inline styles).
     page.evaluate(
         """([startChar, endChar]) => {
-            const container = document.querySelector('.doc-container');
+            const container = document.querySelector('[data-testid=\"doc-container\"]');
             const nodes = walkTextNodes(container);
             const sr = charOffsetToRange(nodes, startChar, endChar);
             if (!sr) return;
@@ -134,7 +134,7 @@ def select_chars(page: Page, start_char: int, end_char: int) -> None:
     # Re-query coordinates after scroll (positions change)
     coords = page.evaluate(
         """([startChar, endChar]) => {
-            const container = document.querySelector('.doc-container');
+            const container = document.querySelector('[data-testid=\"doc-container\"]');
             const nodes = walkTextNodes(container);
             const startRect = charOffsetToRect(nodes, startChar);
             const endRect = charOffsetToRect(nodes, endChar);

@@ -92,7 +92,7 @@ def _execute_pending_scroll(state: PageState) -> None:
 
     js = _render_js(
         t"(function(){{"
-        t"  var c = document.getElementById('{state.doc_container_id}');"
+        t"  var c = document.getElementById({state.doc_container_id});"
         t"  if (!c) return;"
         t"  window._textNodes = walkTextNodes(c);"
         t"  scrollToCharOffset(window._textNodes, {start_char}, {end_char});"
@@ -149,7 +149,7 @@ def _push_highlights_to_client(state: PageState) -> None:
     highlight_json = _RawJS(_build_highlight_json(state))
     js = _render_js(
         t"(function() {{"
-        t"  const c = document.getElementById('{state.doc_container_id}');"
+        t"  const c = document.getElementById({state.doc_container_id});"
         t"  if (c) applyHighlights(c, {highlight_json});"
         t"}})()"
     )

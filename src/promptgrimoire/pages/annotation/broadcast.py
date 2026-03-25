@@ -163,7 +163,7 @@ async def _broadcast_cursor_update(
         )
         js = _render_js(
             t"renderRemoteCursor("
-            t"document.getElementById('{state.doc_container_id}')"
+            t"document.getElementById({state.doc_container_id})"
             t", {client_id}, {char_index}"
             t", {name}, {color})"
         )
@@ -230,7 +230,7 @@ def _replay_existing_cursors(
             color = presence.color
             js = _render_js(
                 t"renderRemoteCursor("
-                t"document.getElementById('{state.doc_container_id}')"
+                t"document.getElementById({state.doc_container_id})"
                 t", {cid}, {char}"
                 t", {resolved_name}, {color})"
             )

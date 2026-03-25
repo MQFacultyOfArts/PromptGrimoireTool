@@ -108,6 +108,83 @@ class TestParaRefInEndnotePath:
 
 
 @requires_pandoc
+class TestParaRefComputedAtExportTime:
+    """para_ref computed from word_to_legal_para when not stored."""
+
+    @pytest.mark.asyncio
+    async def test_empty_para_ref_computed_from_map(self) -> None:
+        r"""Highlights with no para_ref get it computed at export.
+
+        Pre-existing highlights have para_ref=''. The export pipeline
+        must compute it from word_to_legal_para so annotations show
+        paragraph references like [3] in the margin/endnote content.
+        """
+        html = "<p>Some highlighted text in a paragraph.</p>"
+        highlights = [
+            {
+                "id": "h1",
+                "start_char": 0,
+                "end_char": 20,
+                "tag": "issue",
+                "text": "Some highlighted text",
+                "author": "Alice",
+                "created_at": "2026-01-26T10:00:00+00:00",
+                # NO para_ref key — simulates pre-existing highlight
+                "comments": [
+                    {
+                        "author": "Bob",
+                        "text": "A comment.",
+                        "created_at": "2026-01-26T11:00:00+00:00",
+                    },
+                ],
+            },
+        ]
+        tag_colours = {"issue": "#e377c2"}
+        para_map: dict[int, int | None] = {0: 3}
+
+        latex = await convert_html_with_annotations(
+            html=html,
+            highlights=highlights,
+            tag_colours=tag_colours,
+            word_to_legal_para=para_map,
+        )
+        assert r"\annot{" in latex
+        # para_ref [3] must appear even though highlight has no para_ref
+        assert "[3]" in latex
+
+    @pytest.mark.asyncio
+    async def test_stored_para_ref_not_overwritten(self) -> None:
+        r"""Highlights with existing para_ref keep their stored value."""
+        html = "<p>Some highlighted text in a paragraph.</p>"
+        highlights = [
+            {
+                "id": "h1",
+                "start_char": 0,
+                "end_char": 20,
+                "tag": "issue",
+                "text": "Some highlighted text",
+                "author": "Alice",
+                "created_at": "2026-01-26T10:00:00+00:00",
+                "para_ref": "[99]",  # manually set, should be kept
+                "comments": [],
+            },
+        ]
+        tag_colours = {"issue": "#e377c2"}
+        para_map: dict[int, int | None] = {0: 3}
+
+        latex = await convert_html_with_annotations(
+            html=html,
+            highlights=highlights,
+            tag_colours=tag_colours,
+            word_to_legal_para=para_map,
+        )
+        assert r"\annot{" in latex
+        # Stored [99] should win over computed [3]
+        assert "[99]" in latex
+        assert "[3]" not in latex
+
+
+@requires_pandoc
 class TestMixedShortLongAnnotations:
     """Mixed short and long annotations both produce \\annot commands."""
 

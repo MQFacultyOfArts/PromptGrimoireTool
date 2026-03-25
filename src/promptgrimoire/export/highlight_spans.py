@@ -43,6 +43,7 @@ from promptgrimoire.input_pipeline.html_input import (
     find_text_node_offsets,
     walk_and_map,
 )
+from promptgrimoire.input_pipeline.paragraph_map import lookup_para_ref
 
 logger = structlog.get_logger()
 logging.getLogger(__name__).setLevel(logging.INFO)
@@ -261,8 +262,8 @@ def _split_regions_at_boundaries(
 def _build_span_tag(
     region: _HlRegion,
     highlights: list[dict[str, Any]],
-    tag_colours: dict[str, str],  # noqa: ARG001 — API placeholder; colours derived from tag slugs
-    word_to_legal_para: dict[int, int | None] | None,  # noqa: ARG001 — API placeholder; para_ref read from highlight dict
+    tag_colours: dict[str, str],  # noqa: ARG001 — colours derived from tag slugs
+    word_to_legal_para: dict[int, int | None] | None,
 ) -> tuple[str, str]:
     """Build opening and closing ``<span>`` tags for a region.
 
@@ -286,13 +287,26 @@ def _build_span_tag(
     # The value is pre-formatted LaTeX (\annot{...}{...} commands) that the
     # Lua filter emits verbatim as RawInline.
     if region.annots:
+        # Build string-keyed para map for lookup_para_ref (once).
+        str_para_map: dict[str, int] | None = None
+        if word_to_legal_para:
+            str_para_map = {
+                str(k): v for k, v in word_to_legal_para.items() if v is not None
+            }
+
         annot_parts: list[str] = []
         for annot_idx in region.annots:
             hl = highlights[annot_idx]
-            # Use the para_ref already stored in the highlight by
-            # the annotation page (computed via lookup_para_ref at
-            # highlight creation time).
+            # Use stored para_ref if present; otherwise compute
+            # from word_to_legal_para (handles pre-existing highlights
+            # that were created before para_ref was populated).
             para_ref = hl.get("para_ref", "")
+            if not para_ref and str_para_map:
+                para_ref = lookup_para_ref(
+                    str_para_map,
+                    hl.get("start_char", 0),
+                    hl.get("end_char", 0),
+                )
             annot_parts.append(format_annot_latex(hl, para_ref=para_ref))
         annots_latex = "".join(annot_parts)
         # Use single quotes for the attribute since LaTeX uses braces/backslashes.

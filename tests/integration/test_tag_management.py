@@ -167,9 +167,10 @@ class TestDeleteWithCrdtCleanup:
         assert len(result) == 0
 
     @pytest.mark.asyncio
-    async def test_delete_tag_cleans_crdt_highlights(self) -> None:
-        """delete_tag removes CRDT highlights referencing the deleted tag."""
+    async def test_delete_tag_blocked_by_highlights_then_succeeds(self) -> None:
+        """delete_tag is blocked by highlight guard, succeeds after removal."""
         from promptgrimoire.crdt.annotation_doc import AnnotationDocument
+        from promptgrimoire.db.exceptions import HasHighlightsError
         from promptgrimoire.db.tags import create_tag, delete_tag
         from promptgrimoire.db.workspaces import (
             get_workspace,
@@ -188,13 +189,22 @@ class TestDeleteWithCrdtCleanup:
         doc.add_highlight(10, 20, tag_key, "second highlight", "Author")
         await save_workspace_crdt_state(ws_id, doc.get_full_state())
 
-        # Verify highlights exist before deletion
         assert len(doc.get_all_highlights()) == 2
 
-        # Delete the tag (should clean up CRDT)
-        await delete_tag(tag.id)
+        # Guard blocks deletion when highlights exist
+        with pytest.raises(HasHighlightsError):
+            await delete_tag(tag.id)
 
-        # Reload CRDT and verify highlights are removed
+        # Remove highlights from CRDT, persist
+        for hl in list(doc.get_all_highlights()):
+            if hl["tag"] == tag_key:
+                doc.remove_highlight(hl["id"])
+        await save_workspace_crdt_state(ws_id, doc.get_full_state())
+
+        # Now deletion succeeds
+        assert await delete_tag(tag.id) is True
+
+        # Verify tag row is gone and CRDT tag entry is cleaned up
         ws_after = await get_workspace(ws_id)
         assert ws_after is not None
         assert ws_after.crdt_state is not None

@@ -292,7 +292,8 @@ async def delete_tag_group(
         await session.delete(group)
 
     if crdt_doc is not None:
-        crdt_doc.delete_tag_group(group_id)
+        with _safe_crdt_write("delete_tag_group"):
+            crdt_doc.delete_tag_group(group_id)
 
     return True
 

@@ -25,6 +25,7 @@ async def _run(
     output: str,
     inspect: bool,
     email: str,
+    chat: bool,
 ) -> None:
     async with async_playwright() as p:
         browser = await p.chromium.launch()
@@ -42,6 +43,13 @@ async def _run(
         url = f"{base_url}{path}" if path.startswith("/") else path
         await page.goto(url, wait_until="networkidle", timeout=15_000)
         await page.wait_for_timeout(2000)
+
+        # Click "Mock Chat" button if --chat and it exists (dev mode only)
+        if chat:
+            mock_btn = page.get_by_text("Mock Chat")
+            if await mock_btn.count() > 0:
+                await mock_btn.click()
+                await page.wait_for_timeout(500)
 
         # Screenshot
         await page.screenshot(path=output)
@@ -116,6 +124,7 @@ def main(
     ),
     inspect: bool = typer.Option(False, help="Dump flex chain diagnostics"),
     email: str = typer.Option("instructor@uni.edu", help="Mock auth email"),
+    chat: bool = typer.Option(False, help="Inject mock chat exchange (roleplay only)"),
 ) -> None:
     """Take a screenshot of a page on a running dev server."""
     asyncio.run(
@@ -127,6 +136,7 @@ def main(
             output=output,
             inspect=inspect,
             email=email,
+            chat=chat,
         )
     )
 

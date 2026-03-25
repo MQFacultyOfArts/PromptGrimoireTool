@@ -80,6 +80,7 @@ library references during development.
 - [ui.run() parameters, environment variables, native mode configuration](nicegui/configuration.md)
 - [Server hosting, Docker, HTTPS/SSL, reverse proxy (nginx, traefik)](nicegui/deployment.md)
 - [Event handler types and GenericEventArguments for ui.on() handlers](nicegui/events.md)
+- [NiceGUI Layout & Viewport: Lessons from the Roleplay Page](nicegui/layout-viewport.md)
 - [NiceGUI 3.x client lifecycle events - on_connect, on_disconnect, on_delete, reconnect_timeout](nicegui/lifecycle.md)
 - [NiceGUI Multi-Client UI Synchronization](nicegui/multi-client-sync.md)
 - [Production memory management, client lifecycle, storage durability, and known leak patterns for NiceGUI 3.9.0](nicegui/production-memory-management.md)

@@ -129,6 +129,9 @@ library references during development.
 - [Investigation: #377 Page Load Latency](postmortems/2026-03-18-page-load-latency-377.md)
 - [Causal Analysis: NiceGUI Slot Deletion Race (#369)](postmortems/2026-03-20-slot-deletion-investigation-369.md)
 - [Post-Mortem: 2026-03-21 PDF Export Failure + Journal PII Leak](postmortems/2026-03-21-export-failure-pii-leak.md)
+- [Investigation: #377 Workspace Performance — Large Document Baseline](postmortems/2026-03-22-workspace-performance-377.md)
+- [WIP Handoff: #377 Workspace Performance — Epoch Analysis](postmortems/2026-03-24-377-wip-handoff.md)
+- [Clobber Scan Prompt — for Codex/Gemini](postmortems/2026-03-24-clobber-scan-prompt.md)
 - [PromptGrimoire Incident Analysis Playbook](postmortems/incident-analysis-playbook.md)
 
 ## prds

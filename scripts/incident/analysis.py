@@ -12,6 +12,17 @@ _CRASH_BOUNCE_THRESHOLD = 300  # seconds
 
 LOGIN_EVENT_PATTERN = "Login successful%"
 
+# Extract the last application call site from a traceback.
+# e.g. File ".../src/promptgrimoire/pages/foo.py", line 42, in bar
+_CALLSITE_RE = re.compile(
+    r'File "[^"]*src/promptgrimoire/(.+?)", line (\d+), in (\w+)',
+)
+
+# JS timeout event patterns
+_JS_TIMEOUT_EVENT = "JavaScript did not respond%"
+_TASK_EXCEPTION_EVENT = "Task exception was never retrieved%"
+_JS_TIMEOUT_MARKER = "JavaScript did not respond"
+
 
 def extract_epochs(
     conn: sqlite3.Connection,
@@ -453,6 +464,76 @@ def query_epoch_errors(
             }
         )
     return result
+
+
+def _extract_callsite(exception_tb: str | None) -> str:
+    """Extract the last application-level call site from a traceback.
+
+    Finds the last frame inside ``src/promptgrimoire/`` and returns
+    a normalised string like ``pages/annotation/cards.py:558 toggle_detail``.
+    Returns ``"unknown"`` if no application frame is found.
+    """
+    if not exception_tb:
+        return "unknown"
+    matches = _CALLSITE_RE.findall(exception_tb)
+    if not matches:
+        return "unknown"
+    # Last match is the deepest application frame before nicegui
+    path, line, func = matches[-1]
+    return f"{path}:{line} {func}"
+
+
+def query_epoch_js_timeouts(
+    conn: sqlite3.Connection,
+    start_utc: str,
+    end_utc: str,
+    duration_seconds: float,
+) -> dict:
+    """Query JS timeout events within an epoch, grouped by call site.
+
+    Covers both direct ``JavaScript did not respond`` errors and
+    ``Task exception was never retrieved`` variants that wrap them.
+    Returns a dict with ``total``, ``per_hour``, and ``by_callsite``
+    (list of dicts sorted by count descending).
+    """
+    rows = conn.execute(
+        "SELECT json_extract(extra_json, '$.exception')"
+        " FROM jsonl_events"
+        " WHERE ts_utc >= ? AND ts_utc <= ?"
+        " AND ("
+        "   event LIKE ?"
+        "   OR (event LIKE ? AND extra_json LIKE ?)"
+        " )",
+        (
+            start_utc,
+            end_utc,
+            _JS_TIMEOUT_EVENT,
+            _TASK_EXCEPTION_EVENT,
+            f"%{_JS_TIMEOUT_MARKER}%",
+        ),
+    ).fetchall()
+
+    callsite_counts: dict[str, int] = {}
+    for (exception_tb,) in rows:
+        site = _extract_callsite(exception_tb)
+        callsite_counts[site] = callsite_counts.get(site, 0) + 1
+
+    total = sum(callsite_counts.values())
+    is_crash = duration_seconds < _CRASH_BOUNCE_THRESHOLD
+    per_hour = None if is_crash else total / (duration_seconds / 3600)
+
+    by_callsite = sorted(
+        [{"callsite": site, "count": cnt} for site, cnt in callsite_counts.items()],
+        key=lambda d: d["count"],
+        reverse=True,
+    )
+
+    return {
+        "total": total,
+        "per_hour": per_hour,
+        "is_crash_bounce": is_crash,
+        "by_callsite": by_callsite,
+    }
 
 
 def _query_nosrv_clustering(
@@ -1005,6 +1086,7 @@ def _render_epoch_analysis(
     lines.append("")
 
     _render_epoch_errors(lines, analysis.get("errors", []))
+    _render_epoch_js_timeouts(lines, analysis.get("js_timeouts"))
     _render_epoch_error_landscape(lines, analysis.get("error_landscape"))
     _render_epoch_haproxy(lines, analysis.get("haproxy", {}))
     _render_epoch_pool_config(lines, analysis.get("pool_config"))
@@ -1031,6 +1113,54 @@ def _render_epoch_errors(lines: list[str], errors: list[dict]) -> None:
             ]
         )
     lines.extend(_md_table(headers, rows))
+    lines.append("")
+
+
+def _render_epoch_js_timeouts(
+    lines: list[str],
+    js_data: dict | None,
+) -> None:
+    """Render JS timeout call site breakdown for an epoch."""
+    if not js_data or js_data.get("total", 0) == 0:
+        return
+    total = js_data["total"]
+    per_hr = js_data.get("per_hour")
+    rate_str = f"{per_hr:.1f}/hr" if per_hr is not None else "—"
+    lines.append(
+        f"**JS Timeouts:** {total} ({rate_str})",
+    )
+    lines.append("")
+    by_site = js_data.get("by_callsite", [])
+    if by_site:
+        headers = ["Call Site", "Count", "%"]
+        rows: list[list[str]] = []
+        for cs in by_site[:5]:
+            pct = cs["count"] / total * 100
+            rows.append(
+                [
+                    f"`{cs['callsite']}`",
+                    str(cs["count"]),
+                    f"{pct:.0f}%",
+                ]
+            )
+        shown = sum(cs["count"] for cs in by_site[:5])
+        if shown < total:
+            remainder = total - shown
+            pct = remainder / total * 100
+            rows.append(
+                [
+                    "*(other)*",
+                    str(remainder),
+                    f"{pct:.0f}%",
+                ]
+            )
+        lines.extend(
+            _md_table(
+                headers,
+                rows,
+                ["l", "r", "r"],
+            ),
+        )
     lines.append("")
 
 

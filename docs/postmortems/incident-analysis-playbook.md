@@ -2,7 +2,7 @@
 
 *Standing playbook for production incident investigation. Applies the methodology from the `incident-analysis` skill to PromptGrimoire's specific infrastructure.*
 
-*Last updated: 2026-03-20. Created from lessons learned during the 2026-03-16 morning and afternoon incidents. Updated with automated tooling (`collect-telemetry.sh`, `incident_db.py`) and corrected pool configuration.*
+*Last updated: 2026-03-24. Created from lessons learned during the 2026-03-16 morning and afternoon incidents. Updated with automated tooling (`collect-telemetry.sh`, `incident_db.py`), corrected pool configuration, JS timeout epoch analysis, and dataset building workflow.*
 
 ## Log Sources
 
@@ -97,6 +97,46 @@ scp "grimoire.drbbs.org:/tmp/haproxy-YYYYMMDD.log" /tmp/
 scp "grimoire.drbbs.org:/tmp/pglog-YYYYMMDD.log" /tmp/
 ```
 
+## Building the Dataset
+
+After collecting telemetry, build the incident database in this order. Each step depends on the previous one.
+
+```bash
+# 1. Ingest the tarball (or extracted directory) — creates the DB and loads all log sources
+uv run scripts/incident_db.py ingest /tmp/telemetry-YYYYMMDD-HHMM.tar.gz --db /tmp/incident.db
+
+# 2. Fetch GitHub PR metadata (enriches epochs with PR titles/authors)
+uv run scripts/incident_db.py github \
+  --start "YYYY-MM-DD HH:MM" --end "YYYY-MM-DD HH:MM" --db /tmp/incident.db
+
+# 3. Verify provenance — check all sources ingested correctly
+uv run scripts/incident_db.py sources --db /tmp/incident.db
+
+# 4. Generate the operational review report
+uv run scripts/incident_db.py review --db /tmp/incident.db \
+  --counts-json /tmp/db-snapshot.json --output /tmp/review.md
+```
+
+**Directory ingest:** If the tarball was already extracted, pass the directory instead:
+```bash
+uv run scripts/incident_db.py ingest /tmp/telemetry-377/ --db /tmp/incident.db
+```
+
+**WAL checkpoint:** The SQLite DB uses WAL mode. After a large ingest (~5M+ events), the DB file may appear empty to other connections until the WAL is checkpointed. If you see 0 rows after ingest, run:
+```bash
+sqlite3 /tmp/incident.db "PRAGMA wal_checkpoint(TRUNCATE)"
+```
+
+**Re-ingestion is safe:** SHA256 dedup on the `sources` table means re-running ingest on the same data is a no-op.
+
+**Beszel metrics** (optional, requires SSH tunnel to monitoring hub):
+```bash
+ssh -L 8090:localhost:8090 brian.fedarch.org  # separate terminal
+uv run scripts/incident_db.py beszel \
+  --start "YYYY-MM-DD HH:MM" --end "YYYY-MM-DD HH:MM" \
+  --hub http://localhost:8090 --db /tmp/incident.db
+```
+
 ## Static DB Counts
 
 Snapshot the production database state for the review report. Run on the server or via ssh:
@@ -163,6 +203,12 @@ uv run scripts/incident_db.py github \
 
 # Generate operational review report (with optional DB counts)
 uv run scripts/incident_db.py review --db incident.db --counts-json counts.json --output report.md
+
+# JS timeout epoch analysis — call site breakdown per deploy
+uv run scripts/incident_db.py js-timeouts --db incident.db --output js-timeouts.md
+
+# JS timeout analysis with more call sites per epoch
+uv run scripts/incident_db.py js-timeouts --db incident.db --top-n 10
 ```
 
 ## JSONL Analysis (Manual)

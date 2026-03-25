@@ -6,13 +6,22 @@ Students paste content from PDFs containing C0/C1 control characters
 
 See incident 2026-03-25: two students hit "Text line contains an invalid
 character" errors from ^^H (backspace) in case citations.
+
+Fixture: fixtures/pdf_with_control_chars.html — extracted from 66.pdf
+(Adelaide Law Review article) via pymupdf4llm + pandoc, reproducing
+the exact production failure pattern: page numbers with embedded
+backspace characters in running headers.
 """
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from promptgrimoire.export.pandoc import convert_html_to_latex
+
+_FIXTURES = Path(__file__).parent / "fixtures"
 
 
 class TestControlCharStripping:
@@ -64,3 +73,21 @@ class TestControlCharStripping:
         latex = await convert_html_to_latex(html)
         assert "caf" in latex
         assert "ve" in latex
+
+    @pytest.mark.asyncio
+    async def test_real_pdf_fixture(self) -> None:
+        """Fixture from 66.pdf (Adelaide Law Review) with backspace in headers.
+
+        The PDF typesetting embeds U+0008 BACKSPACE between page numbers
+        and running header text. pymupdf4llm extracts it faithfully,
+        pandoc passes it through to HTML, and it must be stripped before
+        LaTeX compilation.
+        """
+        html = (_FIXTURES / "pdf_with_control_chars.html").read_text()
+        assert "\x08" in html or "&#x8;" in html, "Fixture must contain backspace"
+        latex = await convert_html_to_latex(html)
+        assert "\x08" not in latex
+        # Content survived the strip
+        assert "CALCULATING CULTURAL" in latex
+        assert "880" in latex
+        assert "Indigenous" in latex

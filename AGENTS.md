@@ -55,6 +55,7 @@ uv run grimoire e2e run --serial        # E2E tests in serial mode (single serve
 uv run grimoire e2e all                 # Run all 8 lanes: js, bats, unit, integration, playwright, nicegui, smoke, blns+extra
 uv run grimoire e2e changed             # Smart selection E2E tests
 uv run grimoire e2e cards               # Card-specific E2E tests (@pytest.mark.cards)
+uv run grimoire e2e perf                # Performance baseline tests (@pytest.mark.perf)
 
 # Code Quality
 uv run ruff check .         # Linting
@@ -105,7 +106,7 @@ Before modifying core systems, reference the detailed documentation in the `docs
 - Collaboration (CRDT): `docs/ARCHITECTURE.md`
 - Web UI & Routing: `docs/annotation-architecture.md`
 - Input Pipeline (HTML/DOCX/PDF): `docs/input-pipeline.md`
-- Export Pipeline: `docs/export.md`
+- Export Pipeline (highlights, paragraph numbering, endnote cross-refs): `docs/export.md`
 - Structured Logging: `docs/logging.md`
 - Testing: `docs/testing.md`
 
@@ -126,6 +127,8 @@ Before modifying core systems, reference the detailed documentation in the `docs
 **CRDT dual-write safety** (`db/tags.py`): All CRDT writes in the tags module are wrapped in `_safe_crdt_write(operation)` context manager. DB state is authoritative; CRDT failures are logged at ERROR (triggering Discord alerting) but suppressed to avoid corrupting the DB transaction. CRDT state self-heals on next page load.
 
 **Tag import idempotency** (`db/tags.py`): `import_tags_from_workspace` uses PostgreSQL `ON CONFLICT DO NOTHING` for both groups and tags instead of pre-checking existing names. Returns `ImportResult` dataclass with `created_tags`, `skipped_tags`, `created_groups`, `skipped_groups` counts. Re-importing the same source is safe and idempotent.
+
+**Paragraph numbering pipeline** (`input_pipeline/paragraph_map.py`, `export/pandoc.py`, `export/filters/highlight.lua`, `export/promptgrimoire-export.sty`): Two numbering modes -- auto-number (sequential block elements, skipping headers and list items) and source-number (`<li value="N">` from AustLII-style documents, detected by `detect_source_numbering()`). `build_paragraph_map()` walks document HTML mirroring `extract_text_from_html()` traversal, producing char-offset-to-paragraph-number mappings. `inject_paragraph_markers_for_export()` inserts `<span data-paranumber="N">` markers into export HTML. The Lua filter converts these to `\paranumber{N}` LaTeX commands rendered as grey margin numbers. `lookup_para_ref()` computes `[N]` or `[N]-[M]` paragraph references for highlights at export time (fallback for highlights created before `para_ref` was populated). Long annotations use bidirectional `\label`/`\hyperref` cross-references between inline superscripts and endnote entries, with a `\linkicon` visible affordance. Short annotations (margin path) have no cross-reference links.
 
 **Navigator FTS** (`db/navigator.py`): `search_navigator()` runs a three-leg UNION ALL: (1) document content, (2) CRDT search_text, (3) metadata (owner name, workspace/activity/week titles, course code/name). Uses prefix matching via `to_tsquery` with `:*` suffixes. Metadata snippets are labelled ("Title: ... | Author: ... | Unit: ...").
 

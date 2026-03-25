@@ -13,7 +13,7 @@ they reveal where the test suite is redundant or incomplete.
 > user-docs-rodney-showboat-207,
 > platform-handlers-openrouter-chatcraft-209, docs-platform-208,
 > tags-214, word-count-limits-47, wargame-schema-294, card-layout-236,
-> pdf-export-filename-271, and tag-deletion-guards-413 branches.
+> pdf-export-filename-271, tag-deletion-guards-413, and pdf-para-numbering-417 branches.
 > Existing tests from before these branches are not yet documented here.
 
 ## Highlight Span Insertion (Pre-Pandoc)
@@ -242,6 +242,220 @@ they reveal where the test suite is redundant or incomplete.
 5. Import export_annotation_pdf from pdf_export
 
 **Verifies:** Package-level re-exports work; no broken imports after restructuring
+
+## Paragraph Marker Injection (Export)
+
+### None word_to_legal_para returns HTML unchanged
+**File:** tests/unit/export/test_paragraph_markers.py::TestAC1_2_NoneParaMap
+1. Pass HTML to inject_paragraph_markers_for_export with None para map
+2. Assert output is identical to input
+3. Repeat with multi-paragraph HTML
+
+**Verifies:** AC1.2 -- None para map is a no-op
+
+### Empty word_to_legal_para returns HTML unchanged
+**File:** tests/unit/export/test_paragraph_markers.py::TestAC1_3_EmptyParaMap
+1. Pass HTML with empty dict para map
+2. Assert output is identical to input
+
+**Verifies:** AC1.3 -- empty dict para map is a no-op
+
+### All-None values in para map skip injection
+**File:** tests/unit/export/test_paragraph_markers.py::TestAllNoneValues
+1. Pass HTML with para_map where all values are None
+2. Assert output is identical to input (empty-after-filter guard)
+
+**Verifies:** Para map entries with None values are filtered out before injection
+
+### Markers inserted at start of each auto-numbered paragraph
+**File:** tests/unit/export/test_paragraph_markers.py::TestAC1_1_MarkersInserted
+1. Build para_map for 2-paragraph HTML with char offsets
+2. Call inject_paragraph_markers_for_export
+3. Parse output, find all `<span data-paranumber>` markers
+4. Assert 2 markers with numbers ["1", "2"]
+5. Verify markers are empty spans (no text content)
+6. Verify 3-paragraph case produces markers ["1", "2", "3"]
+7. Verify None values in para_map are skipped (no marker for that entry)
+
+**Verifies:** AC1.1 -- each mapped paragraph gets exactly one empty paranumber marker span
+
+### Single paragraph gets one marker
+**File:** tests/unit/export/test_paragraph_markers.py::TestSingleParagraph
+1. Single `<p>` with para_map {0: 1}
+2. Assert exactly one marker with data-paranumber="1"
+
+**Verifies:** Edge case -- single paragraph still gets a marker
+
+### Mixed block elements get markers
+**File:** tests/unit/export/test_paragraph_markers.py::TestMixedBlockElements
+1. HTML with `<p>` and `<blockquote>`
+2. Assert both get paranumber markers
+
+**Verifies:** Markers apply to all block elements, not just `<p>`
+
+### br-br pseudo-paragraphs get markers
+**File:** tests/unit/export/test_paragraph_markers.py::TestBrBrPseudoParagraphs
+1. HTML with `<p>First.<br><br>Second.</p>` and para_map for both
+2. Assert markers ["1", "2"] present
+
+**Verifies:** br-br splits within a block element are treated as separate paragraphs for marker injection
+
+### Paranumber marker appears before highlight span at position 0
+**File:** tests/unit/export/test_paragraph_markers.py::TestAC1_6_MarkerBeforeHighlight
+1. HTML with a data-hl highlight span starting at char 0
+2. Inject paranumber marker
+3. Parse DOM, find positions of paranumber and highlight spans
+4. Assert paranumber index < highlight index in child order
+
+**Verifies:** AC1.6 -- paranumber markers come before highlights in DOM order (Pandoc AST ordering)
+
+### Pandoc round-trip preserves paranumber spans
+**File:** tests/unit/export/test_paragraph_markers.py::TestPandocRoundTrip (smoke)
+1. Feed `<span data-paranumber="1"></span>` through pandoc --from html --to json
+2. Walk JSON AST to find Span nodes with "paranumber" attribute
+3. Assert span preserved with value "1"
+4. Repeat with 3 paranumber spans in separate paragraphs
+5. Verify paranumber span coexists with highlight span in same paragraph
+
+**Verifies:** Pandoc preserves empty attributed spans (data- prefix stripped in AST: "data-paranumber" becomes "paranumber")
+
+## Paranumber LaTeX Rendering (Smoke)
+
+### Paranumber spans produce \paranumber{N} in LaTeX
+**File:** tests/unit/export/test_paranumber_latex.py::TestParanumberInLatex (smoke)
+1. Pre-inject paranumber spans into HTML
+2. Call convert_html_with_annotations (Pandoc + Lua filter)
+3. Assert `\paranumber{1}` and `\paranumber{2}` in LaTeX output
+4. Verify HTML without paranumber spans produces no \paranumber commands
+5. Verify paranumber coexists with highlight spans (both render)
+
+**Verifies:** AC1.4 -- Lua filter converts paranumber AST spans to \paranumber{N} commands
+
+### Full pipeline from paragraph map to LaTeX
+**File:** tests/unit/export/test_paranumber_latex.py::TestFullPipelineParanumber (smoke)
+1. Start with plain HTML and a word_to_legal_para map
+2. inject_paragraph_markers_for_export -> verify data-paranumber in HTML (AC1.1)
+3. convert_html_with_annotations -> verify \paranumber{N} in LaTeX (AC1.4)
+4. None para map -> no markers -> no \paranumber in LaTeX
+
+**Verifies:** AC1.1 + AC1.4 -- end-to-end: paragraph map -> HTML markers -> LaTeX commands
+
+### Paranumber compiles to PDF without errors
+**File:** tests/unit/export/test_paranumber_latex.py::TestParanumberCompilation (latexmk)
+1. Generate .tex from HTML with 3 paranumber markers
+2. Verify .tex contains \paranumber{1}, {2}, {3}
+3. Compile with latexmk
+4. Assert PDF exists and has non-zero size
+
+**Verifies:** AC1.5 -- \paranumber command compiles without LaTeX errors
+
+## Paragraph Numbering Edge Cases
+
+### Empty/None paragraph map edge cases
+**File:** tests/unit/export/test_paragraph_numbering_edge_cases.py::TestEmptyParagraphMap
+1. Empty dict -> HTML unchanged
+2. None -> HTML unchanged
+
+**Verifies:** AC1.3 -- defensive guards for empty/None para maps (overlaps with test_paragraph_markers)
+
+### Paranumber works without annotations
+**File:** tests/unit/export/test_paragraph_numbering_edge_cases.py::TestNoAnnotationsWithParanumber
+1. Run compute_highlight_spans with no highlights -> no data-hl in output
+2. Run inject_paragraph_markers_for_export with para_map -> markers present
+
+**Verifies:** Paragraph numbering is independent of the annotation pipeline
+
+### br-br pseudo-paragraphs get paranumber
+**File:** tests/unit/export/test_paragraph_numbering_edge_cases.py::TestBrBrPseudoParagraphMarkers
+1. HTML with br-br split and matching para_map
+2. Assert both markers present
+
+**Verifies:** br-br edge case (overlaps with test_paragraph_markers)
+
+### para_ref survives endnote \write path
+**File:** tests/unit/export/test_paragraph_numbering_edge_cases.py::TestParaRefInEndnotePath (smoke)
+1. Highlight with para_ref="[3]" and a comment (triggers endnote)
+2. Convert to LaTeX
+3. Assert \annot{ present and "[3]" in output
+
+**Verifies:** AC3.2 -- paragraph reference text survives LaTeX's deferred \write expansion
+
+### para_ref computed at export time from word_to_legal_para
+**File:** tests/unit/export/test_paragraph_numbering_edge_cases.py::TestParaRefComputedAtExportTime (smoke)
+1. Highlight with NO para_ref key + word_to_legal_para={0: 3}
+2. Convert to LaTeX with word_to_legal_para parameter
+3. Assert "[3]" in LaTeX output (computed from map)
+4. Repeat with highlight that HAS para_ref="[99]" -- assert [99] wins, [3] absent
+
+**Verifies:** Export-time fallback computation of para_ref for pre-existing highlights; stored para_ref takes precedence
+
+### Short-only annotations have no cross-reference links
+**File:** tests/unit/export/test_paragraph_numbering_edge_cases.py::TestShortOnlyAnnotationsNoCrossref (smoke)
+1. Short annotation (no comment) -> convert to LaTeX
+2. Assert \annot{ present (positive)
+3. Assert \label{annot-endnote: NOT present (negative)
+
+**Verifies:** AC2.4 -- short annotations use margin path, no endnote cross-references
+
+## Endnote Cross-References (Static Analysis)
+
+### \annot long path has bidirectional label/hyperref
+**File:** tests/unit/export/test_endnote_crossref.py::TestAnnotMacroLongPath
+1. Read .sty file, extract \annot macro body
+2. Assert \phantomsection\label{annot-inline:\theannotnum} present (inline label)
+3. Assert \hyperref[annot-endnote:\theannotnum] present (inline -> endnote link)
+4. Assert \noexpand\label{annot-endnote:\theannotnum} in \write block (endnote label)
+5. Assert \noexpand\hyperref[annot-inline:\theannotnum] in \write block (endnote -> inline back-link)
+
+**Verifies:** AC2.1 + AC2.2 -- long annotations have bidirectional cross-reference pairs
+
+### \annot short path has NO label/hyperref
+**File:** tests/unit/export/test_endnote_crossref.py::TestAnnotMacroShortPath
+1. Split \annot at \else to isolate short path
+2. Assert \label{annot-inline: NOT in short path
+3. Assert \hyperref[annot-endnote: NOT in short path
+
+**Verifies:** AC2.4 -- short annotations bypass cross-reference machinery
+
+### \annotref has inline label and hyperref
+**File:** tests/unit/export/test_endnote_crossref.py::TestAnnotrefMacro
+1. Extract \annotref macro from .sty
+2. Assert \phantomsection\label{annot-inline:} and \hyperref[annot-endnote:] present
+
+**Verifies:** AC2.3 -- table-safe inline variant has cross-references
+
+### \annotendnote has endnote label and back-link
+**File:** tests/unit/export/test_endnote_crossref.py::TestAnnotendnoteMacro
+1. Extract \annotendnote macro from .sty
+2. Assert \noexpand\label{annot-endnote:} and \noexpand\hyperref[annot-inline:] in \write block
+
+**Verifies:** AC2.3 -- table-safe endnote variant has cross-references
+
+### Link affordance icons present on cross-references
+**File:** tests/unit/export/test_endnote_crossref.py::TestLinkAffordance
+1. Inline superscript in \annot long path has \linkicon (visible click cue)
+2. Margin stub ("see endnotes") does NOT have \linkicon (no false affordance)
+3. Endnote back-link has \noexpand\linkicon
+4. \annotref has \linkicon
+5. \annotendnote has \noexpand\linkicon
+6. \linkicon command is defined in .sty
+
+**Verifies:** Cross-reference links have visible affordance; non-link elements do not
+
+### Short annotations produce no label/hyperref in Pandoc output
+**File:** tests/unit/export/test_endnote_crossref.py::TestShortAnnotationNoLinks (smoke)
+1. Short annotation (no comments) -> convert_html_with_annotations
+2. Assert \annot{ present (positive)
+3. Assert no \label{annot-inline: or \hyperref[annot-endnote: in .tex source
+
+**Verifies:** AC2.4 -- end-to-end confirmation that short annotations have no cross-ref commands
+
+### Cross-reference compilation test
+**File:** tests/unit/export/test_endnote_crossref.py::TestCrossrefCompilation (latexmk)
+1. Long annotation with detailed comment -> generate_tex_only -> compile_latex
+2. Assert PDF exists with non-zero size
+
+**Verifies:** Bidirectional \label/\hyperref pairs compile without LaTeX errors (two-pass latexmk)
 
 ## Export Resilience
 

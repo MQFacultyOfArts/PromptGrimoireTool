@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 import re
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
@@ -34,6 +35,7 @@ logger = structlog.get_logger()
 logging.getLogger(__name__).setLevel(logging.WARNING)
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
     from uuid import UUID
 
     from sqlalchemy.ext.asyncio import AsyncSession
@@ -42,6 +44,20 @@ if TYPE_CHECKING:
 
 
 _HEX_COLOR_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
+
+
+@contextmanager
+def _safe_crdt_write(operation: str) -> Iterator[None]:
+    """Guard CRDT dual-writes: log and suppress failures.
+
+    DB state is authoritative. CRDT failures are programming errors
+    (wrong types, missing keys) that self-heal on next page load.
+    Logged at ERROR level, which triggers Discord alerting.
+    """
+    try:
+        yield
+    except Exception:
+        logger.exception("crdt_dual_write_failed", operation=operation)
 
 
 def _validate_hex_color(color: str, *, nullable: bool = False) -> None:
@@ -144,17 +160,12 @@ async def create_tag_group(
         raise DuplicateNameError(msg)
 
     if crdt_doc is not None:
-        try:
+        with _safe_crdt_write("create_tag_group"):
             crdt_doc.set_tag_group(
                 group_id=group.id,
                 name=group.name,
                 order_index=group.order_index,
                 colour=group.color,
-            )
-        except Exception:
-            logger.exception(
-                "crdt_dual_write_failed",
-                operation="create_tag_group",
             )
 
     return group
@@ -244,12 +255,13 @@ async def update_tag_group(
         raise DuplicateNameError(msg)
 
     if crdt_doc is not None:
-        crdt_doc.set_tag_group(
-            group_id=group.id,
-            name=group.name,
-            order_index=group.order_index,
-            colour=group.color,
-        )
+        with _safe_crdt_write("update_tag_group"):
+            crdt_doc.set_tag_group(
+                group_id=group.id,
+                name=group.name,
+                order_index=group.order_index,
+                colour=group.color,
+            )
 
     return group
 
@@ -381,7 +393,7 @@ async def create_tag(
         raise DuplicateNameError(msg)
 
     if crdt_doc is not None:
-        try:
+        with _safe_crdt_write("create_tag"):
             crdt_doc.set_tag(
                 tag_id=tag.id,
                 name=tag.name,
@@ -390,11 +402,6 @@ async def create_tag(
                 group_id=tag.group_id,
                 description=tag.description,
                 highlights=[],
-            )
-        except Exception:
-            logger.exception(
-                "crdt_dual_write_failed",
-                operation="create_tag",
             )
 
     return tag
@@ -453,17 +460,18 @@ def _apply_tag_field_updates(
 
 def _sync_tag_to_crdt(tag: Tag, crdt_doc: AnnotationDocument) -> None:
     """Write the current tag state to CRDT, preserving existing highlights."""
-    existing = crdt_doc.get_tag(tag.id)
-    highlights = existing.get("highlights", []) if existing else []
-    crdt_doc.set_tag(
-        tag_id=tag.id,
-        name=tag.name,
-        colour=tag.color,
-        order_index=tag.order_index,
-        group_id=tag.group_id,
-        description=tag.description,
-        highlights=highlights,
-    )
+    with _safe_crdt_write("sync_tag_to_crdt"):
+        existing = crdt_doc.get_tag(tag.id)
+        highlights = existing.get("highlights", []) if existing else []
+        crdt_doc.set_tag(
+            tag_id=tag.id,
+            name=tag.name,
+            colour=tag.color,
+            order_index=tag.order_index,
+            group_id=tag.group_id,
+            description=tag.description,
+            highlights=highlights,
+        )
 
 
 async def update_tag(
@@ -619,33 +627,35 @@ def _sync_tag_order_index_to_crdt(
     tag_ids: list[UUID], crdt_doc: AnnotationDocument
 ) -> None:
     """Update order_index for each tag in the CRDT doc."""
-    for idx, tag_id in enumerate(tag_ids):
-        existing = crdt_doc.get_tag(tag_id)
-        if existing:
-            crdt_doc.set_tag(
-                tag_id=tag_id,
-                name=existing["name"],
-                colour=existing["colour"],
-                order_index=idx,
-                group_id=existing.get("group_id"),
-                description=existing.get("description"),
-                highlights=existing.get("highlights", []),
-            )
+    with _safe_crdt_write("sync_tag_order_to_crdt"):
+        for idx, tag_id in enumerate(tag_ids):
+            existing = crdt_doc.get_tag(tag_id)
+            if existing:
+                crdt_doc.set_tag(
+                    tag_id=tag_id,
+                    name=existing["name"],
+                    colour=existing["colour"],
+                    order_index=idx,
+                    group_id=existing.get("group_id"),
+                    description=existing.get("description"),
+                    highlights=existing.get("highlights", []),
+                )
 
 
 def _sync_group_order_index_to_crdt(
     group_ids: list[UUID], crdt_doc: AnnotationDocument
 ) -> None:
     """Update order_index for each tag group in the CRDT doc."""
-    for idx, gid in enumerate(group_ids):
-        existing = crdt_doc.get_tag_group(gid)
-        if existing:
-            crdt_doc.set_tag_group(
-                group_id=gid,
-                name=existing["name"],
-                order_index=idx,
-                colour=existing.get("colour"),
-            )
+    with _safe_crdt_write("sync_group_order_to_crdt"):
+        for idx, gid in enumerate(group_ids):
+            existing = crdt_doc.get_tag_group(gid)
+            if existing:
+                crdt_doc.set_tag_group(
+                    group_id=gid,
+                    name=existing["name"],
+                    order_index=idx,
+                    colour=existing.get("colour"),
+                )
 
 
 async def reorder_tags(
@@ -966,13 +976,8 @@ async def import_tags_from_workspace(
             )
 
     if crdt_doc is not None:
-        try:
+        with _safe_crdt_write("import_tags"):
             _import_crdt_dual_write(crdt_doc, result_obj)
-        except Exception:
-            logger.exception(
-                "crdt_dual_write_failed",
-                operation="import_tags",
-            )
 
     return result_obj
 

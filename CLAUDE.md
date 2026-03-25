@@ -227,7 +227,7 @@ src/promptgrimoire/
 │   ├── crdt_extraction.py # Pure CRDT-to-text extraction for FTS indexing
 │   ├── navigator.py     # Navigator query (UNION ALL CTE), NavigatorRow, SearchHit, metadata FTS
 │   ├── roles.py         # Cached staff role queries
-│   ├── tags.py          # Tag/TagGroup CRUD, import, reorder, CRDT cleanup
+│   ├── tags.py          # Tag/TagGroup CRUD, import (ImportResult), reorder, deletion guards, CRDT cleanup
 │   ├── wargames.py      # Wargame team CRUD, ACL, roster ingestion, turn cycle orchestration
 │   ├── workspace_documents.py  # Document CRUD (add, list, reorder, update content)
 │   └── workspaces.py    # Workspace CRUD (create, get)

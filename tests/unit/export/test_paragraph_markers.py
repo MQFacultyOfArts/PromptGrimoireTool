@@ -72,6 +72,22 @@ class TestAC1_3_EmptyParaMap:
 
 
 # ---------------------------------------------------------------------------
+# All-None values guard: word_to_legal_para with only None values
+# ---------------------------------------------------------------------------
+
+
+class TestAllNoneValues:
+    """Given word_to_legal_para where all values are None, HTML is unchanged."""
+
+    def test_all_none_values_skips_injection(self) -> None:
+        """All-None para_map hits the empty-after-filter guard; HTML unchanged."""
+        html = "<p>Hello world</p>"
+        para_map: dict[int, int | None] = {0: None, 5: None}
+        result = inject_paragraph_markers_for_export(html, para_map)
+        assert result == html
+
+
+# ---------------------------------------------------------------------------
 # AC1.1: Markers inserted at start of each auto-numbered paragraph
 # ---------------------------------------------------------------------------
 
@@ -166,9 +182,7 @@ class TestBrBrPseudoParagraphs:
         para_map: dict[int, int | None] = {0: 1, 13: 2}
         result = inject_paragraph_markers_for_export(html, para_map)
         numbers = _marker_numbers(result)
-        assert len(numbers) >= 1
-        # At minimum, the block-level paragraph should get a marker
-        assert "1" in numbers
+        assert numbers == ["1", "2"]
 
 
 # ---------------------------------------------------------------------------

@@ -113,6 +113,16 @@ CREATE INDEX IF NOT EXISTS idx_pg_ts ON pg_events(ts_utc);
 CREATE INDEX IF NOT EXISTS idx_beszel_ts ON beszel_metrics(ts_utc);
 CREATE INDEX IF NOT EXISTS idx_github_events_ts ON github_events(ts_utc);
 
+CREATE TABLE IF NOT EXISTS pgbouncer_events (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    source_id   INTEGER NOT NULL REFERENCES sources(id),
+    ts_utc      TEXT NOT NULL,
+    pid         INTEGER,
+    level       TEXT NOT NULL,
+    message     TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_pgbouncer_ts ON pgbouncer_events(ts_utc);
+
 DROP VIEW IF EXISTS timeline;
 CREATE VIEW timeline AS
 SELECT source_id, ts_utc, 'journal' AS source, priority AS level_or_status, message, NULL AS extra
@@ -127,6 +137,9 @@ FROM haproxy_events
 UNION ALL
 SELECT source_id, ts_utc, 'pglog' AS source, level AS level_or_status, message, detail AS extra
 FROM pg_events
+UNION ALL
+SELECT source_id, ts_utc, 'pgbouncer' AS source, level AS level_or_status, message, NULL AS extra
+FROM pgbouncer_events
 UNION ALL
 SELECT source_id, ts_utc, 'beszel' AS source,
        printf('cpu=%.0f%%', cpu) AS level_or_status,

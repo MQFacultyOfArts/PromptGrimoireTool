@@ -13,6 +13,7 @@ _FILENAME_TO_FORMAT: dict[str, str] = {
     "haproxy.log": "haproxy",
     "postgresql.log": "pglog",
     "postgresql.json": "pglog",
+    "pgbouncer.log": "pgbouncer",
 }
 
 _REQUIRED_MANIFEST_KEYS = {"hostname", "timezone", "requested_window", "files"}

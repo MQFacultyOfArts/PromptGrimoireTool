@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING
 from scripts.incident.parsers.haproxy import parse_haproxy
 from scripts.incident.parsers.journal import parse_journal
 from scripts.incident.parsers.jsonl import parse_jsonl
+from scripts.incident.parsers.pgbouncer import parse_pgbouncer
 from scripts.incident.parsers.pglog import parse_pglog_auto
 from scripts.incident.provenance import format_to_table, parse_manifest
 from scripts.incident.schema import create_schema
@@ -94,6 +95,17 @@ _PARSERS: dict[str, tuple[object, str, list[str]]] = {
             "error_type",
             "detail",
             "statement",
+            "message",
+        ],
+    ),
+    "pgbouncer": (
+        parse_pgbouncer,
+        "pgbouncer_events",
+        [
+            "source_id",
+            "ts_utc",
+            "pid",
+            "level",
             "message",
         ],
     ),

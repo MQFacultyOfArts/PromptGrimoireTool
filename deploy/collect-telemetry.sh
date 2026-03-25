@@ -16,14 +16,18 @@ APP_DIR="${APP_DIR:-/opt/promptgrimoire}"
 JSONL_LOG="${JSONL_LOG:-$APP_DIR/logs/sessions/promptgrimoire.jsonl}"
 HAPROXY_LOG="${HAPROXY_LOG:-/var/log/haproxy.log}"
 PG_LOG_DIR="${PG_LOG_DIR:-/var/log/postgresql}"
+PGBOUNCER_LOG="${PGBOUNCER_LOG:-/var/log/pgbouncer/pgbouncer.log}"
 # PostgreSQL logging_collector writes to log_directory relative to the data
 # directory (default: "log" → /var/lib/postgresql/*/main/log/).  Detect this
 # automatically so we collect jsonlog output regardless of configuration.
 PG_COLLECTOR_DIR="${PG_COLLECTOR_DIR:-}"
 if [[ -z "$PG_COLLECTOR_DIR" ]]; then
-    # Ask the running cluster for its data directory + log_directory
-    _pg_data=$(sudo -u postgres psql -qtAX -c "SHOW data_directory;" 2>/dev/null || true)
-    _pg_logdir=$(sudo -u postgres psql -qtAX -c "SHOW log_directory;" 2>/dev/null || true)
+    # Ask the running cluster for its data directory + log_directory.
+    # Connect via Unix socket directly to PG (not through PgBouncer) using
+    # the postgres superuser.  -h /var/run/postgresql ensures we bypass
+    # PgBouncer even if PGHOST or .pg_service.conf redirect the default.
+    _pg_data=$(sudo -u postgres psql -h /var/run/postgresql -qtAX -c "SHOW data_directory;" 2>/dev/null || true)
+    _pg_logdir=$(sudo -u postgres psql -h /var/run/postgresql -qtAX -c "SHOW log_directory;" 2>/dev/null || true)
     if [[ -n "$_pg_data" ]] && [[ -n "$_pg_logdir" ]]; then
         if [[ "$_pg_logdir" == /* ]]; then
             # Absolute path
@@ -235,7 +239,7 @@ _pg_collect_from_dir() {
             cat "$f" >> "$output" 2>/dev/null && found=1
         fi
         PG_SOURCE="${PG_SOURCE:+$PG_SOURCE, }$f"
-    done < <(find "$dir" -maxdepth 1 -name "*.${ext}*" -type f 2>/dev/null | sort)
+    done < <(find "$dir" -maxdepth 1 -name "postgresql*.${ext}*" -type f 2>/dev/null | sort)
 
     return $((1 - found))
 }
@@ -277,6 +281,50 @@ else
     warn "No PostgreSQL log content found in $PG_LOG_DIR"
     PG_METHOD="missing"
     PG_SOURCE="none"
+fi
+
+# -------------------------------------------------------------------
+# 4b. Copy PgBouncer log
+# -------------------------------------------------------------------
+step "Collecting PgBouncer log..."
+PGBOUNCER_METHOD="not collected"
+PGBOUNCER_SOURCE="none"
+
+if [[ -f "$PGBOUNCER_LOG" ]] && [[ -s "$PGBOUNCER_LOG" ]]; then
+    cp "$PGBOUNCER_LOG" "$WORKDIR/pgbouncer.log"
+    PGBOUNCER_METHOD="full copy"
+    PGBOUNCER_SOURCE="$PGBOUNCER_LOG"
+    step "  Collected PgBouncer log from: $PGBOUNCER_LOG"
+else
+    # Check for rotated logs
+    _pgb_dir=$(dirname "$PGBOUNCER_LOG")
+    _pgb_base=$(basename "$PGBOUNCER_LOG")
+    if [[ -d "$_pgb_dir" ]]; then
+        _pgb_found=0
+        while IFS= read -r f; do
+            [[ -n "$f" ]] || continue
+            if [[ "$f" == *.gz ]]; then
+                zcat "$f" >> "$WORKDIR/pgbouncer.log" 2>/dev/null && _pgb_found=1
+            else
+                [[ -s "$f" ]] || continue
+                cat "$f" >> "$WORKDIR/pgbouncer.log" 2>/dev/null && _pgb_found=1
+            fi
+            PGBOUNCER_SOURCE="${PGBOUNCER_SOURCE:+$PGBOUNCER_SOURCE, }$f"
+        done < <(find "$_pgb_dir" -maxdepth 1 -name "${_pgb_base}*" -type f 2>/dev/null | sort)
+        if [[ $_pgb_found -eq 1 ]]; then
+            PGBOUNCER_METHOD="concatenated rotated logs"
+            step "  Collected PgBouncer logs from: $PGBOUNCER_SOURCE"
+        fi
+    fi
+    if [[ "$PGBOUNCER_METHOD" == "not collected" ]]; then
+        warn "PgBouncer log not found at $PGBOUNCER_LOG"
+    fi
+fi
+
+# Remove empty output file
+if [[ -f "$WORKDIR/pgbouncer.log" ]] && [[ ! -s "$WORKDIR/pgbouncer.log" ]]; then
+    rm -f "$WORKDIR/pgbouncer.log"
+    PGBOUNCER_METHOD="empty"
 fi
 
 # -------------------------------------------------------------------
@@ -406,6 +454,7 @@ for f in "$WORKDIR"/*; do
         structlog.jsonl)  FILES_JSON+=$(file_entry "$f" "${JSONL_SOURCES:-$JSONL_LOG}" "$JSONL_METHOD") ;;
         haproxy.log)      FILES_JSON+=$(file_entry "$f" "${HAPROXY_SOURCES:-$HAPROXY_LOG}" "$HAPROXY_METHOD") ;;
         postgresql*)      FILES_JSON+=$(file_entry "$f" "${PG_SOURCE:-unknown}" "$PG_METHOD") ;;
+        pgbouncer.log)    FILES_JSON+=$(file_entry "$f" "${PGBOUNCER_SOURCE:-unknown}" "$PGBOUNCER_METHOD") ;;
         db-snapshot.json) FILES_JSON+=$(file_entry "$f" "$DB_NAME" "$DB_METHOD") ;;
         *)                FILES_JSON+=$(file_entry "$f" "unknown" "unknown") ;;
     esac

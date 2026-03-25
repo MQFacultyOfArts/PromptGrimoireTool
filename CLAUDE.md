@@ -171,6 +171,10 @@ uv run grimoire e2e cards
 # Run standalone latexmk lane (real PDF compilation, 120s timeout)
 uv run grimoire e2e latexmk
 
+# Run performance baseline tests (perf marker)
+uv run grimoire e2e perf
+
+
 # Run linting
 uv run ruff check .
 
@@ -211,7 +215,7 @@ src/promptgrimoire/
 ├── models/              # Data models (Character, Session, Turn, LorebookEntry)
 ├── parsers/             # SillyTavern character card parser
 ├── llm/                 # Claude API client, lorebook activation, prompt assembly
-├── input_pipeline/      # HTML input processing (see docs/input-pipeline.md)
+├── input_pipeline/      # HTML input processing, paragraph numbering (see docs/input-pipeline.md)
 ├── pages/               # NiceGUI page routes
 │   ├── annotation/      # Main annotation page (see docs/annotation-architecture.md)
 │   ├── navigator/       # Workspace navigator (route: /, see docs/database.md § Navigator)

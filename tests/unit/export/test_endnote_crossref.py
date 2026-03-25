@@ -151,6 +151,68 @@ class TestAnnotendnoteMacro:
         assert r"\noexpand\hyperref[annot-inline:" in endnote
 
 
+class TestLinkAffordance:
+    """Cross-reference links must have visible click affordance."""
+
+    def test_inline_superscript_has_link_icon(self) -> None:
+        r"""The inline superscript in \annot long path has a link icon."""
+        sty = _read_sty()
+        annot = _extract_macro(sty, "annot")
+        # The long path's hyperref-wrapped superscript must contain
+        # a visible indicator that it's clickable (not just hidelinks)
+        long_path = annot.split(r"\else")[0]
+        # Look for a link icon character inside the hyperref block
+        assert "\\,\\textsuperscript{\\linkicon}" in long_path or (
+            "\\linkicon" in long_path
+        ), "Inline superscript needs visible link affordance"
+
+    def test_see_endnotes_stub_has_link_icon(self) -> None:
+        r"""The 'see endnotes' margin stub has a visible link icon."""
+        sty = _read_sty()
+        annot = _extract_macro(sty, "annot")
+        long_path = annot.split(r"\else")[0]
+        # The margin note for long annotations must contain a
+        # link icon so users know they can navigate to the endnote
+        assert "see endnotes" in long_path
+        # Find the marginalia block containing "see endnotes"
+        margin_start = long_path.find(r"\marginalia")
+        margin_section = long_path[margin_start:]
+        assert r"\linkicon" in margin_section, (
+            "Margin stub needs visible link affordance"
+        )
+
+    def test_endnote_back_link_has_icon(self) -> None:
+        r"""Endnote number back-link has a visible link icon."""
+        sty = _read_sty()
+        annot = _extract_macro(sty, "annot")
+        # In the \write block, the hyperref-wrapped endnote number
+        # should include a visible icon
+        assert r"\noexpand\linkicon" in annot, (
+            "Endnote back-link needs visible link affordance"
+        )
+
+    def test_annotref_has_link_icon(self) -> None:
+        r"""\annotref superscript has a visible link icon."""
+        sty = _read_sty()
+        annotref = _extract_macro(sty, "annotref")
+        assert r"\linkicon" in annotref, "annotref needs visible link affordance"
+
+    def test_annotendnote_has_link_icon(self) -> None:
+        r"""\annotendnote back-link has a visible link icon."""
+        sty = _read_sty()
+        endnote = _extract_macro(sty, "annotendnote")
+        assert r"\noexpand\linkicon" in endnote, (
+            "annotendnote needs visible link affordance"
+        )
+
+    def test_linkicon_command_defined(self) -> None:
+        r"""The \linkicon command is defined in the .sty file."""
+        sty = _read_sty()
+        assert r"\newcommand{\linkicon}" in sty, (
+            r"\linkicon command must be defined in the .sty"
+        )
+
+
 @requires_pandoc
 class TestShortAnnotationNoLinks:
     """AC2.4: Document with only short annotations has no cross-reference links."""

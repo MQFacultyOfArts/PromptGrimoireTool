@@ -147,6 +147,10 @@
     \input{\jobname.endnotes}%
   \fi
 }
+% Link affordance icon: small blue arrow signalling a clickable cross-reference.
+% Placed inside \hyperref blocks so users discover the bidirectional links.
+\newcommand{\linkicon}{{\scriptsize\textcolor{blue!60}{↗}}}
+
 \newcommand{\annot}[2]{%
   \stepcounter{annotnum}%
   % Measure content height at margin width.
@@ -158,11 +162,11 @@
     % Long annotation → write to endnotes file, show stub in margin
     \phantomsection\label{annot-inline:\theannotnum}%
     \hyperref[annot-endnote:\theannotnum]{%
-      \textsuperscript{\textcolor{#1}{\textbf{\theannotnum}}}%
+      \textsuperscript{\textcolor{#1}{\textbf{\theannotnum}}}\,\linkicon
     }%
     \marginalia[ysep=3pt]{%
       \fcolorbox{#1}{#1!20}{%
-        \parbox{4.3cm}{\footnotesize\textbf{\theannotnum.} (see endnotes)}%
+        \parbox{4.3cm}{\footnotesize\textbf{\theannotnum.} (see endnotes \linkicon)}%
       }%
     }%
     \global\annothasendnotestrue
@@ -171,7 +175,7 @@
       \noexpand\label{annot-endnote:\theannotnum}%
       \noexpand\par\noexpand\noindent
       \noexpand\hyperref[annot-inline:\theannotnum]{%
-        \noexpand\textcolor{#1}{\noexpand\textbf{\theannotnum.}}%
+        \noexpand\textcolor{#1}{\noexpand\textbf{\theannotnum.}}\noexpand\linkicon
       }%
       \unexpanded{#2}%
       \noexpand\par\noexpand\medskip
@@ -194,7 +198,7 @@
   \stepcounter{annotnum}%
   \phantomsection\label{annot-inline:\theannotnum}%
   \hyperref[annot-endnote:\theannotnum]{%
-    \textsuperscript{\textcolor{#1}{\textbf{endnote \theannotnum}}}%
+    \textsuperscript{\textcolor{#1}{\textbf{endnote \theannotnum}}}\,\linkicon
   }%
 }
 
@@ -208,7 +212,7 @@
     \noexpand\label{annot-endnote:#2}%
     \noexpand\par\noexpand\noindent
     \noexpand\hyperref[annot-inline:#2]{%
-      \noexpand\textcolor{#1}{\noexpand\textbf{#2.}}%
+      \noexpand\textcolor{#1}{\noexpand\textbf{#2.}}\noexpand\linkicon
     }%
     \unexpanded{#3}%
     \noexpand\par\noexpand\medskip

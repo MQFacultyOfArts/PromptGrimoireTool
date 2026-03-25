@@ -44,7 +44,7 @@ class LaneResult:
 PLAYWRIGHT_LANE = LaneSpec(
     name="playwright",
     test_paths=(Path("tests/e2e"),),
-    marker_expr="e2e",
+    marker_expr="e2e and not perf",
     needs_server=True,
     artifact_subdir="playwright",
 )

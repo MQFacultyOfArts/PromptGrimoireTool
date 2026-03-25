@@ -16,6 +16,7 @@ from __future__ import annotations
 import pytest
 
 from promptgrimoire.export.pandoc import convert_html_with_annotations
+from promptgrimoire.export.pdf import compile_latex
 from promptgrimoire.export.pdf_export import generate_tex_only
 from promptgrimoire.input_pipeline.paragraph_map import (
     inject_paragraph_markers_for_export,
@@ -151,8 +152,6 @@ class TestParanumberCompilation:
 
         # Compilation test: generate_tex_only only produces .tex;
         # use compile_latex for PDF compilation.
-        from promptgrimoire.export.pdf import compile_latex
-
         pdf_path = await compile_latex(tex_path)
         assert pdf_path.exists()
         assert pdf_path.stat().st_size > 0

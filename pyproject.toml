@@ -52,6 +52,9 @@ promptgrimoire = "promptgrimoire:main"
 grimoire = "promptgrimoire.cli:app"
 load-test-data = "promptgrimoire.cli_loadtest:load_test_data"
 
+[tool.uv]
+exclude-newer = "3 days"
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"

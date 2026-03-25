@@ -826,7 +826,6 @@ async def _import_tags(
 
     Populates *result_obj* in place.
     """
-    tag_offset = 0
     for src_tag in source_tags:
         new_group_id = group_id_map.get(src_tag.group_id) if src_tag.group_id else None
         new_id = uuid4()
@@ -840,7 +839,7 @@ async def _import_tags(
                 group_id=new_group_id,
                 description=src_tag.description,
                 locked=False,
-                order_index=base_order + tag_offset,
+                order_index=base_order + len(result_obj.created_tags),
                 created_at=datetime.now(UTC),
             )
             .on_conflict_do_nothing(constraint="uq_tag_workspace_name")
@@ -853,7 +852,6 @@ async def _import_tags(
             created_tag = await session.get(Tag, created_id)
             assert created_tag is not None  # noqa: S101
             result_obj.created_tags.append(created_tag)
-            tag_offset += 1
         else:
             result_obj.skipped_tags += 1
 

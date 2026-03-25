@@ -8,6 +8,7 @@ Route: /roleplay
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import TYPE_CHECKING
 from urllib.parse import urlencode
@@ -77,10 +78,17 @@ _BECKY_CARD_PATH = (
 def _create_chat_message(
     content: str, name: str, sent: bool, *, avatar: str | None = None
 ) -> None:
-    """Create a chat message with markdown-rendered content."""
-    msg = ui.chat_message(name=name, sent=sent, avatar=avatar)
-    with msg:
-        ui.markdown(content).classes("text-base")
+    """Create a chat message with markdown-rendered content.
+
+    Uses ``text_html=True`` so Quasar renders the content inside its own
+    bubble structure, preserving sent/received alignment and styling.
+    """
+    # Convert markdown emphasis to HTML italic for inline rendering.
+    # Full markdown parsing is overkill — the AI uses *asterisks* for
+    # action text and plain prose for dialogue.
+    html = re.sub(r"\*([^*]+)\*", r"<em>\1</em>", content)
+    html = html.replace("\n", "<br>")
+    ui.chat_message(text=html, name=name, sent=sent, avatar=avatar, text_html=True)
 
 
 def _render_messages(session: Session, chat_container, scroll_area: ScrollArea) -> None:
@@ -89,8 +97,8 @@ def _render_messages(session: Session, chat_container, scroll_area: ScrollArea) 
         for turn in session.turns:
             avatar = _USER_AVATAR if turn.is_user else _AI_AVATAR
             _create_chat_message(turn.content, turn.name, turn.is_user, avatar=avatar)
-    # Scroll to bottom after rendering
-    scroll_area.scroll_to(percent=1.0)
+    # Defer scroll-to-bottom so the browser has time to lay out new elements
+    ui.timer(0.1, lambda: scroll_area.scroll_to(percent=1.0), once=True)
 
 
 async def _complete_conversation(
@@ -99,13 +107,13 @@ async def _complete_conversation(
     send_button,
     chat_container,
     *,
-    finish_btn=None,
+    finish_btns: list | None = None,
 ) -> None:
     """Lock the UI, export the conversation, and show a completion banner.
 
     Called when the AI emits ``<endofconversation>`` or when the user
-    clicks "Finish Interview".  ``finish_btn`` is optional — Task 3
-    adds the button, Task 2 calls this without it.
+    clicks "Finish Interview".  ``finish_btns`` is a list of button
+    instances (sidebar + narrow header) to disable on completion.
     """
     session = state["session"]
     if session.ended:
@@ -114,8 +122,8 @@ async def _complete_conversation(
 
     input_field.disable()
     send_button.disable()
-    if finish_btn is not None:
-        finish_btn.disable()
+    for btn in finish_btns or ():
+        btn.disable()
     auth_user = app.storage.user.get("auth_user")
     if auth_user is None:
         ui.notify("Session expired. Please refresh the page.", type="negative")
@@ -140,7 +148,7 @@ async def _handle_finish(
     state: dict,
     input_field: Input,
     send_button,
-    finish_btn,
+    finish_btns: list,
     chat_container,
 ) -> None:
     """Show confirmation dialog; on confirm, lock and export the conversation."""
@@ -165,7 +173,7 @@ async def _handle_finish(
 
     if confirmed:
         await _complete_conversation(
-            state, input_field, send_button, chat_container, finish_btn=finish_btn
+            state, input_field, send_button, chat_container, finish_btns=finish_btns
         )
 
 
@@ -203,6 +211,7 @@ async def _stream_response(
     full_response = ""
     first_chunk = True
     conversation_ended = False
+    chunk_count = 0
     async for chunk in client.stream_message_only(session):
         if first_chunk:
             spinner.visible = False
@@ -210,9 +219,14 @@ async def _stream_response(
             first_chunk = False
         full_response += chunk.text
         streaming_label.text = full_response
-        scroll_area.scroll_to(percent=1.0)
+        chunk_count += 1
+        # Scroll every ~10 chunks to avoid hammering the browser
+        if chunk_count % 10 == 0:
+            scroll_area.scroll_to(percent=1.0)
         if chunk.ended:
             conversation_ended = True
+    # Final deferred scroll after stream ends and layout settles
+    ui.timer(0.1, lambda: scroll_area.scroll_to(percent=1.0), once=True)
     return full_response, conversation_ended
 
 
@@ -226,7 +240,7 @@ async def _handle_send(
     scroll_area: ScrollArea,
     send_button,
     *,
-    finish_btn=None,
+    finish_btns: list | None = None,
 ) -> None:
     """Handle sending a message and streaming the response.
 
@@ -275,7 +289,7 @@ async def _handle_send(
         _create_chat_message(
             full_response, session.character.name, sent=False, avatar=_AI_AVATAR
         )
-    scroll_area.scroll_to(percent=1.0)
+    ui.timer(0.1, lambda: scroll_area.scroll_to(percent=1.0), once=True)
 
     if conversation_ended:
         logger.info(
@@ -284,7 +298,7 @@ async def _handle_send(
             turn_count=len(session.turns),
         )
         await _complete_conversation(
-            state, input_field, send_button, chat_container, finish_btn=finish_btn
+            state, input_field, send_button, chat_container, finish_btns=finish_btns
         )
     else:
         send_button.enable()
@@ -337,8 +351,15 @@ def _setup_session(
     return session, client, log_path
 
 
-def _build_char_panel(widgets: dict) -> None:
-    """Build the character info panel (left sidebar)."""
+def _build_char_panel(
+    widgets: dict,
+    management_drawer: RightDrawer,
+) -> None:
+    """Build the character info panel (left sidebar).
+
+    Contains portrait, name, settings cog, and Finish Interview button.
+    Visible on wide viewports (>1024px); hidden on narrow via CSS.
+    """
     with (
         ui.column()
         .classes("roleplay-char-panel")
@@ -353,17 +374,82 @@ def _build_char_panel(widgets: dict) -> None:
         panel_char_name = ui.label("").classes("text-h5 roleplay-char-name")
         widgets["panel_char_name"] = panel_char_name
 
+        # Settings cog — opens management drawer
+        settings_btn = ui.button(icon="settings").props(
+            'flat round data-testid="roleplay-settings-btn"'
+        )
+        settings_btn.on("click", management_drawer.toggle)
+
+        # Finish Interview button (sidebar instance)
+        sidebar_finish_btn = (
+            ui.button("Finish Interview", icon="stop")
+            .props('data-testid="roleplay-sidebar-finish-btn"')
+            .classes("w-full")
+        )
+        widgets["sidebar_finish_btn"] = sidebar_finish_btn
+
+        # Dev-only: inject mock chat turns for visual testing
+        if get_settings().dev.auth_mock:
+
+            def _on_mock_chat() -> None:
+                session = widgets.get("_state", {}).get("session")
+                if session is None:
+                    return
+                _inject_mock_chat(session)
+                chat_container = widgets.get("chat_container")
+                scroll_area = widgets.get("scroll_area")
+                if chat_container and scroll_area:
+                    chat_container.clear()
+                    _render_messages(session, chat_container, scroll_area)
+
+            ui.button("Mock Chat", icon="bug_report", on_click=_on_mock_chat).props(
+                "flat dense"
+            ).classes("w-full").tooltip("Inject mock conversation turns")
+
+            async def _on_angry_becky() -> None:
+                state = widgets.get("_state", {})
+                session = state.get("session")
+                if session is None:
+                    return
+                _inject_angry_chat(session)
+                chat_container = widgets.get("chat_container")
+                scroll_area = widgets.get("scroll_area")
+                if chat_container and scroll_area:
+                    chat_container.clear()
+                    _render_messages(session, chat_container, scroll_area)
+                # Trigger the completion flow (lock + export + banner)
+                input_field = widgets.get("message_input")
+                send_button = widgets.get("send_button")
+                finish_btns = widgets.get("finish_btns")
+                if input_field and send_button and chat_container:
+                    await _complete_conversation(
+                        state,
+                        input_field,
+                        send_button,
+                        chat_container,
+                        finish_btns=finish_btns,
+                    )
+
+            ui.button("Angry Becky", icon="mood_bad", on_click=_on_angry_becky).props(
+                "flat dense"
+            ).classes("w-full").tooltip("Full conversation + end-of-conversation flow")
+
 
 def _build_chat_header(
-    widgets: dict[str, object], management_drawer: RightDrawer
+    widgets: dict[str, object],
+    management_drawer: RightDrawer,
 ) -> None:
-    """Build the chat card header row with avatar, name, and settings button."""
-    with ui.row().classes("w-full items-center justify-between"):
-        with (
-            ui.row()
-            .classes("items-center gap-3")
-            .props('data-testid="roleplay-chat-header"')
-        ):
+    """Build the narrow-viewport chat header row.
+
+    Contains avatar, name, settings cog, and End button.
+    Only visible at ≤1024px when the sidebar is hidden.
+    """
+    with (
+        ui.row()
+        .classes("w-full items-center justify-between roleplay-narrow-header")
+        .props('data-testid="roleplay-chat-header"')
+    ):
+        with ui.row().classes("items-center gap-3"):
             ui.avatar(icon=f"img:{_AI_AVATAR}", color=None, size="40px").classes(
                 "roleplay-chat-header-avatar"
             )
@@ -372,10 +458,19 @@ def _build_chat_header(
             )
         widgets["char_name_label"] = char_name_label
 
-        settings_btn = ui.button(icon="settings").props(
-            'flat round data-testid="roleplay-settings-btn"'
-        )
-        settings_btn.on("click", management_drawer.toggle)
+        with ui.row().classes("items-center gap-1"):
+            settings_btn = ui.button(icon="settings").props(
+                'flat round data-testid="roleplay-narrow-settings-btn"'
+            )
+            settings_btn.on("click", management_drawer.toggle)
+
+            # Finish Interview button (narrow header instance)
+            header_finish_btn = (
+                ui.button("End", icon="stop")
+                .props('outline dense data-testid="roleplay-narrow-finish-btn"')
+                .classes("ml-1")
+            )
+            widgets["header_finish_btn"] = header_finish_btn
 
 
 _EXPORT_BTN_INITIAL_DISABLED = True
@@ -431,6 +526,70 @@ async def _handle_export(state: dict) -> None:
     except Exception:
         logger.exception("Failed to export roleplay session")
         ui.notify("Export failed. Please try again.", type="negative")
+
+
+_MOCK_CHAT_TURNS = [
+    (True, "Please come in and take a seat. How can I help you today?"),
+    (
+        False,
+        "*Becky walks in and sits down, fidgeting slightly with her hands*\n\n"
+        '"Thank you." *She takes a breath* "I\'m not really sure where to '
+        'start. Should I just explain what happened?"',
+    ),
+    (True, "Yes, please tell me what happened in your own words."),
+]
+
+_MOCK_ANGRY_TURNS = [
+    (True, "So what exactly happened at work?"),
+    (
+        False,
+        '*Becky shifts uncomfortably* "Well, I was carrying some boxes in the '
+        "warehouse — they were quite heavy, maybe 20 kilos each — and I slipped "
+        "on something wet on the floor. Nobody had put up a sign or anything. I "
+        'fell backwards and hit my head on the concrete."',
+    ),
+    (True, "Were there any witnesses?"),
+    (
+        False,
+        '"My colleague Dave saw it happen. He helped me up. But then my manager '
+        "Mr Thompson came over and said I should have been more careful. He didn't "
+        "even ask if I was okay.\" *Becky's voice rises* \"He just said 'accidents "
+        "happen' and told me to get back to work.\"",
+    ),
+    (True, "That sounds very frustrating. Did you see a doctor?"),
+    (
+        False,
+        '*Becky takes a shaky breath* "I went to the GP the next day because I '
+        "had terrible headaches and my back was killing me. She said I had a mild "
+        "concussion and a lower back strain. I've been off work for three weeks "
+        "now and I don't know if they're even going to pay me.\"",
+    ),
+    (
+        True,
+        "I understand. Have you reported this to anyone at the company besides "
+        "your manager?",
+    ),
+    (
+        False,
+        "\"No, I... I didn't know I was supposed to. Mr Thompson said he'd "
+        '"handle it" but nothing happened. And now HR is calling me asking when '
+        'I\'m coming back and I just..." *Becky pauses, visibly upset* "I just '
+        "want someone to take this seriously. That's why I'm here.\"\n\n"
+        '"I think that\'s all I have to say for now. Thank you for listening."',
+    ),
+]
+
+
+def _inject_mock_chat(session: Session) -> None:
+    """Add mock turns to the session for visual testing (dev mode only)."""
+    for is_user, text in _MOCK_CHAT_TURNS:
+        session.add_turn(text, is_user=is_user)
+
+
+def _inject_angry_chat(session: Session) -> None:
+    """Add extended mock conversation ending with completion (dev mode only)."""
+    for is_user, text in _MOCK_ANGRY_TURNS:
+        session.add_turn(text, is_user=is_user)
 
 
 def _auto_load_character(state: dict, widgets: dict) -> None:
@@ -546,30 +705,22 @@ async def roleplay_page() -> None:
         return
 
     state: dict = {"session": None, "client": None, "log_path": None}
-    widgets: dict = {}
+    widgets: dict = {"_state": state}
 
     with page_layout("Roleplay", drawer_open=False):
         ui.add_head_html('<link rel="stylesheet" href="/static/roleplay.css">')
         # Inline overrides — Quasar uses very high specificity on
         # chat message colours; an external stylesheet can't always win.
         ui.add_head_html("""<style>
+            /* Chat bubble backgrounds — same style for sent and received */
+            .roleplay-chat .q-message-text--received,
             .roleplay-chat .q-message-text-content {
-                background: rgba(60, 60, 60, 0.3) !important;
+                background: rgba(80, 80, 80, 0.5) !important;
                 color: rgb(220, 220, 210) !important;
             }
+            .roleplay-chat .q-message-text--sent,
             .roleplay-chat .q-message-sent .q-message-text-content {
-                background: rgba(0, 0, 0, 0.3) !important;
-                color: rgb(220, 220, 210) !important;
-            }
-            .roleplay-chat .q-message-text {
-                color: rgb(220, 220, 210) !important;
-            }
-            .roleplay-chat .q-message-text--sent {
-                background: rgba(0, 0, 0, 0.3) !important;
-                color: rgb(220, 220, 210) !important;
-            }
-            .roleplay-chat .q-message-text--received {
-                background: rgba(60, 60, 60, 0.3) !important;
+                background: rgba(80, 80, 80, 0.5) !important;
                 color: rgb(220, 220, 210) !important;
             }
             .roleplay-chat .q-message-name--sent,
@@ -668,115 +819,115 @@ async def roleplay_page() -> None:
                 "color: rgba(220,220,210,0.6); font-size: 12px;"
             )
 
-        # Centre a constrained-width column
+        # Page-level row: sidebar (left margin) + centred chat column.
+        # Use ui.element('div') to avoid NiceGUI wrapper divs that
+        # break the flex chain.
         with (
-            ui.column()
-            .classes("w-full items-center")
-            .style("display: flex; flex-direction: column; flex: 1; min-height: 0;"),
-            ui.column().classes("roleplay-column").style("padding: 0 16px;"),
+            ui.element("div")
+            .classes("roleplay-page-row")
+            .style(
+                "flex: 1; min-height: 0; display: flex;"
+                " flex-wrap: nowrap; align-items: stretch;"
+                " width: 100%; justify-content: center;"
+            )
         ):
+            # Left sidebar — outside the constrained column
+            _build_char_panel(widgets, management_drawer)
+
+            # Centred chat column — gets full max-width
             with (
-                ui.row()
-                .classes("roleplay-main-row w-full")
-                .style(
-                    "flex: 1; min-height: 0; display: flex;"
-                    " flex-wrap: nowrap; align-items: stretch;"
-                )
+                ui.element("div").classes("roleplay-column").style("padding: 0 16px;"),
+                ui.card()
+                .classes("w-full roleplay-card")
+                .props('data-testid="roleplay-chat-card"') as chat_card,
             ):
-                _build_char_panel(widgets)
+                widgets["chat_card"] = chat_card
 
-                # Chat section — transparent card over dark background
+                # Narrow-viewport header (hidden on wide)
+                _build_chat_header(widgets, management_drawer)
+
+                # Scenario hidden — raw placeholder text is not user-facing
+                scenario_label = ui.label("")
+                scenario_label.visible = False
+                widgets["scenario_label"] = scenario_label
+
                 with (
-                    ui.card()
-                    .classes("w-full roleplay-card")
-                    .style(
-                        "background: rgba(23, 23, 23, 0.75) !important;"
-                        " box-shadow: 0 4px 16px rgba(0,0,0,0.4) !important;"
-                        " border: 1px solid rgba(220,220,210,0.1) !important;"
-                        " border-radius: 12px !important;"
-                    )
-                    .props('data-testid="roleplay-chat-card"') as chat_card
+                    ui.scroll_area()
+                    .classes("w-full roleplay-chat")
+                    .props('data-testid="roleplay-chat-area"') as scroll_area
                 ):
-                    widgets["chat_card"] = chat_card
+                    chat_container = ui.column().classes("w-full gap-3")
+                widgets["scroll_area"] = scroll_area
+                widgets["chat_container"] = chat_container
 
-                    _build_chat_header(widgets, management_drawer)
-
-                    # Scenario hidden — raw placeholder text is not user-facing
-                    scenario_label = ui.label("")
-                    scenario_label.visible = False
-                    widgets["scenario_label"] = scenario_label
-
-                    with (
-                        ui.scroll_area()
-                        .classes("w-full border rounded p-4 roleplay-chat")
-                        .props('data-testid="roleplay-chat-area"') as scroll_area
-                    ):
-                        chat_container = ui.column().classes("w-full gap-3")
-                    widgets["scroll_area"] = scroll_area
-                    widgets["chat_container"] = chat_container
-
-                    with (
-                        ui.row()
-                        .classes("w-full mt-4 items-center")
-                        .style("flex-wrap: nowrap;")
-                    ):
-                        message_input = (
-                            ui.input(placeholder="Type your message...")
-                            .classes("flex-grow")
-                            .props('outlined data-testid="roleplay-message-input"')
-                            .style(
-                                "color: rgb(220, 220, 210) !important;"
-                                " flex: 1; min-width: 0;"
-                            )
+                # Input row — just message field and send button
+                with (
+                    ui.row()
+                    .classes("w-full mt-4 items-center roleplay-input-row")
+                    .style("flex-wrap: nowrap;")
+                ):
+                    message_input = (
+                        ui.input(placeholder="Type your message...")
+                        .classes("flex-grow")
+                        .props('outlined data-testid="roleplay-message-input"')
+                        .style(
+                            "color: rgb(220, 220, 210) !important;"
+                            " flex: 1; min-width: 0;"
                         )
+                    )
 
-                        async def on_send(text: str) -> None:
-                            if state["session"]:
-                                await _handle_send(
-                                    text,
-                                    state,
-                                    state["client"],
-                                    message_input,
-                                    state["log_path"],
-                                    chat_container,
-                                    scroll_area,
-                                    send_button,
-                                    finish_btn=widgets.get("finish_btn"),
-                                )
-
-                        send_button = (
-                            ui.button("Send")
-                            .classes("ml-2")
-                            .props('data-testid="roleplay-send-btn"')
-                        )
-                        on_submit_with_value(
-                            send_button,
-                            message_input,
-                            on_send,
-                        )
-                        on_submit_with_value(
-                            message_input,
-                            message_input,
-                            on_send,
-                            event="keydown.enter",
-                        )
-
-                        finish_btn = (
-                            ui.button("Finish Interview", icon="stop")
-                            .props('outline data-testid="roleplay-finish-btn"')
-                            .classes("ml-2")
-                        )
-                        widgets["finish_btn"] = finish_btn
-                        finish_btn.on(
-                            "click",
-                            lambda: _handle_finish(
+                    async def on_send(text: str) -> None:
+                        if state["session"]:
+                            await _handle_send(
+                                text,
                                 state,
+                                state["client"],
                                 message_input,
-                                send_button,
-                                finish_btn,
+                                state["log_path"],
                                 chat_container,
-                            ),
-                        )
+                                scroll_area,
+                                send_button,
+                                finish_btns=widgets.get("finish_btns"),
+                            )
 
-            # Auto-load bundled Becky Bennett character card
-            _auto_load_character(state, widgets)
+                    send_button = (
+                        ui.button("Send")
+                        .classes("ml-2")
+                        .props('data-testid="roleplay-send-btn"')
+                    )
+                    widgets["message_input"] = message_input
+                    widgets["send_button"] = send_button
+                    on_submit_with_value(
+                        send_button,
+                        message_input,
+                        on_send,
+                    )
+                    on_submit_with_value(
+                        message_input,
+                        message_input,
+                        on_send,
+                        event="keydown.enter",
+                    )
+
+        # Wire finish buttons (both sidebar and narrow header) to the
+        # same handler.  Store as a list for the completion logic.
+        finish_btns = [
+            btn
+            for key in ("sidebar_finish_btn", "header_finish_btn")
+            if (btn := widgets.get(key)) is not None
+        ]
+        widgets["finish_btns"] = finish_btns
+        for btn in finish_btns:
+            btn.on(
+                "click",
+                lambda: _handle_finish(
+                    state,
+                    message_input,
+                    send_button,
+                    finish_btns,
+                    chat_container,
+                ),
+            )
+
+        # Auto-load bundled Becky Bennett character card
+        _auto_load_character(state, widgets)

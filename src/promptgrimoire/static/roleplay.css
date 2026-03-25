@@ -14,11 +14,15 @@
     z-index: -1;
 }
 
+/* ── Page-level row: sidebar + chat column ───────────────────────── */
+.roleplay-page-row {
+    justify-content: center;
+}
+
 /* ── Centred column ──────────────────────────────────────────────── */
 .roleplay-column {
     max-width: 1000px !important;
     width: 100% !important;
-    align-self: center !important;
     flex: 1 !important;
     min-height: 0 !important;
     display: flex !important;
@@ -41,14 +45,12 @@
     overflow: hidden !important;
 }
 
-/* ── Chat scroll area ────────────────────────────────────────────── */
+/* ── Chat scroll area — transparent, no nested background ────────── */
 .roleplay-chat {
-    background: rgba(23, 23, 23, 0.85);
-    backdrop-filter: blur(8px);
-    -webkit-backdrop-filter: blur(8px);
+    background: transparent;
     border-radius: 12px;
     padding: 16px;
-    border-color: rgba(220, 220, 210, 0.15) !important;
+    border: none !important;
     flex: 1 !important;
     min-height: 0 !important;
 }
@@ -76,6 +78,11 @@
     font-size: 15px;
 }
 
+/* Sent messages — right-align text within the full-width bubble */
+.roleplay-chat .q-message-sent .q-message-text-content {
+    text-align: right;
+}
+
 /* Message name labels */
 .roleplay-chat .q-message-name {
     color: rgb(180, 180, 170) !important;
@@ -99,10 +106,11 @@
     color: rgb(220, 220, 210) !important;
 }
 
-/* Italic / emphasis colour */
+/* Italic / emphasis — warm amber for action text, matching ST convention.
+   !important needed to override inline style's !important on parent text colour. */
 .roleplay-chat .q-message em,
 .roleplay-chat .q-message i {
-    color: rgb(145, 145, 145);
+    color: rgb(225, 180, 100) !important;
 }
 
 /* Blockquote — orange accent */
@@ -125,6 +133,7 @@
 .roleplay-char-panel {
     width: 280px;
     min-width: 280px;
+    flex-shrink: 0;
     padding: 24px 16px;
     display: flex;
     flex-direction: column;
@@ -146,8 +155,8 @@
     text-shadow: 0 2px 8px rgba(0, 0, 0, 0.8), 0 0 4px rgba(0, 0, 0, 0.6);
 }
 
-/* ── Input row: make message field fill available width ───────────── */
-.roleplay-card .nicegui-row .nicegui-input.flex-grow {
+/* ── Input row: make Quasar field wrapper fill available width ────── */
+.roleplay-input-row .q-field {
     flex: 1 1 0% !important;
     min-width: 0 !important;
 }
@@ -190,6 +199,21 @@
     opacity: 0.4 !important;
 }
 
+/* ── Button overrides inside sidebar ─────────────────────────────── */
+.roleplay-char-panel .q-btn {
+    color: rgb(220, 220, 210) !important;
+    background: rgba(80, 80, 80, 0.5) !important;
+    border: 1px solid rgba(220, 220, 210, 0.2) !important;
+}
+
+.roleplay-char-panel .q-btn:hover {
+    background: rgba(100, 100, 100, 0.6) !important;
+}
+
+.roleplay-char-panel .q-btn--disabled {
+    opacity: 0.4 !important;
+}
+
 /* ── Expansion panel overrides ──────────────────────────────────── */
 .roleplay-upload .q-expansion-item__container {
     color: rgb(220, 220, 210) !important;
@@ -203,9 +227,18 @@
     color: rgb(220, 220, 210) !important;
 }
 
-/* ── Responsive collapse — hide sidebar on narrow viewports ──────── */
+/* ── Narrow-viewport header — hidden on wide viewports ───────────── */
+.roleplay-narrow-header {
+    display: none !important;
+}
+
+/* ── Responsive: ≤1024px — hide sidebar, show narrow header ──────── */
 @media (max-width: 1024px) {
     .roleplay-char-panel {
         display: none !important;
+    }
+
+    .roleplay-narrow-header {
+        display: flex !important;
     }
 }

@@ -1208,6 +1208,34 @@ def _entry_pdf_filename(guide: Guide) -> None:
         )
 
 
+def _entry_paragraph_numbers_export(guide: Guide) -> None:
+    """How do paragraph numbers appear in PDF export?"""
+    with guide.step(
+        "How do paragraph numbers appear in PDF export?",
+        level=3,
+        text_only=True,
+    ) as g:
+        g.note(
+            "When a workspace uses auto-numbering, the exported PDF "
+            "shows small grey paragraph numbers in the left margin. "
+            "These match the on-screen paragraph numbers. "
+            "Source-number mode documents (e.g. AustLII judgments) "
+            "already display numbers as list items, so no margin "
+            "numbers are added.\n\n"
+            "Verified by ``test_paragraph_markers.py`` (marker "
+            "injection) and ``test_paranumber_latex.py`` (LaTeX "
+            "rendering)."
+        )
+        g.note(
+            "**Endnote cross-references:** Long annotations that "
+            "overflow into the endnotes section have clickable "
+            "links. Click the superscript number in the body text "
+            "to jump to the corresponding endnote. Click the number "
+            "in the endnote to jump back to the body location.\n\n"
+            "Verified by ``test_endnote_crossref.py``."
+        )
+
+
 # ---------------------------------------------------------------------------
 # Additional Annotating
 # ---------------------------------------------------------------------------
@@ -1426,6 +1454,7 @@ def _run_screenshot_sections(
     guide.section("Export")
     _entry_export_pdf(page, guide)
     _entry_pdf_filename(guide)
+    _entry_paragraph_numbers_export(guide)
 
 
 def _run_management_sections(

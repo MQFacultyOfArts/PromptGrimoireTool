@@ -574,23 +574,18 @@ def inject_paragraph_markers_for_export(
     Returns:
         Modified HTML with ``<span data-paranumber="N"></span>`` markers.
     """
-    if word_to_legal_para is None or not word_to_legal_para:
+    if not word_to_legal_para:
         return html
 
-    # Convert to the string-keyed format expected by inject_paragraph_attributes,
-    # filtering out None-valued entries (skipped elements).
+    # Convert to string-keyed format, filtering out None values (skipped elements).
     paragraph_map: dict[str, int] = {
         str(k): v for k, v in word_to_legal_para.items() if v is not None
     }
-
     if not paragraph_map:
         return html
 
-    # Add data-para attributes to block elements via selectolax DOM.
     attributed_html = inject_paragraph_attributes(html, paragraph_map)
 
-    # Regex-insert <span data-paranumber="N"></span> after each opening tag
-    # that has a data-para="N" attribute.
     return re.sub(
         r'(<[^>]+\sdata-para="(\d+)"[^>]*>)',
         r'\1<span data-paranumber="\2"></span>',

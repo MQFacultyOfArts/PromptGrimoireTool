@@ -129,11 +129,7 @@ class TestAC1_1_MarkersInserted:
         html = "<p>First</p><p>Second</p><p>Third</p>"
         para_map: dict[int, int | None] = {0: 1, 5: None, 11: 3}
         result = inject_paragraph_markers_for_export(html, para_map)
-        numbers = _marker_numbers(result)
-        assert "1" in numbers
-        assert "3" in numbers
-        # None-valued entry should not produce a marker
-        assert len(numbers) == 2
+        assert _marker_numbers(result) == ["1", "3"]
 
 
 # ---------------------------------------------------------------------------

@@ -144,7 +144,6 @@ class TestParanumberCompilation:
             tag_colours={},
             output_dir=tmp_path,
         )
-        # Verify tex contains the commands
         tex_content = tex_path.read_text()
         assert r"\paranumber{1}" in tex_content
         assert r"\paranumber{2}" in tex_content

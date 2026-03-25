@@ -13,7 +13,7 @@ feedback.
 from __future__ import annotations
 
 import asyncio
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 import structlog
 from nicegui import ui
@@ -34,6 +34,28 @@ if TYPE_CHECKING:
 logger = structlog.get_logger()
 
 # ── Element creation helpers ────────────────────────────────────────
+
+
+def _apply_deletion_guard(
+    btn: ui.button,
+    *,
+    count: int,
+    noun: str,
+    default_tooltip: str,
+    remedy: str,
+) -> None:
+    """Disable a delete button when a blocking count is non-zero.
+
+    When *count* > 0, disables the button and sets a tooltip like
+    "Has 3 highlights -- remove highlights first".  Otherwise sets
+    *default_tooltip*.
+    """
+    if count > 0:
+        btn.disable()
+        s = "s" if count != 1 else ""
+        btn.tooltip(f"Has {count} {noun}{s} — {remedy}")
+    else:
+        btn.tooltip(default_tooltip)
 
 
 def _create_move_buttons(
@@ -259,7 +281,7 @@ def _render_tag_row(
 
         # Editable fields (colour, name, description, group)
         _create_tag_fields(
-            model,  # type: ignore[arg-type]  # TagRowInputs is a dict at runtime
+            cast("dict[str, Any]", model),
             tag.id,
             group_options=group_options,
             can_edit=can_edit,
@@ -278,14 +300,13 @@ def _render_tag_row(
             on_click=lambda _e, t=tag: on_delete(t.id, t.name),
         ).props(f"flat round dense color=negative data-testid=tag-delete-btn-{tag.id}")
 
-        if highlight_count > 0:
-            del_btn.disable()
-            s = "s" if highlight_count != 1 else ""
-            del_btn.tooltip(
-                f"Has {highlight_count} highlight{s} — remove highlights first"
-            )
-        else:
-            del_btn.tooltip("Delete tag")
+        _apply_deletion_guard(
+            del_btn,
+            count=highlight_count,
+            noun="highlight",
+            default_tooltip="Delete tag",
+            remedy="remove highlights first",
+        )
 
         if not can_edit:
             del_btn.props("disable")
@@ -401,12 +422,13 @@ def _render_group_header(
         ).props(
             f"flat round dense color=negative data-testid=group-delete-btn-{group.id}"
         )
-        if tag_count > 0:
-            del_group_btn.disable()
-            s = "s" if tag_count != 1 else ""
-            del_group_btn.tooltip(f"Has {tag_count} tag{s} — delete tags first")
-        else:
-            del_group_btn.tooltip("Delete group")
+        _apply_deletion_guard(
+            del_group_btn,
+            count=tag_count,
+            noun="tag",
+            default_tooltip="Delete group",
+            remedy="delete tags first",
+        )
 
         # Debounced colour save for immediate visual feedback
         if on_group_field_save is not None:

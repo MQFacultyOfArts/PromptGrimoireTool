@@ -39,7 +39,7 @@ def _select_text_by_mouse(page: Page, text: str) -> dict[str, float] | None:
     """
     coords = page.evaluate(
         """(text) => {
-            const c = document.getElementById('doc-container');
+            const c = document.querySelector('[data-testid=\"doc-container\"]');
             const walker = document.createTreeWalker(
                 c, NodeFilter.SHOW_TEXT, null
             );

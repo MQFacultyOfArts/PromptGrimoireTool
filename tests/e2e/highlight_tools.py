@@ -54,7 +54,7 @@ def find_text_range(page: Page, needle: str) -> tuple[int, int]:
     wait_for_text_walker(page, timeout=10000)
     result = page.evaluate(
         """(needle) => {
-            const container = document.getElementById('doc-container');
+            const container = document.querySelector('[data-testid=\"doc-container\"]');
             if (!container || typeof walkTextNodes === 'undefined')
                 return { error: 'text walker not ready' };
             const nodes = walkTextNodes(container);
@@ -140,7 +140,7 @@ def create_highlight_with_tag(
     # Log the coordinates that select_chars computed for the mouse drag.
     coord_state = page.evaluate(
         """([startChar, endChar]) => {
-            const c = document.getElementById('doc-container');
+            const c = document.querySelector('[data-testid=\"doc-container\"]');
             if (!c) return { error: 'no doc-container' };
             const nodes = walkTextNodes(c);
             const sr = charOffsetToRect(nodes, startChar);
@@ -221,7 +221,7 @@ def select_text_range(page: Page, text: str) -> None:
     """
     page.evaluate(
         """(text) => {
-            const container = document.getElementById('doc-container');
+            const container = document.querySelector('[data-testid=\"doc-container\"]');
             const walker = document.createTreeWalker(
                 container, NodeFilter.SHOW_TEXT, null
             );
@@ -261,7 +261,7 @@ def scroll_to_char(page: Page, char_offset: int) -> None:
     wait_for_text_walker(page, timeout=10000)
     page.evaluate(
         """(charIdx) => {
-            const c = document.getElementById('doc-container');
+            const c = document.querySelector('[data-testid=\"doc-container\"]');
             if (!c) return;
             const nodes = walkTextNodes(c);
             scrollToCharOffset(nodes, charIdx, charIdx);

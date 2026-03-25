@@ -39,7 +39,8 @@ class TestRemoteCursorRendering:
         # Call renderRemoteCursor via JS
         page.evaluate(
             """() => {
-                const container = document.getElementById('doc-container');
+                const q = '[data-testid="doc-container"]';
+                const container = document.querySelector(q);
                 renderRemoteCursor(container, 'test-user-1', 10, 'Alice', '#2196F3');
             }"""
         )
@@ -78,7 +79,8 @@ class TestRemoteCursorRendering:
         # Render cursor at position 5
         page.evaluate(
             """() => {
-                const container = document.getElementById('doc-container');
+                const q = '[data-testid="doc-container"]';
+                const container = document.querySelector(q);
                 renderRemoteCursor(container, 'test-user-1', 5, 'Alice', '#2196F3');
             }"""
         )
@@ -87,7 +89,8 @@ class TestRemoteCursorRendering:
         # Render same user at position 20 -- should replace, not duplicate
         page.evaluate(
             """() => {
-                const container = document.getElementById('doc-container');
+                const q = '[data-testid="doc-container"]';
+                const container = document.querySelector(q);
                 renderRemoteCursor(container, 'test-user-1', 20, 'Alice', '#2196F3');
             }"""
         )
@@ -108,7 +111,8 @@ class TestRemoteCursorRendering:
         # Render then remove
         page.evaluate(
             """() => {
-                const container = document.getElementById('doc-container');
+                const q = '[data-testid="doc-container"]';
+                const container = document.querySelector(q);
                 renderRemoteCursor(container, 'test-user-1', 10, 'Alice', '#2196F3');
             }"""
         )
@@ -226,7 +230,8 @@ class TestMultipleUsers:
 
         page.evaluate(
             """() => {
-                const container = document.getElementById('doc-container');
+                const q = '[data-testid="doc-container"]';
+                const container = document.querySelector(q);
                 renderRemoteCursor(container, 'user-alice', 5, 'Alice', '#2196F3');
                 renderRemoteCursor(container, 'user-bob', 20, 'Bob', '#FF5722');
             }"""
@@ -284,7 +289,8 @@ class TestRemoveAllRemotePresence:
         # Create multiple cursors and selections
         page.evaluate(
             """() => {
-                const container = document.getElementById('doc-container');
+                const q = '[data-testid="doc-container"]';
+                const container = document.querySelector(q);
                 renderRemoteCursor(container, 'user-alice', 5, 'Alice', '#2196F3');
                 renderRemoteCursor(container, 'user-bob', 20, 'Bob', '#FF5722');
                 renderRemoteSelection('user-alice', 0, 10, 'Alice', '#2196F3');
@@ -321,7 +327,8 @@ class TestUpdateRemoteCursorPositions:
 
         page.evaluate(
             """() => {
-                const container = document.getElementById('doc-container');
+                const q = '[data-testid="doc-container"]';
+                const container = document.querySelector(q);
                 renderRemoteCursor(container, 'test-user', 10, 'Alice', '#2196F3');
             }"""
         )
@@ -334,7 +341,8 @@ class TestUpdateRemoteCursorPositions:
         # Call update -- should not throw, positions recalculated
         page.evaluate(
             """() => {
-                const container = document.getElementById('doc-container');
+                const q = '[data-testid="doc-container"]';
+                const container = document.querySelector(q);
                 updateRemoteCursorPositions(container);
             }"""
         )

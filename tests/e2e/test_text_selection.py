@@ -51,7 +51,7 @@ class TestTextSelection:
         # bounding rect via JS, then use mouse events.
         coords = page.evaluate(
             """() => {
-                const c = document.getElementById('doc-container');
+                const c = document.querySelector('[data-testid=\"doc-container\"]');
                 const walker = document.createTreeWalker(
                     c, NodeFilter.SHOW_TEXT, null
                 );
@@ -101,7 +101,7 @@ class TestTextSelection:
         # Emit a synthetic selection spanning the boundary
         page.evaluate(
             """() => {
-                const c = document.getElementById('doc-container');
+                const c = document.querySelector('[data-testid=\"doc-container\"]');
                 const tn = walkTextNodes(c);
                 const total = tn.length
                     ? tn[tn.length - 1].endChar : 0;

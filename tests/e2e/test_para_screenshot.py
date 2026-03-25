@@ -112,7 +112,7 @@ def _paste_and_render(page: Page, html: str) -> None:
 # JS function that detects all novel formatting contexts in the
 # rendered document and returns their positions for screenshotting.
 _LANDMARK_JS = """() => {
-    const c = document.getElementById('doc-container');
+    const c = document.querySelector('[data-testid=\"doc-container\"]');
     if (!c) return [];
     const cRect = c.getBoundingClientRect();
     const landmarks = [];
@@ -242,7 +242,7 @@ def _screenshot_at_landmarks(
     for i, lm in enumerate(landmarks):
         page.evaluate(
             f"""(() => {{
-                const c = document.getElementById('doc-container');
+                const c = document.querySelector('[data-testid=\"doc-container\"]');
                 if (!c) return;
                 const els = c.querySelectorAll(
                     '[data-para],[data-speaker],'

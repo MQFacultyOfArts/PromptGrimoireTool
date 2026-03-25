@@ -11,11 +11,16 @@ Plus edge cases: single paragraph, mixed block elements, br-br pseudo-paragraphs
 
 from __future__ import annotations
 
+import json
+import subprocess
+from typing import Any
+
 from selectolax.lexbor import LexborHTMLParser
 
 from promptgrimoire.input_pipeline.paragraph_map import (
     inject_paragraph_markers_for_export,
 )
+from tests.conftest import requires_pandoc
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -221,3 +226,114 @@ class TestAC1_6_MarkerBeforeHighlight:
             f"paranumber marker (idx={paranumber_idx}) should appear before "
             f"highlight span (idx={highlight_idx})"
         )
+
+
+# ---------------------------------------------------------------------------
+# Pandoc round-trip: verify empty data-paranumber spans survive the AST
+# ---------------------------------------------------------------------------
+
+
+@requires_pandoc
+class TestPandocRoundTrip:
+    """Verify Pandoc preserves <span data-paranumber="N"></span> through its AST.
+
+    Phase 2 of #417 adds a Lua filter that reads these spans from the AST.
+    This smoke test confirms the Phase 1 -> Phase 2 contract: Pandoc must
+    represent empty attributed spans as Span nodes with the paranumber
+    attribute intact.
+
+    **Important discovery:** Pandoc strips the ``data-`` prefix from HTML
+    data attributes when building its AST.  ``data-paranumber="1"`` in HTML
+    becomes a key-value pair ``["paranumber", "1"]`` in the Pandoc JSON AST.
+    The Phase 2 Lua filter must therefore look up ``paranumber``, not
+    ``data-paranumber``.
+    """
+
+    # Pandoc strips the "data-" prefix from HTML data attributes in its AST.
+    _AST_ATTR = "paranumber"
+
+    def _pandoc_html_to_ast(self, html: str) -> dict[str, Any]:
+        """Run pandoc --from html --to json and return parsed AST dict."""
+        result = subprocess.run(
+            ["pandoc", "--from", "html", "--to", "json"],
+            input=html,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        return json.loads(result.stdout)
+
+    def _find_spans_with_attr(
+        self,
+        node: Any,
+        attr_name: str,
+    ) -> list[dict[str, Any]]:
+        """Recursively find Span nodes in the Pandoc AST carrying *attr_name*.
+
+        Pandoc JSON AST represents inline elements as::
+
+            {"t": "Span", "c": [["id", ["class", ...], [["key", "val"], ...]], [...]]}
+
+        The third element of the attribute triple is the key-value pair list.
+        """
+        hits: list[dict[str, Any]] = []
+        if isinstance(node, dict):
+            if node.get("t") == "Span":
+                attrs = node["c"][0]  # [id, classes, kvpairs]
+                kvpairs = attrs[2]
+                for key, val in kvpairs:
+                    if key == attr_name:
+                        hits.append({"key": key, "value": val, "node": node})
+            # Recurse into all dict values
+            for v in node.values():
+                hits.extend(self._find_spans_with_attr(v, attr_name))
+        elif isinstance(node, list):
+            for item in node:
+                hits.extend(self._find_spans_with_attr(item, attr_name))
+        return hits
+
+    def test_empty_paranumber_span_preserved(self) -> None:
+        """A single empty <span data-paranumber="1"></span> survives the AST."""
+        html = '<p><span data-paranumber="1"></span>Some paragraph text.</p>'
+        ast = self._pandoc_html_to_ast(html)
+        spans = self._find_spans_with_attr(ast, self._AST_ATTR)
+
+        assert len(spans) == 1, (
+            f"Expected 1 Span with {self._AST_ATTR}, found {len(spans)}"
+        )
+        assert spans[0]["value"] == "1"
+
+    def test_multiple_paranumber_spans_preserved(self) -> None:
+        """Multiple paranumber markers in separate paragraphs all survive."""
+        html = (
+            '<p><span data-paranumber="1"></span>First paragraph.</p>'
+            '<p><span data-paranumber="2"></span>Second paragraph.</p>'
+            '<p><span data-paranumber="3"></span>Third paragraph.</p>'
+        )
+        ast = self._pandoc_html_to_ast(html)
+        spans = self._find_spans_with_attr(ast, self._AST_ATTR)
+
+        assert len(spans) == 3, (
+            f"Expected 3 Span nodes with {self._AST_ATTR}, found {len(spans)}"
+        )
+        values = [s["value"] for s in spans]
+        assert values == ["1", "2", "3"]
+
+    def test_paranumber_span_alongside_highlight_span(self) -> None:
+        """Paranumber span coexists with a highlight span in the same paragraph."""
+        html = (
+            "<p>"
+            '<span data-paranumber="5"></span>'
+            '<span data-hl="abc">Highlighted text</span>'
+            " rest of paragraph."
+            "</p>"
+        )
+        ast = self._pandoc_html_to_ast(html)
+        para_spans = self._find_spans_with_attr(ast, self._AST_ATTR)
+        # Pandoc strips "data-" prefix: data-hl -> hl
+        hl_spans = self._find_spans_with_attr(ast, "hl")
+
+        assert len(para_spans) == 1
+        assert para_spans[0]["value"] == "5"
+        assert len(hl_spans) == 1
+        assert hl_spans[0]["value"] == "abc"

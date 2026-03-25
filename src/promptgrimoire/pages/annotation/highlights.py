@@ -7,7 +7,7 @@ CRDT state and the browser's CSS Custom Highlight API.
 from __future__ import annotations
 
 import json
-import logging
+import time
 from typing import Any
 
 import structlog
@@ -24,7 +24,6 @@ from promptgrimoire.pages.annotation import (
 from promptgrimoire.pages.annotation.css import _build_highlight_pseudo_css
 
 logger = structlog.get_logger()
-logging.getLogger(__name__).setLevel(logging.INFO)
 
 
 async def _warp_to_highlight(state: PageState, start_char: int, end_char: int) -> None:
@@ -228,6 +227,7 @@ async def _add_highlight(state: PageState, tag: str) -> None:
     assert state.selection_end is not None  # noqa: S101
     assert state.crdt_doc is not None  # noqa: S101
 
+    _t_pipeline = time.monotonic()
     try:
         # Update status to show saving
         if state.save_status:
@@ -268,7 +268,13 @@ async def _add_highlight(state: PageState, tag: str) -> None:
         )
 
         # Force immediate save for test observability
+        _t = time.monotonic()
         await pm.force_persist_workspace(state.workspace_id)
+        logger.debug(
+            "tag_apply_phase",
+            phase="force_persist_workspace",
+            elapsed_ms=round((time.monotonic() - _t) * 1000, 1),
+        )
 
         if state.save_status:
             state.save_status.text = "Saved"
@@ -277,22 +283,47 @@ async def _add_highlight(state: PageState, tag: str) -> None:
         _update_highlight_css(state)
 
         # Refresh annotation cards to show new highlight
+        _t = time.monotonic()
         if state.refresh_annotations:
             state.refresh_annotations(trigger="tag_apply")
+        logger.debug(
+            "tag_apply_phase",
+            phase="refresh_annotation_cards",
+            elapsed_ms=round((time.monotonic() - _t) * 1000, 1),
+        )
 
         # Broadcast to other clients
+        _t = time.monotonic()
         if state.broadcast_update:
             await state.broadcast_update()
+        logger.debug(
+            "tag_apply_phase",
+            phase="broadcast_update",
+            elapsed_ms=round((time.monotonic() - _t) * 1000, 1),
+        )
 
-        # Clear browser selection first to prevent re-triggering on next mouseup
-        await ui.run_javascript("window.getSelection().removeAllRanges();")
-
-        # Clear selection state and hide menu
-        state.selection_start = None
-        state.selection_end = None
-        if state.highlight_menu:
-            state.highlight_menu.set_visibility(False)
+        # Clear browser selection (fire-and-forget — void return, no ordering
+        # dependency on subsequent server-side cleanup).  Previously awaited
+        # with 1.0s timeout, causing ~3,400 TimeoutErrors when the browser
+        # could not respond in time (queued behind NiceGUI element batch).
+        # See #377.
+        ui.run_javascript("window.getSelection().removeAllRanges();")
     finally:
         # Always release processing lock -- prevents permanent lockout if any
         # step above raises (e.g. JS relay failure, persistence error).
         state.processing_highlight = False
+
+        # Clear selection state and hide menu — unconditional so that a JS
+        # timeout or other exception cannot leave ghost highlight_menu or
+        # stale selection_start/selection_end.  Previously inside the try
+        # block after the awaited removeAllRanges, so TimeoutError skipped
+        # these lines.  See #377.
+        state.selection_start = None
+        state.selection_end = None
+        if state.highlight_menu:
+            state.highlight_menu.set_visibility(False)
+        logger.debug(
+            "tag_apply_phase",
+            phase="total_pipeline",
+            elapsed_ms=round((time.monotonic() - _t_pipeline) * 1000, 1),
+        )

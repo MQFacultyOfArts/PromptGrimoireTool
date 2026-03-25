@@ -6,9 +6,11 @@ setting up JS-based text selection detection, and keyboard shortcuts.
 
 from __future__ import annotations
 
+import time
 from html import escape
 from typing import Any
 
+import structlog
 from nicegui import ui
 
 from promptgrimoire.input_pipeline.html_input import extract_text_from_html
@@ -23,6 +25,8 @@ from promptgrimoire.pages.annotation.highlights import (
     _add_highlight,
     _build_highlight_json,
 )
+
+logger = structlog.get_logger()
 
 
 async def _handle_selection(state: PageState, e: Any) -> None:
@@ -231,7 +235,14 @@ async def _render_document_with_highlights(
     # Extract characters from clean HTML for text extraction when highlighting
     # (char spans are injected client-side, not stored in DB)
     if doc.content:
+        _t = time.monotonic()
         state.document_chars = extract_text_from_html(doc.content)
+        logger.debug(
+            "render_phase",
+            phase="extract_text_from_html",
+            elapsed_ms=round((time.monotonic() - _t) * 1000, 1),
+            content_len=len(doc.content),
+        )
         # paragraph_map is only meaningful when content is present
         state.paragraph_map = doc.paragraph_map
         # Store raw content and auto-number mode for paragraph toggle re-render
@@ -297,8 +308,23 @@ async def _render_document_with_highlights(
             # Inject data-para attributes for paragraph number margin display.
             # paragraph_map comes from WorkspaceDocument; empty map is a no-op.
             para_map = getattr(doc, "paragraph_map", None) or {}
+            _t = time.monotonic()
             rendered_html = inject_paragraph_attributes(doc.content, para_map)
+            logger.debug(
+                "render_phase",
+                phase="inject_paragraph_attributes",
+                elapsed_ms=round((time.monotonic() - _t) * 1000, 1),
+                content_len=len(doc.content),
+                para_map_size=len(para_map),
+            )
+            _t = time.monotonic()
             ui.html(rendered_html, sanitize=False)
+            logger.debug(
+                "render_phase",
+                phase="ui_html",
+                elapsed_ms=round((time.monotonic() - _t) * 1000, 1),
+                html_len=len(rendered_html),
+            )
 
         # Load annotation-highlight.js for CSS Custom Highlight API support.
         # This script provides walkTextNodes(), applyHighlights(),

@@ -42,13 +42,14 @@ function setupCardPositioning(docContainerId, sidebarId, minGap) {
   }
 
   function positionCards() {
+    if (window.__perfInstrumented) console.time('positionCards');
     var nodes = tn();
-    if (!nodes || !nodes.length) return;
+    if (!nodes || !nodes.length) { if (window.__perfInstrumented) console.timeEnd('positionCards'); return; }
     var dc = document.getElementById(docContainerId);
     var ac = document.getElementById(sidebarId);
-    if (!dc || !ac) return;
+    if (!dc || !ac) { if (window.__perfInstrumented) console.timeEnd('positionCards'); return; }
     var cards = Array.from(ac.querySelectorAll('[data-start-char]'));
-    if (!cards.length) return;
+    if (!cards.length) { if (window.__perfInstrumented) console.timeEnd('positionCards'); return; }
     var docRect = dc.getBoundingClientRect();
     var annRect = ac.getBoundingClientRect();
     var cOff = annRect.top - docRect.top;
@@ -78,6 +79,7 @@ function setupCardPositioning(docContainerId, sidebarId, minGap) {
       info.card.style.top = y + 'px';
       minY = y + info.height + minGap;
     }
+    if (window.__perfInstrumented) console.timeEnd('positionCards');
   }
 
   var ticking = false;

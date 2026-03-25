@@ -105,7 +105,10 @@ function clearHighlights() {
  * @param {Object} [tagColors] - optional tag-to-priority map (reserved for future use)
  */
 function applyHighlights(container, highlightData, tagColors) {
+    if (window.__perfInstrumented) console.time('applyHighlights');
+    if (window.__perfInstrumented) console.time('applyHighlights:walkTextNodes');
     const textNodes = walkTextNodes(container);
+    if (window.__perfInstrumented) console.timeEnd('applyHighlights:walkTextNodes');
     // Keep global reference fresh for scroll-sync and hover
     window._textNodes = textNodes;
     const totalChars = textNodes.length
@@ -114,8 +117,12 @@ function applyHighlights(container, highlightData, tagColors) {
     window._highlightsReady = false;
     clearHighlights();
 
-    if (!textNodes.length) return;
+    if (!textNodes.length) {
+        if (window.__perfInstrumented) console.timeEnd('applyHighlights');
+        return;
+    }
 
+    if (window.__perfInstrumented) console.time('applyHighlights:rangeCreation');
     let tagIdx = 0;
     for (const [tag, regions] of Object.entries(highlightData)) {
         const ranges = [];
@@ -159,9 +166,11 @@ function applyHighlights(container, highlightData, tagColors) {
         }
         tagIdx++;
     }
+    if (window.__perfInstrumented) console.timeEnd('applyHighlights:rangeCreation');
     // Signal that highlights (and _textNodes) are ready
     window._highlightsReady = true;
     document.dispatchEvent(new Event('highlights-ready'));
+    if (window.__perfInstrumented) console.timeEnd('applyHighlights');
 }
 
 function charOffsetToRange(textNodes, startChar, endChar) {

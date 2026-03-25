@@ -93,7 +93,7 @@ Claude Code hooks automatically run on every `.py` file write:
 
 1. `ruff check --fix` - autofix lint issues
 2. `ruff format` - format code
-3. `ty check` - type checking
+3. `ty@0.0.24 check` - type checking
 
 All three must pass before code is considered complete.
 
@@ -173,7 +173,7 @@ uv run grimoire e2e cards
 uv run ruff check .
 
 # Run type checking
-uvx ty check
+uvx ty@0.0.24 check
 
 # Seed development data (idempotent)
 uv run grimoire seed run

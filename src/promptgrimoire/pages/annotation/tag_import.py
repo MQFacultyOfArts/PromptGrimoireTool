@@ -8,13 +8,17 @@ they can read.  Imports ``_refresh_tag_state`` from
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 from uuid import UUID
 
 import structlog
 from nicegui import ui
 
-from promptgrimoire.db.exceptions import SharePermissionError, TagCreationDeniedError
+from promptgrimoire.db.exceptions import (
+    DuplicateNameError,
+    SharePermissionError,
+    TagCreationDeniedError,
+)
 from promptgrimoire.pages.annotation.tag_management_save import (
     _refresh_tag_state,
 )
@@ -23,9 +27,45 @@ if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
 
     from promptgrimoire.db.models import Workspace
+    from promptgrimoire.db.tags import ImportResult
     from promptgrimoire.pages.annotation import PageState
 
 logger = structlog.get_logger()
+
+
+def _pluralise(n: int, word: str) -> str:
+    """Return e.g. '3 tags' or '1 group'."""
+    return f"{n} {word}{'s' if n != 1 else ''}"
+
+
+_NotifyType = Literal["positive", "negative", "warning", "info", "ongoing"]
+
+
+def _import_notification(result: ImportResult) -> tuple[str, _NotifyType]:
+    """Build notification message and type from an ImportResult.
+
+    Returns:
+        (message, notify_type) tuple for ``ui.notify()``.
+    """
+    if not result.created_tags and not result.created_groups:
+        return "No new tags to import", "info"
+
+    parts: list[str] = []
+    if result.created_tags:
+        parts.append(_pluralise(len(result.created_tags), "tag"))
+    if result.created_groups:
+        parts.append(_pluralise(len(result.created_groups), "group"))
+    msg = f"Imported {', '.join(parts)}"
+
+    if result.skipped_tags or result.skipped_groups:
+        skipped: list[str] = []
+        if result.skipped_tags:
+            skipped.append(_pluralise(result.skipped_tags, "tag"))
+        if result.skipped_groups:
+            skipped.append(_pluralise(result.skipped_groups, "group"))
+        msg += f" ({', '.join(skipped)} already existed)"
+
+    return msg, "positive"
 
 
 def _build_workspace_options(
@@ -96,6 +136,10 @@ async def _render_import_section(
                 .props('data-testid="import-workspace-select"')
             )
 
+            import_btn = ui.button("Import").props(
+                'flat dense data-testid="import-tags-btn"'
+            )
+
             async def _import_from_workspace() -> None:
                 if not ws_select.value:
                     ui.notify("Select a workspace first", type="warning")
@@ -104,8 +148,10 @@ async def _render_import_section(
                     import_tags_from_workspace,
                 )
 
+                import_btn.disable()
+                import_btn.props("loading")
                 try:
-                    imported = await import_tags_from_workspace(
+                    result = await import_tags_from_workspace(
                         source_workspace_id=UUID(ws_select.value),
                         target_workspace_id=state.workspace_id,
                         user_id=UUID(state.user_id),
@@ -117,20 +163,24 @@ async def _render_import_section(
                     )
                     ui.notify(str(exc), type="negative")
                     return
-
-                # Notify before render_tag_list() — that call clears
-                # content_area which destroys this handler's slot context,
-                # making subsequent ui.notify() calls fail.
-                if imported:
-                    ui.notify(
-                        f"Imported {len(imported)} tag(s)",
-                        type="positive",
+                except DuplicateNameError as exc:
+                    logger.warning(
+                        "tag_import_duplicate",
+                        operation="import_tags",
+                        reason=str(exc),
                     )
-                else:
-                    ui.notify("No new tags to import", type="info")
+                    ui.notify(str(exc), type="warning")
+                    return
+                finally:
+                    import_btn.props(remove="loading")
+                    import_btn.enable()
+
+                # Notify BEFORE render_tag_list() — that call clears
+                # content_area which destroys dialog elements via
+                # weakref.finalize, invalidating the slot context.
+                msg, notify_type = _import_notification(result)
+                ui.notify(msg, type=notify_type)
                 await render_tag_list()
                 await _refresh_tag_state(state)
 
-            ui.button("Import", on_click=_import_from_workspace).props(
-                'flat dense data-testid="import-tags-btn"'
-            )
+            import_btn.on_click(_import_from_workspace)

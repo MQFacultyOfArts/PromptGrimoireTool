@@ -83,7 +83,7 @@ class TestCreateExportJob:
 
         user_id, workspace_id = await _create_user_and_workspace()
         job1 = await create_export_job(user_id, workspace_id, {"format": "pdf"})
-        await complete_job(job1.id, "token123", "/tmp/test.pdf")
+        await complete_job(job1.id, f"token-{uuid4().hex[:8]}", "/tmp/test.pdf")
 
         # Should succeed — no active job
         job2 = await create_export_job(user_id, workspace_id, {"format": "pdf"})
@@ -176,7 +176,7 @@ class TestClaimNextJob:
         assert remaining_job.status == "queued"
 
         # Complete one of the claimed jobs — third slot opens.
-        await complete_job(claimed_a.id, "tok-a", "/tmp/a.pdf")
+        await complete_job(claimed_a.id, f"tok-a-{uuid4().hex[:8]}", "/tmp/a.pdf")
 
         # Now claim the third job.
         claimed_c = await claim_own_job(unclaimed_id)
@@ -184,8 +184,8 @@ class TestClaimNextJob:
         assert claimed_c.id == next(iter(unclaimed_id))
 
         # Cleanup
-        await complete_job(claimed_b.id, "tok-b", "/tmp/b.pdf")
-        await complete_job(claimed_c.id, "tok-c", "/tmp/c.pdf")
+        await complete_job(claimed_b.id, f"tok-b-{uuid4().hex[:8]}", "/tmp/b.pdf")
+        await complete_job(claimed_c.id, f"tok-c-{uuid4().hex[:8]}", "/tmp/c.pdf")
 
     # NOTE: Fair-scheduling *priority ordering* (users with fewer running
     # jobs claimed first) cannot be integration-tested with the current
@@ -222,8 +222,8 @@ class TestClaimNextJob:
         assert {claimed1.id, claimed2.id} == our_ids
 
         # Complete both
-        await complete_job(claimed1.id, "tok1", "/tmp/1.pdf")
-        await complete_job(claimed2.id, "tok2", "/tmp/2.pdf")
+        await complete_job(claimed1.id, f"tok1-{uuid4().hex[:8]}", "/tmp/1.pdf")
+        await complete_job(claimed2.id, f"tok2-{uuid4().hex[:8]}", "/tmp/2.pdf")
 
 
 class TestCompleteAndFailJob:
@@ -240,12 +240,13 @@ class TestCompleteAndFailJob:
 
         user_id, workspace_id = await _create_user_and_workspace()
         job = await create_export_job(user_id, workspace_id, {"format": "pdf"})
-        await complete_job(job.id, "download-tok", "/tmp/export.pdf")
+        token = f"download-{uuid4().hex[:8]}"
+        await complete_job(job.id, token, "/tmp/export.pdf")
 
         updated = await get_job(job.id)
         assert updated is not None
         assert updated.status == "completed"
-        assert updated.download_token == "download-tok"
+        assert updated.download_token == token
         assert updated.pdf_path == "/tmp/export.pdf"
         assert updated.token_expires_at is not None
         assert updated.completed_at is not None
@@ -319,9 +320,10 @@ class TestGetJobByToken:
 
         user_id, workspace_id = await _create_user_and_workspace()
         job = await create_export_job(user_id, workspace_id, {"format": "pdf"})
-        await complete_job(job.id, "secret-token", "/tmp/out.pdf")
+        token = f"secret-{uuid4().hex[:8]}"
+        await complete_job(job.id, token, "/tmp/out.pdf")
 
-        found = await get_job_by_token("secret-token")
+        found = await get_job_by_token(token)
         assert found is not None
         assert found.id == job.id
 
@@ -349,7 +351,7 @@ class TestCleanupExpiredJobs:
 
         user_id, workspace_id = await _create_user_and_workspace()
         job = await create_export_job(user_id, workspace_id, {"format": "pdf"})
-        await complete_job(job.id, "tok", "/tmp/nonexistent.pdf")
+        await complete_job(job.id, f"tok-{uuid4().hex[:8]}", "/tmp/nonexistent.pdf")
 
         # Cutoff in the future — should delete our job.
         # Don't assert exact count — under xdist, another worker may have
@@ -377,7 +379,7 @@ class TestCleanupExpiredJobs:
 
         user_id, workspace_id = await _create_user_and_workspace()
         job = await create_export_job(user_id, workspace_id, {"format": "pdf"})
-        await complete_job(job.id, "tok", str(pdf_file))
+        await complete_job(job.id, f"tok-{uuid4().hex[:8]}", str(pdf_file))
 
         cutoff = datetime.now(UTC) + timedelta(hours=1)
         await cleanup_expired_jobs(cutoff)
@@ -417,7 +419,7 @@ class TestCleanupExpiredJobs:
 
         user_id, workspace_id = await _create_user_and_workspace()
         job = await create_export_job(user_id, workspace_id, {"format": "pdf"})
-        await complete_job(job.id, "tok", "/tmp/test.pdf")
+        await complete_job(job.id, f"tok-{uuid4().hex[:8]}", "/tmp/test.pdf")
 
         # Cutoff in the past — should preserve
         cutoff = datetime.now(UTC) - timedelta(hours=1)

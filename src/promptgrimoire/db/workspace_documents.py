@@ -12,7 +12,11 @@ from sqlalchemy import func
 from sqlmodel import select
 
 from promptgrimoire.db.engine import get_session
-from promptgrimoire.db.exceptions import OwnershipError, ProtectedDocumentError
+from promptgrimoire.db.exceptions import (
+    HasAnnotationsError,
+    OwnershipError,
+    ProtectedDocumentError,
+)
 from promptgrimoire.db.models import ACLEntry, Workspace, WorkspaceDocument
 from promptgrimoire.input_pipeline import build_paragraph_map_for_json
 
@@ -231,6 +235,12 @@ async def delete_document(document_id: UUID, *, user_id: UUID) -> bool:
     Raises:
         ProtectedDocumentError: If the document is a template clone.
         PermissionError: If ``user_id`` is not the workspace owner.
+        HasAnnotationsError: If the document has one or more CRDT highlights.
+
+    Guard behaviour: The annotation count is read from the persisted CRDT
+    state inside the same session as the document load. If ``crdt_state``
+    is None (workspace has no persisted annotations), the guard is skipped
+    and deletion proceeds normally.
     """
     async with get_session() as session:
         result = await session.exec(
@@ -246,7 +256,9 @@ async def delete_document(document_id: UUID, *, user_id: UUID) -> bool:
                 source_document_id=doc.source_document_id,
             )
 
-        # Check literal ownership via ACLEntry (NOT resolve_permission)
+        # Check literal ownership via ACLEntry (NOT resolve_permission).
+        # Must run before annotation guard to avoid leaking document state
+        # to non-owners.
         owner_entry = await session.exec(
             select(ACLEntry).where(
                 ACLEntry.workspace_id == doc.workspace_id,
@@ -257,6 +269,21 @@ async def delete_document(document_id: UUID, *, user_id: UUID) -> bool:
         if owner_entry.first() is None:
             msg = f"user {user_id} is not the owner of workspace {doc.workspace_id}"
             raise OwnershipError(msg)
+
+        # Guard: count annotations from DB-persisted CRDT state (same session)
+        workspace = await session.get(Workspace, doc.workspace_id)
+        if workspace and workspace.crdt_state:
+            from promptgrimoire.crdt.annotation_doc import (
+                AnnotationDocument as AnnotationDocumentCls,
+            )
+
+            count_doc = AnnotationDocumentCls("count-doc-tmp")
+            count_doc.apply_update(workspace.crdt_state)
+            annotation_count = len(
+                count_doc.get_highlights_for_document(str(document_id))
+            )
+            if annotation_count > 0:
+                raise HasAnnotationsError(document_id, annotation_count)
 
         await session.delete(doc)
         return True

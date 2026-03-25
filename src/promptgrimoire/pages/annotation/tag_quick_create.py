@@ -194,22 +194,28 @@ async def open_quick_create(state: PageState) -> None:
             ).props('flat data-testid="quick-create-cancel-btn"')
 
             async def _save(text: str) -> None:
-                ok = await _quick_create_save(
-                    state,
-                    text,
-                    selected_color,
-                    group_select,
-                    saved_start,
-                    saved_end,
-                )
-                if not ok:
-                    return
+                create_btn.disable()
+                create_btn.props("loading")
+                try:
+                    ok = await _quick_create_save(
+                        state,
+                        text,
+                        selected_color,
+                        group_select,
+                        saved_start,
+                        saved_end,
+                    )
+                    if not ok:
+                        return
 
-                dialog.close()
-                ui.notify(
-                    f"Tag '{text}' created",
-                    type="positive",
-                )
+                    dialog.close()
+                    ui.notify(
+                        f"Tag '{text}' created",
+                        type="positive",
+                    )
+                finally:
+                    create_btn.props(remove="loading")
+                    create_btn.enable()
 
             create_btn = ui.button("Create").props(
                 'color=primary data-testid="quick-create-save-btn"',

@@ -59,7 +59,7 @@ class TagCrudCallbacks(TypedDict):
     """Typed return value of ``_build_tag_crud_callbacks``."""
 
     delete_tag: Callable[[UUID, str], None]
-    add_tag: Callable[[UUID | None], Awaitable[None]]
+    add_tag: Callable[[UUID | None, ui.button | None], Awaitable[None]]
     lock_toggle: Callable[[UUID, bool], Awaitable[None]]
 
 
@@ -296,6 +296,12 @@ async def open_tag_management(
             all_tags = await list_tags_for_workspace(state.workspace_id)
             group_options: dict[str, str] = {str(g.id): g.name for g in groups}
 
+            # Pre-compute highlight counts for disable-with-tooltip on delete buttons
+            highlight_counts: dict[UUID, int] = {
+                tag.id: _highlight_count_for_tag(state.crdt_doc, tag.id)
+                for tag in all_tags
+            }
+
             tags_by_group: dict[UUID | None, list[Tag]] = {}
             for tag in all_tags:
                 tags_by_group.setdefault(tag.group_id, []).append(tag)
@@ -355,6 +361,7 @@ async def open_tag_management(
                     group_row_collector=group_row_inputs,
                     on_field_save=_save_tag_field,
                     on_group_field_save=_save_group_field,
+                    highlight_counts=highlight_counts,
                 )
 
                 # Import section -- available to all users (AC3.6)
@@ -539,18 +546,28 @@ def _build_tag_crud_callbacks(
         ui.notify(f"Tag '{tag_name}' deleted", type="positive")
         await render_tag_list()
 
-    async def _add_tag_in_group(group_id: UUID | None) -> None:
-        existing_names = (
-            {t.name for t in state.tag_info_list} if state.tag_info_list else set()
-        )
-        name = _unique_tag_name(existing_names)
-        tag = await _create_tag_or_notify(
-            create_tag, state, name, _PRESET_PALETTE[0], group_id
-        )
-        if tag is None:
-            return
-        await render_tag_list()
-        await _refresh_tag_state(state)
+    async def _add_tag_in_group(
+        group_id: UUID | None, btn: ui.button | None = None
+    ) -> None:
+        if btn is not None:
+            btn.disable()
+            btn.props("loading")
+        try:
+            existing_names = (
+                {t.name for t in state.tag_info_list} if state.tag_info_list else set()
+            )
+            name = _unique_tag_name(existing_names)
+            tag = await _create_tag_or_notify(
+                create_tag, state, name, _PRESET_PALETTE[0], group_id
+            )
+            if tag is None:
+                return
+            await render_tag_list()
+            await _refresh_tag_state(state)
+        finally:
+            if btn is not None:
+                btn.props(remove="loading")
+                btn.enable()
 
     async def _lock_toggle(tag_id: UUID, locked: bool) -> None:
         try:

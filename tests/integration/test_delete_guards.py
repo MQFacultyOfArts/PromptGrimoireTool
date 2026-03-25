@@ -493,6 +493,151 @@ class TestDeleteDocument:
         result = await delete_document(uuid4(), user_id=uuid4())
         assert result is False
 
+    @pytest.mark.asyncio
+    async def test_delete_document_with_annotations_raises(self) -> None:
+        """Document with CRDT highlights raises HasAnnotationsError.
+
+        Verifies tag-deletion-guards-413.AC3.2.
+        """
+        from promptgrimoire.crdt.annotation_doc import AnnotationDocument
+        from promptgrimoire.db.acl import grant_permission
+        from promptgrimoire.db.exceptions import HasAnnotationsError
+        from promptgrimoire.db.workspace_documents import add_document, delete_document
+        from promptgrimoire.db.workspaces import (
+            create_workspace,
+            save_workspace_crdt_state,
+        )
+
+        workspace = await create_workspace()
+        owner_id = await _create_student()
+        await grant_permission(workspace.id, owner_id, "owner")
+
+        doc = await add_document(
+            workspace_id=workspace.id,
+            type="source",
+            content="<p>Annotated content</p>",
+            source_type="html",
+            title="Annotated Doc",
+        )
+
+        # Build CRDT state with 2 highlights for this document
+        crdt = AnnotationDocument("test")
+        doc_str = str(doc.id)
+        for i in range(2):
+            crdt.add_highlight(
+                start_char=i * 10,
+                end_char=(i + 1) * 10,
+                tag="some-tag",
+                text=f"text{i}",
+                author="test",
+                document_id=doc_str,
+            )
+        await save_workspace_crdt_state(workspace.id, crdt.get_full_state())
+
+        with pytest.raises(HasAnnotationsError) as exc_info:
+            await delete_document(doc.id, user_id=owner_id)
+        assert exc_info.value.highlight_count == 2
+        assert exc_info.value.document_id == doc.id
+
+    @pytest.mark.asyncio
+    async def test_delete_document_zero_annotations_succeeds(self) -> None:
+        """User-uploaded document with zero annotations deletes successfully.
+
+        Verifies tag-deletion-guards-413.AC3.1.
+        """
+        from promptgrimoire.crdt.annotation_doc import AnnotationDocument
+        from promptgrimoire.db.acl import grant_permission
+        from promptgrimoire.db.workspace_documents import (
+            add_document,
+            delete_document,
+            get_document,
+        )
+        from promptgrimoire.db.workspaces import (
+            create_workspace,
+            save_workspace_crdt_state,
+        )
+
+        workspace = await create_workspace()
+        owner_id = await _create_student()
+        await grant_permission(workspace.id, owner_id, "owner")
+
+        doc = await add_document(
+            workspace_id=workspace.id,
+            type="source",
+            content="<p>Clean content</p>",
+            source_type="html",
+            title="Clean Doc",
+        )
+
+        # Persist empty CRDT state (no highlights for this doc)
+        crdt = AnnotationDocument("test")
+        await save_workspace_crdt_state(workspace.id, crdt.get_full_state())
+
+        result = await delete_document(doc.id, user_id=owner_id)
+        assert result is True
+        assert await get_document(doc.id) is None
+
+    @pytest.mark.asyncio
+    async def test_delete_document_after_removing_annotations_succeeds(self) -> None:
+        """Document deletion succeeds after all annotations are removed from CRDT.
+
+        Verifies tag-deletion-guards-413.AC3.5.
+        """
+        from promptgrimoire.crdt.annotation_doc import AnnotationDocument
+        from promptgrimoire.db.acl import grant_permission
+        from promptgrimoire.db.exceptions import HasAnnotationsError
+        from promptgrimoire.db.workspace_documents import (
+            add_document,
+            delete_document,
+            get_document,
+        )
+        from promptgrimoire.db.workspaces import (
+            create_workspace,
+            save_workspace_crdt_state,
+        )
+
+        workspace = await create_workspace()
+        owner_id = await _create_student()
+        await grant_permission(workspace.id, owner_id, "owner")
+
+        doc = await add_document(
+            workspace_id=workspace.id,
+            type="source",
+            content="<p>Will clear annotations</p>",
+            source_type="html",
+            title="Clearing Doc",
+        )
+
+        # Build CRDT state with highlights
+        crdt = AnnotationDocument("test")
+        doc_str = str(doc.id)
+        hl_ids = []
+        for i in range(2):
+            hl_id = crdt.add_highlight(
+                start_char=i * 10,
+                end_char=(i + 1) * 10,
+                tag="some-tag",
+                text=f"text{i}",
+                author="test",
+                document_id=doc_str,
+            )
+            hl_ids.append(hl_id)
+        await save_workspace_crdt_state(workspace.id, crdt.get_full_state())
+
+        # Verify guard blocks deletion
+        with pytest.raises(HasAnnotationsError):
+            await delete_document(doc.id, user_id=owner_id)
+
+        # Remove all highlights
+        for hl_id in hl_ids:
+            crdt.remove_highlight(hl_id)
+        await save_workspace_crdt_state(workspace.id, crdt.get_full_state())
+
+        # Now deletion succeeds
+        result = await delete_document(doc.id, user_id=owner_id)
+        assert result is True
+        assert await get_document(doc.id) is None
+
 
 class TestDeleteCourse:
     """Tests for delete_course() with guard logic."""

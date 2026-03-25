@@ -22,7 +22,11 @@ import structlog
 from nicegui import ui
 from selectolax.lexbor import LexborHTMLParser
 
-from promptgrimoire.db.exceptions import OwnershipError, ProtectedDocumentError
+from promptgrimoire.db.exceptions import (
+    HasAnnotationsError,
+    OwnershipError,
+    ProtectedDocumentError,
+)
 from promptgrimoire.db.workspace_documents import (
     count_document_clones,
     delete_document,
@@ -73,17 +77,21 @@ def can_edit_document(doc: WorkspaceDocument, *, annotation_count: int) -> bool:
     return annotation_count == 0 and doc.source_document_id is None
 
 
-def can_delete_document(doc: WorkspaceDocument, *, is_owner: bool) -> bool:
+def can_delete_document(
+    doc: WorkspaceDocument, *, is_owner: bool, annotation_count: int
+) -> bool:
     """Whether a document is eligible for deletion in the UI.
 
     A document can be deleted when:
     1. The viewer is the workspace owner, AND
-    2. The document is user-uploaded (source_document_id IS NULL).
+    2. The document is user-uploaded (source_document_id IS NULL), AND
+    3. The document has zero annotations (highlights).
 
     Template-cloned documents (source_document_id IS NOT NULL) never show
-    a delete button (AC4.3).
+    a delete button. Documents with annotations must have annotations
+    removed before deletion (defence-in-depth -- DB guard also blocks).
     """
-    return is_owner and doc.source_document_id is None
+    return is_owner and doc.source_document_id is None and annotation_count == 0
 
 
 def _get_annotation_count(state: PageState, doc_id: UUID) -> int:
@@ -100,6 +108,33 @@ def _get_annotation_count(state: PageState, doc_id: UUID) -> int:
     if state.crdt_doc is None:
         return 0
     return len(state.crdt_doc.get_highlights_for_document(str(doc_id)))
+
+
+def _render_delete_button(
+    doc: WorkspaceDocument,
+    state: PageState,
+    dialog: ui.dialog,
+    annotation_count: int,
+) -> None:
+    """Render delete button for a user-uploaded document.
+
+    The button is always shown for owner-uploaded documents but disabled
+    with a tooltip when the document has annotations, so the user
+    understands the precondition for deletion.
+    """
+    deletable = can_delete_document(
+        doc, is_owner=state.is_owner, annotation_count=annotation_count
+    )
+    btn = ui.button(
+        icon="delete",
+        on_click=lambda d=doc: _handle_delete_document(d, state, dialog),
+    ).props(
+        f'flat round dense size=sm color=negative data-testid="delete-doc-btn-{doc.id}"'
+    )
+    if not deletable:
+        btn.disable()
+        suffix = "s" if annotation_count != 1 else ""
+        btn.tooltip(f"Remove {annotation_count} annotation{suffix} before deleting")
 
 
 def _render_document_row(
@@ -130,13 +165,8 @@ def _render_document_row(
                     "flat round dense size=sm color=primary"
                     f' data-testid="edit-document-btn-{doc.id}"'
                 )
-            ui.button(
-                icon="delete",
-                on_click=lambda d=doc: _handle_delete_document(d, state, dialog),
-            ).props(
-                "flat round dense size=sm color=negative"
-                f' data-testid="delete-doc-btn-{doc.id}"'
-            )
+            if doc.source_document_id is None:
+                _render_delete_button(doc, state, dialog, annotation_count)
 
 
 async def open_manage_documents_dialog(state: PageState) -> None:
@@ -319,6 +349,20 @@ async def _do_delete_document(doc: WorkspaceDocument, state: PageState) -> None:
     except ProtectedDocumentError:
         logger.warning("protected_document_delete", operation="delete_document")
         ui.notify("This document is protected and cannot be deleted", type="negative")
+        return
+    except HasAnnotationsError as exc:
+        logger.warning(
+            "document_delete_blocked",
+            operation="delete_document",
+            document_id=str(doc.id),
+            highlight_count=exc.highlight_count,
+        )
+        ui.notify(
+            f"Cannot delete: {exc.highlight_count} "
+            f"annotation{'s' if exc.highlight_count != 1 else ''} "
+            "on this document",
+            type="warning",
+        )
         return
 
     ui.notify("Document deleted. You can upload a replacement.", type="positive")

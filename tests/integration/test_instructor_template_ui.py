@@ -498,7 +498,7 @@ class TestImportTagsFromActivity:
         await _fire_event_listeners_async(btn, "click")
 
         # Verify success notification
-        await nicegui_user.should_see("Imported 2 tag(s)", retries=20)
+        await nicegui_user.should_see("Imported 2 tags", retries=20)
 
         # Verify the imported tags exist in the target workspace DB
         from promptgrimoire.db.tags import (

@@ -13,6 +13,7 @@ tags, and verifies they appear in the toolbar.
 
 Acceptance Criteria:
 - tag-lifecycle-235-291.AC3.6: Import available to all users
+- tag-deletion-guards-413.AC4.5: Notification reports created/skipped counts
 """
 
 from __future__ import annotations
@@ -129,6 +130,96 @@ class TestStudentTagImport:
             # Should have the seed tags (10 tags from Legal Case Brief set)
             count = tag_buttons.count()
             assert count > 0, "Expected imported tags in toolbar"
+
+        finally:
+            page.goto("about:blank")
+            page.close()
+            context.close()
+
+    def test_reimport_shows_no_new_tags_notification(
+        self,
+        browser: Browser,
+        app_server: str,
+    ) -> None:
+        """Re-importing tags that already exist shows "No new tags" notification.
+
+        Steps:
+        1. Create source workspace with tags and target without tags
+        2. Import tags (first import -- creates tags)
+        3. Close and reopen dialog
+        4. Import again from same source
+        5. Verify notification says "No new tags to import"
+
+        Verifies: tag-deletion-guards-413.AC4.5
+        """
+        uid = uuid4().hex[:8]
+        email = f"reimport-{uid}@test.edu"
+
+        context = browser.new_context()
+        page = context.new_page()
+
+        try:
+            _authenticate_page(page, app_server, email=email)
+
+            _create_workspace_via_db(
+                user_email=email,
+                html_content="<p>Source for reimport test</p>",
+                seed_tags=True,
+            )
+
+            target_ws_id = _create_workspace_via_db(
+                user_email=email,
+                html_content="<p>Target for reimport test</p>",
+                seed_tags=False,
+            )
+
+            page.goto(f"{app_server}/annotation?workspace_id={target_ws_id}")
+            wait_for_text_walker(page, timeout=15000)
+
+            # --- First import ---
+            page.get_by_test_id("tag-settings-btn").click()
+            dialog = page.get_by_test_id("tag-management-dialog")
+            expect(dialog).to_be_visible(timeout=5000)
+
+            import_select = dialog.get_by_test_id("import-workspace-select")
+            expect(import_select).to_be_visible(timeout=5000)
+            import_select.click()
+
+            source_option = page.get_by_role("option").first  # noqa: PG002
+            source_option.wait_for(state="visible", timeout=5000)
+            source_option.click()
+
+            import_btn = dialog.get_by_test_id("import-tags-btn")
+            import_btn.click()
+
+            expect(page.locator(".q-notification")).to_contain_text(
+                re.compile(r"Imported \d+ tag"), timeout=10000
+            )
+
+            # Close dialog
+            dialog.get_by_test_id("tag-management-done-btn").click()
+            expect(dialog).to_be_hidden(timeout=5000)
+
+            # --- Second import (re-import) ---
+            page.get_by_test_id("tag-settings-btn").click()
+            dialog = page.get_by_test_id("tag-management-dialog")
+            expect(dialog).to_be_visible(timeout=5000)
+
+            import_select = dialog.get_by_test_id("import-workspace-select")
+            expect(import_select).to_be_visible(timeout=5000)
+            import_select.click()
+
+            source_option = page.get_by_role("option").first  # noqa: PG002
+            source_option.wait_for(state="visible", timeout=5000)
+            source_option.click()
+
+            import_btn = dialog.get_by_test_id("import-tags-btn")
+            import_btn.click()
+
+            # Should show "No new tags to import"
+            expect(page.locator(".q-notification")).to_contain_text(
+                "No new tags to import", timeout=10000
+            )
 
         finally:
             page.goto("about:blank")

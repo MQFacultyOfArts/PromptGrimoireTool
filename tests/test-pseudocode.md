@@ -13,7 +13,7 @@ they reveal where the test suite is redundant or incomplete.
 > user-docs-rodney-showboat-207,
 > platform-handlers-openrouter-chatcraft-209, docs-platform-208,
 > tags-214, word-count-limits-47, wargame-schema-294, card-layout-236,
-> and pdf-export-filename-271 branches.
+> pdf-export-filename-271, and tag-deletion-guards-413 branches.
 > Existing tests from before these branches are not yet documented here.
 
 ## Highlight Span Insertion (Pre-Pandoc)
@@ -2076,13 +2076,15 @@ It catches any divergence that would cause highlights to render at wrong positio
 
 **Verifies:** update_tag_group modifies requested fields
 
-### Delete TagGroup ungroups its tags
-**File:** tests/integration/test_tag_crud.py::TestDeleteTagGroup::test_delete_group_ungroups_tags
+### Delete group blocked when it has tags, succeeds after removal
+**File:** tests/integration/test_tag_crud.py::TestDeleteTagGroup::test_delete_group_with_tag_blocked_then_ungroups_after_removal
 1. Create group, create tag in group
-2. Delete group
-3. Assert tag still exists with group_id=None
+2. Attempt delete group -- assert HasChildTagsError
+3. Ungroup the tag (update_tag group_id=None)
+4. Delete group -- succeeds
+5. Assert tag still exists with group_id=None (FK SET NULL)
 
-**Verifies:** SET NULL FK on TagGroup delete preserves tags as ungrouped
+**Verifies:** HasChildTagsError guard blocks group deletion; after tags removed, deletion proceeds and FK SET NULL preserves orphaned tags
 
 ### Locked tag rejects field changes
 **File:** tests/integration/test_tag_crud.py::TestLockEnforcement::test_update_locked_tag_rejects_field_changes
@@ -2167,29 +2169,208 @@ It catches any divergence that would cause highlights to render at wrong positio
 
 **Verifies:** Import creates independent copies with correct field preservation and group remapping
 
-### Delete tag removes CRDT highlights
-**File:** tests/integration/test_tag_crud.py::TestDeleteTagCrdtCleanup::test_delete_tag_removes_crdt_highlights
+### Delete tag blocked when CRDT highlights persisted
+**File:** tests/integration/test_tag_crud.py::TestDeleteTagCrdtCleanup::test_delete_tag_blocked_when_crdt_highlights_persisted
 1. Create workspace with tag, build CRDT state with 3 highlights for that tag
-2. Save CRDT state, delete tag
-3. Reload CRDT, assert 0 highlights remain and tag_order entry removed
+2. Save CRDT state, attempt delete tag
+3. Assert HasHighlightsError with highlight_count=3
 
-**Verifies:** Tag deletion cascades to CRDT highlight cleanup
+**Verifies:** HasHighlightsError guard reads persisted CRDT state and blocks deletion (supersedes old AC2.3 silent cleanup)
 
-### Delete tag preserves other tags' highlights
+### Delete tag blocked preserves other tags' highlights
 **File:** tests/integration/test_tag_crud.py::TestDeleteTagCrdtCleanup::test_delete_tag_preserves_other_highlights
 1. Create 2 tags, build CRDT state with highlights for both
-2. Delete tag A only
-3. Assert tag B's highlights and tag_order entry preserved
+2. Attempt delete tag A -- assert HasHighlightsError
+3. Assert both tags' highlights remain untouched (guard fires before cleanup)
 
-**Verifies:** CRDT cleanup is surgical -- only removes targeted tag's data
+**Verifies:** Guard raises before any CRDT mutation occurs
 
-### Delete tag succeeds when no tag_order entry exists
-**File:** tests/integration/test_tag_crud.py::TestDeleteTagCrdtCleanup::test_delete_tag_no_tag_order_entry
-1. Create tag, build CRDT with highlight but no tag_order entry
-2. Delete tag -- assert no error
-3. Assert highlights removed
+### Delete tag blocked even without tags Map entry
+**File:** tests/integration/test_tag_crud.py::TestDeleteTagCrdtCleanup::test_delete_tag_blocked_with_highlights_no_tags_map_entry
+1. Create tag, build CRDT with highlight but no tags Map entry
+2. Attempt delete tag -- assert HasHighlightsError with count=1
 
-**Verifies:** Missing tag_order is silently skipped during cleanup
+**Verifies:** Guard counts highlights regardless of tags Map presence
+
+### CRDT cleanup runs after guard passes (tag entry removed from tags Map)
+**File:** tests/integration/test_tag_crud.py::TestDeleteTagCrdtCleanup::test_delete_tag_crdt_cleanup_runs_after_guard_passes
+1. Create tag with highlights and tags Map entry
+2. Remove highlights from persisted CRDT state (so guard passes)
+3. Delete tag -- succeeds
+4. Reload CRDT, assert tag entry gone from tags Map
+
+**Verifies:** When guard passes (zero highlights), CRDT cleanup runs and removes tag from tags Map
+
+## Tag Deletion Guards (#413)
+
+### Delete empty group succeeds
+**File:** tests/integration/test_tag_crud.py::TestDeleteTagGroup::test_delete_empty_group_succeeds
+1. Create group with zero tags
+2. Delete group
+3. Assert deletion returns True
+
+**Verifies:** Empty groups pass the HasChildTagsError guard (AC1.1)
+
+### Delete group with tags raises HasChildTagsError
+**File:** tests/integration/test_tag_crud.py::TestDeleteTagGroup::test_delete_group_with_tags_raises
+1. Create group with 2 tags
+2. Attempt delete group
+3. Assert HasChildTagsError with tag_count=2
+
+**Verifies:** Guard counts child tags and blocks deletion (AC1.2)
+
+### Delete tag with zero highlights succeeds
+**File:** tests/integration/test_tag_crud.py::TestDeleteTagGroup::test_delete_tag_with_zero_highlights_succeeds
+1. Create workspace with tag, persist empty CRDT state
+2. Delete tag
+3. Assert deletion succeeds, tag gone from DB
+
+**Verifies:** Tags with no CRDT highlights pass the guard (AC2.1)
+
+### Delete tag with highlights raises HasHighlightsError
+**File:** tests/integration/test_tag_crud.py::TestDeleteTagGroup::test_delete_tag_with_highlights_raises
+1. Create workspace with tag, build CRDT with 2 highlights for that tag
+2. Persist CRDT state, attempt delete tag
+3. Assert HasHighlightsError with highlight_count=2
+
+**Verifies:** Guard reads persisted CRDT state to count highlights (AC2.2)
+
+### Delete document with annotations raises HasAnnotationsError
+**File:** tests/integration/test_delete_guards.py::TestDocumentDeletionGuards::test_delete_document_with_annotations_raises
+1. Create workspace with document, build CRDT with 2 highlights for that document
+2. Persist CRDT state, attempt delete document
+3. Assert HasAnnotationsError with highlight_count=2
+
+**Verifies:** Document deletion guard reads CRDT highlights for the document (AC3.2)
+
+### Import creates groups and tags with ImportResult
+**File:** tests/integration/test_tag_crud.py::TestImportTagsFromWorkspace::test_import_creates_groups_and_tags
+1. Create source workspace with 2 groups and 3 tags (2 grouped, 1 ungrouped)
+2. Grant read access, import to target
+3. Assert ImportResult: 2 created_groups, 3 created_tags, 0 skipped
+
+**Verifies:** Full import with ON CONFLICT DO NOTHING creates all items (AC4.1, AC4.4)
+
+### Re-import skips all existing items
+**File:** tests/integration/test_tag_crud.py::TestImportTagsFromWorkspace::test_reimport_skips_all_existing
+1. Import source to target (first time)
+2. Import same source again
+3. Assert second ImportResult: 0 created, all skipped
+
+**Verifies:** Idempotent import via ON CONFLICT DO NOTHING (AC4.2)
+
+### Partial overlap creates new, skips existing
+**File:** tests/integration/test_tag_crud.py::TestImportTagsFromWorkspace::test_partial_overlap_creates_new_skips_existing
+1. Create source with "Overlap" and "Unique" tags
+2. Create target with "Overlap" already present
+3. Import; assert 1 created (Unique), 1 skipped (Overlap)
+
+**Verifies:** Mixed import correctly categorises created vs skipped (AC4.3)
+
+### Existing group name remaps source tags
+**File:** tests/integration/test_tag_crud.py::TestImportTagsFromWorkspace::test_existing_group_name_remaps_tags
+1. Source has group "SharedGroup" with tag "Src"
+2. Target already has group "SharedGroup"
+3. Import; assert source tag remapped to target's existing group
+
+**Verifies:** Group name collisions remap tags to existing target group (AC4.3a)
+
+## Deletion Guard Exceptions (Unit)
+
+### HasChildTagsError stores attributes and formats message
+**File:** tests/unit/test_exceptions.py::TestHasChildTagsError
+1. Instantiate with group_id and count
+2. Assert group_id and tag_count attributes stored
+3. Assert singular "1 tag" vs plural "5 tags" in message
+4. Assert is subclass of BusinessLogicError
+
+**Verifies:** Exception correctly stores context and pluralises
+
+### HasHighlightsError stores attributes and formats message
+**File:** tests/unit/test_exceptions.py::TestHasHighlightsError
+1. Instantiate with tag_id and count
+2. Assert tag_id and highlight_count attributes stored
+3. Assert singular/plural formatting
+
+**Verifies:** Exception correctly stores context and pluralises
+
+### HasAnnotationsError stores attributes and formats message
+**File:** tests/unit/test_exceptions.py::TestHasAnnotationsError
+1. Instantiate with document_id and count
+2. Assert document_id and highlight_count attributes stored
+3. Assert singular/plural formatting
+
+**Verifies:** Exception correctly stores context and pluralises
+
+## Import Notification (Unit)
+
+### Notification text for various ImportResult states
+**File:** tests/unit/test_import_notification.py::TestImportNotification
+1. Empty result: "No new tags to import" (info type)
+2. Tags only: "Imported 3 tags" (positive type)
+3. Single tag: no trailing "s"
+4. Groups only: "Imported 2 groups"
+5. Tags + groups: "Imported 2 tags, 1 group"
+6. With skipped: "Imported 1 tag (3 tags already existed)"
+7. Parametrised singular/plural for skipped counts
+
+**Verifies:** _import_notification produces correct user-facing text with pluralisation (AC4.5)
+
+## Deletion Guard UI (E2E)
+
+### Group delete button disabled when group has tags
+**File:** tests/e2e/test_tag_deletion_guards.py
+1. Create workspace with group containing tags
+2. Navigate to tag management
+3. Assert group delete button is disabled
+4. Assert tooltip contains tag count and remedy text
+
+**Verifies:** UI disables group deletion with explanatory tooltip (AC1.3)
+
+### Tag delete button disabled when tag has highlights
+**File:** tests/e2e/test_tag_deletion_guards.py
+1. Create workspace with tag, persist CRDT highlights
+2. Navigate to tag management
+3. Assert tag delete button is disabled
+4. Assert tooltip contains highlight count and remedy text
+
+**Verifies:** UI disables tag deletion with explanatory tooltip (AC2.3)
+
+### Document delete button disabled when document has annotations
+**File:** tests/e2e/test_tag_deletion_guards.py
+1. Create workspace with document, persist CRDT highlights for document
+2. Navigate to document management
+3. Assert document delete button is disabled
+4. Assert tooltip contains annotation count and remedy text
+
+**Verifies:** UI disables document deletion with explanatory tooltip (AC3.3)
+
+## Loading Guards (E2E)
+
+### Import button disabled during import operation
+**File:** tests/e2e/test_tag_loading_guards.py
+1. Create source and target workspaces with tags
+2. Trigger import
+3. Assert no duplicate tags created by rapid clicks
+4. Assert button re-enables after operation
+
+**Verifies:** Import button prevents double-submission (AC5.1, AC5.4)
+
+### Add-tag button disabled during tag creation
+**File:** tests/e2e/test_tag_loading_guards.py
+1. Fill tag name, click add
+2. Assert no duplicate tags created by rapid clicks
+3. Assert button re-enables after operation
+
+**Verifies:** Add-tag button prevents double-submission (AC5.2, AC5.4)
+
+### Quick Create save button disabled during creation
+**File:** tests/e2e/test_tag_loading_guards.py
+1. Fill Quick Create form, click save
+2. Assert no duplicate tags created by rapid clicks
+3. Assert button re-enables after operation
+
+**Verifies:** Quick Create save prevents double-submission (AC5.3, AC5.4)
 
 ## Annotation Tags -- Tag Schema & Cascade (Integration)
 

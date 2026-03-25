@@ -52,8 +52,7 @@ def _apply_deletion_guard(
     """
     if count > 0:
         btn.disable()
-        s = "s" if count != 1 else ""
-        btn.tooltip(f"Has {count} {noun}{s} — {remedy}")
+        btn.tooltip(f"Has {count} {noun}{'s' if count != 1 else ''} — {remedy}")
     else:
         btn.tooltip(default_tooltip)
 

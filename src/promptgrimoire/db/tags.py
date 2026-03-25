@@ -799,7 +799,7 @@ async def _import_groups(
 
         if created_id is not None:
             created_group = await session.get(TagGroup, created_id)
-            assert created_group is not None  # noqa: S101
+            assert created_group is not None  # noqa: S101  -- RETURNING guarantees non-None after insert
             result_obj.created_groups.append(created_group)
             group_id_map[src_group.id] = created_id
         else:
@@ -850,7 +850,7 @@ async def _import_tags(
 
         if created_id is not None:
             created_tag = await session.get(Tag, created_id)
-            assert created_tag is not None  # noqa: S101
+            assert created_tag is not None  # noqa: S101  -- RETURNING guarantees non-None after insert
             result_obj.created_tags.append(created_tag)
         else:
             result_obj.skipped_tags += 1
@@ -860,7 +860,11 @@ def _import_crdt_dual_write(
     crdt_doc: AnnotationDocument,
     result_obj: ImportResult,
 ) -> None:
-    """Write newly created groups and tags to the live CRDT document."""
+    """Write newly created groups and tags to the live CRDT document.
+
+    Callers **must** wrap this in ``_safe_crdt_write`` to ensure partial
+    CRDT mutations are caught and logged rather than propagated.
+    """
     for group in result_obj.created_groups:
         crdt_doc.set_tag_group(
             group_id=group.id,

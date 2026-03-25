@@ -61,8 +61,8 @@ step "git pull"
 sudo -u promptgrimoire env PATH="$PG_PATH" git -C "$APP_DIR" pull --rebase
 
 # 2. Sync dependencies
-step "uv sync --no-dev"
-sudo -u promptgrimoire env PATH="$PG_PATH" "$UV" --directory "$APP_DIR" sync --no-dev
+step "uv sync"
+sudo -u promptgrimoire env PATH="$PG_PATH" "$UV" --directory "$APP_DIR" sync
 
 # 3. Tests (e-stop)
 if [[ "$SKIP_TESTS" == "false" ]]; then

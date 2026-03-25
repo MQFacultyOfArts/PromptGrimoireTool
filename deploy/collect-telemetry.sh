@@ -21,24 +21,8 @@ PGBOUNCER_LOG="${PGBOUNCER_LOG:-/var/log/pgbouncer/pgbouncer.log}"
 # directory (default: "log" → /var/lib/postgresql/*/main/log/).  Detect this
 # automatically so we collect jsonlog output regardless of configuration.
 PG_COLLECTOR_DIR="${PG_COLLECTOR_DIR:-}"
-if [[ -z "$PG_COLLECTOR_DIR" ]]; then
-    # Ask the running cluster for its data directory + log_directory.
-    # Connect via Unix socket directly to PG (not through PgBouncer) using
-    # the postgres superuser.  -h /var/run/postgresql ensures we bypass
-    # PgBouncer even if PGHOST or .pg_service.conf redirect the default.
-    _pg_data=$(sudo -u postgres psql -h /var/run/postgresql -qtAX -c "SHOW data_directory;" 2>/dev/null || true)
-    _pg_logdir=$(sudo -u postgres psql -h /var/run/postgresql -qtAX -c "SHOW log_directory;" 2>/dev/null || true)
-    if [[ -n "$_pg_data" ]] && [[ -n "$_pg_logdir" ]]; then
-        if [[ "$_pg_logdir" == /* ]]; then
-            # Absolute path
-            PG_COLLECTOR_DIR="$_pg_logdir"
-        else
-            # Relative to data directory
-            PG_COLLECTOR_DIR="$_pg_data/$_pg_logdir"
-        fi
-        [[ -d "$PG_COLLECTOR_DIR" ]] || PG_COLLECTOR_DIR=""
-    fi
-fi
+# NOTE: PG_COLLECTOR_DIR auto-detection (sudo -u postgres psql) is deferred
+# to after argument parsing so that --help / usage paths don't require sudo.
 UNIT_NAME="${UNIT_NAME:-promptgrimoire.service}"
 DB_NAME="${DB_NAME:-promptgrimoire}"
 DB_USER="${DB_USER:-promptgrimoire}"
@@ -81,6 +65,29 @@ done
 if [[ "${COLLECT_TELEMETRY_ALLOW_NON_ROOT:-0}" != "1" && $EUID -ne 0 ]]; then
     echo "ERROR: Must run as root (need journal + log access)." >&2
     exit 1
+fi
+
+# -------------------------------------------------------------------
+# Auto-detect PG logging_collector directory (deferred from config block
+# because it needs sudo, which isn't available during --help / usage).
+# -------------------------------------------------------------------
+if [[ -z "$PG_COLLECTOR_DIR" ]]; then
+    # Ask the running cluster for its data directory + log_directory.
+    # Connect via Unix socket directly to PG (not through PgBouncer) using
+    # the postgres superuser.  -h /var/run/postgresql ensures we bypass
+    # PgBouncer even if PGHOST or .pg_service.conf redirect the default.
+    _pg_data=$(sudo -u postgres psql -h /var/run/postgresql -qtAX -c "SHOW data_directory;" 2>/dev/null || true)
+    _pg_logdir=$(sudo -u postgres psql -h /var/run/postgresql -qtAX -c "SHOW log_directory;" 2>/dev/null || true)
+    if [[ -n "$_pg_data" ]] && [[ -n "$_pg_logdir" ]]; then
+        if [[ "$_pg_logdir" == /* ]]; then
+            # Absolute path
+            PG_COLLECTOR_DIR="$_pg_logdir"
+        else
+            # Relative to data directory
+            PG_COLLECTOR_DIR="$_pg_data/$_pg_logdir"
+        fi
+        [[ -d "$PG_COLLECTOR_DIR" ]] || PG_COLLECTOR_DIR=""
+    fi
 fi
 
 # -------------------------------------------------------------------

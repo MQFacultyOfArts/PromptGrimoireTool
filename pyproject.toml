@@ -214,6 +214,10 @@ ignore = [
 "scripts/incident/*.py" = [
     "TC003",  # sqlite3 used at runtime via caller-passed Connection objects
 ]
+"scripts/profile_workspace.py" = [
+    "B008",     # typer.Option must be called in function defaults
+    "TC003",    # Path used at runtime for file output
+]
 
 [tool.ruff.lint.isort]
 known-first-party = ["promptgrimoire"]

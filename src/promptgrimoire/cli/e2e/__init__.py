@@ -554,6 +554,61 @@ def browserstack(
 
 
 @e2e_app.command(
+    "perf",
+    context_settings={
+        "allow_extra_args": True,
+        "allow_interspersed_args": False,
+    },
+)
+def perf(
+    ctx: typer.Context,
+    filter_expr: str | None = typer.Option(
+        None, "-k", "--filter", help="Pytest keyword filter expression"
+    ),
+    exit_first: bool = typer.Option(
+        False, "-x", "--exit-first", help="Stop on first failure (-x)"
+    ),
+    collect_only: bool = typer.Option(
+        False, "--co", "--collect-only", help="Only collect tests, don't run them"
+    ),
+) -> None:
+    """Run performance baseline tests (perf marker) with managed E2E server."""
+    args = _prepend_filter(ctx.args, filter_expr)
+
+    default_args = ["-m", "perf", "-v", "-s", "--tb=short", "-o", "addopts="]
+
+    if collect_only:
+        from promptgrimoire.cli.testing import _run_collect_only
+
+        sys.exit(_run_collect_only(default_args=default_args, extra_args=args))
+
+    from promptgrimoire.config import get_settings
+
+    get_settings()
+    _pre_test_db_cleanup()
+
+    port = _allocate_ports(1)[0]
+    url = f"http://localhost:{port}"
+    server_process = _start_e2e_server(port)
+    console.print(f"[green]Server ready at {url}[/]")
+
+    os.environ["E2E_BASE_URL"] = url
+
+    args = _prepend_pytest_flags(args, exit_first=exit_first, failed_first=False)
+
+    try:
+        exit_code = _run_pytest(
+            title=f"Performance Baseline Tests — server {url}",
+            log_path=Path("test-perf.log"),
+            default_args=default_args,
+            extra_args=args,
+        )
+    finally:
+        _stop_e2e_server(server_process)
+    sys.exit(exit_code)
+
+
+@e2e_app.command(
     "nicegui",
     context_settings={
         "allow_extra_args": True,

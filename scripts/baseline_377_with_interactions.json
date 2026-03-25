@@ -1,0 +1,195 @@
+{
+  "workspace_id": "0e5e9b04-de94-4728-a8c9-e625c141fea3",
+  "server_url": "http://localhost:8080",
+  "iterations": 3,
+  "load_results": [
+    {
+      "iteration": 0,
+      "walkerReady": true,
+      "timing": {
+        "wallClockTotalMs": 3699,
+        "wallClockDomMs": 3611,
+        "wallClockNetworkMs": 3612,
+        "wallClockWalkerMs": 87
+      },
+      "browser": {
+        "navigation": {
+          "responseEnd": 2246.5999999046326,
+          "requestStart": 1.0999999046325684,
+          "serverResponseMs": 2246,
+          "domContentLoadedMs": 3385,
+          "domInteractiveMs": 2602,
+          "loadEventMs": 3609,
+          "transferSizeBytes": 269173,
+          "encodedBodySizeBytes": 268873,
+          "decodedBodySizeBytes": 1704733
+        },
+        "paint": {
+          "firstPaintMs": 3620,
+          "firstContentfulPaintMs": 3620
+        },
+        "lcp": {
+          "startTimeMs": 3620,
+          "size": 114872,
+          "element": "P"
+        },
+        "resourceCount": 24
+      },
+      "document": {
+        "docContainerExists": true,
+        "docContainerHtml": 425788,
+        "textNodeCount": 5020,
+        "highlightCount": 0
+      }
+    },
+    {
+      "iteration": 1,
+      "walkerReady": true,
+      "timing": {
+        "wallClockTotalMs": 4406,
+        "wallClockDomMs": 4297,
+        "wallClockNetworkMs": 4298,
+        "wallClockWalkerMs": 108
+      },
+      "browser": {
+        "navigation": {
+          "responseEnd": 3015.1999999284744,
+          "requestStart": 0.3999999761581421,
+          "serverResponseMs": 3015,
+          "domContentLoadedMs": 4083,
+          "domInteractiveMs": 3377,
+          "loadEventMs": 4295,
+          "transferSizeBytes": 269059,
+          "encodedBodySizeBytes": 268759,
+          "decodedBodySizeBytes": 1704733
+        },
+        "paint": {
+          "firstPaintMs": 4304,
+          "firstContentfulPaintMs": 4304
+        },
+        "lcp": {
+          "startTimeMs": 4304,
+          "size": 114872,
+          "element": "P"
+        },
+        "resourceCount": 24
+      },
+      "document": {
+        "docContainerExists": true,
+        "docContainerHtml": 425788,
+        "textNodeCount": 5020,
+        "highlightCount": 0
+      }
+    },
+    {
+      "iteration": 2,
+      "walkerReady": true,
+      "timing": {
+        "wallClockTotalMs": 4283,
+        "wallClockDomMs": 4177,
+        "wallClockNetworkMs": 4178,
+        "wallClockWalkerMs": 105
+      },
+      "browser": {
+        "navigation": {
+          "responseEnd": 2968.7000000476837,
+          "requestStart": 0.5,
+          "serverResponseMs": 2968,
+          "domContentLoadedMs": 3955,
+          "domInteractiveMs": 3316,
+          "loadEventMs": 4175,
+          "transferSizeBytes": 269129,
+          "encodedBodySizeBytes": 268829,
+          "decodedBodySizeBytes": 1704733
+        },
+        "paint": {
+          "firstPaintMs": 4184,
+          "firstContentfulPaintMs": 4184
+        },
+        "lcp": {
+          "startTimeMs": 4184,
+          "size": 114872,
+          "element": "P"
+        },
+        "resourceCount": 24
+      },
+      "document": {
+        "docContainerExists": true,
+        "docContainerHtml": 425788,
+        "textNodeCount": 5020,
+        "highlightCount": 0
+      }
+    }
+  ],
+  "load_summary": {
+    "wallClockTotalMs": {
+      "count": 3,
+      "min": 3699,
+      "max": 4406,
+      "mean": 4129.3,
+      "median": 4283,
+      "stdev": 377.7
+    },
+    "serverResponseMs": {
+      "count": 3,
+      "min": 2246,
+      "max": 3015,
+      "mean": 2743,
+      "median": 2968,
+      "stdev": 431.1
+    },
+    "domContentLoadedMs": {
+      "count": 3,
+      "min": 3385,
+      "max": 4083,
+      "mean": 3807.7,
+      "median": 3955,
+      "stdev": 371.6
+    },
+    "firstContentfulPaintMs": {
+      "count": 3,
+      "min": 3620,
+      "max": 4304,
+      "mean": 4036,
+      "median": 4184,
+      "stdev": 365.2
+    },
+    "lcpMs": {
+      "count": 3,
+      "min": 3620,
+      "max": 4304,
+      "mean": 4036,
+      "median": 4184,
+      "stdev": 365.2
+    },
+    "decodedBodySizeBytes": {
+      "count": 3,
+      "min": 1704733,
+      "max": 1704733,
+      "mean": 1704733,
+      "median": 1704733,
+      "stdev": 0.0
+    }
+  },
+  "interaction_results": [
+    {
+      "iteration": 0,
+      "tagButtonCount": 11,
+      "highlightMenuVisible": false
+    },
+    {
+      "iteration": 1,
+      "tagButtonCount": 11,
+      "highlightMenuVisible": false
+    },
+    {
+      "iteration": 2,
+      "tagButtonCount": 11,
+      "highlightMenuVisible": false
+    }
+  ],
+  "interaction_summary": {
+    "highlightMenuMs": {},
+    "tagApplyMs": {}
+  }
+}

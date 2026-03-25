@@ -59,7 +59,7 @@ class TagCrudCallbacks(TypedDict):
     """Typed return value of ``_build_tag_crud_callbacks``."""
 
     delete_tag: Callable[[UUID, str], None]
-    add_tag: Callable[[UUID | None], Awaitable[None]]
+    add_tag: Callable[[UUID | None, ui.button | None], Awaitable[None]]
     lock_toggle: Callable[[UUID, bool], Awaitable[None]]
 
 
@@ -546,18 +546,28 @@ def _build_tag_crud_callbacks(
         ui.notify(f"Tag '{tag_name}' deleted", type="positive")
         await render_tag_list()
 
-    async def _add_tag_in_group(group_id: UUID | None) -> None:
-        existing_names = (
-            {t.name for t in state.tag_info_list} if state.tag_info_list else set()
-        )
-        name = _unique_tag_name(existing_names)
-        tag = await _create_tag_or_notify(
-            create_tag, state, name, _PRESET_PALETTE[0], group_id
-        )
-        if tag is None:
-            return
-        await render_tag_list()
-        await _refresh_tag_state(state)
+    async def _add_tag_in_group(
+        group_id: UUID | None, btn: ui.button | None = None
+    ) -> None:
+        if btn is not None:
+            btn.disable()
+            btn.props("loading")
+        try:
+            existing_names = (
+                {t.name for t in state.tag_info_list} if state.tag_info_list else set()
+            )
+            name = _unique_tag_name(existing_names)
+            tag = await _create_tag_or_notify(
+                create_tag, state, name, _PRESET_PALETTE[0], group_id
+            )
+            if tag is None:
+                return
+            await render_tag_list()
+            await _refresh_tag_state(state)
+        finally:
+            if btn is not None:
+                btn.props(remove="loading")
+                btn.enable()
 
     async def _lock_toggle(tag_id: UUID, locked: bool) -> None:
         try:

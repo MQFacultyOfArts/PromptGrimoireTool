@@ -561,7 +561,7 @@ def _render_tag_list_content(
     is_instructor: bool,
     on_delete_tag: Callable[[UUID, str], None],
     on_delete_group: Callable[[UUID, str], None],
-    on_add_tag: Callable[[UUID | None], Awaitable[None]],
+    on_add_tag: Callable[[UUID | None, ui.button | None], Awaitable[None]],
     on_add_group: Callable[[], Awaitable[None]],
     on_lock_toggle: (Callable[[UUID, bool], Awaitable[None]] | None),
     on_tag_reorder_for_group: Any,
@@ -629,7 +629,7 @@ def _render_tag_list_content(
                 )
                 ui.button(
                     "+ Add tag",
-                    on_click=lambda _e, gid=group.id: on_add_tag(gid),
+                    on_click=lambda e, gid=group.id: on_add_tag(gid, e.sender),
                 ).props(f"flat dense data-testid=group-add-tag-btn-{group.id}").classes(
                     "text-xs ml-8 mt-1"
                 )
@@ -656,7 +656,7 @@ def _render_tag_list_content(
         )
         ui.button(
             "+ Add tag",
-            on_click=lambda _e: on_add_tag(None),
+            on_click=lambda e: on_add_tag(None, e.sender),
         ).props('flat dense data-testid="add-ungrouped-tag-btn"').classes(
             "text-xs ml-8 mt-1"
         )

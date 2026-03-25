@@ -52,9 +52,14 @@ Wait for the user to provide the output. The script prints the tarball path and 
 
 ### 2b. Copy tarball to local machine
 
+**Store incident data in the worktree, not `/tmp`.** `/tmp` is a shared namespace — E2E test runs, system cleanup, or other processes can clobber files there. Use `output/incident/` under the current worktree:
+
 ```bash
-scp grimoire.drbbs.org:/tmp/telemetry-YYYYMMDD-HHMM.tar.gz /tmp/
+mkdir -p output/incident
+scp grimoire.drbbs.org:/tmp/telemetry-YYYYMMDD-HHMM.tar.gz output/incident/
 ```
+
+All subsequent commands use `output/incident/` as the working directory for the DB, report, and extracted files. The `output/` directory is gitignored.
 
 ### 2c. (Optional) Fetch Beszel metrics
 
@@ -66,7 +71,7 @@ ssh -L 8090:localhost:8090 brian.fedarch.org
 # Then fetch:
 uv run scripts/incident_db.py beszel \
   --start "YYYY-MM-DD HH:MM" --end "YYYY-MM-DD HH:MM" \
-  --hub http://localhost:8090 --db /tmp/incident.db
+  --hub http://localhost:8090 --db output/incident/incident.db
 ```
 
 ## Step 3: Build the Dataset
@@ -75,14 +80,14 @@ These commands run locally. Execute them sequentially — each depends on the pr
 
 ```bash
 # 1. Ingest tarball
-uv run scripts/incident_db.py ingest /tmp/telemetry-YYYYMMDD-HHMM.tar.gz --db /tmp/incident.db
+uv run scripts/incident_db.py ingest output/incident/telemetry-YYYYMMDD-HHMM.tar.gz --db output/incident/incident.db
 
 # 2. Fetch GitHub PR metadata
 uv run scripts/incident_db.py github \
-  --start "YYYY-MM-DD HH:MM" --end "YYYY-MM-DD HH:MM" --db /tmp/incident.db
+  --start "YYYY-MM-DD HH:MM" --end "YYYY-MM-DD HH:MM" --db output/incident/incident.db
 
 # 3. Verify provenance
-uv run scripts/incident_db.py sources --db /tmp/incident.db
+uv run scripts/incident_db.py sources --db output/incident/incident.db
 ```
 
 **Check the sources output.** Every expected source must appear. If any are missing, investigate before proceeding.
@@ -91,11 +96,11 @@ uv run scripts/incident_db.py sources --db /tmp/incident.db
 
 ```bash
 # Extract db-snapshot.json from tarball
-tar xzf /tmp/telemetry-YYYYMMDD-HHMM.tar.gz ./db-snapshot.json -O > /tmp/db-snapshot.json
+tar xzf output/incident/telemetry-YYYYMMDD-HHMM.tar.gz ./db-snapshot.json -O > output/incident/db-snapshot.json
 
 # Generate report
-uv run scripts/incident_db.py review --db /tmp/incident.db \
-  --counts-json /tmp/db-snapshot.json --output /tmp/review.md
+uv run scripts/incident_db.py review --db output/incident/incident.db \
+  --counts-json output/incident/db-snapshot.json --output output/incident/review.md
 ```
 
 Read the generated report. It contains:
@@ -119,29 +124,31 @@ Now apply the `incident-analysis` skill methodology:
 # Timeline of events in a window
 uv run scripts/incident_db.py timeline \
   --start "YYYY-MM-DD HH:MM" --end "YYYY-MM-DD HH:MM" \
-  --level error --db /tmp/incident.db
+  --level error --db output/incident/incident.db
 
 # Event breakdown by type
-uv run scripts/incident_db.py breakdown --db /tmp/incident.db
+uv run scripts/incident_db.py breakdown --db output/incident/incident.db
 
 # JS timeout analysis (if relevant)
-uv run scripts/incident_db.py js-timeouts --db /tmp/incident.db --output /tmp/js-timeouts.md
+uv run scripts/incident_db.py js-timeouts --db output/incident/incident.db --output output/incident/js-timeouts.md
 
 # Raw SQL for anything else
-sqlite3 /tmp/incident.db "SELECT ..."
+sqlite3 output/incident/incident.db "SELECT ..."
 ```
 
 ### Direct log queries (when the DB isn't enough)
 
+Extract files from the tarball into `output/incident/` first, then query:
+
 ```bash
 # JSONL — filter by time window (timestamps are UTC)
-jq -r 'select(.timestamp >= "YYYY-MM-DDTHH:MM" and .timestamp < "YYYY-MM-DDTHH:MM")' /tmp/file.jsonl
+jq -r 'select(.timestamp >= "YYYY-MM-DDTHH:MM" and .timestamp < "YYYY-MM-DDTHH:MM")' output/incident/file.jsonl
 
 # HAProxy — status code breakdown (local time)
-grep "DD/Mon/YYYY:HH:MM" /tmp/haproxy.log | grep -oE ' [0-9]{3} ' | sort | uniq -c | sort -rn
+grep "DD/Mon/YYYY:HH:MM" output/incident/haproxy.log | grep -oE ' [0-9]{3} ' | sort | uniq -c | sort -rn
 
 # PG log — error search (UTC timestamps)
-grep "^YYYY-MM-DD HH:MM" /tmp/pglog.log | grep -i error
+grep "^YYYY-MM-DD HH:MM" output/incident/pglog.log | grep -i error
 ```
 
 ## Step 6: Write the Postmortem
@@ -182,6 +189,7 @@ Structure:
 
 ## Rules
 
+- **Store incident data in `output/incident/`, never `/tmp`.** `/tmp` is a shared namespace — E2E tests, system cleanup, and other processes can clobber files. The worktree's `output/` directory is gitignored and safe. Incident 2026-03-25: the SQLite DB was wiped to 0 bytes during an E2E test run because it was stored in `/tmp`.
 - **One server command at a time.** Give one, wait for output, give the next.
 - **Never assume service state.** Check `systemctl status` before and after.
 - **All numbers need provenance.** Command that produced it, source, filter, timezone.

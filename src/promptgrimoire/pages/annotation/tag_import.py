@@ -14,7 +14,11 @@ from uuid import UUID
 import structlog
 from nicegui import ui
 
-from promptgrimoire.db.exceptions import SharePermissionError, TagCreationDeniedError
+from promptgrimoire.db.exceptions import (
+    DuplicateNameError,
+    SharePermissionError,
+    TagCreationDeniedError,
+)
 from promptgrimoire.pages.annotation.tag_management_save import (
     _refresh_tag_state,
 )
@@ -132,6 +136,10 @@ async def _render_import_section(
                 .props('data-testid="import-workspace-select"')
             )
 
+            import_btn = ui.button("Import").props(
+                'flat dense data-testid="import-tags-btn"'
+            )
+
             async def _import_from_workspace() -> None:
                 if not ws_select.value:
                     ui.notify("Select a workspace first", type="warning")
@@ -140,6 +148,8 @@ async def _render_import_section(
                     import_tags_from_workspace,
                 )
 
+                import_btn.disable()
+                import_btn.props("loading")
                 try:
                     result = await import_tags_from_workspace(
                         source_workspace_id=UUID(ws_select.value),
@@ -153,6 +163,17 @@ async def _render_import_section(
                     )
                     ui.notify(str(exc), type="negative")
                     return
+                except DuplicateNameError as exc:
+                    logger.warning(
+                        "tag_import_duplicate",
+                        operation="import_tags",
+                        reason=str(exc),
+                    )
+                    ui.notify(str(exc), type="warning")
+                    return
+                finally:
+                    import_btn.props(remove="loading")
+                    import_btn.enable()
 
                 # Notify BEFORE render_tag_list() — that call clears
                 # content_area which destroys dialog elements via
@@ -162,6 +183,4 @@ async def _render_import_section(
                 await render_tag_list()
                 await _refresh_tag_state(state)
 
-            ui.button("Import", on_click=_import_from_workspace).props(
-                'flat dense data-testid="import-tags-btn"'
-            )
+            import_btn.on_click(_import_from_workspace)

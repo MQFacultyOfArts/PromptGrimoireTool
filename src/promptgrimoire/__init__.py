@@ -450,6 +450,19 @@ def main() -> None:
     # Admin kick endpoint for banning users in real time
     app.routes.insert(0, Route("/api/admin/kick", kick_user_handler, methods=["POST"]))
 
+    # Pre-restart flush and connection-count endpoints for zero-downtime deploy
+    from promptgrimoire.pages.restart import (
+        connection_count_handler,
+        pre_restart_handler,
+    )
+
+    app.routes.insert(
+        0, Route("/api/pre-restart", pre_restart_handler, methods=["POST"])
+    )
+    app.routes.insert(
+        0, Route("/api/connection-count", connection_count_handler, methods=["GET"])
+    )
+
     settings = get_settings()
 
     if settings.database.url:

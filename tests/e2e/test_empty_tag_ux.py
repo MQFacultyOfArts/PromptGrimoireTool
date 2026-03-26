@@ -180,7 +180,7 @@ class TestEmptyTagFloatingMenu:
 
             with subtests.test(msg="ac1_3_new_button_alongside_tags"):
                 # AC1.3: With tags now existing, "+ New" alongside tag buttons
-                page.locator("#doc-container").click(position={"x": 5, "y": 5})
+                page.get_by_test_id("doc-container").click(position={"x": 5, "y": 5})
 
                 select_chars(page, *find_text_range(page, "floating menu"))
 

@@ -78,19 +78,14 @@ def add_comment_to_highlight(
     comment_input = card.get_by_test_id("comment-input")
     comment_input.fill(text)
 
-    # Capture the epoch BEFORE clicking.  Prefer the per-document map
-    # (``window.__cardEpochs[doc_id]``) when available, falling back to
-    # the legacy scalar ``window.__annotationCardsEpoch``.
-    old_epoch = page.evaluate(
-        "() => {"
-        "  const m = window.__cardEpochs;"
-        "  if (m) {"
-        "    const v = Object.values(m);"
-        "    if (v.length) return Math.max(...v);"
-        "  }"
-        "  return window.__annotationCardsEpoch || 0;"
-        "}"
-    )
+    # Capture the scalar epoch BEFORE clicking.  The scalar
+    # ``__annotationCardsEpoch`` tracks the most-recent broadcast from
+    # whichever document is currently active, so it always increments
+    # when the current tab's cards rebuild.  The per-document map
+    # ``__cardEpochs`` is unsuitable because Math.max() across all docs
+    # can stay flat when a lower-epoch document increments to match a
+    # higher-epoch sibling (see #186 multi-doc export test).
+    old_epoch = page.evaluate("() => window.__annotationCardsEpoch || 0")
 
     card.get_by_test_id("post-comment-btn").click()
 
@@ -98,14 +93,7 @@ def add_comment_to_highlight(
     # and signal completion via the epoch increment. This guarantees
     # the old DOM is dead and the new DOM is fully settled.
     page.wait_for_function(
-        "(oldEpoch) => {"
-        "  const m = window.__cardEpochs;"
-        "  if (m) {"
-        "    const v = Object.values(m);"
-        "    if (v.length) return Math.max(...v) > oldEpoch;"
-        "  }"
-        "  return (window.__annotationCardsEpoch || 0) > oldEpoch;"
-        "}",
+        "(oldEpoch) => (window.__annotationCardsEpoch || 0) > oldEpoch",
         arg=old_epoch,
         timeout=10000,
     )

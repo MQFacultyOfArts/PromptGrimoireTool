@@ -213,7 +213,7 @@ def select_text_range(page: Page, text: str) -> None:
     """Select a text substring in the document container by evaluating JS.
 
     Uses the browser's native selection API to select the given text
-    within ``#doc-container``. This approach works without char spans.
+    within the doc-container. This approach works without char spans.
 
     Args:
         page: Playwright page.

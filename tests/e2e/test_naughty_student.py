@@ -211,7 +211,7 @@ class TestNaughtyStudent:
                     timeout=30000,
                 )
 
-                doc = page.locator("#doc-container")
+                doc = page.get_by_test_id("doc-container")
 
                 # "Safe text here" should be visible
                 expect(doc).to_contain_text("Safe text here", timeout=10000)
@@ -232,7 +232,7 @@ class TestNaughtyStudent:
                     timeout=30000,
                 )
 
-                doc = page.locator("#doc-container")
+                doc = page.get_by_test_id("doc-container")
 
                 # Normal text should render
                 expect(doc).to_contain_text("Normal text", timeout=10000)
@@ -438,7 +438,7 @@ class TestNaughtyStudent:
                 wait_for_text_walker(student_page, timeout=15000)
 
                 # Verify content is visible
-                expect(student_page.locator("#doc-container")).to_contain_text(
+                expect(student_page.get_by_test_id("doc-container")).to_contain_text(
                     "protected content", timeout=10000
                 )
 
@@ -476,7 +476,7 @@ class TestNaughtyStudent:
                 )
 
                 # Right-click on the document container
-                student_page.locator("#doc-container").click(button="right")
+                student_page.get_by_test_id("doc-container").click(button="right")
 
                 # Verify toast notification (context menu event is prevented)
                 expect(student_page.locator(".q-notification")).to_contain_text(

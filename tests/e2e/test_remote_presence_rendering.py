@@ -146,7 +146,8 @@ class TestRemoteSelectionRendering:
 
         page.evaluate(
             """() => {
-                renderRemoteSelection('test-user-1', 5, 20, 'Alice', '#2196F3');
+                const cid = document.querySelector('[data-testid="doc-container"]').id;
+                renderRemoteSelection('test-user-1', 5, 20, 'Alice', '#2196F3', cid);
             }"""
         )
 
@@ -173,7 +174,8 @@ class TestRemoteSelectionRendering:
         # Render then remove
         page.evaluate(
             """() => {
-                renderRemoteSelection('test-user-1', 5, 20, 'Alice', '#2196F3');
+                const cid = document.querySelector('[data-testid="doc-container"]').id;
+                renderRemoteSelection('test-user-1', 5, 20, 'Alice', '#2196F3', cid);
             }"""
         )
         assert page.evaluate("() => CSS.highlights.has('hl-sel-test-user-1')")
@@ -197,14 +199,16 @@ class TestRemoteSelectionRendering:
         # First selection
         page.evaluate(
             """() => {
-                renderRemoteSelection('test-user-1', 0, 10, 'Alice', '#2196F3');
+                const cid = document.querySelector('[data-testid="doc-container"]').id;
+                renderRemoteSelection('test-user-1', 0, 10, 'Alice', '#2196F3', cid);
             }"""
         )
 
         # Second selection for same user -- should replace
         page.evaluate(
             """() => {
-                renderRemoteSelection('test-user-1', 15, 30, 'Alice', '#2196F3');
+                const cid = document.querySelector('[data-testid="doc-container"]').id;
+                renderRemoteSelection('test-user-1', 15, 30, 'Alice', '#2196F3', cid);
             }"""
         )
 
@@ -261,8 +265,9 @@ class TestMultipleUsers:
 
         page.evaluate(
             """() => {
-                renderRemoteSelection('user-alice', 0, 10, 'Alice', '#2196F3');
-                renderRemoteSelection('user-bob', 20, 35, 'Bob', '#FF5722');
+                const cid = document.querySelector('[data-testid="doc-container"]').id;
+                renderRemoteSelection('user-alice', 0, 10, 'Alice', '#2196F3', cid);
+                renderRemoteSelection('user-bob', 20, 35, 'Bob', '#FF5722', cid);
             }"""
         )
 
@@ -291,10 +296,11 @@ class TestRemoveAllRemotePresence:
             """() => {
                 const q = '[data-testid="doc-container"]';
                 const container = document.querySelector(q);
+                const cid = container.id;
                 renderRemoteCursor(container, 'user-alice', 5, 'Alice', '#2196F3');
                 renderRemoteCursor(container, 'user-bob', 20, 'Bob', '#FF5722');
-                renderRemoteSelection('user-alice', 0, 10, 'Alice', '#2196F3');
-                renderRemoteSelection('user-bob', 15, 30, 'Bob', '#FF5722');
+                renderRemoteSelection('user-alice', 0, 10, 'Alice', '#2196F3', cid);
+                renderRemoteSelection('user-bob', 15, 30, 'Bob', '#FF5722', cid);
             }"""
         )
 

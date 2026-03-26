@@ -54,7 +54,7 @@ class TestHighlightRendering:
         tag_btn.click()
 
         # Verify no char spans in DOM
-        char_spans = page.locator("#doc-container span.char")
+        char_spans = page.get_by_test_id("doc-container").locator("span.char")
         expect(char_spans).to_have_count(0)
 
         # Wait for and verify highlight is registered in CSS.highlights

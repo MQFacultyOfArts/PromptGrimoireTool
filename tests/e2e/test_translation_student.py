@@ -63,7 +63,7 @@ def _setup_and_highlight(
 ) -> None:
     """Create workspace, verify snippet rendered, highlight, verify card."""
     setup_workspace_with_content(page, app_server, content)
-    expect(page.locator("#doc-container")).to_contain_text(
+    expect(page.get_by_test_id("doc-container")).to_contain_text(
         verify_snippet, timeout=15000
     )
     hl = find_text_range(page, verify_snippet)
@@ -236,7 +236,7 @@ class TestTranslationStudent:
             with subtests.test(msg="paste_mixed_content"):
                 setup_workspace_with_content(page, app_server, MIXED_TEXT)
 
-                doc = page.locator("#doc-container")
+                doc = page.get_by_test_id("doc-container")
                 expect(doc).to_contain_text("Hello", timeout=15000)
                 expect(doc).to_contain_text("\u4e16\u754c", timeout=5000)
 
@@ -286,7 +286,7 @@ class TestTranslationStudent:
 
             with subtests.test(msg="paste_cjk_fixture"):
                 _load_fixture_via_paste(page, app_server, fixture_path)
-                expect(page.locator("#doc-container")).to_contain_text(
+                expect(page.get_by_test_id("doc-container")).to_contain_text(
                     "\u7ef4\u57fa\u767e\u79d1", timeout=15000
                 )
 

@@ -103,7 +103,7 @@ class TestLawStudent:
                 _load_fixture_via_paste(page, app_server, fixture_path)
 
                 # Verify fixture content loaded
-                expect(page.locator("#doc-container")).to_contain_text(
+                expect(page.get_by_test_id("doc-container")).to_contain_text(
                     "Lawlis", timeout=15000
                 )
 
@@ -269,7 +269,7 @@ class TestLawStudent:
                 )
 
                 # Click elsewhere to deselect
-                page.locator("#doc-container").click(position={"x": 5, "y": 5})
+                page.get_by_test_id("doc-container").click(position={"x": 5, "y": 5})
 
             with subtests.test(msg="organise_tab"):
                 # Click Organise tab

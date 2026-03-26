@@ -142,7 +142,7 @@ class TestHTMLPasteWhitespace:
         doc_container = page.locator("[data-testid='document-content']")
         if doc_container.count() == 0:
             # Fallback to the doc-container element
-            doc_container = page.locator("#doc-container")
+            doc_container = page.get_by_test_id("doc-container")
 
         # Screenshot just the document content area
         doc_container.screenshot(path=str(SCREENSHOT_DIR / "04_document_content.png"))

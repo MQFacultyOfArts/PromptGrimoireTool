@@ -317,7 +317,7 @@ class TestBrowserPerf377:
         page.goto(ws_url)
 
         page.wait_for_function(
-            "() => document.getElementById('doc-container')"
+            "() => document.querySelector('[data-testid=\"doc-container\"]')"
             " && window._textNodes && window._textNodes.length > 0"
             " && window._highlightsReady === true",
             timeout=60_000,

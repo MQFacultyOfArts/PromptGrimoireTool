@@ -54,7 +54,7 @@ def _switch_to_organise(page: Page) -> None:
 def _switch_to_annotate(page: Page) -> None:
     """Click the first source tab and wait for it to be active."""
     page.get_by_test_id("tab-source-1").click()
-    expect(page.locator("#doc-container")).to_be_visible(timeout=5000)
+    expect(page.get_by_test_id("doc-container")).to_be_visible(timeout=5000)
 
 
 def _get_card_ids_in_column(page: Page, tag_name: str) -> list[str]:

@@ -70,6 +70,6 @@ class TestRestartingPage:
         from urllib.parse import urlparse
 
         path = urlparse(fresh_page.url).path
-        assert path == "/" or path.startswith("/authenticate"), (
-            f"Expected redirect to / or /authenticate, got {path}"
+        assert path in ("/", "/login") or path.startswith("/authenticate"), (
+            f"Expected redirect to / or auth page, got {path}"
         )

@@ -38,7 +38,7 @@ Phase B addresses a separate operational problem: when the server is restarted t
 ### query-optimisation-and-graceful-restart-186.AC4: Deploy script
 - **AC4.1 Success:** `restart.sh` calls pre-restart, waits for ≤5% connections + 2s
 - **AC4.2 Edge:** Timeout after configurable seconds proceeds with restart (don't hang forever)
-- **AC4.3 Success:** No HAProxy drain step in the deploy sequence
+- **AC4.3 Success:** HAProxy drain blocks new arrivals during application-level drain window
 
 ## Glossary
 

@@ -10,6 +10,7 @@ from __future__ import annotations
 import hmac
 import sys
 from typing import TYPE_CHECKING
+from uuid import UUID
 
 import structlog
 from starlette.responses import JSONResponse
@@ -46,7 +47,7 @@ def _validate_restart_token(request: Request) -> JSONResponse | None:
     return None
 
 
-def _get_annotation_state() -> tuple[dict, AnnotationDocumentRegistry | None]:  # type: ignore[type-arg]
+def _get_annotation_state() -> tuple[dict, AnnotationDocumentRegistry | None]:
     """Lazy accessor for annotation module state.
 
     Avoids importing the annotation package at module level (which
@@ -57,7 +58,23 @@ def _get_annotation_state() -> tuple[dict, AnnotationDocumentRegistry | None]:  
     mod = sys.modules.get("promptgrimoire.pages.annotation")
     if mod is None:
         return {}, None
-    return mod._workspace_presence, mod._workspace_registry  # type: ignore[attr-defined]
+    return mod._workspace_presence, mod._workspace_registry
+
+
+def _replace_crdt_text(text_field: Any, new_value: str, doc: Any) -> None:
+    """Atomically replace a CRDT Text field's content.
+
+    Mirrors the write pattern in ``pages/annotation/respond.py:382-391``.
+    """
+    current = str(text_field)
+    if current == new_value:
+        return
+    with doc.transaction():
+        current_len = len(text_field)
+        if current_len > 0:
+            del text_field[:current_len]
+        if new_value:
+            text_field += new_value
 
 
 async def _flush_single_client(
@@ -67,8 +84,6 @@ async def _flush_single_client(
     workspace_registry: AnnotationDocumentRegistry,
 ) -> None:
     """Flush one client's Milkdown editor content into the CRDT document."""
-    from uuid import UUID  # noqa: PLC0415
-
     if not presence.has_milkdown_editor:
         return
     if not presence.nicegui_client or presence.nicegui_client._deleted:
@@ -77,18 +92,12 @@ async def _flush_single_client(
         md = await presence.nicegui_client.run_javascript(
             "window._getMilkdownMarkdown()", timeout=3.0
         )
+        if md is None:
+            md = ""
         crdt_doc = await workspace_registry.get_or_create_for_workspace(
             UUID(workspace_id)
         )
-        text_field = crdt_doc.response_draft_markdown
-        current = str(text_field)
-        if current != md:
-            with crdt_doc.doc.transaction():
-                current_len = len(text_field)
-                if current_len > 0:
-                    del text_field[:current_len]
-                if md:
-                    text_field += md
+        _replace_crdt_text(crdt_doc.response_draft_markdown, md, crdt_doc.doc)
     except Exception:
         logger.warning(
             "pre_restart_flush_failed",

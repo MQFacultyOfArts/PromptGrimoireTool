@@ -91,6 +91,7 @@ class AdminConfig(BaseModel):
     """Admin API configuration."""
 
     admin_api_secret: SecretStr = SecretStr("")
+    pre_restart_token: SecretStr = SecretStr("")
 
 
 class AppConfig(BaseModel):

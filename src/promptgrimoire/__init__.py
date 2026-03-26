@@ -370,16 +370,22 @@ def _register_db_lifecycle(app: object) -> None:
     from promptgrimoire.deadline_worker import (
         start_deadline_worker,
     )
+    from promptgrimoire.diagnostics import start_diagnostic_logger
     from promptgrimoire.export.worker import start_export_worker
     from promptgrimoire.search_worker import start_search_worker
 
     _search_worker_task: asyncio.Task[None] | None = None
     _deadline_worker_task: asyncio.Task[None] | None = None
     _export_worker_task: asyncio.Task[None] | None = None
+    _diagnostic_logger_task: asyncio.Task[None] | None = None
 
     @app.on_startup
     async def startup() -> None:
-        nonlocal _search_worker_task, _deadline_worker_task, _export_worker_task
+        nonlocal \
+            _search_worker_task, \
+            _deadline_worker_task, \
+            _export_worker_task, \
+            _diagnostic_logger_task
         await init_db()
         await verify_schema(get_engine())
         _search_worker_task = asyncio.create_task(
@@ -391,11 +397,18 @@ def _register_db_lifecycle(app: object) -> None:
         _export_worker_task = asyncio.create_task(
             start_export_worker(),
         )
+        _diagnostic_logger_task = asyncio.create_task(
+            start_diagnostic_logger(),
+        )
         log.info("database_connected")
 
     @app.on_shutdown
     async def shutdown() -> None:
-        nonlocal _search_worker_task, _deadline_worker_task, _export_worker_task
+        nonlocal \
+            _search_worker_task, \
+            _deadline_worker_task, \
+            _export_worker_task, \
+            _diagnostic_logger_task
         # Cancel background workers and await completion before DB teardown
         tasks_to_cancel: list[asyncio.Task[None]] = []
         if _search_worker_task is not None:
@@ -410,6 +423,10 @@ def _register_db_lifecycle(app: object) -> None:
             _export_worker_task.cancel()
             tasks_to_cancel.append(_export_worker_task)
             _export_worker_task = None
+        if _diagnostic_logger_task is not None:
+            _diagnostic_logger_task.cancel()
+            tasks_to_cancel.append(_diagnostic_logger_task)
+            _diagnostic_logger_task = None
         if tasks_to_cancel:
             await asyncio.gather(*tasks_to_cancel, return_exceptions=True)
         # Persist all dirty CRDT documents before closing DB
@@ -449,6 +466,19 @@ def main() -> None:
 
     # Admin kick endpoint for banning users in real time
     app.routes.insert(0, Route("/api/admin/kick", kick_user_handler, methods=["POST"]))
+
+    # Pre-restart flush and connection-count endpoints for zero-downtime deploy
+    from promptgrimoire.pages.restart import (
+        connection_count_handler,
+        pre_restart_handler,
+    )
+
+    app.routes.insert(
+        0, Route("/api/pre-restart", pre_restart_handler, methods=["POST"])
+    )
+    app.routes.insert(
+        0, Route("/api/connection-count", connection_count_handler, methods=["GET"])
+    )
 
     settings = get_settings()
 

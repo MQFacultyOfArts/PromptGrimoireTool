@@ -117,11 +117,11 @@ class TestDocumentUploadNoReload:
                 f"URL changed after paste: {url_before!r} -> {page.url!r}"
             )
 
-        with subtests.test(msg="content_form_hidden_after_add"):
-            # With multi-document disabled (default), the content form
-            # hides after the first document is added.
+        with subtests.test(msg="add_document_btn_remains_available"):
+            # Multi-document: button stays visible so users can add more
+            # documents to the workspace.
             add_btn = page.get_by_test_id("add-document-btn")
-            expect(add_btn).not_to_be_visible(timeout=5000)
+            expect(add_btn).to_be_visible(timeout=5000)
 
     def test_docx_upload_renders_without_url_change(
         self,
@@ -166,11 +166,10 @@ class TestDocumentUploadNoReload:
                 f"URL changed after upload: {url_before!r} -> {page.url!r}"
             )
 
-        with subtests.test(msg="content_form_hidden_after_upload"):
-            # With multi-document disabled (default), the content form
-            # hides after the first document is added.
+        with subtests.test(msg="add_document_btn_remains_after_upload"):
+            # Multi-document: button stays visible so users can add more.
             add_btn = page.get_by_test_id("add-document-btn")
-            expect(add_btn).not_to_be_visible(timeout=5000)
+            expect(add_btn).to_be_visible(timeout=5000)
 
     def test_pdf_upload_renders_without_url_change(
         self,
@@ -213,8 +212,7 @@ class TestDocumentUploadNoReload:
                 f"URL changed after PDF upload: {url_before!r} -> {page.url!r}"
             )
 
-        with subtests.test(msg="content_form_hidden_after_pdf"):
-            # With multi-document disabled (default), the content form
-            # hides after the first document is added.
+        with subtests.test(msg="add_document_btn_remains_after_pdf"):
+            # Multi-document: button stays visible so users can add more.
             add_btn = page.get_by_test_id("add-document-btn")
-            expect(add_btn).not_to_be_visible(timeout=5000)
+            expect(add_btn).to_be_visible(timeout=5000)

@@ -61,8 +61,12 @@ async def wait_for[T](
 # ---------------------------------------------------------------------------
 
 
-def _is_in_open_dialog(el: Element) -> bool:
-    """Check whether *el* is inside a dialog that is currently open."""
+def _is_visible_element(el: Element) -> bool:
+    """Return True if *el* should be included in query results.
+
+    Returns False only when *el* lives inside a ``ui.dialog`` that is
+    currently closed.  Elements not inside any dialog are always visible.
+    """
     from nicegui import ui
 
     parent = el.parent_slot.parent if el.parent_slot else None
@@ -90,10 +94,33 @@ def _find_by_testid(user: User, testid: str) -> Element | None:
                 continue
             if el.props.get("data-testid") != testid:
                 continue
-            if not _is_in_open_dialog(el):
+            if not _is_visible_element(el):
                 continue
             return el
     return None
+
+
+def _find_all_by_testid(user: User, testid: str) -> list[Element]:
+    """Return all visible elements whose ``data-testid`` prop matches *testid*.
+
+    Skips elements inside closed dialogs so that hidden dialog content does
+    not interfere with assertions made on the active page.
+
+    Extracted here to avoid duplication across the three characterisation
+    test modules (test_annotation_cards_charac.py, test_organise_charac.py,
+    test_respond_charac.py). See: phase_01.md Task 3-5 (multi-doc-tabs-186).
+    """
+    results: list[Element] = []
+    with user:
+        for el in ElementFilter():
+            if not el.visible:
+                continue
+            if el.props.get("data-testid") != testid:
+                continue
+            if not _is_visible_element(el):
+                continue
+            results.append(el)
+    return results
 
 
 def _find_value_element_by_testid(user: User, testid: str) -> ValueElement | None:

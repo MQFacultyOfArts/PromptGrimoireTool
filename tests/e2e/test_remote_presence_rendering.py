@@ -39,7 +39,8 @@ class TestRemoteCursorRendering:
         # Call renderRemoteCursor via JS
         page.evaluate(
             """() => {
-                const container = document.getElementById('doc-container');
+                const q = '[data-testid="doc-container"]';
+                const container = document.querySelector(q);
                 renderRemoteCursor(container, 'test-user-1', 10, 'Alice', '#2196F3');
             }"""
         )
@@ -78,7 +79,8 @@ class TestRemoteCursorRendering:
         # Render cursor at position 5
         page.evaluate(
             """() => {
-                const container = document.getElementById('doc-container');
+                const q = '[data-testid="doc-container"]';
+                const container = document.querySelector(q);
                 renderRemoteCursor(container, 'test-user-1', 5, 'Alice', '#2196F3');
             }"""
         )
@@ -87,7 +89,8 @@ class TestRemoteCursorRendering:
         # Render same user at position 20 -- should replace, not duplicate
         page.evaluate(
             """() => {
-                const container = document.getElementById('doc-container');
+                const q = '[data-testid="doc-container"]';
+                const container = document.querySelector(q);
                 renderRemoteCursor(container, 'test-user-1', 20, 'Alice', '#2196F3');
             }"""
         )
@@ -108,7 +111,8 @@ class TestRemoteCursorRendering:
         # Render then remove
         page.evaluate(
             """() => {
-                const container = document.getElementById('doc-container');
+                const q = '[data-testid="doc-container"]';
+                const container = document.querySelector(q);
                 renderRemoteCursor(container, 'test-user-1', 10, 'Alice', '#2196F3');
             }"""
         )
@@ -142,7 +146,8 @@ class TestRemoteSelectionRendering:
 
         page.evaluate(
             """() => {
-                renderRemoteSelection('test-user-1', 5, 20, 'Alice', '#2196F3');
+                const cid = document.querySelector('[data-testid="doc-container"]').id;
+                renderRemoteSelection('test-user-1', 5, 20, 'Alice', '#2196F3', cid);
             }"""
         )
 
@@ -169,7 +174,8 @@ class TestRemoteSelectionRendering:
         # Render then remove
         page.evaluate(
             """() => {
-                renderRemoteSelection('test-user-1', 5, 20, 'Alice', '#2196F3');
+                const cid = document.querySelector('[data-testid="doc-container"]').id;
+                renderRemoteSelection('test-user-1', 5, 20, 'Alice', '#2196F3', cid);
             }"""
         )
         assert page.evaluate("() => CSS.highlights.has('hl-sel-test-user-1')")
@@ -193,14 +199,16 @@ class TestRemoteSelectionRendering:
         # First selection
         page.evaluate(
             """() => {
-                renderRemoteSelection('test-user-1', 0, 10, 'Alice', '#2196F3');
+                const cid = document.querySelector('[data-testid="doc-container"]').id;
+                renderRemoteSelection('test-user-1', 0, 10, 'Alice', '#2196F3', cid);
             }"""
         )
 
         # Second selection for same user -- should replace
         page.evaluate(
             """() => {
-                renderRemoteSelection('test-user-1', 15, 30, 'Alice', '#2196F3');
+                const cid = document.querySelector('[data-testid="doc-container"]').id;
+                renderRemoteSelection('test-user-1', 15, 30, 'Alice', '#2196F3', cid);
             }"""
         )
 
@@ -226,7 +234,8 @@ class TestMultipleUsers:
 
         page.evaluate(
             """() => {
-                const container = document.getElementById('doc-container');
+                const q = '[data-testid="doc-container"]';
+                const container = document.querySelector(q);
                 renderRemoteCursor(container, 'user-alice', 5, 'Alice', '#2196F3');
                 renderRemoteCursor(container, 'user-bob', 20, 'Bob', '#FF5722');
             }"""
@@ -256,8 +265,9 @@ class TestMultipleUsers:
 
         page.evaluate(
             """() => {
-                renderRemoteSelection('user-alice', 0, 10, 'Alice', '#2196F3');
-                renderRemoteSelection('user-bob', 20, 35, 'Bob', '#FF5722');
+                const cid = document.querySelector('[data-testid="doc-container"]').id;
+                renderRemoteSelection('user-alice', 0, 10, 'Alice', '#2196F3', cid);
+                renderRemoteSelection('user-bob', 20, 35, 'Bob', '#FF5722', cid);
             }"""
         )
 
@@ -284,11 +294,13 @@ class TestRemoveAllRemotePresence:
         # Create multiple cursors and selections
         page.evaluate(
             """() => {
-                const container = document.getElementById('doc-container');
+                const q = '[data-testid="doc-container"]';
+                const container = document.querySelector(q);
+                const cid = container.id;
                 renderRemoteCursor(container, 'user-alice', 5, 'Alice', '#2196F3');
                 renderRemoteCursor(container, 'user-bob', 20, 'Bob', '#FF5722');
-                renderRemoteSelection('user-alice', 0, 10, 'Alice', '#2196F3');
-                renderRemoteSelection('user-bob', 15, 30, 'Bob', '#FF5722');
+                renderRemoteSelection('user-alice', 0, 10, 'Alice', '#2196F3', cid);
+                renderRemoteSelection('user-bob', 15, 30, 'Bob', '#FF5722', cid);
             }"""
         )
 
@@ -321,7 +333,8 @@ class TestUpdateRemoteCursorPositions:
 
         page.evaluate(
             """() => {
-                const container = document.getElementById('doc-container');
+                const q = '[data-testid="doc-container"]';
+                const container = document.querySelector(q);
                 renderRemoteCursor(container, 'test-user', 10, 'Alice', '#2196F3');
             }"""
         )
@@ -334,7 +347,8 @@ class TestUpdateRemoteCursorPositions:
         # Call update -- should not throw, positions recalculated
         page.evaluate(
             """() => {
-                const container = document.getElementById('doc-container');
+                const q = '[data-testid="doc-container"]';
+                const container = document.querySelector(q);
                 updateRemoteCursorPositions(container);
             }"""
         )

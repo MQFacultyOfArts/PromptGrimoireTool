@@ -149,8 +149,8 @@ if os.environ.get("E2E_SKIP_LATEXMK", "1") == "1":
     import promptgrimoire.export.pdf as _pdf_mod
     import promptgrimoire.export.pdf_export as _pdf_export_mod
 
-    _pdf_mod.compile_latex = _compile_latex_noop  # type: ignore[assignment]  # intentional monkey-patch
-    _pdf_export_mod.compile_latex = _compile_latex_noop  # type: ignore[assignment]  # intentional monkey-patch
+    _pdf_mod.compile_latex = _compile_latex_noop  # type: ignore[assignment]  # ty: ignore[invalid-assignment]  # intentional monkey-patch
+    _pdf_export_mod.compile_latex = _compile_latex_noop  # type: ignore[assignment]  # ty: ignore[invalid-assignment]  # intentional monkey-patch
 # --- End monkey-patch ---
 
 from nicegui import app, ui
@@ -166,6 +166,18 @@ from promptgrimoire import __file__ as _pg_init
 
 _static_dir = Path(_pg_init).parent / "static"
 app.add_static_files("/static", str(_static_dir))
+
+
+# Health check endpoint (mirrors promptgrimoire.__init__, supports HEAD + GET)
+from starlette.responses import PlainTextResponse
+from starlette.routing import Route
+
+
+async def _healthz(_request):
+    return PlainTextResponse("ok")
+
+
+app.routes.insert(0, Route("/healthz", _healthz, methods=["GET", "HEAD"]))
 
 
 # Diagnostic endpoint: pool + pg_stat + NiceGUI client stats
@@ -364,7 +376,7 @@ def _timed_delete(self):
     )
 
 
-_Client.delete = _timed_delete  # type: ignore[assignment]  # intentional monkey-patch
+_Client.delete = _timed_delete  # type: ignore[assignment]  # ty: ignore[invalid-assignment]  # intentional monkey-patch
 
 ui.run(
     port=port,

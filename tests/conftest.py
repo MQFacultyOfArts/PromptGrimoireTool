@@ -406,6 +406,15 @@ import promptgrimoire
 _static_dir = Path(promptgrimoire.__file__).parent / "static"
 app.add_static_files("/static", str(_static_dir))
 
+# Health check endpoint (mirrors promptgrimoire.__init__)
+from starlette.responses import PlainTextResponse
+from starlette.routing import Route
+
+async def _healthz(_request):
+    return PlainTextResponse("ok")
+
+app.routes.insert(0, Route("/healthz", _healthz, methods=["GET", "HEAD"]))
+
 # Diagnostic endpoint: pool + pg_stat + NiceGUI client stats
 @app.get("/api/test/diagnostics")
 async def _diagnostics():

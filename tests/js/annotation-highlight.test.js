@@ -9,6 +9,9 @@ describe('annotation-highlight.js', () => {
     delete window._textNodes;
     delete window._highlightsReady;
     delete window._annotSelectionBound;
+    delete window._annotSelectionBoundFor;
+    delete window._positionCardsMap;
+    delete window._activeDocContainerId;
     delete window._demoSelectionBound;
     vi.restoreAllMocks();
   });

@@ -193,7 +193,7 @@ class TestCardPositioning:
         # Scroll to the very bottom of the document container
         page.evaluate(
             """() => {
-                const dc = document.getElementById('doc-container');
+                const dc = document.querySelector('[data-testid=\"doc-container\"]');
                 if (dc) dc.scrollTop = dc.scrollHeight;
                 else window.scrollTo(0, document.body.scrollHeight);
             }"""
@@ -203,7 +203,7 @@ class TestCardPositioning:
         # Scroll back to the top
         page.evaluate(
             """() => {
-                const dc = document.getElementById('doc-container');
+                const dc = document.querySelector('[data-testid=\"doc-container\"]');
                 if (dc) dc.scrollTop = 0;
                 else window.scrollTo(0, 0);
             }"""

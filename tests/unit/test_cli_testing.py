@@ -566,3 +566,52 @@ class TestPytestFlagPassthrough:
         extra = _captured_extra_args(captured)
         assert "-x" not in extra
         assert "--ff" not in extra
+
+
+class TestNiceguiUiFileWhitelist:
+    """Guard: every nicegui_ui-marked test file must be in _NICEGUI_UI_FILES.
+
+    If a test file uses ``pytest.mark.nicegui_ui`` but is NOT in the
+    whitelist, ``grimoire test run <file>`` routes it through the plain
+    pytest runner (no NiceGUI app, no /login route) → 404 on auth.
+    """
+
+    def test_all_nicegui_ui_files_in_test_run_whitelist(self) -> None:
+        """Scan integration tests for nicegui_ui marker, verify test run whitelist."""
+        from pathlib import Path
+
+        from promptgrimoire.cli.testing import _NICEGUI_UI_FILES
+
+        integration_dir = Path("tests/integration")
+        missing: list[str] = []
+
+        for py_file in sorted(integration_dir.glob("test_*.py")):
+            source = py_file.read_text()
+            if "nicegui_ui" in source and py_file.name not in _NICEGUI_UI_FILES:
+                missing.append(py_file.name)
+
+        assert not missing, (
+            f"Test files with nicegui_ui marker missing from "
+            f"_NICEGUI_UI_FILES in cli/testing.py: {missing}\n"
+            f"Add them so 'grimoire test run' routes to the NiceGUI lane."
+        )
+
+    def test_all_nicegui_ui_files_in_lane_allowlist(self) -> None:
+        """Scan integration tests for nicegui_ui marker, verify e2e lane allowlist."""
+        from pathlib import Path
+
+        from promptgrimoire.cli.e2e._lanes import _NICEGUI_ALLOWLIST
+
+        integration_dir = Path("tests/integration")
+        missing: list[str] = []
+
+        for py_file in sorted(integration_dir.glob("test_*.py")):
+            source = py_file.read_text()
+            if "nicegui_ui" in source and py_file.name not in _NICEGUI_ALLOWLIST:
+                missing.append(py_file.name)
+
+        assert not missing, (
+            f"Test files with nicegui_ui marker missing from "
+            f"_NICEGUI_ALLOWLIST in cli/e2e/_lanes.py: {missing}\n"
+            f"Add them so 'grimoire e2e all' includes them in the NiceGUI lane."
+        )

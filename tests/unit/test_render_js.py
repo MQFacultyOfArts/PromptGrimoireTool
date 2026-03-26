@@ -211,3 +211,52 @@ class TestStaticPortions:
         y = 2
         result = _render_js(t"{x}{y}")
         assert result == "12"
+
+
+class TestDoubleQuotingPrevention:
+    """Guard against manual quotes around interpolations.
+
+    _render_js applies json.dumps() to string values, which wraps them
+    in double quotes. If the t-string template ALSO has manual quotes
+    around the interpolation (e.g. '{val}'), the output contains both
+    the outer single quotes and inner double quotes: '"value"'.
+
+    This is a correctness bug, not just a style issue — getElementById
+    receives an ID string with literal quote characters and never finds
+    the element. Regression test for the multi-doc-tabs init IIFE fix.
+    """
+
+    def test_string_interpolation_provides_own_quotes(self) -> None:
+        """json.dumps adds quotes — no manual quotes needed."""
+        container_id = "doc-container-abc123"
+        result = _render_js(t"document.getElementById({container_id})")
+        assert result == 'document.getElementById("doc-container-abc123")'
+
+    def test_manual_quotes_around_interpolation_double_quotes(self) -> None:
+        """Manual quotes + json.dumps = double-quoted string (the bug).
+
+        This test documents the WRONG pattern so developers understand
+        what NOT to do. The output has literal quote characters inside
+        the JS string, which will never match a DOM element ID.
+        """
+        container_id = "doc-container-abc123"
+        # This is the WRONG pattern — produces '"doc-container-abc123"'
+        result = _render_js(t"document.getElementById('{container_id}')")
+        # The outer single quotes are literal template text,
+        # json.dumps adds inner double quotes → double-quoted
+        assert result == """document.getElementById('"doc-container-abc123"')"""
+
+    def test_getelementbyid_pattern_correct(self) -> None:
+        """The correct pattern for getElementById with _render_js."""
+        doc_id = "doc-container-deadbeef"
+        menu_id = "hl-menu-deadbeef"
+        result = _render_js(
+            t"setupAnnotationSelection({doc_id}, function(sel) {{"
+            t"  emitEvent('selection_made', sel);"
+            t"}}, {menu_id});"
+        )
+        assert '"doc-container-deadbeef"' in result
+        assert '"hl-menu-deadbeef"' in result
+        # Must NOT contain double-quoted strings inside single quotes
+        assert "'\"doc-container-deadbeef\"'" not in result
+        assert "'\"hl-menu-deadbeef\"'" not in result

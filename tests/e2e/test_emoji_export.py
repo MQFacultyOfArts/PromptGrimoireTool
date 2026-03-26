@@ -72,7 +72,7 @@ class TestEmojiExport:
 
             with subtests.test(msg="paste_emoji_fixture"):
                 _load_fixture_via_paste(page, app_server, FIXTURE_PATH)
-                doc = page.locator("#doc-container")
+                doc = page.get_by_test_id("doc-container")
                 # Verify at least one emoji rendered in the document
                 for emoji in FIXTURE_EMOJI:
                     expect(doc).to_contain_text(emoji, timeout=15000)

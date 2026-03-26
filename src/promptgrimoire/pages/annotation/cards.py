@@ -10,69 +10,64 @@ tag select, text preview, and comments.
 
 from __future__ import annotations
 
-import re
 import time
 from typing import TYPE_CHECKING, Any
 
 import structlog
 from nicegui import ui
 
-from promptgrimoire.auth.anonymise import anonymise_author
 from promptgrimoire.crdt.persistence import get_persistence_manager
 from promptgrimoire.pages.annotation import PageState, _render_js
-from promptgrimoire.ui_helpers import on_submit_with_value
-
-if TYPE_CHECKING:
-    from collections.abc import Callable
+from promptgrimoire.pages.annotation.card_shared import (
+    anonymise_display_author,
+    author_initials,
+    build_expandable_text,
+)
 from promptgrimoire.pages.annotation.highlights import (
     _delete_highlight,
     _update_highlight_css,
 )
+from promptgrimoire.ui_helpers import on_submit_with_value
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 logger = structlog.get_logger()
 
 
-def _author_initials(name: str) -> str:
-    """Derive compact initials from a display name.
+def _broadcast_cards_epoch(state: PageState) -> None:
+    """Increment and broadcast the cards epoch to the client.
 
-    Splits on whitespace and hyphens, takes first char of each segment,
-    joins with dots.  "Brian Ballsun-Stanton" -> "B.B.S.", "Ada" -> "A."
+    Writes both the per-document map (``window.__cardEpochs``) and the
+    legacy scalar (``window.__annotationCardsEpoch``) so that E2E tests
+    can wait on either.
     """
-    segments = re.split(r"[\s\-]+", name)
-    return ".".join(s[0].upper() for s in segments if s) + "."
+    state.cards_epoch += 1
+    doc_key = str(state.document_id) if state.document_id else "_default"
+    ui.run_javascript(
+        f"window.__cardEpochs = window.__cardEpochs || {{}}; "
+        f"window.__cardEpochs['{doc_key}'] = {state.cards_epoch}; "
+        f"window.__annotationCardsEpoch = {state.cards_epoch}"
+    )
 
 
-def _build_expandable_text(full_text: str) -> None:
-    """Build expandable text preview for annotation card."""
-    is_long = len(full_text) > 80
-    if is_long:
-        truncated_text = full_text[:80] + "..."
-        with ui.element("div").classes("mt-1"):
-            # Truncated view with expand icon
-            with ui.row().classes("items-start gap-1 cursor-pointer") as truncated_row:
-                ui.icon("expand_more", size="xs").classes("text-gray-400")
-                ui.label(f'"{truncated_text}"').classes("text-sm italic")
+def _snapshot_highlight(hl: dict[str, Any]) -> dict[str, Any]:
+    """Create a comparable snapshot of highlight data for change detection.
 
-            # Full view with collapse icon
-            with ui.row().classes("items-start gap-1 cursor-pointer") as full_row:
-                ui.icon("expand_less", size="xs").classes("text-gray-400")
-                ui.label(f'"{full_text}"').classes("text-sm italic")
-            full_row.set_visibility(False)
-
-            def toggle_expand(
-                tr: ui.row = truncated_row, fr: ui.row = full_row
-            ) -> None:
-                if tr.visible:
-                    tr.set_visibility(False)
-                    fr.set_visibility(True)
-                else:
-                    tr.set_visibility(True)
-                    fr.set_visibility(False)
-
-            truncated_row.on("click", toggle_expand)
-            full_row.on("click", toggle_expand)
-    else:
-        ui.label(f'"{full_text}"').classes("text-sm italic mt-1")
+    Captures tag, para_ref, comment count, and comment text content to
+    detect when a card needs rebuilding.  Any rendered field that can
+    change independently of the highlight ID must be included here.
+    """
+    comments = hl.get("comments", [])
+    return {
+        "tag": hl.get("tag", ""),
+        "para_ref": hl.get("para_ref", ""),
+        "comment_count": len(comments),
+        "comment_texts": tuple(
+            c.get("text", "")
+            for c in sorted(comments, key=lambda c: c.get("created_at", ""))
+        ),
+    }
 
 
 def _build_comment_delete_btn(
@@ -130,16 +125,7 @@ def _build_single_comment(
     c_text = comment.get("text", "")
     c_user_id = comment.get("user_id")
     c_id = comment.get("id", "")
-    c_author = anonymise_author(
-        author=c_author_raw,
-        user_id=c_user_id,
-        viewing_user_id=state.user_id,
-        anonymous_sharing=state.is_anonymous,
-        viewer_is_privileged=state.viewer_is_privileged,
-        author_is_privileged=(
-            c_user_id is not None and c_user_id in state.privileged_user_ids
-        ),
-    )
+    c_author = anonymise_display_author(c_author_raw, c_user_id, state)
     with (
         ui.element("div")
         .classes("bg-gray-100 p-2 rounded mt-1")
@@ -449,7 +435,7 @@ def _build_detail_section(
 
     # Highlighted text preview
     if full_text:
-        _build_expandable_text(full_text)
+        build_expandable_text(full_text)
 
     # Comments
     _build_comments_section(state, highlight_id, comments)
@@ -480,17 +466,8 @@ def _build_annotation_card(
                 tag_display = ti.name
                 break
     hl_user_id = highlight.get("user_id")
-    display_author = anonymise_author(
-        author=author,
-        user_id=hl_user_id,
-        viewing_user_id=state.user_id,
-        anonymous_sharing=state.is_anonymous,
-        viewer_is_privileged=state.viewer_is_privileged,
-        author_is_privileged=(
-            hl_user_id is not None and hl_user_id in state.privileged_user_ids
-        ),
-    )
-    initials = _author_initials(display_author)
+    display_author = anonymise_display_author(author, hl_user_id, state)
+    initials = author_initials(display_author)
 
     card = (
         ui.card()
@@ -576,8 +553,110 @@ def _build_annotation_card(
     return card
 
 
+def _get_highlights(state: PageState) -> list[dict[str, Any]]:
+    """Get highlights for the current document from CRDT state.
+
+    Caller must ensure ``state.crdt_doc is not None`` before calling.
+    """
+    if state.crdt_doc is None:  # pragma: no cover — guarded by callers
+        return []
+    if state.document_id is not None:
+        return state.crdt_doc.get_highlights_for_document(
+            str(state.document_id),
+        )
+    return state.crdt_doc.get_all_highlights()
+
+
+def _diff_annotation_cards(state: PageState) -> None:
+    """Update annotation cards by diffing CRDT state against current cards.
+
+    Instead of clearing and rebuilding the entire container, this function:
+    - Removes cards for highlights that no longer exist in the CRDT
+    - Adds cards for new highlights at the correct sorted position
+    - Leaves unchanged cards untouched (preserving expansion state, input
+      focus, and DOM event handlers)
+
+    Only called when ``state.annotation_cards`` is already populated
+    (i.e. after the first full build).
+    """
+    if state.annotations_container is None or state.crdt_doc is None:
+        return
+    if state.annotation_cards is None:
+        return
+
+    highlights = _get_highlights(state)
+    crdt_map = {hl["id"]: hl for hl in highlights}
+    crdt_ids = set(crdt_map.keys())
+    registry_ids = set(state.annotation_cards.keys())
+
+    changed = False
+
+    # REMOVED: IDs in registry but not in CRDT
+    for removed_id in registry_ids - crdt_ids:
+        card = state.annotation_cards.pop(removed_id)
+        card.delete()
+        state.expanded_cards.discard(removed_id)
+        state.card_snapshots.pop(removed_id, None)
+        changed = True
+
+    # ADDED: IDs in CRDT but not in registry
+    added_ids = crdt_ids - registry_ids
+    if added_ids:
+        # highlights list is already sorted by start_char; process adds
+        # in ascending position order so each move(target_index=N) is
+        # correct after prior insertions have shifted later elements.
+        sorted_hl_ids = [hl["id"] for hl in highlights]
+        added_in_order = [hid for hid in sorted_hl_ids if hid in added_ids]
+        with state.annotations_container:
+            for add_id in added_in_order:
+                hl = crdt_map[add_id]
+                card = _build_annotation_card(state, hl)
+                state.annotation_cards[add_id] = card
+                state.card_snapshots[add_id] = _snapshot_highlight(hl)
+                position = sorted_hl_ids.index(add_id)
+                card.move(
+                    target_container=state.annotations_container,
+                    target_index=position,
+                )
+                changed = True
+
+    # CHANGED: IDs in both — check if highlight data differs
+    common_ids = crdt_ids & registry_ids
+    # Reuse sorted_hl_ids from ADDED block or compute once for position lookup
+    if not added_ids:
+        sorted_hl_ids = [hl["id"] for hl in highlights]
+    with state.annotations_container:
+        for hl_id in common_ids:
+            hl = crdt_map[hl_id]
+            new_snap = _snapshot_highlight(hl)
+            old_snap = state.card_snapshots.get(hl_id)
+            if old_snap != new_snap:
+                old_card = state.annotation_cards[hl_id]
+                old_card.delete()
+                new_card = _build_annotation_card(state, hl)
+                state.annotation_cards[hl_id] = new_card
+                state.card_snapshots[hl_id] = new_snap
+                position = sorted_hl_ids.index(hl_id)
+                new_card.move(
+                    target_container=state.annotations_container,
+                    target_index=position,
+                )
+                changed = True
+
+    if changed:
+        with state.annotations_container:
+            _broadcast_cards_epoch(state)
+
+
 def _refresh_annotation_cards(state: PageState, *, trigger: str = "unknown") -> None:
-    """Refresh all annotation cards from CRDT state."""
+    """Refresh annotation cards from CRDT state.
+
+    First call (``annotation_cards is None``): full build — clears the
+    container and creates all cards from scratch.
+
+    Subsequent calls: diff-based update via ``_diff_annotation_cards`` —
+    only adds/removes individual cards that changed, preserving the rest.
+    """
     logger.debug(
         "card_rebuild",
         trigger=trigger,
@@ -590,8 +669,13 @@ def _refresh_annotation_cards(state: PageState, *, trigger: str = "unknown") -> 
 
     _t0 = time.monotonic()
 
-    if state.annotation_cards is None:
-        state.annotation_cards = {}
+    if state.annotation_cards is not None:
+        # Subsequent render — diff
+        _diff_annotation_cards(state)
+        return
+
+    # First render — full build
+    state.annotation_cards = {}
 
     # Wrap the entire rebuild in ``with container`` so that every
     # ``ui.run_javascript`` call resolves the NiceGUI client through the
@@ -600,13 +684,7 @@ def _refresh_annotation_cards(state: PageState, *, trigger: str = "unknown") -> 
     with state.annotations_container:
         state.annotations_container.clear()
 
-        # Get highlights for this document
-        if state.document_id is not None:
-            highlights = state.crdt_doc.get_highlights_for_document(
-                str(state.document_id),
-            )
-        else:
-            highlights = state.crdt_doc.get_all_highlights()
+        highlights = _get_highlights(state)
 
         logger.debug(
             "[CARDS] Found %d highlights for doc_id=%s",
@@ -620,9 +698,9 @@ def _refresh_annotation_cards(state: PageState, *, trigger: str = "unknown") -> 
             logger.debug("[CARDS] Creating card for highlight %s", hl_id[:8])
             card = _build_annotation_card(state, hl)
             state.annotation_cards[hl_id] = card
+            state.card_snapshots[hl_id] = _snapshot_highlight(hl)
 
-        state.cards_epoch += 1
-        ui.run_javascript(f"window.__annotationCardsEpoch = {state.cards_epoch}")
+        _broadcast_cards_epoch(state)
 
     logger.debug(
         "render_phase",

@@ -442,9 +442,17 @@ def _print_footer(exit_code: int, duration: object, log_path: Path) -> None:
 
 _NICEGUI_UI_FILES: frozenset[str] = frozenset(
     {
+        "test_annotation_cards_charac.py",
+        "test_annotation_pdf_export_filename_ui.py",
+        "test_bulk_enrol_upload_ui.py",
+        "test_crud_management_ui.py",
         "test_instructor_course_admin_ui.py",
         "test_instructor_template_ui.py",
-        "test_crud_management_ui.py",
+        "test_multi_doc_tabs.py",
+        "test_organise_charac.py",
+        "test_respond_charac.py",
+        "test_slot_deletion_race_369.py",
+        "test_tag_management_crdt_sync.py",
     }
 )
 
@@ -503,7 +511,10 @@ def run_tests(
 
         sys.exit(run_nicegui_lane(args))
 
-    # Unit / integration — serial, no retries, fail-fast for targeted runs
+    # Unit / integration — serial, no retries, fail-fast for targeted runs.
+    # Exclude nicegui_ui and e2e markers so directory-level runs
+    # (e.g. tests/integration/) don't collect NiceGUI tests that
+    # need the user_simulation harness.
     sys.exit(
         _run_pytest(
             title="Targeted Tests (no retries, fail-fast)",
@@ -512,6 +523,8 @@ def run_tests(
                 "-x",
                 "-v",
                 "--tb=short",
+                "-m",
+                _NON_UI_MARKER_EXPRESSION,
             ],
             extra_args=args,
         )

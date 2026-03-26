@@ -7,8 +7,10 @@ CRDT state and the browser's CSS Custom Highlight API.
 from __future__ import annotations
 
 import json
+import re
 import time
 from typing import Any
+from uuid import UUID
 
 import structlog
 from nicegui import ui
@@ -25,47 +27,78 @@ from promptgrimoire.pages.annotation.css import _build_highlight_pseudo_css
 
 logger = structlog.get_logger()
 
+_UUID_RE = re.compile(
+    r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+    re.IGNORECASE,
+)
 
-async def _warp_to_highlight(state: PageState, start_char: int, end_char: int) -> None:
-    """Switch to the Annotate tab and scroll to a highlight range.
 
-    This is the cross-tab navigation entry point: Tab 2 (Organise) and Tab 3
-    (Respond) "locate" buttons call this to warp the user back to Tab 1 and
-    scroll the highlighted text into view with a brief gold flash.
+async def _warp_to_highlight(
+    state: PageState,
+    start_char: int,
+    end_char: int,
+    document_id: str | None = None,
+) -> None:
+    """Switch to the correct source tab and scroll to a highlight range.
 
-    Per-client only -- ``set_value()`` affects only the calling client's tab
-    state, not other connected users (AC5.4).
+    Stores the scroll target on ``state._pending_scroll`` and calls
+    ``set_value`` to trigger the tab change handler.  The handler
+    (``_handle_source_tab_switch``) executes the scroll after
+    render/refresh completes — this avoids duplicating tab-switch logic
+    and works for both rendered and unrendered (deferred) tabs.
 
-    Args:
-        state: Page state with tab_panels and annotations.
-        start_char: First character index of the highlight range.
-        end_char: Last character index (exclusive) of the highlight range.
+    If the target tab is already active, executes the scroll directly.
     """
-    # 1. Switch tab to Annotate
-    if state.tab_panels is not None:
-        state.tab_panels.set_value("Annotate")
-    state.active_tab = "Annotate"
+    # Resolve target document tab
+    target_doc_id: str | None = None
+    if state.tab_panels is not None and state.document_tabs:
+        if document_id:
+            doc_uuid = UUID(document_id) if _UUID_RE.match(document_id) else None
+            if doc_uuid is not None and doc_uuid in state.document_tabs:
+                target_doc_id = document_id
+        if target_doc_id is None:
+            target_doc_id = str(next(iter(state.document_tabs)))
 
-    # 2. Refresh Tab 1 annotations and highlight CSS.
-    # _update_highlight_css() pushes highlight ranges to the client internally,
-    # so no separate _push_highlights_to_client() call is needed.
+    # Store pending scroll for the tab change handler to execute.
+    state._pending_scroll = (start_char, end_char)
+
+    if target_doc_id is not None and state.tab_panels is not None:
+        if target_doc_id == state.active_tab:
+            # Already on the right tab — execute scroll directly.
+            _execute_pending_scroll(state)
+        else:
+            # Different tab — set_value triggers async _on_tab_change
+            # which does save/restore/render/refresh, then executes
+            # the pending scroll.
+            state.tab_panels.set_value(target_doc_id)
+
+
+def _execute_pending_scroll(state: PageState) -> None:
+    """Execute and clear the pending scroll target.
+
+    Called by ``_handle_source_tab_switch`` after render/refresh,
+    or directly by ``_warp_to_highlight`` when already on the target tab.
+    """
+    scroll = state._pending_scroll
+    if scroll is None:
+        return
+    state._pending_scroll = None
+    start_char, end_char = scroll
+
+    # Refresh before scrolling
     if state.refresh_annotations:
         state.refresh_annotations(trigger="highlight_add")
     _update_highlight_css(state)
 
-    # 4. Scroll to highlight and throb it. Refreshes _textNodes inline
-    #    to guarantee fresh DOM references after tab switch + re-render.
-    #    After scrolling, explicitly trigger positionCards via rAF to ensure
-    #    annotation sidebar cards become visible (MutationObserver fires
-    #    before the scroll, hiding cards that aren't yet in viewport).
     js = _render_js(
         t"(function(){{"
-        t"  var c = document.getElementById('doc-container');"
+        t"  var c = document.getElementById({state.doc_container_id});"
         t"  if (!c) return;"
         t"  window._textNodes = walkTextNodes(c);"
         t"  scrollToCharOffset(window._textNodes, {start_char}, {end_char});"
         t"  throbHighlight(window._textNodes, {start_char}, {end_char}, 800);"
-        t"  if (window._positionCards) requestAnimationFrame(window._positionCards);"
+        t"  if (window._positionCards)"
+        t"    requestAnimationFrame(window._positionCards);"
         t"}})()"
     )
     ui.run_javascript(js)
@@ -116,7 +149,7 @@ def _push_highlights_to_client(state: PageState) -> None:
     highlight_json = _RawJS(_build_highlight_json(state))
     js = _render_js(
         t"(function() {{"
-        t"  const c = document.getElementById('doc-container');"
+        t"  const c = document.getElementById({state.doc_container_id});"
         t"  if (c) applyHighlights(c, {highlight_json});"
         t"}})()"
     )
@@ -176,6 +209,7 @@ async def _delete_highlight(
         card.delete()
     if state.annotation_cards and highlight_id in state.annotation_cards:
         del state.annotation_cards[highlight_id]
+    state.card_snapshots.pop(highlight_id, None)
     _update_highlight_css(state)
     # Broadcast to other clients
     if state.broadcast_update:

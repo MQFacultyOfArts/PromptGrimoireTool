@@ -89,8 +89,10 @@ async def _refresh_tag_state(
         _push_highlights_to_client(state)
 
     if not skip_card_rebuild:
-        # Always refresh annotation cards when tags change — card borders
-        # use tag colours, so any colour/name change needs a card rebuild.
+        # Tag metadata changes (rename, recolour) aren't captured in
+        # per-highlight snapshots, so invalidate the card cache to force
+        # a full rebuild rather than a no-op diff.
+        state.invalidate_card_cache()
         if state.refresh_annotations:
             state.refresh_annotations(trigger="tag_save")
 

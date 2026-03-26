@@ -14,7 +14,6 @@ Traceability:
 
 from __future__ import annotations
 
-import asyncio
 from typing import TYPE_CHECKING
 from uuid import UUID, uuid4
 
@@ -161,10 +160,7 @@ class TestBulkEnrolUploadWidget:
         )
         await upload_el.handle_uploads([file_upload])
 
-        # Allow async handler to complete
-        await asyncio.sleep(0.5)
-
-        # Verify success notification appeared
+        # Verify success notification appeared (should_see polls)
         await nicegui_user.should_see("Enrolled")
 
     @pytest.mark.asyncio
@@ -199,10 +195,8 @@ class TestBulkEnrolUploadWidget:
 
         # First upload
         await upload_el.handle_uploads([file_upload])
-        await asyncio.sleep(0.5)
         await nicegui_user.should_see("Enrolled 1 of 1")
 
         # Second upload of same data — should show info (all duplicates)
         await upload_el.handle_uploads([file_upload])
-        await asyncio.sleep(0.5)
         await nicegui_user.should_see("already enrolled")

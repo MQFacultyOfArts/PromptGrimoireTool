@@ -206,31 +206,32 @@ def _build_highlight_menu(
     highlight_menu = (
         ui.card()
         .classes("fixed z-[110] shadow-lg p-2")
-        .props('data-testid="highlight-menu" id="highlight-menu"')
+        .props(f'data-testid="highlight-menu" id="{state.highlight_menu_id}"')
     )
     highlight_menu.set_visibility(False)
     state.highlight_menu = highlight_menu
 
-    # Store callbacks for rebuilds triggered by _refresh_tag_state
+    # Store callbacks for rebuilds triggered by _refresh_tag_state.
+    # WARNING: these are NOT saved/restored on tab switch — they hold
+    # the callback from the last-rendered tab.  It works because
+    # on_tag_click calls _add_highlight(state, key) which reads
+    # state.document_id dynamically.  Do NOT refactor to capture
+    # document_id at callback creation time.
     state._highlight_menu_tag_click = on_tag_click
     state._highlight_menu_on_add_click = on_add_click
 
     _populate_highlight_menu(state, on_tag_click, on_add_click=on_add_click)
 
 
-async def _render_document_with_highlights(
-    state: PageState,
-    doc: Any,
-    crdt_doc: Any,
-    *,
-    on_add_click: Any | None = None,
-    on_manage_click: Any | None = None,
-    footer: Any | None = None,
-) -> None:
-    """Render a document with highlight support."""
+def _init_document_state(state: PageState, doc: Any, crdt_doc: Any) -> None:
+    """Populate PageState fields for a new document render."""
     state.document_id = doc.id
+    state.doc_container_id = f"doc-container-{doc.id}"
+    state.ann_container_id = f"ann-container-{doc.id}"
+    state.highlight_menu_id = f"hl-menu-{doc.id}"
     state.crdt_doc = crdt_doc
     state.annotation_cards = {}
+    state.card_snapshots = {}
 
     # Extract characters from clean HTML for text extraction when highlighting
     # (char spans are injected client-side, not stored in DB)
@@ -248,6 +249,69 @@ async def _render_document_with_highlights(
         # Store raw content and auto-number mode for paragraph toggle re-render
         state.document_content = doc.content
         state.auto_number_paragraphs = getattr(doc, "auto_number_paragraphs", True)
+
+
+def _inject_highlight_scripts(state: PageState) -> None:
+    """Load annotation JS and initialise text walker + highlight API.
+
+    Injects script tags via ``add_body_html`` for full page loads, plus a
+    dynamic loader for SPA navigations where ``add_body_html`` scripts are
+    absent.
+    """
+    ui.add_body_html('<script src="/static/annotation-highlight.js"></script>')
+    ui.add_body_html('<script src="/static/annotation-card-sync.js"></script>')
+    ui.add_body_html('<script src="/static/annotation-copy-protection.js"></script>')
+
+    highlight_json = _RawJS(_build_highlight_json(state))
+    init_js = _render_js(
+        t"(function() {{"
+        t"  var SCRIPTS = ["
+        t"    '/static/annotation-highlight.js',"
+        t"    '/static/annotation-card-sync.js',"
+        t"    '/static/annotation-copy-protection.js'"
+        t"  ];"
+        t"  function init() {{"
+        t"    var c = document.getElementById({state.doc_container_id});"
+        t"    if (!c) return;"
+        t"    window._textNodes = walkTextNodes(c);"
+        t"    applyHighlights(c, {highlight_json});"
+        t"    setupAnnotationSelection({state.doc_container_id}, function(sel) {{"
+        t"      emitEvent('selection_made', sel);"
+        t"    }}, {state.highlight_menu_id});"
+        t"    if (window._pendingCopyProtection) {{"
+        t"      setupCopyProtection(window._pendingCopyProtection);"
+        t"      delete window._pendingCopyProtection;"
+        t"    }}"
+        t"    if (typeof initToolbarObserver === 'function') {{"
+        t"      initToolbarObserver();"
+        t"    }}"
+        t"  }}"
+        t"  if (typeof walkTextNodes === 'function') {{ init(); return; }}"
+        t"  var loaded = 0;"
+        t"  SCRIPTS.forEach(function(src) {{"
+        t"    var s = document.createElement('script');"
+        t"    s.src = src;"
+        t"    s.onload = function() {{"
+        t"      if (++loaded === SCRIPTS.length) init();"
+        t"    }};"
+        t"    document.body.appendChild(s);"
+        t"  }});"
+        t"}})();"
+    )
+    ui.run_javascript(init_js)
+
+
+async def _render_document_with_highlights(
+    state: PageState,
+    doc: Any,
+    crdt_doc: Any,
+    *,
+    on_add_click: Any | None = None,
+    on_manage_click: Any | None = None,
+    footer: Any | None = None,
+) -> None:
+    """Render a document with highlight support."""
+    _init_document_state(state, doc, crdt_doc)
 
     # Static ::highlight() CSS for all tags -- actual highlight ranges are
     # registered in CSS.highlights by JS applyHighlights()
@@ -283,7 +347,8 @@ async def _render_document_with_highlights(
     pb = "" if footer is not None else "padding-bottom: 60px; "
     layout_wrapper = (
         ui.element("div")
-        .props('id="annotation-layout-wrapper"')
+        .props(f'id="ann-layout-{doc.id}"')
+        .classes("annotation-layout-wrapper")
         .style(
             "position: relative; display: flex; gap: 1.5rem; "
             f"width: 90%; max-width: 1600px; margin: 0 auto; {pb}"
@@ -301,7 +366,7 @@ async def _render_document_with_highlights(
             ui.element("div")
             .classes(container_classes)
             .style("flex: 2; min-width: 600px; max-width: 900px;")
-            .props('id="doc-container" data-testid="doc-container"')
+            .props(f'id="{state.doc_container_id}" data-testid="doc-container"')
         )
         state.doc_container = doc_container
         with doc_container:
@@ -326,60 +391,7 @@ async def _render_document_with_highlights(
                 html_len=len(rendered_html),
             )
 
-        # Load annotation-highlight.js for CSS Custom Highlight API support.
-        # This script provides walkTextNodes(), applyHighlights(),
-        # clearHighlights(), and setupAnnotationSelection().
-        #
-        # add_body_html injects into the initial HTML template served on
-        # full page loads.  On SPA navigations (ui.navigate.to) the script
-        # tags are NOT added to the already-loaded DOM, so we also load
-        # them dynamically as a fallback.
-        ui.add_body_html('<script src="/static/annotation-highlight.js"></script>')
-        ui.add_body_html('<script src="/static/annotation-card-sync.js"></script>')
-        ui.add_body_html(
-            '<script src="/static/annotation-copy-protection.js"></script>'
-        )
-
-        # Initialise text walker, apply highlights, and set up selection
-        # detection after scripts are loaded.  The dynamic loader handles
-        # SPA navigations where add_body_html scripts are absent.
-        highlight_json = _RawJS(_build_highlight_json(state))
-        init_js = _render_js(
-            t"(function() {{"
-            t"  var SCRIPTS = ["
-            t"    '/static/annotation-highlight.js',"
-            t"    '/static/annotation-card-sync.js',"
-            t"    '/static/annotation-copy-protection.js'"
-            t"  ];"
-            t"  function init() {{"
-            t"    var c = document.getElementById('doc-container');"
-            t"    if (!c) return;"
-            t"    window._textNodes = walkTextNodes(c);"
-            t"    applyHighlights(c, {highlight_json});"
-            t"    setupAnnotationSelection('doc-container', function(sel) {{"
-            t"      emitEvent('selection_made', sel);"
-            t"    }});"
-            t"    if (window._pendingCopyProtection) {{"
-            t"      setupCopyProtection(window._pendingCopyProtection);"
-            t"      delete window._pendingCopyProtection;"
-            t"    }}"
-            t"    if (typeof initToolbarObserver === 'function') {{"
-            t"      initToolbarObserver();"
-            t"    }}"
-            t"  }}"
-            t"  if (typeof walkTextNodes === 'function') {{ init(); return; }}"
-            t"  var loaded = 0;"
-            t"  SCRIPTS.forEach(function(src) {{"
-            t"    var s = document.createElement('script');"
-            t"    s.src = src;"
-            t"    s.onload = function() {{"
-            t"      if (++loaded === SCRIPTS.length) init();"
-            t"    }};"
-            t"    document.body.appendChild(s);"
-            t"  }});"
-            t"}})();"
-        )
-        ui.run_javascript(init_js)
+        _inject_highlight_scripts(state)
 
         # Annotations sidebar (~35% of layout)
         # Needs ID for scroll-sync JavaScript positioning
@@ -387,10 +399,16 @@ async def _render_document_with_highlights(
             ui.element("div")
             .classes("annotations-sidebar")
             .style("flex: 1; min-width: 300px; max-width: 450px;")
-            .props('id="annotations-container"')
+            .props(f'id="{state.ann_container_id}"')
         )
 
-    # Set up refresh function
+    # Set up refresh function.
+    # WARNING: this closure is NOT saved/restored on tab switch — each
+    # source tab render overwrites it.  It works because it reads
+    # state.annotations_container dynamically at call time (restored by
+    # _restore_source_tab_state).  Do NOT refactor to capture the
+    # container at closure creation time — that would silently target
+    # the wrong document after a tab switch.
     def refresh_annotations(*, trigger: str = "unknown") -> None:
         _refresh_annotation_cards(state, trigger=trigger)
 
@@ -405,6 +423,6 @@ async def _render_document_with_highlights(
 
     # Set up scroll-synced card positioning and hover interaction
     # (loaded from static/annotation-card-sync.js)
-    ui.run_javascript(
-        "setupCardPositioning('doc-container', 'annotations-container', 8)"
-    )
+    doc_id = state.doc_container_id
+    ann_id = state.ann_container_id
+    ui.run_javascript(f"setupCardPositioning('{doc_id}', '{ann_id}', 8)")

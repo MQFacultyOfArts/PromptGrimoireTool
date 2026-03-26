@@ -1,28 +1,38 @@
-"""NiceGUI User-harness tests for PDF export filename wiring.
+"""PDF export filename policy — end-to-end through the real export path.
 
-Exercises the annotation page export flow to verify that the Phase 1 + Phase 2
-filename policy is correctly wired through ``_handle_pdf_export``.
+Verifies that clicking Export PDF on the annotation page produces an ExportJob
+in the database whose ``payload["filename"]`` matches the filename policy.
 
-Acceptance Criteria:
-- pdf-export-filename-271.AC4.1: Page computes filename before calling export seam
-- pdf-export-filename-271.AC4.3: Annotate and Respond tabs yield same filename
-- pdf-export-filename-271.AC4.4: Missing placement avoids workspace_{uuid}
-- pdf-export-filename-271.AC5.4: Old generic basename no longer used
+Feature borders tested:
+- Placed workspace: filename contains course code, activity, owner, date
+  (not ``workspace_{uuid}``)
+- Respond tab: same workspace yields identical filename regardless of tab
+- Loose workspace: unplaced workspace uses fallback segments ("Unplaced", date)
 
-Traceability:
-- Design: docs/implementation-plans/2026-03-09-pdf-export-filename-271/phase_03.md
+Mocks (environment, not seam):
+- ``_server_local_export_date``: controls the date segment of the filename
+- ``_start_export_polling``: prevents background timer (no worker in test)
+- ``_extract_response_markdown``: NiceGUI test harness has no JS runtime,
+  so ``ui.run_javascript`` for Milkdown extraction would timeout or fail
+  non-deterministically. Returns empty string (response text is irrelevant
+  to filename policy).
+
+NiceGUI dispatches async click handlers as background tasks via
+``handle_event`` → ``background_tasks.create()``. So after firing the
+click event, we poll the DB for the ExportJob rather than assuming the
+handler completed synchronously.
 """
 
 from __future__ import annotations
 
 from datetime import date
-from pathlib import Path
 from typing import TYPE_CHECKING
 from uuid import UUID, uuid4
 
 import pytest
 
 from promptgrimoire.config import get_settings
+from promptgrimoire.db.models import ExportJob
 from promptgrimoire.export.filename import (
     PdfExportFilenameContext,
     build_pdf_export_stem,
@@ -31,6 +41,7 @@ from tests.integration.conftest import _authenticate
 from tests.integration.nicegui_helpers import (
     _click_testid,
     _find_by_testid,
+    _fire_event_listeners_async,
     _should_see_testid,
     wait_for,
 )
@@ -166,26 +177,88 @@ async def _setup_loose_workspace(
 
 
 # ---------------------------------------------------------------------------
-# Capture helpers
+# DB query helper
 # ---------------------------------------------------------------------------
 
 
-class ExportCapture:
-    """Captures arguments passed to the patched export seam."""
+async def _get_export_job(user_id: UUID, workspace_id: UUID):
+    """Fetch the most recent ExportJob for this user+workspace.
 
-    def __init__(self) -> None:
-        self.filename: str | None = None
-        self.called = False
-        self.download_path: Path | None = None
+    Uses a simple query (not the production ``get_active_job_for_user``)
+    to avoid coupling to its datetime-based active/expired filters.
+    """
+    from sqlmodel import col, select
 
-    async def fake_export(self, **kwargs: object) -> Path:
-        self.called = True
-        self.filename = str(kwargs.get("filename", ""))
-        fake_path = Path("/tmp/fake_export.pdf")
-        return fake_path
+    from promptgrimoire.db.engine import get_session
+    from promptgrimoire.db.models import ExportJob
 
-    def fake_download(self, path: object) -> None:
-        self.download_path = Path(str(path))
+    async with get_session() as session:
+        stmt = (
+            select(ExportJob)
+            .where(
+                ExportJob.user_id == user_id,
+                ExportJob.workspace_id == workspace_id,
+            )
+            .order_by(col(ExportJob.created_at).desc())
+            .limit(1)
+        )
+        return (await session.exec(stmt)).first()
+
+
+def _expected_filename(meta, export_date: date = FIXED_DATE) -> str:
+    """Build expected filename from workspace metadata using the real policy."""
+    return build_pdf_export_stem(
+        PdfExportFilenameContext(
+            course_code=meta.course_code,
+            activity_title=meta.activity_title,
+            workspace_title=meta.workspace_title,
+            owner_display_name=meta.owner_display_name,
+            export_date=export_date,
+        )
+    )
+
+
+def _apply_export_mocks(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Apply environment mocks shared by all export filename tests."""
+    import promptgrimoire.pages.annotation.pdf_export as pdf_mod
+
+    monkeypatch.setattr(pdf_mod, "_server_local_export_date", lambda: FIXED_DATE)
+    monkeypatch.setattr(pdf_mod, "_start_export_polling", lambda *_a, **_kw: None)
+    # NiceGUI test harness has no JS runtime — ui.run_javascript would
+    # timeout non-deterministically. Response text feeds notes_latex
+    # (pdf_export.py:499), not the filename under test, so this mock
+    # is inert for the filename assertion.
+
+    async def _no_js_markdown(_state: object) -> str:
+        return ""
+
+    monkeypatch.setattr(pdf_mod, "_extract_response_markdown", _no_js_markdown)
+
+
+async def _click_export_and_wait_for_job(
+    nicegui_user: User,
+    user_id: UUID,
+    ws_id: UUID,
+) -> ExportJob:
+    """Click Export PDF and poll DB until the ExportJob appears.
+
+    NiceGUI dispatches async click handlers as background tasks, so
+    the handler may still be running when ``_fire_event_listeners_async``
+    returns. We poll the DB for the job instead of assuming synchronous
+    completion.
+    """
+    btn = _find_by_testid(nicegui_user, "export-pdf-btn")
+    assert btn is not None
+    await _fire_event_listeners_async(btn, "click")
+
+    async def _poll() -> ExportJob | None:
+        return await _get_export_job(user_id, ws_id)
+
+    job = await wait_for(_poll, timeout=10.0)
+    assert isinstance(job, ExportJob), (
+        "No ExportJob created after 10s — export handler bailed"
+    )
+    return job
 
 
 # ---------------------------------------------------------------------------
@@ -194,95 +267,57 @@ class ExportCapture:
 
 
 class TestAnnotateTabExportFilename:
-    """Verify Annotate-tab export passes the policy filename to the export seam."""
+    """Placed workspace export: filename follows policy, not workspace_{uuid}."""
 
     @pytest.mark.asyncio
     async def test_annotate_export_uses_policy_filename(
         self, nicegui_user: User, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Click Export PDF on the Annotate tab and verify the filename argument.
+        """Click Export PDF → ExportJob in DB has policy-derived filename.
 
-        Steps:
-        1. Create a placed workspace with known metadata.
-        2. Monkeypatch the export seam and ui.download.
-        3. Monkeypatch _server_local_export_date to return a fixed date.
-        4. Open the annotation page and click Export PDF.
-        5. Assert the captured filename matches the Phase 1 policy output.
-        6. Assert filename != workspace_{workspace_id}.
-        7. Assert ui.download was called with the fake path.
+        Positive border: filename contains course code + activity + owner + date.
+        Negative border: filename is NOT ``workspace_{uuid}``.
         """
         email = "exporter@uni.edu"
-        ws_id, _user_id, _course_code = await _setup_placed_workspace(email=email)
+        ws_id, user_id, _course_code = await _setup_placed_workspace(email=email)
 
-        capture = ExportCapture()
-
-        import promptgrimoire.pages.annotation.pdf_export as pdf_mod
-
-        monkeypatch.setattr(pdf_mod, "export_annotation_pdf", capture.fake_export)
-        monkeypatch.setattr(pdf_mod.ui, "download", capture.fake_download)
-        monkeypatch.setattr(pdf_mod, "_server_local_export_date", lambda: FIXED_DATE)
+        _apply_export_mocks(monkeypatch)
 
         await _authenticate(nicegui_user, email=email)
         await nicegui_user.open(f"/annotation?workspace_id={ws_id}")
         await _should_see_testid(nicegui_user, "export-pdf-btn")
 
-        # Click export
-        btn = _find_by_testid(nicegui_user, "export-pdf-btn")
-        assert btn is not None
-        from tests.integration.nicegui_helpers import _fire_event_listeners_async
+        job = await _click_export_and_wait_for_job(nicegui_user, user_id, ws_id)
 
-        await _fire_event_listeners_async(btn, "click")
+        filename = job.payload["filename"]
 
-        # Wait for the export to complete
-        await wait_for(lambda: capture.called, timeout=10.0)
-
-        # Build the expected filename via the real Phase 1 builder
         from promptgrimoire.db.workspaces import get_workspace_export_metadata
 
         meta = await get_workspace_export_metadata(ws_id)
         assert meta is not None
-        expected = build_pdf_export_stem(
-            PdfExportFilenameContext(
-                course_code=meta.course_code,
-                activity_title=meta.activity_title,
-                workspace_title=meta.workspace_title,
-                owner_display_name=meta.owner_display_name,
-                export_date=FIXED_DATE,
-            )
-        )
+        expected = _expected_filename(meta)
 
-        assert capture.filename == expected
-        assert capture.filename != f"workspace_{ws_id}"
+        assert filename == expected
+        assert filename != f"workspace_{ws_id}"
 
 
 class TestRespondTabExportFilename:
-    """Respond-tab export yields same filename for same workspace/date."""
+    """Respond tab export yields identical filename for the same workspace."""
 
     @pytest.mark.asyncio
     async def test_respond_tab_same_filename(
         self, nicegui_user: User, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Switch to Respond tab, export, and verify same filename as Annotate.
+        """Switch to Respond tab, export → same filename as Annotate tab.
 
-        Steps:
-        1. Create a placed workspace.
-        2. Patch export seam, ui.download, and date seam.
-        3. Open annotation page, switch to Respond tab.
-        4. Click Export PDF.
-        5. Assert the filename matches the expected policy output.
+        Feature border: filename is workspace-derived, not tab-derived.
         """
         email = "respond@uni.edu"
-        ws_id, _user_id, _course_code = await _setup_placed_workspace(
+        ws_id, user_id, _course_code = await _setup_placed_workspace(
             email=email, activity_title="Respond Activity"
         )
 
-        capture = ExportCapture()
-
-        import promptgrimoire.pages.annotation.pdf_export as pdf_mod
-
-        monkeypatch.setattr(pdf_mod, "export_annotation_pdf", capture.fake_export)
-        monkeypatch.setattr(pdf_mod.ui, "download", capture.fake_download)
-        monkeypatch.setattr(pdf_mod, "_server_local_export_date", lambda: FIXED_DATE)
+        _apply_export_mocks(monkeypatch)
 
         await _authenticate(nicegui_user, email=email)
         await nicegui_user.open(f"/annotation?workspace_id={ws_id}")
@@ -291,82 +326,47 @@ class TestRespondTabExportFilename:
         # Switch to Respond tab
         await _should_see_testid(nicegui_user, "tab-respond")
         _click_testid(nicegui_user, "tab-respond")
+        await _should_see_testid(nicegui_user, "export-pdf-btn")
 
-        # Small wait for tab switch
-        import asyncio
+        job = await _click_export_and_wait_for_job(nicegui_user, user_id, ws_id)
 
-        await asyncio.sleep(0.3)
+        filename = job.payload["filename"]
 
-        # Click export
-        btn = _find_by_testid(nicegui_user, "export-pdf-btn")
-        assert btn is not None
-        from tests.integration.nicegui_helpers import _fire_event_listeners_async
-
-        await _fire_event_listeners_async(btn, "click")
-
-        await wait_for(lambda: capture.called, timeout=10.0)
-
-        # Build the expected filename
         from promptgrimoire.db.workspaces import get_workspace_export_metadata
 
         meta = await get_workspace_export_metadata(ws_id)
         assert meta is not None
-        expected = build_pdf_export_stem(
-            PdfExportFilenameContext(
-                course_code=meta.course_code,
-                activity_title=meta.activity_title,
-                workspace_title=meta.workspace_title,
-                owner_display_name=meta.owner_display_name,
-                export_date=FIXED_DATE,
-            )
-        )
+        expected = _expected_filename(meta)
 
-        assert capture.filename == expected
-        assert capture.filename != f"workspace_{ws_id}"
+        assert filename == expected
+        assert filename != f"workspace_{ws_id}"
 
 
 class TestLooseWorkspaceExportFilename:
-    """Verify missing placement still avoids the old generic basename."""
+    """Unplaced workspace uses fallback filename, never workspace_{uuid}."""
 
     @pytest.mark.asyncio
     async def test_loose_workspace_uses_fallback_policy(
         self, nicegui_user: User, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Export from a loose workspace and verify it uses fallback-based policy.
+        """Export from loose workspace → fallback segments in filename.
 
-        Steps:
-        1. Create a loose workspace (no course/activity).
-        2. Patch export seam, ui.download, and date seam.
-        3. Open annotation page, click Export PDF.
-        4. Assert filename is not workspace_{uuid}.
-        5. Assert filename uses the Phase 1 fallback segments.
+        Positive border: filename contains "Unplaced" and the fixed date.
+        Negative border: filename is NOT ``workspace_{uuid}``.
         """
         email = "loose@uni.edu"
-        ws_id, _user_id = await _setup_loose_workspace(email=email)
+        ws_id, user_id = await _setup_loose_workspace(email=email)
 
-        capture = ExportCapture()
-
-        import promptgrimoire.pages.annotation.pdf_export as pdf_mod
-
-        monkeypatch.setattr(pdf_mod, "export_annotation_pdf", capture.fake_export)
-        monkeypatch.setattr(pdf_mod.ui, "download", capture.fake_download)
-        monkeypatch.setattr(pdf_mod, "_server_local_export_date", lambda: FIXED_DATE)
+        _apply_export_mocks(monkeypatch)
 
         await _authenticate(nicegui_user, email=email)
         await nicegui_user.open(f"/annotation?workspace_id={ws_id}")
         await _should_see_testid(nicegui_user, "export-pdf-btn")
 
-        # Click export
-        btn = _find_by_testid(nicegui_user, "export-pdf-btn")
-        assert btn is not None
-        from tests.integration.nicegui_helpers import _fire_event_listeners_async
+        job = await _click_export_and_wait_for_job(nicegui_user, user_id, ws_id)
 
-        await _fire_event_listeners_async(btn, "click")
+        filename = job.payload["filename"]
 
-        await wait_for(lambda: capture.called, timeout=10.0)
-
-        assert capture.filename is not None
-        assert capture.filename != f"workspace_{ws_id}"
-        # Should contain fallback segments from the Phase 1 builder
-        assert "Unplaced" in capture.filename
-        assert "20260309" in capture.filename
+        assert filename != f"workspace_{ws_id}"
+        assert "Unplaced" in filename
+        assert "20260309" in filename

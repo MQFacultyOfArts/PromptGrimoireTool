@@ -21,6 +21,7 @@ from uuid import UUID
 import structlog
 from nicegui import ui
 from selectolax.lexbor import LexborHTMLParser
+from sqlalchemy.orm.exc import DetachedInstanceError
 
 from promptgrimoire.db.exceptions import (
     HasAnnotationsError,
@@ -30,7 +31,8 @@ from promptgrimoire.db.exceptions import (
 from promptgrimoire.db.workspace_documents import (
     count_document_clones,
     delete_document,
-    list_documents,
+    get_document,
+    list_document_headers,
     update_document_content,
 )
 
@@ -49,17 +51,21 @@ def _document_display_name(doc: WorkspaceDocument) -> str:
     """Return a display name for a document.
 
     Uses the title if set, otherwise extracts the first 50 characters
-    of plain text from the HTML content.
+    of plain text from the HTML content. Returns "Untitled" when content
+    is deferred (headers-only query) or empty.
     """
     if doc.title:
         return doc.title
-    if doc.content:
-        text = LexborHTMLParser(doc.content).text(separator=" ").strip()
-        if text:
-            preview = text[:_PREVIEW_MAX_CHARS]
-            if len(text) > _PREVIEW_MAX_CHARS:
-                preview += "..."
-            return preview
+    try:
+        if doc.content:
+            text = LexborHTMLParser(doc.content).text(separator=" ").strip()
+            if text:
+                preview = text[:_PREVIEW_MAX_CHARS]
+                if len(text) > _PREVIEW_MAX_CHARS:
+                    preview += "..."
+                return preview
+    except DetachedInstanceError:
+        logger.debug("content_deferred_in_display_name", doc_id=str(doc.id))
     return "Untitled"
 
 
@@ -178,7 +184,7 @@ async def open_manage_documents_dialog(state: PageState) -> None:
     show an edit button (AC3.1). Annotated or template-cloned documents
     do not show an edit button (AC3.2).
     """
-    documents = await list_documents(state.workspace_id)
+    documents = await list_document_headers(state.workspace_id)
 
     with ui.dialog() as dialog, ui.card().classes("w-[32rem]"):
         ui.label("Manage Documents").classes("text-lg font-bold")
@@ -200,7 +206,7 @@ async def open_manage_documents_dialog(state: PageState) -> None:
     dialog.open()
 
 
-def _open_edit_dialog(
+async def _open_edit_dialog(
     doc: WorkspaceDocument,
     state: PageState,
     manage_dialog: ui.dialog,
@@ -211,8 +217,18 @@ def _open_edit_dialog(
     (80vw) with the document's HTML content pre-loaded. Save persists
     the content and triggers document refresh. Cancel returns without
     saving.
+
+    Fetches the full document (including content) because the manage
+    dialog uses ``list_document_headers()`` which defers the content
+    column.
     """
     manage_dialog.close()
+
+    # Fetch full document with content — headers-only objects have deferred content
+    full_doc = await get_document(doc.id)
+    if full_doc is None:
+        ui.notify("Document not found", type="negative")
+        return
 
     with (
         ui.dialog() as edit_dialog,
@@ -224,7 +240,9 @@ def _open_edit_dialog(
         ui.separator().classes("flex-shrink-0")
 
         # QEditor scrolls internally via content-style; fills flex space
-        editor = ui.editor(value=doc.content or "").classes("w-full flex-1 min-h-0")
+        editor = ui.editor(value=full_doc.content or "").classes(
+            "w-full flex-1 min-h-0"
+        )
         editor.props(
             'data-testid="document-editor"'
             ' content-style="max-height: 60vh; overflow-y: auto"'

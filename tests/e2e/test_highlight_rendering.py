@@ -54,7 +54,7 @@ class TestHighlightRendering:
         tag_btn.click()
 
         # Verify no char spans in DOM
-        char_spans = page.locator("#doc-container span.char")
+        char_spans = page.get_by_test_id("doc-container").locator("span.char")
         expect(char_spans).to_have_count(0)
 
         # Wait for and verify highlight is registered in CSS.highlights
@@ -132,7 +132,8 @@ class TestHighlightRendering:
         # (native mouse selection across block boundaries is hard to automate)
         page.evaluate(
             """() => {
-                const container = document.getElementById('doc-container');
+                const q = '[data-testid="doc-container"]';
+                const container = document.querySelector(q);
                 const textNodes = walkTextNodes(container);
                 // Select from char 10 to char 30 (spans the paragraph boundary)
                 const totalChars = textNodes.length
@@ -182,7 +183,7 @@ class TestHighlightRendering:
         # Call applyHighlights with various invalid offsets
         page.evaluate(
             """() => {
-                const c = document.getElementById('doc-container');
+                const c = document.querySelector('[data-testid=\"doc-container\"]');
                 applyHighlights(c, {
                     test_tag: [
                         {start_char: -1, end_char: 5},      // negative start

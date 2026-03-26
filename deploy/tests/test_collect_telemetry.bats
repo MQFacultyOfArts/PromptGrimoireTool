@@ -38,7 +38,15 @@ EOF
 echo "grimoire.test"
 EOF
 
-    chmod +x "$BIN_DIR/journalctl" "$BIN_DIR/timedatectl" "$BIN_DIR/hostname"
+    # Stub sudo so the script never escalates privileges during tests.
+    # The real script calls `sudo -u postgres psql` for PG auto-detection
+    # and DB snapshots — both must be inert in the test sandbox.
+    cat >"$BIN_DIR/sudo" <<'EOF'
+#!/usr/bin/env bash
+exit 1
+EOF
+
+    chmod +x "$BIN_DIR/journalctl" "$BIN_DIR/timedatectl" "$BIN_DIR/hostname" "$BIN_DIR/sudo"
 }
 
 teardown() {
@@ -57,6 +65,7 @@ run_collect() {
         JSONL_LOG="$JSONL_FILE" \
         HAPROXY_LOG="$HAPROXY_FILE" \
         PG_LOG_DIR="$PG_DIR" \
+        PG_COLLECTOR_DIR="$PG_DIR" \
         bash "$SCRIPT" --start "2026-03-16 14:50" --end "2026-03-16 17:20"
 }
 

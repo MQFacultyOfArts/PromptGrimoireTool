@@ -203,7 +203,7 @@ class TestHistoryTutorial:
             page1.wait_for_function("new Promise(r => requestAnimationFrame(r))")
 
             # Student A should be warped to Annotate tab
-            expect(page1.get_by_test_id("tab-annotate")).to_have_attribute(
+            expect(page1.get_by_test_id("tab-source-1")).to_have_attribute(
                 "aria-selected", "true", timeout=3000
             )
 

@@ -128,8 +128,10 @@ class TestHTMLPasteWhitespace:
 
         # Scroll down to see the content (it may be below the fold)
         page.evaluate(
-            "document.getElementById('doc-container').scrollTop = "
-            "document.getElementById('doc-container').scrollHeight * 0.1"
+            """() => {
+                const c = document.querySelector('[data-testid="doc-container"]');
+                c.scrollTop = c.scrollHeight * 0.1;
+            }"""
         )
         page.evaluate("() => new Promise(resolve => requestAnimationFrame(resolve))")
 
@@ -140,7 +142,7 @@ class TestHTMLPasteWhitespace:
         doc_container = page.locator("[data-testid='document-content']")
         if doc_container.count() == 0:
             # Fallback to the doc-container element
-            doc_container = page.locator("#doc-container")
+            doc_container = page.get_by_test_id("doc-container")
 
         # Screenshot just the document content area
         doc_container.screenshot(path=str(SCREENSHOT_DIR / "04_document_content.png"))
@@ -232,8 +234,10 @@ class TestHTMLPasteWhitespace:
 
         # Scroll to make Case Name visible
         page.evaluate(
-            "document.getElementById('doc-container').scrollTop = "
-            "document.getElementById('doc-container').scrollHeight * 0.1"
+            """() => {
+                const c = document.querySelector('[data-testid="doc-container"]');
+                c.scrollTop = c.scrollHeight * 0.1;
+            }"""
         )
         page.evaluate("() => new Promise(resolve => requestAnimationFrame(resolve))")
 
@@ -242,7 +246,7 @@ class TestHTMLPasteWhitespace:
 
         # Get positions via JavaScript using text content search
         positions = page.evaluate("""() => {
-            const container = document.getElementById('doc-container');
+            const container = document.querySelector('[data-testid=\"doc-container\"]');
             if (!container) return null;
 
             // Walk text nodes to find "Case Name" and "Lawlis"
@@ -323,7 +327,8 @@ class TestParagraphNumberingAndIndent:
         # Find and measure indent of "Ground 1" text
         # Use a tree walker to find the text node, then walk up for margin-left
         indent_data = page.evaluate("""() => {
-            const contentContainer = document.getElementById('doc-container');
+            const q = '[data-testid="doc-container"]';
+            const contentContainer = document.querySelector(q);
             if (!contentContainer) return { error: 'No doc-container found' };
 
             const containerRect = contentContainer.getBoundingClientRect();

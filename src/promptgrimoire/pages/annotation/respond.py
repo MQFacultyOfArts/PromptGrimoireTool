@@ -29,6 +29,10 @@ import structlog
 from nicegui import ui
 
 from promptgrimoire.crdt.persistence import get_persistence_manager
+from promptgrimoire.pages.annotation.card_shared import (
+    anonymise_display_author,
+    build_expandable_text,
+)
 from promptgrimoire.pages.annotation.word_count_badge import format_word_count_badge
 from promptgrimoire.word_count import word_count
 
@@ -42,9 +46,6 @@ if TYPE_CHECKING:
 
 logger = structlog.get_logger()
 logging.getLogger(__name__).setLevel(logging.INFO)
-
-# Maximum characters to show in highlight text snippet before truncation
-_SNIPPET_MAX_CHARS = 100
 
 # Initial split percentage for the reference panel (left side of splitter)
 _REFERENCE_PANEL_SPLIT = 25
@@ -115,6 +116,7 @@ def _build_reference_card(
     highlight: dict[str, Any],
     tag_colour: str,
     display_tag_name: str,
+    state: PageState,
     on_locate: Callable[..., Any] | None = None,
 ) -> None:
     """Render a single read-only highlight reference card.
@@ -123,17 +125,18 @@ def _build_reference_card(
         highlight: Highlight data dict from CRDT.
         tag_colour: Hex colour for the left border.
         display_tag_name: Human-readable tag name.
+        state: Page state for anonymisation context.
         on_locate: Optional async callback(start_char, end_char) to warp to
             the highlight in Tab 1.
     """
-    author = highlight.get("author", "Unknown")
+    raw_author = highlight.get("author", "Unknown")
+    hl_user_id = highlight.get("user_id")
     start_char: int = int(highlight.get("start_char", 0))
     end_char: int = int(highlight.get("end_char", 0))
     full_text = highlight.get("text", "")
-    snippet = full_text[:_SNIPPET_MAX_CHARS]
-    if len(full_text) > _SNIPPET_MAX_CHARS:
-        snippet += "..."
     comments: list[dict[str, Any]] = highlight.get("comments", [])
+
+    display_author = anonymise_display_author(raw_author, hl_user_id, state)
 
     with (
         ui.card()
@@ -146,43 +149,66 @@ def _build_reference_card(
                 f"color: {tag_colour};"
             )
             if on_locate is not None:
+                hl_doc_id = highlight.get("document_id")
 
-                async def _do_locate(sc: int = start_char, ec: int = end_char) -> None:
-                    await on_locate(sc, ec)
+                async def _do_locate(
+                    sc: int = start_char,
+                    ec: int = end_char,
+                    did: str | None = hl_doc_id,
+                ) -> None:
+                    await on_locate(sc, ec, did)
 
                 ui.button(icon="my_location", on_click=_do_locate).props(
                     'flat dense size=xs data-testid="respond-locate-btn"'
                 ).tooltip("Locate in document")
 
-        ui.label(f"by {author}").classes("text-xs text-gray-500")
-        if snippet:
-            ui.label(f'"{snippet}"').classes("text-sm italic mt-1")
+        ui.label(f"by {display_author}").classes("text-xs text-gray-500")
+        if full_text:
+            build_expandable_text(full_text)
         for comment in comments:
-            comment_author = comment.get("author", "")
+            raw_c_author = comment.get("author", "")
+            c_uid = comment.get("user_id")
             comment_text = comment.get("text", "")
+            display_c_author = anonymise_display_author(raw_c_author, c_uid, state)
             if comment_text:
                 with (
                     ui.row()
                     .classes("w-full items-start gap-1 mt-1 pl-2")
                     .style("border-left: 2px solid #e0e0e0;")
                 ):
-                    ui.label(f"{comment_author}:").classes(
+                    ui.label(f"{display_c_author}:").classes(
                         "text-xs text-gray-500 font-medium shrink-0"
                     )
                     ui.label(comment_text).classes("text-xs text-gray-700")
 
 
-def _matches_filter(highlight: dict[str, Any], filter_text: str) -> bool:
-    """Check if a highlight matches the search filter (case-insensitive)."""
+def _matches_filter(
+    highlight: dict[str, Any],
+    filter_text: str,
+    state: PageState,
+) -> bool:
+    """Check if a highlight matches the search filter (case-insensitive).
+
+    Author names are resolved through ``anonymise_display_author`` so that
+    the filter searches against the *displayed* name (pseudonym when
+    anonymous sharing is active), not the raw CRDT value.
+    """
     needle = filter_text.lower()
     text = highlight.get("text", "").lower()
-    author = highlight.get("author", "").lower()
-    if needle in text or needle in author:
+    # Anonymise highlight author for filtering
+    raw_author = highlight.get("author", "")
+    hl_user_id = highlight.get("user_id")
+    display_author = anonymise_display_author(raw_author, hl_user_id, state).lower()
+    if needle in text or needle in display_author:
         return True
     for comment in highlight.get("comments", []):
         if needle in comment.get("text", "").lower():
             return True
-        if needle in comment.get("author", "").lower():
+        # Anonymise comment author for filtering
+        raw_c_author = comment.get("author", "")
+        c_uid = comment.get("user_id")
+        display_c_author = anonymise_display_author(raw_c_author, c_uid, state).lower()
+        if needle in display_c_author:
             return True
     return False
 
@@ -190,6 +216,7 @@ def _matches_filter(highlight: dict[str, Any], filter_text: str) -> bool:
 def _filter_highlights(
     highlights: list[dict[str, Any]],
     active_filter: str,
+    state: PageState,
     tag_name: str = "",
 ) -> list[dict[str, Any]]:
     """Filter highlights by text content or author, optionally matching tag name."""
@@ -198,7 +225,7 @@ def _filter_highlights(
     return [
         hl
         for hl in highlights
-        if _matches_filter(hl, active_filter)
+        if _matches_filter(hl, active_filter, state)
         or (tag_name and active_filter.lower() in tag_name.lower())
     ]
 
@@ -226,6 +253,7 @@ def _tracked_expansion(
 def _build_reference_panel(
     tags: list[TagInfo],
     crdt_doc: AnnotationDocument,
+    state: PageState,
     filter_text: str | None = None,
     accordion_state: dict[str, bool] | None = None,
     on_locate: Callable[..., Any] | None = None,
@@ -238,6 +266,7 @@ def _build_reference_panel(
     Args:
         tags: List of TagInfo instances for grouping.
         crdt_doc: The CRDT annotation document.
+        state: Page state for anonymisation context.
         filter_text: Optional search string to filter highlights by text or author.
         accordion_state: Dict mapping tag name to open/closed state. Mutated in
             place via ``on_value_change`` callbacks so the caller's dict stays
@@ -259,19 +288,21 @@ def _build_reference_panel(
 
     for tag_info in tags:
         filtered = _filter_highlights(
-            tagged_highlights[tag_info.name], active_filter, tag_info.name
+            tagged_highlights[tag_info.name], active_filter, state, tag_info.name
         )
         if not filtered:
             continue
         with _tracked_expansion(tag_info.name, accordion_state):
             for hl in filtered:
-                _build_reference_card(hl, tag_info.colour, tag_info.name, on_locate)
+                _build_reference_card(
+                    hl, tag_info.colour, tag_info.name, state, on_locate
+                )
 
-    untagged_filtered = _filter_highlights(untagged_highlights, active_filter)
+    untagged_filtered = _filter_highlights(untagged_highlights, active_filter, state)
     if untagged_filtered:
         with _tracked_expansion("Untagged", accordion_state):
             for hl in untagged_filtered:
-                _build_reference_card(hl, "#999999", "Untagged", on_locate)
+                _build_reference_card(hl, "#999999", "Untagged", state, on_locate)
 
 
 def _build_reference_column(
@@ -279,6 +310,7 @@ def _build_reference_column(
     tags: list[TagInfo],
     crdt_doc: AnnotationDocument,
     accordion_state: dict[str, bool],
+    state: PageState,
     on_locate: Callable[..., Any] | None = None,
 ) -> tuple[ui.element, ui.input]:
     """Build the reference panel column inside the splitter's 'before' slot.
@@ -309,7 +341,11 @@ def _build_reference_column(
         reference_container = ui.column().classes("w-full")
         with reference_container:
             _build_reference_panel(
-                tags, crdt_doc, accordion_state=accordion_state, on_locate=on_locate
+                tags,
+                crdt_doc,
+                state,
+                accordion_state=accordion_state,
+                on_locate=on_locate,
             )
 
     return reference_container, search_input
@@ -496,7 +532,7 @@ async def render_respond_tab(
         )
 
         reference_container, search_input = _build_reference_column(
-            splitter, tags, crdt_doc, accordion_state, on_locate=on_locate
+            splitter, tags, crdt_doc, accordion_state, state=state, on_locate=on_locate
         )
 
         def _filter_highlights(e: object) -> None:
@@ -512,6 +548,7 @@ async def render_respond_tab(
                 _build_reference_panel(
                     tags,
                     crdt_doc,
+                    state,
                     filter_text=filter_val,
                     accordion_state=accordion_state,
                     on_locate=on_locate,
@@ -606,6 +643,7 @@ async def render_respond_tab(
             _build_reference_panel(
                 tags,
                 crdt_doc,
+                state,
                 filter_text=search_input.value,
                 accordion_state=accordion_state,
                 on_locate=on_locate,

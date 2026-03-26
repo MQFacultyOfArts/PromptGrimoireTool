@@ -40,7 +40,7 @@ class TestChatCraftIngest232:
                 seed_tags=False,
             )
 
-            doc = page.locator("#doc-container")
+            doc = page.get_by_test_id("doc-container")
             expect(doc).to_contain_text("Hi Sonnet. Trying to repro a bug report.")
             expect(doc.locator("[data-speaker]")).to_have_count(10)
             expect(doc.locator('[data-speaker="system"]')).to_have_count(1)
@@ -71,9 +71,11 @@ class TestChatCraftIngest232:
                 seed_tags=False,
             )
 
-            final_assistant = page.locator(
-                '#doc-container [data-speaker="assistant"]'
-            ).last
+            final_assistant = (
+                page.get_by_test_id("doc-container")
+                .locator('[data-speaker="assistant"]')
+                .last
+            )
             expect(final_assistant).to_contain_text("The above summary is nested:")
             expect(final_assistant.locator("blockquote")).to_have_count(2)
             expect(final_assistant.locator("blockquote blockquote")).to_have_count(1)

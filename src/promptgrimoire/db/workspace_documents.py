@@ -6,9 +6,10 @@ Provides async database functions for document management within workspaces.
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, cast
 
 from sqlalchemy import func
+from sqlalchemy.orm import QueryableAttribute, defer
 from sqlmodel import select
 
 from promptgrimoire.db.engine import get_session
@@ -91,6 +92,28 @@ async def get_document(document_id: UUID) -> WorkspaceDocument | None:
             select(WorkspaceDocument).where(WorkspaceDocument.id == document_id)
         )
         return result.first()
+
+
+async def list_document_headers(workspace_id: UUID) -> list[WorkspaceDocument]:
+    """List document metadata without content, ordered by order_index.
+
+    Returns WorkspaceDocument objects with the ``content`` column deferred.
+    Accessing ``.content`` on these objects raises ``DetachedInstanceError``
+    because the session is closed before return.
+
+    Use ``get_document()`` to fetch a single document with full content,
+    or ``list_documents()`` for export paths that need all content.
+    """
+    async with get_session() as session:
+        result = await session.exec(
+            select(WorkspaceDocument)
+            .where(WorkspaceDocument.workspace_id == workspace_id)
+            .options(
+                defer(cast("QueryableAttribute[Any]", WorkspaceDocument.content))
+            )  # SQLModel exposes str; cast for ty
+            .order_by("order_index")
+        )
+        return list(result.all())
 
 
 async def list_documents(workspace_id: UUID) -> list[WorkspaceDocument]:

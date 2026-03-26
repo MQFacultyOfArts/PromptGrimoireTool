@@ -15,9 +15,9 @@ Traceability:
 from __future__ import annotations
 
 from promptgrimoire.crdt.annotation_doc import AnnotationDocument
-from promptgrimoire.pages.annotation.organise import _SNIPPET_MAX_CHARS
+from promptgrimoire.pages.annotation.card_shared import _EXPANDABLE_THRESHOLD
+from promptgrimoire.pages.annotation.tab_bar import _parse_sort_end_args
 from promptgrimoire.pages.annotation.tags import TagInfo
-from promptgrimoire.pages.annotation.workspace import _parse_sort_end_args
 
 # Test tag list — uses string raw_keys matching CRDT highlight tag values
 _TEST_TAGS = [
@@ -145,13 +145,13 @@ class TestHighlightGrouping:
         assert hl["end_char"] == 15
         assert "id" in hl
 
-    def test_snippet_truncation_logic(self) -> None:
-        """Long text should be truncated at _SNIPPET_MAX_CHARS in card rendering."""
+    def test_expandable_text_truncation_threshold(self) -> None:
+        """Long text is truncated at _EXPANDABLE_THRESHOLD chars."""
         long_text = "x" * 150
-        snippet = long_text[:_SNIPPET_MAX_CHARS]
-        if len(long_text) > _SNIPPET_MAX_CHARS:
+        snippet = long_text[:_EXPANDABLE_THRESHOLD]
+        if len(long_text) > _EXPANDABLE_THRESHOLD:
             snippet += "..."
-        assert len(snippet) == _SNIPPET_MAX_CHARS + 3  # _SNIPPET_MAX_CHARS + "..."
+        assert len(snippet) == _EXPANDABLE_THRESHOLD + 3  # threshold + "..."
         assert snippet.endswith("...")
 
     def test_tag_info_list_produces_columns(self) -> None:

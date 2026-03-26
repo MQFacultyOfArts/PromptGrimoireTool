@@ -293,6 +293,26 @@ class AnnotationDocument:
         finally:
             _origin_var.reset(token)
 
+    def remove_highlights_for_document(
+        self, document_id: str, origin_client_id: str | None = None
+    ) -> int:
+        """Remove all highlights belonging to a document.
+
+        Args:
+            document_id: Document ID whose highlights should be removed.
+            origin_client_id: Client making the change (for echo prevention).
+
+        Returns:
+            Number of highlights removed.
+        """
+        highlights = self.get_highlights_for_document(document_id)
+        removed = 0
+        for hl in highlights:
+            hl_id = hl.get("id", "")
+            if hl_id and self.remove_highlight(hl_id, origin_client_id):
+                removed += 1
+        return removed
+
     def update_highlight_tag(
         self, highlight_id: str, new_tag: str, origin_client_id: str | None = None
     ) -> bool:

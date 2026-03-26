@@ -67,6 +67,8 @@ The test suite is organised into 8 lanes: 1 JS lane, 1 BATS lane for shell scrip
 
 Playwright's event loop contaminates xdist workers, so E2E tests must never run in the unit/integration lanes. See [docs/testing.md](docs/testing.md).
 
+Brian's FIRST LAW: "Flaky" and "Pre-existing" failures are not reasons to stop. They are ways to understand classes of bugs. It is your job to make the code better. When you are working and tests fail, it is your fault to 1) understand why they fail, 2) understand the patterns of failure, and 3) discuss how to fix them such that they more ably fufill the intention of the test. "Flaky" is not a stop word, is a component in a chain of explanation.
+
 ### Smoke Marker Propagation
 
 The `smoke` marker is applied automatically by the `requires_latex`, `requires_full_latexmk`, and `requires_pandoc` decorators in `tests/conftest.py`. Tests using these decorators are excluded from the unit lane and collected into the dedicated smoke lane. Do not apply `@pytest.mark.smoke` manually when using these decorators.
@@ -93,7 +95,7 @@ Claude Code hooks automatically run on every `.py` file write:
 
 1. `ruff check --fix` - autofix lint issues
 2. `ruff format` - format code
-3. `ty check` - type checking
+3. `ty@0.0.24 check` - type checking
 
 All three must pass before code is considered complete.
 
@@ -173,7 +175,7 @@ uv run grimoire e2e cards
 uv run ruff check .
 
 # Run type checking
-uvx ty check
+uvx ty@0.0.24 check
 
 # Seed development data (idempotent)
 uv run grimoire seed run

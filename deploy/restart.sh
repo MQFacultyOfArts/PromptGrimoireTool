@@ -10,12 +10,12 @@
 #   2. uv sync --no-dev (as promptgrimoire)
 #   3. unit tests (optional, e-stop on failure)
 #   4. Update HAProxy 503 page
-#   5. HAProxy drain (stop new connections, let in-flight finish)
-#   6. Wait for active connections to drain
-#   7. HAProxy maintenance mode (serves friendly 503 with jittered reload)
-#   8. systemctl restart
-#   9. Wait for /healthz
-#  10. Stagger delay (let clients land on 503 and get jittered timers)
+#   5. Application-level pre-restart (flush CRDT, navigate clients to /restarting)
+#   6. HAProxy drain (stop new connections, let in-flight finish)
+#   7. Wait for application-level connections to drain
+#   8. HAProxy maintenance mode (serves friendly 503 with jittered reload)
+#   9. systemctl restart
+#  10. Wait for /healthz
 #  11. HAProxy back to ready
 set -euo pipefail
 
@@ -26,7 +26,10 @@ UV=/home/promptgrimoire/.local/bin/uv
 PG_PATH="/home/promptgrimoire/.local/bin:/home/promptgrimoire/.TinyTeX/bin/x86_64-linux:/usr/local/bin:/usr/bin:/bin"
 HEALTHZ=http://127.0.0.1:8080/healthz
 MAX_WAIT=60
-DRAIN_WAIT=10
+
+# Application-level drain token (for pre-restart + connection-count endpoints)
+PRE_RESTART_TOKEN=$(grep '^ADMIN__PRE_RESTART_TOKEN=' "$APP_DIR/.env" 2>/dev/null | cut -d= -f2- || true)
+DRAIN_TIMEOUT=${DRAIN_TIMEOUT:-30}  # Max seconds to wait for app-level connections to drain
 
 SKIP_TESTS=false
 if [[ "${1:-}" == "--skip-tests" ]]; then
@@ -44,7 +47,7 @@ step() { echo "==> $1"; }
 RECOVERY="echo 'set server be_promptgrimoire/app state ready' | socat stdio $SOCK"
 
 # After steps 1-3 fail: server is still running, nothing to recover.
-# After steps 4-9 fail: HAProxy may be in drain/maint. Print recovery.
+# After steps 4-11 fail: HAProxy may be in drain/maint. Print recovery.
 haproxy_touched=false
 cleanup() {
     if [[ "$haproxy_touched" == "true" ]]; then
@@ -84,39 +87,62 @@ fi
 step "Updating HAProxy 503 page"
 cp "$APP_DIR/deploy/503.http" /etc/haproxy/errors/503.http
 
-# 5. Drain — stop sending new connections, let in-flight requests finish
+# 5. Application-level pre-restart (flush CRDT state, navigate clients)
+step "Triggering application-level pre-restart"
+if [[ -z "$PRE_RESTART_TOKEN" ]]; then
+    echo "  WARNING: ADMIN__PRE_RESTART_TOKEN not set in .env — skipping pre-restart" >&2
+    initial_count=0
+else
+    pre_restart_response=$(curl -sf -X POST \
+        -H "Authorization: Bearer $PRE_RESTART_TOKEN" \
+        http://127.0.0.1:8080/api/pre-restart 2>&1) || {
+        echo "  WARNING: pre-restart endpoint failed — proceeding with restart" >&2
+        pre_restart_response=""
+    }
+    initial_count=$(echo "$pre_restart_response" | grep -o '"initial_count":[0-9]*' | cut -d: -f2 || true)
+    initial_count=${initial_count:-0}
+    echo "  Initial connected clients: $initial_count"
+fi
+
+# 6. Drain — stop sending new connections, let in-flight requests finish
 haproxy_touched=true
 step "HAProxy → drain (new connections blocked, in-flight finishing)"
 echo "set server be_promptgrimoire/app state drain" | socat stdio "$SOCK"
 
-# 5. Wait for connections to drain
-#    Check active sessions on the backend; once zero (or timeout), proceed.
-step "Waiting for active connections to drain (max ${DRAIN_WAIT}s)"
-drain_elapsed=0
-while [[ $drain_elapsed -lt $DRAIN_WAIT ]]; do
-    sessions=$(echo "show stat" | socat stdio "$SOCK" \
-        | awk -F, '/^be_promptgrimoire,app,/ { print $5 }')
-    if [[ "${sessions:-0}" -eq 0 ]]; then
-        echo "    Drained after ${drain_elapsed}s"
-        break
+# 7. Wait for application-level connections to drain
+if [[ "$initial_count" -gt 0 ]] && [[ -n "$PRE_RESTART_TOKEN" ]]; then
+    threshold=$(( (initial_count * 5 + 99) / 100 ))  # ceil(5%)
+    step "Waiting for connections to drain (threshold: ≤${threshold}, timeout: ${DRAIN_TIMEOUT}s)"
+    drain_elapsed=0
+    while [[ $drain_elapsed -lt $DRAIN_TIMEOUT ]]; do
+        sleep 1
+        drain_elapsed=$((drain_elapsed + 1))
+        current=$(curl -sf \
+            -H "Authorization: Bearer $PRE_RESTART_TOKEN" \
+            http://127.0.0.1:8080/api/connection-count 2>/dev/null \
+            | grep -o '"count":[0-9]*' | cut -d: -f2 || true)
+        current=${current:-0}
+        if [[ "$current" -le "$threshold" ]]; then
+            echo "  Drained to $current connections (≤${threshold}) after ${drain_elapsed}s"
+            sleep 2  # Grace period
+            break
+        fi
+        echo "  ${drain_elapsed}s: $current connections remaining"
+    done
+    if [[ $drain_elapsed -ge $DRAIN_TIMEOUT ]]; then
+        echo "  Timeout after ${DRAIN_TIMEOUT}s — proceeding with restart"
     fi
-    echo "    ${sessions} active sessions, waiting..."
-    sleep 1
-    drain_elapsed=$((drain_elapsed + 1))
-done
-if [[ $drain_elapsed -ge $DRAIN_WAIT ]]; then
-    echo "    Drain timeout — proceeding with ${sessions:-?} sessions still active"
 fi
 
-# 6. Maintenance mode (serves friendly 503 page)
+# 8. Maintenance mode (serves friendly 503 page)
 step "HAProxy → maintenance mode"
 echo "set server be_promptgrimoire/app state maint" | socat stdio "$SOCK"
 
-# 7. Restart
+# 9. Restart
 step "Restarting promptgrimoire"
 systemctl restart promptgrimoire
 
-# 8. Wait for healthy
+# 10. Wait for healthy
 step "Waiting for /healthz (max ${MAX_WAIT}s)"
 elapsed=0
 until curl -sf "$HEALTHZ" > /dev/null 2>&1; do
@@ -129,13 +155,6 @@ until curl -sf "$HEALTHZ" > /dev/null 2>&1; do
         exit 1
     fi
 done
-
-# 10. Stagger delay — hold maintenance mode while clients land on the
-#     jittered 503 page (5–35s random reload). This prevents thundering
-#     herd when HAProxy switches back to ready. See #419.
-STAGGER_WAIT=20
-step "Stagger delay (${STAGGER_WAIT}s — clients landing on jittered 503)"
-sleep "$STAGGER_WAIT"
 
 # 11. Back to ready
 step "HAProxy → ready"

@@ -1,8 +1,8 @@
 # Annotation Page Architecture
 
-*Last updated: 2026-03-11*
+*Last updated: 2026-03-15*
 
-The annotation page (`pages/annotation/`) is a 26-module package split from a monolith.
+The annotation page (`pages/annotation/`) is a 29-module package split from a monolith.
 
 ## Layout
 
@@ -57,6 +57,14 @@ Definition-before-import ordering is **critical** in `__init__.py`. The sequence
 
 Do not reorder. Types must be defined before submodule imports to resolve circular dependencies (e.g. `workspace.py` imports `PageState` from `__init__`). No `PLC0415` lint suppression is used; the ordering makes late imports unnecessary.
 
+## Tab System (`tab_bar.py`, `tab_state.py`, `workspace.py`)
+
+Multi-document workspaces use a three-tab bar (Source, Respond, Organise) with deferred rendering per document.
+
+- `tab_bar.py` -- Tab creation (`build_tabs`), tab change handler factory (`_make_tab_change_handler`), deferred tab panel rendering (`_build_tab_panels`), and SortableJS drag-and-drop wiring for the Organise tab (`_setup_organise_drag`). Extracted from `workspace.py` in Phase 6 to separate tab mechanics from workspace assembly.
+- `tab_state.py` -- `DocumentTabState` dataclass holding per-document UI state: `document_id`, `tab`/`panel` element references, `document_container`/`cards_container`, `annotation_cards` dict, `card_snapshots`, `rendered` flag, and `cards_epoch` counter. Created for Phase 7 multi-document support so each source tab tracks its own rendering state independently.
+- `workspace.py` -- Top-level workspace entry point (`render_workspace`). Handles auth/ACL resolution, document container rendering, and tag management callbacks. Tab management was extracted to `tab_bar.py`; workspace now imports `build_tabs`, `_make_tab_change_handler`, `_setup_organise_drag`, and `_build_tab_panels` from there.
+
 ## Broadcast & Presence (`broadcast.py`)
 
 `_RemotePresence` (defined in `__init__.py`) carries two separate callbacks for broadcast events:
@@ -101,6 +109,6 @@ The content form is split across four modules:
 
 ## Guard Tests
 
-- `test_annotation_package_structure.py` -- Prevents regression: package directory exists, monolith `.py` file absent, all 20 modules present, no satellite files at `pages/` level, no imports from old paths
+- `test_annotation_package_structure.py` -- Prevents regression: package directory exists, monolith `.py` file absent, all expected modules present, no satellite files at `pages/` level, no imports from old paths
 - `test_annotation_js_extraction.py` -- Prevents re-introduction of JS string constants: static JS files exist with expected functions, `_COPY_PROTECTION_JS` constant absent from Python source
 - `test_css_audit.py` -- Quasar regression guard: asserts computed CSS properties on toolbar, buttons, highlight menu, and sidebar; verifies toolbar is at viewport bottom and content is not obscured

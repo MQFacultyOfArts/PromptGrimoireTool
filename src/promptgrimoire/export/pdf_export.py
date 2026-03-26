@@ -268,6 +268,59 @@ def _build_general_notes_section(
 _LIBREOFFICE_FILTER = Path(__file__).parent / "filters" / "libreoffice.lua"
 
 
+async def _convert_single_document(
+    html_content: str,
+    highlights: list[dict[str, Any]],
+    tag_colours: dict[str, str],
+    word_to_legal_para: dict[int, int | None] | None = None,
+) -> str:
+    """Convert one document's HTML + highlights to a LaTeX body fragment."""
+    processed_html = preprocess_for_export(html_content) if html_content else ""
+    return await convert_html_with_annotations(
+        html=processed_html,
+        highlights=highlights,
+        tag_colours=tag_colours,
+        filter_paths=[_LIBREOFFICE_FILTER],
+        word_to_legal_para=word_to_legal_para,
+    )
+
+
+async def _build_multi_doc_body(
+    documents: list[dict[str, Any]],
+    tag_colours: dict[str, str],
+) -> str:
+    """Process multiple documents into a combined LaTeX body.
+
+    Each document is converted independently (so highlight char offsets
+    remain relative to their own HTML), then joined with section headings.
+    Single-document workspaces omit the heading for backwards compatibility.
+    """
+    parts: list[str] = []
+    for i, doc in enumerate(documents):
+        latex = await _convert_single_document(
+            doc["html_content"],
+            doc.get("highlights", []),
+            tag_colours,
+            word_to_legal_para=doc.get("word_to_legal_para"),
+        )
+        if len(documents) > 1:
+            title = doc.get("title", f"Source {i + 1}")
+            escaped = html.escape(title).replace("&amp;", r"\&")
+            parts.append(f"\\section*{{{escaped}}}")
+        parts.append(latex)
+    return "\n\n".join(parts)
+
+
+def _resolve_output_dir(user_id: str | None, workspace_id: str | None) -> Path:
+    """Resolve or create the output directory for an export."""
+    if user_id:
+        return _get_export_dir(user_id)
+    prefix = "promptgrimoire_export_"
+    if workspace_id:
+        prefix = f"promptgrimoire_export_{workspace_id[:8]}_"
+    return Path(tempfile.mkdtemp(prefix=prefix))
+
+
 def _get_export_dir(user_id: str) -> Path:
     """Get or create user's export directory, cleaning up previous exports.
 
@@ -359,6 +412,7 @@ async def generate_tex_only(
     word_count: int | None = None,
     word_minimum: int | None = None,
     word_limit: int | None = None,
+    documents: list[dict[str, Any]] | None = None,
 ) -> Path:
     """Generate a .tex file from HTML + annotations without compiling to PDF.
 
@@ -367,20 +421,10 @@ async def generate_tex_only(
     enables fast assertions on LaTeX content in tests without paying
     the 5-10s compilation cost.
 
-    Args:
-        html_content: HTML content to export (from ``doc.content``).
-        highlights: List of highlight dicts from CRDT doc.
-        tag_colours: Mapping of tag names to hex colours.
-        output_dir: Directory where the .tex file will be written.
-        general_notes: HTML content from general notes editor.
-        notes_latex: Pre-converted LaTeX for the notes section (e.g.,
-            from Pandoc markdown conversion). Takes precedence over
-            ``general_notes`` when non-empty.
-        word_to_legal_para: Optional mapping for paragraph references.
-        filename: Base name for the output file (without extension).
-        word_count: Word count to display in the snitch badge (keyword-only).
-        word_minimum: Minimum word count threshold (keyword-only).
-        word_limit: Maximum word count threshold (keyword-only).
+    When *documents* is provided (multi-doc workspaces), each document
+    is processed independently and joined with ``\\section*{}`` headings.
+    The legacy *html_content* / *highlights* parameters are used as a
+    single-document fallback.
 
     Returns:
         Path to the generated .tex file.
@@ -388,27 +432,21 @@ async def generate_tex_only(
     Raises:
         ValueError: If highlights are provided but content is empty.
     """
-    if highlights and (not html_content or not html_content.strip()):
-        raise ValueError(
-            "Cannot insert annotation markers into empty content. "
-            "Provide document content or remove highlights."
-        )
-
     # Ensure .sty is in the output directory before writing .tex
     ensure_sty_in_dir(output_dir)
 
-    # Preprocess HTML: detect platform, remove chrome, inject speaker labels
-    processed_html = preprocess_for_export(html_content) if html_content else ""
-
-    # Convert HTML to LaTeX body with annotations
-    # Use libreoffice.lua filter for proper table handling
-    latex_body = await convert_html_with_annotations(
-        html=processed_html,
-        highlights=highlights,
-        tag_colours=tag_colours,
-        filter_paths=[_LIBREOFFICE_FILTER],
-        word_to_legal_para=word_to_legal_para,
-    )
+    # Build LaTeX body from documents list or legacy single-doc params
+    if documents:
+        latex_body = await _build_multi_doc_body(documents, tag_colours)
+    else:
+        if highlights and (not html_content or not html_content.strip()):
+            raise ValueError(
+                "Cannot insert annotation markers into empty content. "
+                "Provide document content or remove highlights."
+            )
+        latex_body = await _convert_single_document(
+            html_content, highlights, tag_colours, word_to_legal_para
+        )
 
     # Prepend word count badge if word count info is provided
     if word_count is not None:
@@ -416,14 +454,12 @@ async def generate_tex_only(
         if badge:
             latex_body = badge + latex_body
 
-    # Build general notes section (before preamble so notes text is
-    # included in script detection for dynamic font loading)
+    # Build general notes section
     notes_section = _build_general_notes_section(
         general_notes, latex_content=notes_latex
     )
 
-    # Build preamble with tag colours and dynamic font loading.
-    # Include both body and notes for complete script detection.
+    # Build preamble with tag colours and dynamic font loading
     full_text = f"{latex_body}\n{notes_section}" if notes_section else latex_body
     preamble = build_annotation_preamble(tag_colours, body_text=full_text)
 
@@ -455,37 +491,21 @@ async def export_annotation_pdf(
     word_count: int | None = None,
     word_minimum: int | None = None,
     word_limit: int | None = None,
+    documents: list[dict[str, Any]] | None = None,
 ) -> Path:
     """Generate PDF with annotations from live annotation data.
 
     This is the main entry point for PDF export. It orchestrates:
-    1. HTML -> LaTeX conversion with annotation markers (via ``generate_tex_only``)
+    1. HTML -> LaTeX conversion with annotation markers
     2. PDF compilation via latexmk
 
-    Args:
-        html_content: HTML content to export (from ``doc.content``).
-        highlights: List of highlight dicts from CRDT doc.
-        tag_colours: Mapping of tag names to hex colours.
-        general_notes: HTML content from general notes editor.
-        notes_latex: Pre-converted LaTeX for the notes section (e.g.,
-            from Pandoc markdown conversion). Takes precedence over
-            ``general_notes`` when non-empty.
-        word_to_legal_para: Optional mapping for paragraph references.
-        output_dir: Optional output directory for PDF. Defaults to temp dir.
-        user_id: Optional user identifier for scoped temp directory.
-            If provided, creates a per-user export dir that is cleaned on reuse.
-        filename: Base name for the output PDF file (without extension).
-        workspace_id: Optional workspace identifier for log correlation.
-        word_count: Word count to display in the snitch badge (keyword-only).
-        word_minimum: Minimum word count threshold (keyword-only).
-        word_limit: Maximum word count threshold (keyword-only).
+    When *documents* is provided (multi-doc workspaces), each document
+    is processed independently and joined with ``\\section*{}`` headings.
+    The legacy *html_content* / *highlights* parameters are used as a
+    single-document fallback.
 
     Returns:
         Path to the generated PDF file.
-
-    Raises:
-        ValueError: If highlights are provided but content is empty.
-        subprocess.CalledProcessError: If LaTeX compilation fails.
     """
     t_export_start = time.monotonic()
     export_id = str(uuid4())
@@ -493,13 +513,7 @@ async def export_annotation_pdf(
 
     # Resolve output directory
     if output_dir is None:
-        if user_id:
-            output_dir = _get_export_dir(user_id)
-        else:
-            prefix = "promptgrimoire_export_"
-            if workspace_id:
-                prefix = f"promptgrimoire_export_{workspace_id[:8]}_"
-            output_dir = Path(tempfile.mkdtemp(prefix=prefix))
+        output_dir = _resolve_output_dir(user_id, workspace_id)
 
     log.info(
         "PDF export workspace=%s output_dir=%s",
@@ -507,22 +521,19 @@ async def export_annotation_pdf(
         output_dir,
     )
 
-    if highlights and (not html_content or not html_content.strip()):
-        raise ValueError(
-            "Cannot insert annotation markers into empty content. "
-            "Provide document content or remove highlights."
-        )
-
     # --- Stage: pandoc_convert ---
     t0 = time.monotonic()
-    processed_html = preprocess_for_export(html_content) if html_content else ""
-    latex_body = await convert_html_with_annotations(
-        html=processed_html,
-        highlights=highlights,
-        tag_colours=tag_colours,
-        filter_paths=[_LIBREOFFICE_FILTER],
-        word_to_legal_para=word_to_legal_para,
-    )
+    if documents:
+        latex_body = await _build_multi_doc_body(documents, tag_colours)
+    else:
+        if highlights and (not html_content or not html_content.strip()):
+            raise ValueError(
+                "Cannot insert annotation markers into empty content. "
+                "Provide document content or remove highlights."
+            )
+        latex_body = await _convert_single_document(
+            html_content, highlights, tag_colours, word_to_legal_para
+        )
     log.info(
         "export_stage_complete",
         export_stage="pandoc_convert",

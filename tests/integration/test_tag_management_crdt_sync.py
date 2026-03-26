@@ -28,7 +28,6 @@ Verification strategy:
 
 from __future__ import annotations
 
-import asyncio
 from pathlib import Path
 from uuid import UUID, uuid4
 
@@ -41,6 +40,7 @@ from tests.integration.nicegui_helpers import (
     _click_testid,
     _find_value_element_by_testid,
     _should_see_testid,
+    wait_for,
 )
 
 _NICEGUI_TEST_APP = Path(__file__).parent / "nicegui_test_app.py"
@@ -112,7 +112,6 @@ class TestTagColourEditUpdatesCrdt:
             await user.open(f"/annotation?workspace_id={ws_id}")
             await _should_see_testid(user, "tag-settings-btn")
             _click_testid(user, "tag-settings-btn")
-            await asyncio.sleep(0.3)
             await _should_see_testid(user, "tag-management-dialog")
 
             color_el = _find_value_element_by_testid(user, f"tag-color-input-{tag.id}")
@@ -122,13 +121,15 @@ class TestTagColourEditUpdatesCrdt:
             # Click Done to trigger batch save
             await _should_see_testid(user, "tag-management-done-btn")
             _click_testid(user, "tag-management-done-btn")
-            await asyncio.sleep(0.5)
 
-            # Verify via DB: update_tag writes to both DB and CRDT
+            # Poll DB until batch save propagates
             from promptgrimoire.db.tags import get_tag
 
-            updated = await get_tag(tag.id)
-            assert updated is not None, "tag not found in DB after save"
+            async def _colour_saved():
+                t = await get_tag(tag.id)
+                return t if t is not None and t.color == "#ff0000" else None
+
+            updated = await wait_for(_colour_saved, timeout=5.0)
             assert updated.color == "#ff0000", (
                 f"tag colour not updated: expected #ff0000, got {updated.color}"
             )
@@ -154,7 +155,6 @@ class TestTagNameEditUpdatesCrdt:
             await user.open(f"/annotation?workspace_id={ws_id}")
             await _should_see_testid(user, "tag-settings-btn")
             _click_testid(user, "tag-settings-btn")
-            await asyncio.sleep(0.3)
             await _should_see_testid(user, "tag-management-dialog")
 
             name_el = _find_value_element_by_testid(user, f"tag-name-input-{tag.id}")
@@ -164,13 +164,15 @@ class TestTagNameEditUpdatesCrdt:
             # Click Done to trigger batch save
             await _should_see_testid(user, "tag-management-done-btn")
             _click_testid(user, "tag-management-done-btn")
-            await asyncio.sleep(0.5)
 
-            # Verify via DB: update_tag writes to both DB and CRDT
+            # Poll DB until batch save propagates
             from promptgrimoire.db.tags import get_tag
 
-            updated = await get_tag(tag.id)
-            assert updated is not None, "tag not found in DB after save"
+            async def _name_saved():
+                t = await get_tag(tag.id)
+                return t if t is not None and t.name == "NewName" else None
+
+            updated = await wait_for(_name_saved, timeout=5.0)
             assert updated.name == "NewName", (
                 f"tag name not updated: expected 'NewName', got {updated.name!r}"
             )
@@ -202,7 +204,6 @@ class TestGroupColourEditUpdatesCrdt:
             await user.open(f"/annotation?workspace_id={ws_id}")
             await _should_see_testid(user, "tag-settings-btn")
             _click_testid(user, "tag-settings-btn")
-            await asyncio.sleep(0.3)
             await _should_see_testid(user, "tag-management-dialog")
 
             group_color_el = _find_value_element_by_testid(
@@ -214,13 +215,15 @@ class TestGroupColourEditUpdatesCrdt:
             # Click Done to trigger batch save
             await _should_see_testid(user, "tag-management-done-btn")
             _click_testid(user, "tag-management-done-btn")
-            await asyncio.sleep(0.5)
 
-            # Verify via DB: update_tag_group writes to both DB and CRDT
+            # Poll DB until batch save propagates
             from promptgrimoire.db.tags import get_tag_group
 
-            updated = await get_tag_group(group.id)
-            assert updated is not None, "group not found in DB after save"
+            async def _group_colour_saved():
+                g = await get_tag_group(group.id)
+                return g if g is not None and g.color == "#00ff00" else None
+
+            updated = await wait_for(_group_colour_saved, timeout=5.0)
             assert updated.color == "#00ff00", (
                 f"group colour not updated: expected #00ff00, got {updated.color}"
             )

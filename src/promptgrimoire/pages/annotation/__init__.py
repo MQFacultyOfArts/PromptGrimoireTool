@@ -34,7 +34,8 @@ Package structure (26 authored modules):
     tags                    Tag definitions and colour mapping
     word_count_badge        Word count badge UI component
     word_count_enforcement  Export-time word count violation check
-    workspace               Workspace tabs, view orchestration, organise drag
+    tab_bar                  Tab bar builder, tab change handler, organise drag
+    workspace               Workspace view, document rendering, tag callbacks
 """
 
 from __future__ import annotations
@@ -70,6 +71,7 @@ if TYPE_CHECKING:
 
     from nicegui import Client
 
+    from promptgrimoire.pages.annotation.tab_state import DocumentTabState
     from promptgrimoire.pages.annotation.tags import TagInfo
 
 logger = structlog.get_logger()
@@ -236,6 +238,13 @@ class PageState:
     # Annotation cards
     annotations_container: ui.element | None = None
     annotation_cards: dict[str, ui.card] | None = None
+    # Per-document tab state (multi-document workspace)
+    document_tabs: dict[UUID, DocumentTabState] = field(default_factory=dict)
+    card_snapshots: dict[str, dict[str, Any]] = field(default_factory=dict)
+    # WARNING: expanded_cards is workspace-global, not per-document.
+    # Works because highlight IDs are UUIDs (globally unique within a
+    # workspace).  Do NOT change to integer or sequential IDs without
+    # making this per-document via DocumentTabState save/restore.
     expanded_cards: set[str] = field(
         default_factory=set
     )  # highlight IDs currently expanded
@@ -250,12 +259,22 @@ class PageState:
     paragraph_map: dict[str, int] = field(default_factory=dict)
     # Document container element for re-rendering (paragraph toggle)
     doc_container: ui.element | None = None
+    # Per-document HTML element IDs (parameterised to prevent cross-tab collisions)
+    doc_container_id: str = "doc-container"
+    ann_container_id: str = "annotations-container"
+    highlight_menu_id: str = "highlight-menu"
     # Raw document HTML content for paragraph map rebuild
     document_content: str = ""
     # Current auto-number mode for paragraph toggle
     auto_number_paragraphs: bool = True
+    # Paragraph toggle switch element (updated on tab switch)
+    paragraph_toggle: ui.switch | None = None
     # Guard against duplicate highlight creation
     processing_highlight: bool = False
+    # Pending scroll target: set by _warp_to_highlight, consumed by
+    # _handle_source_tab_switch after render/refresh completes.
+    # tuple of (start_char, end_char) or None.
+    _pending_scroll: tuple[int, int] | None = None
     # Tab container references (Phase 1: three-tab UI)
     tab_panels: ui.tab_panels | None = (
         None  # Tab panels container for programmatic switching
@@ -319,6 +338,24 @@ class PageState:
     def tag_colours(self) -> dict[str, str]:
         """Build tag key -> hex colour mapping from tag_info_list."""
         return {ti.raw_key: ti.colour for ti in (self.tag_info_list or [])}
+
+    def invalidate_card_cache(self) -> None:
+        """Force the next ``refresh_annotations()`` to do a full rebuild.
+
+        Call this when tag metadata changes (rename, recolour, create,
+        delete) — the per-highlight snapshot cannot detect those because
+        the highlight's ``tag`` field (a UUID) doesn't change when the
+        tag's display name or colour does.  Also invalidates per-document
+        tab caches so deferred tabs rebuild on next visit.
+        """
+        self.annotation_cards = None
+        self.card_snapshots = {}
+        for doc_tab in self.document_tabs.values():
+            doc_tab.annotation_cards = {}
+            doc_tab.card_snapshots = {}
+            if doc_tab.rendered:
+                # Mark rendered tabs for rebuild on next visit
+                doc_tab.rendered = False
 
 
 # ---------------------------------------------------------------------------

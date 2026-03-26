@@ -321,11 +321,14 @@ function setupSelection(container) {
  * @param {string} containerId - ID of the DOM element containing the document text
  * @param {Function} emitCallback - called with {start_char, end_char} on valid selection
  */
-function setupAnnotationSelection(containerId, emitCallback) {
-    // Guard against duplicate listeners on re-render (NiceGUI may call
-    // setupAnnotationSelection multiple times if the Annotate tab is rebuilt).
-    if (window._annotSelectionBound) return;
-    window._annotSelectionBound = true;
+function setupAnnotationSelection(containerId, emitCallback, menuId) {
+    // Guard against duplicate listeners per container (each source tab
+    // calls this independently; the old single boolean blocked all but
+    // the first).
+    window._annotSelectionBoundFor = window._annotSelectionBoundFor || {};
+    if (window._annotSelectionBoundFor[containerId]) return;
+    window._annotSelectionBoundFor[containerId] = true;
+    var effectiveMenuId = menuId || 'highlight-menu';
     document.addEventListener('mouseup', () => {
         const container = document.getElementById(containerId);
         if (!container) return;
@@ -345,7 +348,7 @@ function setupAnnotationSelection(containerId, emitCallback) {
 
         if (startChar !== null && endChar !== null && startChar < endChar) {
             // Position highlight menu near the selection end
-            var menu = document.getElementById('highlight-menu');
+            var menu = document.getElementById(effectiveMenuId);
             if (menu) {
                 var endRect = charOffsetToRect(textNodes, Math.max(endChar - 1, startChar));
                 // Menu is hidden when positioning runs; use conservative constant
@@ -556,11 +559,11 @@ function updateRemoteCursorPositions(container) {
  * @param {string} name - Display name (reserved for future label use)
  * @param {string} color - CSS colour for the selection background
  */
-function renderRemoteSelection(clientId, startChar, endChar, name, color) {
+function renderRemoteSelection(clientId, startChar, endChar, name, color, containerId) {
     // Remove any previous selection for this client
     removeRemoteSelection(clientId);
 
-    const container = document.getElementById('doc-container');
+    const container = document.getElementById(containerId || 'doc-container');
     if (!container) return;
 
     // Always re-walk: NiceGUI may re-render doc-container between calls,

@@ -32,14 +32,14 @@ if TYPE_CHECKING:
 def _select_text_by_mouse(page: Page, text: str) -> dict[str, float] | None:
     """Select text by mouse drag, returning coords used.
 
-    Finds the text in #doc-container, computes bounding rect,
+    Finds the text in the doc-container, computes bounding rect,
     and performs a mouse drag to select it.
 
     Returns the coords dict or None if text was not found.
     """
     coords = page.evaluate(
         """(text) => {
-            const c = document.getElementById('doc-container');
+            const c = document.querySelector('[data-testid=\"doc-container\"]');
             const walker = document.createTreeWalker(
                 c, NodeFilter.SHOW_TEXT, null
             );
@@ -104,7 +104,7 @@ class TestAnnotationHighlightApiIntegration:
         wait_for_css_highlight(page)
 
         # Step 4: No span.char in DOM
-        char_spans = page.locator("#doc-container span.char")
+        char_spans = page.get_by_test_id("doc-container").locator("span.char")
         expect(char_spans).to_have_count(0)
 
     def test_two_tags_distinct_highlights(
@@ -136,5 +136,5 @@ class TestAnnotationHighlightApiIntegration:
         wait_for_css_highlight_count(page, 2)
 
         # Verify no char spans
-        char_spans = page.locator("#doc-container span.char")
+        char_spans = page.get_by_test_id("doc-container").locator("span.char")
         expect(char_spans).to_have_count(0)

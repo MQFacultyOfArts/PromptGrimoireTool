@@ -1,6 +1,6 @@
-"""E2E tests for three-tab annotation interface.
+"""E2E tests for tabbed annotation interface.
 
-Tests verify that the annotation page renders three tabs (Annotate, Organise,
+Tests verify that the annotation page renders tabs (Source N, Organise,
 Respond) with correct names and default selection.
 
 Most tab-interaction tests (organise columns, locate/warp, cross-tab reactivity,
@@ -63,21 +63,21 @@ class TestTabHeaders:
 
     @pytestmark_db
     def test_tab_headers(self, workspace_page: Page) -> None:
-        """Page renders Annotate, Organise, Respond tabs with Annotate selected."""
+        """Page renders Source 1, Organise, Respond tabs with Source 1 selected."""
         page = workspace_page
 
         # Assert three tab elements exist
         tabs = page.locator("[data-testid^='tab-']")
         expect(tabs).to_have_count(3, timeout=5000)
 
-        # Verify tab names
-        expect(tabs.nth(0)).to_contain_text("Annotate")
+        # Verify tab names (multi-doc: first tab is "Source 1", not "Annotate")
+        expect(tabs.nth(0)).to_contain_text("Source 1")
         expect(tabs.nth(1)).to_contain_text("Organise")
         expect(tabs.nth(2)).to_contain_text("Respond")
 
-        # Verify Annotate is the selected/active tab
-        annotate_tab = tabs.nth(0)
-        expect(annotate_tab).to_have_attribute("aria-selected", "true")
+        # Verify Source 1 is the selected/active tab
+        source_tab = tabs.nth(0)
+        expect(source_tab).to_have_attribute("aria-selected", "true")
 
 
 class TestEmptyTagToolbar:

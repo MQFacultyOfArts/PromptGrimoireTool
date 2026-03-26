@@ -76,7 +76,7 @@ def inject_copy_protection() -> None:
     intercepted via keydown handler. CSS ``@media print`` hides tab panels
     and shows a "Printing is disabled" message instead.
     """
-    _selectors = '#doc-container, [data-testid="respond-reference-panel"]'
+    _selectors = '.doc-container, [data-testid="respond-reference-panel"]'
     # On SPA navigations, annotation-copy-protection.js may not be loaded yet
     # (ui.add_body_html only injects on full page loads).  Stash the selectors
     # so the dynamic loader in document.py can call setupCopyProtection later.
@@ -106,8 +106,12 @@ def _render_paragraph_toggle(state: PageState, document: WorkspaceDocument) -> N
     """
 
     async def _handle_paragraph_toggle(new_value: bool) -> None:
-        """Handle paragraph numbering toggle change."""
-        if not state.document_content:
+        """Handle paragraph numbering toggle change.
+
+        Uses ``state.document_id`` (not the captured ``document`` object)
+        so the toggle persists to whichever source tab is currently active.
+        """
+        if not state.document_content or state.document_id is None:
             return
 
         # Rebuild the paragraph map with the new mode
@@ -115,12 +119,15 @@ def _render_paragraph_toggle(state: PageState, document: WorkspaceDocument) -> N
             state.document_content, auto_number=new_value
         )
 
-        # Persist to database
+        # Persist to database — use state.document_id (active tab)
         try:
-            await update_document_paragraph_settings(document.id, new_value, new_map)
+            await update_document_paragraph_settings(
+                state.document_id, new_value, new_map
+            )
         except Exception:
             logger.exception(
-                "Failed to update paragraph settings for doc %s", document.id
+                "Failed to update paragraph settings for doc %s",
+                state.document_id,
             )
             ui.notify("Failed to update paragraph settings", type="negative")
             return
@@ -139,7 +146,7 @@ def _render_paragraph_toggle(state: PageState, document: WorkspaceDocument) -> N
         mode_label = "auto-number" if new_value else "source-number"
         ui.notify(f"Paragraph numbering: {mode_label}", type="info")
 
-    ui.switch(
+    state.paragraph_toggle = ui.switch(
         "Auto-number \u00b6",
         value=document.auto_number_paragraphs,
         on_change=lambda e: _handle_paragraph_toggle(e.value),

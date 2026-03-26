@@ -43,7 +43,7 @@ class TestTextSelection:
         setup_workspace_with_content_highlight_api(page, app_server, content)
 
         # Find the text "defendant" in the rendered document
-        doc = page.locator("#doc-container")
+        doc = page.get_by_test_id("doc-container")
         expect(doc).to_be_visible()
 
         # Use mouse drag to select "defendant" in the document.
@@ -51,7 +51,7 @@ class TestTextSelection:
         # bounding rect via JS, then use mouse events.
         coords = page.evaluate(
             """() => {
-                const c = document.getElementById('doc-container');
+                const c = document.querySelector('[data-testid=\"doc-container\"]');
                 const walker = document.createTreeWalker(
                     c, NodeFilter.SHOW_TEXT, null
                 );
@@ -101,7 +101,7 @@ class TestTextSelection:
         # Emit a synthetic selection spanning the boundary
         page.evaluate(
             """() => {
-                const c = document.getElementById('doc-container');
+                const c = document.querySelector('[data-testid=\"doc-container\"]');
                 const tn = walkTextNodes(c);
                 const total = tn.length
                     ? tn[tn.length - 1].endChar : 0;
@@ -123,14 +123,14 @@ class TestTextSelection:
     ) -> None:
         """AC2.3: Selection outside the document container is ignored.
 
-        Selects text in the tag toolbar area (outside #doc-container)
+        Selects text in the tag toolbar area (outside doc-container)
         and verifies no ``selection_made`` event triggers a highlight.
         """
         page = authenticated_page
         content = "Document content for testing."
         setup_workspace_with_content_highlight_api(page, app_server, content)
 
-        # Click on the toolbar area (outside #doc-container)
+        # Click on the toolbar area (outside doc-container)
         toolbar = page.locator("[data-testid='tag-toolbar']")
         expect(toolbar).to_be_visible()
 
@@ -179,7 +179,7 @@ class TestTextSelection:
         )
 
         # Single click in the document (no drag)
-        doc = page.locator("#doc-container")
+        doc = page.get_by_test_id("doc-container")
         expect(doc).to_be_visible()
         doc_box = doc.bounding_box()
         assert doc_box is not None

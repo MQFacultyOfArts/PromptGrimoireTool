@@ -163,7 +163,7 @@ async def _broadcast_cursor_update(
         )
         js = _render_js(
             t"renderRemoteCursor("
-            t"document.getElementById('doc-container')"
+            t"document.getElementById({state.doc_container_id})"
             t", {client_id}, {char_index}"
             t", {name}, {color})"
         )
@@ -199,8 +199,10 @@ async def _broadcast_selection_update(
             receiver_is_privileged=presence.viewer_is_privileged,
             sender_is_privileged=state.viewer_is_privileged,
         )
+        ctnr = state.doc_container_id
         js = _render_js(
-            t"renderRemoteSelection({client_id}, {start}, {end}, {name}, {color})"
+            t"renderRemoteSelection("
+            t"{client_id}, {start}, {end}, {name}, {color}, {ctnr})"
         )
         with contextlib.suppress(Exception):
             await presence.nicegui_client.run_javascript(js, timeout=2.0)
@@ -228,7 +230,7 @@ def _replay_existing_cursors(
             color = presence.color
             js = _render_js(
                 t"renderRemoteCursor("
-                t"document.getElementById('doc-container')"
+                t"document.getElementById({state.doc_container_id})"
                 t", {cid}, {char}"
                 t", {resolved_name}, {color})"
             )
@@ -237,10 +239,11 @@ def _replay_existing_cursors(
             s_start = presence.selection_start
             s_end = presence.selection_end
             color = presence.color
+            ctnr = state.doc_container_id
             js = _render_js(
                 t"renderRemoteSelection("
                 t"{cid}, {s_start}, {s_end},"
-                t" {resolved_name}, {color})"
+                t" {resolved_name}, {color}, {ctnr})"
             )
             ui.run_javascript(js)
 
@@ -303,11 +306,17 @@ async def _handle_remote_update(state: PageState) -> None:
     Rebuilds tag state, CSS, toolbar, annotations, and any
     tab-specific views that are currently active.
     """
+    old_tag_info = state.tag_info_list
     _rebuild_tag_state_from_crdt(state)
     _update_highlight_css(state)
     if state.refresh_toolbar:
         await state.refresh_toolbar()
     _update_user_count(state)
+    # Only invalidate card cache when tag metadata actually changed
+    # (rename, recolour, create, delete). Highlight-only changes are
+    # handled by the diff algorithm's per-highlight snapshots.
+    if state.tag_info_list != old_tag_info:
+        state.invalidate_card_cache()
     if state.refresh_annotations:
         state.refresh_annotations(trigger="crdt_broadcast")
     if state.active_tab == "Organise":
@@ -401,7 +410,9 @@ def _setup_client_sync(
     _update_user_count(state)
     _notify_other_clients(workspace_key, client_id)
 
-    _replay_existing_cursors(workspace_key, client_id, state)
+    # NOTE: cursor replay is deferred until after document rendering
+    # sets state.doc_container_id.  Call replay_existing_cursors()
+    # from the workspace view after _build_tab_panels completes.
 
     async def on_client_delete() -> None:
         await _handle_client_delete(

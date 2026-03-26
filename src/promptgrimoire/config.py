@@ -91,6 +91,7 @@ class AdminConfig(BaseModel):
     """Admin API configuration."""
 
     admin_api_secret: SecretStr = SecretStr("")
+    pre_restart_token: SecretStr = SecretStr("")
 
 
 class AppConfig(BaseModel):
@@ -110,7 +111,6 @@ class FeaturesConfig(BaseModel):
     enable_roleplay: bool = True
     roleplay_require_privileged: bool = True
     enable_file_upload: bool = True
-    enable_multi_document: bool = False
 
 
 class I18nConfig(BaseModel):

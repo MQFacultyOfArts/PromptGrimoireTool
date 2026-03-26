@@ -93,7 +93,14 @@ def add_comment_to_highlight(
     # and signal completion via the epoch increment. This guarantees
     # the old DOM is dead and the new DOM is fully settled.
     page.wait_for_function(
-        "(oldEpoch) => (window.__annotationCardsEpoch || 0) > oldEpoch",
+        "(oldEpoch) => {"
+        "  const m = window.__cardEpochs;"
+        "  if (m) {"
+        "    const v = Object.values(m);"
+        "    if (v.length) return Math.max(...v) > oldEpoch;"
+        "  }"
+        "  return (window.__annotationCardsEpoch || 0) > oldEpoch;"
+        "}",
         arg=old_epoch,
         timeout=10000,
     )

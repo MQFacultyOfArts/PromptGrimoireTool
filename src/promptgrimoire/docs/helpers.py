@@ -80,7 +80,7 @@ def select_chars(page: Page, start_char: int, end_char: int) -> None:
     # have getBoundingClientRect()).
     coords = page.evaluate(
         """([startChar, endChar]) => {
-            const container = document.querySelector('[data-testid=\"doc-container\"]');
+            const container = document.querySelector('[data-testid="doc-container"]');
             if (!container || typeof walkTextNodes === 'undefined') return null;
             const nodes = walkTextNodes(container);
             const startRect = charOffsetToRect(nodes, startChar);
@@ -110,7 +110,7 @@ def select_chars(page: Page, start_char: int, end_char: int) -> None:
     # renders outside the viewport (e.g. AustLII inline styles).
     page.evaluate(
         """([startChar, endChar]) => {
-            const container = document.querySelector('[data-testid=\"doc-container\"]');
+            const container = document.querySelector('[data-testid="doc-container"]');
             const nodes = walkTextNodes(container);
             const sr = charOffsetToRange(nodes, startChar, endChar);
             if (!sr) return;
@@ -134,7 +134,7 @@ def select_chars(page: Page, start_char: int, end_char: int) -> None:
     # Re-query coordinates after scroll (positions change)
     coords = page.evaluate(
         """([startChar, endChar]) => {
-            const container = document.querySelector('[data-testid=\"doc-container\"]');
+            const container = document.querySelector('[data-testid="doc-container"]');
             const nodes = walkTextNodes(container);
             const startRect = charOffsetToRect(nodes, startChar);
             const endRect = charOffsetToRect(nodes, endChar);

@@ -135,7 +135,7 @@ class TestKnownQueryRegressions:
     )
     @pytest.mark.asyncio
     async def test_workspace_fetch_count(self) -> None:
-        """Fetching workspace + headers should need at most 2 queries."""
+        """Workspace fetched multiple times across page-load components."""
         from promptgrimoire.db.engine import _state
         from promptgrimoire.db.workspace_documents import (
             add_document,
@@ -159,7 +159,7 @@ class TestKnownQueryRegressions:
         assert _state.engine is not None, "Engine not initialised"
         sync_engine = _state.engine.sync_engine
 
-        # Simulate page load: fetch workspace then headers
+        # Models redundant get_workspace() calls across page-load components
         with count_queries(sync_engine) as counter:
             await get_workspace(workspace.id)
             await get_workspace(workspace.id)

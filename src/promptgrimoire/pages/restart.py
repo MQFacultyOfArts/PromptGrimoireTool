@@ -157,8 +157,9 @@ async def pre_restart_handler(request: Request) -> JSONResponse:
             continue
         try:
             await client.run_javascript(
-                'window.location.href = "/restarting?return=" '
-                "+ encodeURIComponent(location.href)",
+                'window.location.href = "/restarting?return="'
+                " + encodeURIComponent("
+                "location.pathname + location.search + location.hash)",
                 timeout=2.0,
             )
         except Exception:

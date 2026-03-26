@@ -55,8 +55,11 @@ def create_course(
 
     page.get_by_test_id("create-course-btn").click()
 
-    # Wait for redirect to course detail page
-    page.wait_for_url(re.compile(r"/courses/[0-9a-f-]+"), timeout=10000)
+    # Wait for redirect to course detail page (commit: URL match is enough,
+    # subsequent Playwright actions auto-wait for DOM readiness)
+    page.wait_for_url(
+        re.compile(r"/courses/[0-9a-f-]+"), timeout=10000, wait_until="commit"
+    )
 
 
 def add_week(
@@ -82,7 +85,11 @@ def add_week(
     page.get_by_test_id("add-week-btn").click()
 
     # Wait for the week creation page
-    page.wait_for_url(re.compile(r"/courses/[0-9a-f-]+/weeks/new"), timeout=10000)
+    page.wait_for_url(
+        re.compile(r"/courses/[0-9a-f-]+/weeks/new"),
+        timeout=10000,
+        wait_until="commit",
+    )
 
     if week_number is not None:
         page.get_by_test_id("week-number-input").fill(str(week_number))
@@ -92,7 +99,9 @@ def add_week(
     page.get_by_test_id("create-week-btn").click()
 
     # Wait for redirect back to course detail page
-    page.wait_for_url(re.compile(r"/courses/[0-9a-f-]+$"), timeout=10000)
+    page.wait_for_url(
+        re.compile(r"/courses/[0-9a-f-]+$"), timeout=10000, wait_until="commit"
+    )
 
 
 def add_activity(page: Page, *, title: str, description: str = "") -> None:
@@ -114,6 +123,7 @@ def add_activity(page: Page, *, title: str, description: str = "") -> None:
     page.wait_for_url(
         re.compile(r"/courses/[0-9a-f-]+/weeks/[0-9a-f-]+/activities/new"),
         timeout=10000,
+        wait_until="commit",
     )
 
     page.get_by_test_id("activity-title-input").fill(title)
@@ -124,7 +134,9 @@ def add_activity(page: Page, *, title: str, description: str = "") -> None:
     page.get_by_test_id("create-activity-btn").click()
 
     # Wait for redirect back to course detail page
-    page.wait_for_url(re.compile(r"/courses/[0-9a-f-]+$"), timeout=10000)
+    page.wait_for_url(
+        re.compile(r"/courses/[0-9a-f-]+$"), timeout=10000, wait_until="commit"
+    )
 
 
 def configure_course_setting(page: Page, *, toggle_label: str, enabled: bool) -> None:
@@ -178,7 +190,11 @@ def enrol_student(page: Page, *, email: str) -> None:
         email: Student email address to enrol.
     """
     page.get_by_test_id("manage-enrollments-btn").click()
-    page.wait_for_url(re.compile(r"/courses/[0-9a-f-]+/enrollments"), timeout=10000)
+    page.wait_for_url(
+        re.compile(r"/courses/[0-9a-f-]+/enrollments"),
+        timeout=10000,
+        wait_until="commit",
+    )
 
     page.get_by_test_id("enrollment-email-input").fill(email)
 
@@ -192,7 +208,9 @@ def enrol_student(page: Page, *, email: str) -> None:
 
     # Navigate back to course detail page
     page.get_by_test_id("back-to-unit-btn").click()
-    page.wait_for_url(re.compile(r"/courses/[0-9a-f-]+$"), timeout=10000)
+    page.wait_for_url(
+        re.compile(r"/courses/[0-9a-f-]+$"), timeout=10000, wait_until="commit"
+    )
 
 
 def publish_week(page: Page, week_title: str) -> None:

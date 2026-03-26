@@ -80,7 +80,9 @@ def _fill_template_workspace(page: Page) -> None:
     showing a "Create Template" button.
     """
     page.locator('[data-testid^="template-btn-"]').first.click()
-    page.wait_for_url(re.compile(r"/annotation\?workspace_id="), timeout=10000)
+    page.wait_for_url(
+        re.compile(r"/annotation\?workspace_id="), timeout=10000, wait_until="commit"
+    )
 
     content_input = page.get_by_test_id("content-editor").locator(".q-editor__content")
     content_input.wait_for(state="visible", timeout=5000)
@@ -161,6 +163,7 @@ def _student_start_and_verify(
             student_page.wait_for_url(
                 re.compile(r"/annotation\?workspace_id="),
                 timeout=15000,
+                wait_until="commit",
             )
             assert "/annotation" in student_page.url, (
                 f"Expected /annotation URL, got: {student_page.url}"
@@ -614,7 +617,9 @@ def _setup_course_with_activity(
 
     # Navigate back to course detail page
     page.go_back()
-    page.wait_for_url(re.compile(r"/courses/[0-9a-f-]+"), timeout=10000)
+    page.wait_for_url(
+        re.compile(r"/courses/[0-9a-f-]+"), timeout=10000, wait_until="commit"
+    )
 
     publish_week(page, "Navigator Week")
     enrol_student(page, email=student_email)
@@ -701,6 +706,7 @@ class TestNavigator:
                 page.wait_for_url(
                     re.compile(rf"workspace_id={workspace_id}"),
                     timeout=10000,
+                    wait_until="commit",
                 )
                 assert "/annotation" in page.url, (
                     f"Expected /annotation in URL, got: {page.url}"
@@ -719,6 +725,7 @@ class TestNavigator:
                 page.wait_for_url(
                     re.compile(rf"workspace_id={workspace_id}"),
                     timeout=10000,
+                    wait_until="commit",
                 )
                 assert "/annotation" in page.url, (
                     f"Expected /annotation in URL, got: {page.url}"
@@ -1035,6 +1042,7 @@ class TestNavigator:
                 student_page.wait_for_url(
                     re.compile(r"/annotation\?workspace_id="),
                     timeout=15000,
+                    wait_until="commit",
                 )
 
             with subtests.test(msg="title_matches_activity"):
@@ -1345,7 +1353,7 @@ class TestNavigationChrome:
 
             navigate_home_via_drawer(page)
 
-            page.wait_for_url(re.compile(r"/$|/\?"), timeout=10000)
+            page.wait_for_url(re.compile(r"/$|/\?"), timeout=10000, wait_until="commit")
             assert page.url.rstrip("/").endswith(app_server.rstrip("/")), (
                 f"Expected to navigate to /, got {page.url}"
             )
@@ -1370,7 +1378,7 @@ class TestNavigationChrome:
 
             navigate_home_via_drawer(page)
 
-            page.wait_for_url(re.compile(r"/$|/\?"), timeout=10000)
+            page.wait_for_url(re.compile(r"/$|/\?"), timeout=10000, wait_until="commit")
         finally:
             page.goto("about:blank")
             page.close()

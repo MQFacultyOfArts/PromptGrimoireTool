@@ -64,7 +64,12 @@ class TestRestartingPage:
         """AC3.3: no return param redirects to /."""
         fresh_page.goto(f"{app_server}/restarting")
 
-        # Should eventually redirect to home
+        # Should eventually redirect to home (root path)
         _wait_for_redirect(fresh_page)
-        # After redirect, should be at root or auth redirect
-        assert "/restarting" not in fresh_page.url
+        # URL should be at root or auth redirect from root — not /restarting
+        from urllib.parse import urlparse
+
+        path = urlparse(fresh_page.url).path
+        assert path == "/" or path.startswith("/authenticate"), (
+            f"Expected redirect to / or /authenticate, got {path}"
+        )

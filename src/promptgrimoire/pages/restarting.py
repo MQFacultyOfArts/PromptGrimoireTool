@@ -11,19 +11,36 @@ regardless of authentication state — identical pattern to ``/banned``.
 from __future__ import annotations
 
 import json
+import re
 
 from nicegui import ui
 
+_SAFE_RETURN_RE = re.compile(r"^/([^/].*)?$")
+
 
 def _js_string(value: str) -> str:
-    """Escape a Python string for safe embedding in a JS string literal."""
-    return json.dumps(value)
+    """Escape a Python string for safe embedding in a ``<script>`` block.
+
+    ``json.dumps`` handles JS string escaping but does not escape the
+    ``</`` sequence which terminates ``<script>`` at the HTML parser
+    level (HTML5 §8.1.2.6).  The ``<\\/`` replacement is the standard
+    fix used by Django's ``escapejs`` for the same reason.
+    """
+    return json.dumps(value).replace("</", "<\\/")
+
+
+def _safe_return_url(raw: str) -> str:
+    """Accept only same-origin relative paths; reject everything else."""
+    if _SAFE_RETURN_RE.match(raw):
+        return raw
+    return "/"
 
 
 @ui.page("/restarting")
 async def restarting_page() -> None:
     """Display server-updating message with auto-redirect polling."""
-    return_url = ui.context.client.request.query_params.get("return", "/")
+    raw = ui.context.client.request.query_params.get("return", "/")
+    return_url = _safe_return_url(raw)
 
     with ui.column().classes("absolute-center items-center"):
         ui.icon("update", size="xl").classes("text-blue-500")

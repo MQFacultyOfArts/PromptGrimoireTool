@@ -120,8 +120,8 @@ async def _flush_milkdown_to_crdt() -> None:
     if workspace_registry is None:
         return
 
-    for workspace_id, clients in workspace_presence.items():
-        for client_id, presence in clients.items():
+    for workspace_id, clients in list(workspace_presence.items()):
+        for client_id, presence in list(clients.items()):
             await _flush_single_client(
                 workspace_id, client_id, presence, workspace_registry
             )

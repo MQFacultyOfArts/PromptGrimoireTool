@@ -18,6 +18,7 @@ library references during development.
 
 ## architecture
 
+- [Context Diagram (Level 0)](architecture/dfd/0-context-diagram.md)
 - [[1] Learning Workspace — Level 1 Decomposition](architecture/dfd/1-level-1-decomposition.md)
 - [[5] Annotate Texts — Level 2 Decomposition](architecture/dfd/5-annotate-texts.md)
 

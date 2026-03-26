@@ -410,7 +410,9 @@ def _setup_client_sync(
     _update_user_count(state)
     _notify_other_clients(workspace_key, client_id)
 
-    _replay_existing_cursors(workspace_key, client_id, state)
+    # NOTE: cursor replay is deferred until after document rendering
+    # sets state.doc_container_id.  Call replay_existing_cursors()
+    # from the workspace view after _build_tab_panels completes.
 
     async def on_client_delete() -> None:
         await _handle_client_delete(

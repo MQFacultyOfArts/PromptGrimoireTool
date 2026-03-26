@@ -32,6 +32,7 @@ from promptgrimoire.pages.annotation import (
     PageState,
 )
 from promptgrimoire.pages.annotation.broadcast import (
+    _replay_existing_cursors,
     _setup_client_sync,
 )
 from promptgrimoire.pages.annotation.css import _build_tag_toolbar
@@ -296,6 +297,17 @@ async def _render_workspace_view(
         can_create_tags=can_create_tags,
         footer=footer,
     )
+
+    # Replay existing cursors now that doc_container_id is set.
+    # Must happen after _build_tab_panels (which renders the document
+    # and sets state.doc_container_id to "doc-container-{uuid}").
+    #
+    # There is a narrow window between _setup_client_sync (which
+    # registers us in _workspace_presence) and this call.  Incoming
+    # broadcasts during that window go through _handle_remote_update,
+    # which does not use doc_container_id for cursor rendering, so
+    # the gap is benign.
+    _replay_existing_cursors(str(workspace_id), state.client_id, state)
 
     # Inject copy protection JS after tab container is built (Phase 4)
     if protect:

@@ -35,6 +35,17 @@ e2e_app = typer.Typer(help="End-to-end test commands.")
 _PLAYWRIGHT_TEST_PATH = str(PLAYWRIGHT_LANE.test_paths[0])
 
 
+def _latest_artifact_dir(lane_name: str) -> Path | None:
+    """Return the most recent artifact directory for a parallel lane."""
+    from promptgrimoire.cli.e2e._artifacts import E2E_ARTIFACT_ROOT
+
+    lane_root = E2E_ARTIFACT_ROOT / lane_name
+    if not lane_root.is_dir():
+        return None
+    runs = sorted(lane_root.iterdir(), reverse=True)
+    return runs[0] if runs else None
+
+
 def _has_test_path(args: list[str]) -> bool:
     """Return True if args contains an explicit test file or directory path."""
     for arg in args:
@@ -150,7 +161,7 @@ def _run_all_lane_steps(user_args: list[str]) -> list[LaneResult]:
     # --- Lane 0: JS (vitest) ---
     console.print("[blue]Running JS unit tests...[/]")
     js_exit = _run_js()
-    lane_results.append(LaneResult("js", js_exit, log_path=None))
+    lane_results.append(LaneResult("js", js_exit))
 
     # --- Lane 0.5: BATS (shell script tests) ---
     console.print("[blue]Running BATS lane...[/]")
@@ -207,12 +218,24 @@ def _run_all_lane_steps(user_args: list[str]) -> list[LaneResult]:
         fail_fast=False,
         py_spy=False,
     )
-    lane_results.append(LaneResult("playwright", playwright_exit))
+    lane_results.append(
+        LaneResult(
+            "playwright",
+            playwright_exit,
+            artifact_dir=_latest_artifact_dir("playwright"),
+        )
+    )
 
     # --- Lane 4: NiceGUI (unchanged) ---
     console.print("[blue]Running NiceGUI lane...[/]")
     nicegui_exit = run_nicegui_lane(user_args)
-    lane_results.append(LaneResult("nicegui", nicegui_exit))
+    lane_results.append(
+        LaneResult(
+            "nicegui",
+            nicegui_exit,
+            artifact_dir=_latest_artifact_dir("nicegui"),
+        )
+    )
 
     # --- Lane 5: Smoke (serial, clears addopts) ---
     smoke_log = Path("test-smoke.log")
@@ -318,7 +341,13 @@ def run_slow_lanes(user_args: list[str]) -> int:
             os.environ.pop("E2E_SKIP_LATEXMK", None)
         else:
             os.environ["E2E_SKIP_LATEXMK"] = previous_skip_latexmk
-    lane_results.append(LaneResult("playwright-latexmk", pw_latexmk_exit))
+    lane_results.append(
+        LaneResult(
+            "playwright-latexmk",
+            pw_latexmk_exit,
+            artifact_dir=_latest_artifact_dir("playwright"),
+        )
+    )
 
     console.print("[blue]Running LuaLaTeX compile lane...[/]")
     latexmk_log = Path("test-latexmk-full.log")
@@ -457,7 +486,13 @@ def run_all_browsers(
             py_spy=False,
             browser=browser_name,
         )
-        lane_results.append(LaneResult(f"playwright-{browser_name}", exit_code))
+        lane_results.append(
+            LaneResult(
+                f"playwright-{browser_name}",
+                exit_code,
+                artifact_dir=_latest_artifact_dir("playwright"),
+            )
+        )
         if fail_fast and exit_code != 0:
             break
 

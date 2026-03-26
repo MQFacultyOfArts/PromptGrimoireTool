@@ -404,7 +404,7 @@ def test_run_serial_playwright_e2e_selects_only_playwright_path(
 
     assert exit_code == 0
     assert captured["default_args"][0] == "tests/e2e"
-    assert captured["default_args"][1:3] == ["-m", "e2e"]
+    assert captured["default_args"][1:3] == ["-m", "e2e and not perf"]
     assert "nicegui_ui" not in captured["default_args"]
     assert "Playwright" in captured["title"]
 
@@ -440,7 +440,7 @@ def test_run_playwright_changed_lane_selects_only_playwright_path(
 
     assert exit_code == 0
     assert captured["default_args"][0] == "tests/e2e"
-    assert captured["default_args"][1:3] == ["-m", "e2e"]
+    assert captured["default_args"][1:3] == ["-m", "e2e and not perf"]
     assert "nicegui_ui" not in captured["default_args"]
     assert "Playwright" in captured["title"]
 
@@ -476,7 +476,7 @@ def test_run_playwright_noretry_lane_selects_only_playwright_path(
 
     assert exit_code == 0
     assert captured["default_args"][0] == "tests/e2e"
-    assert captured["default_args"][1:3] == ["-m", "e2e"]
+    assert captured["default_args"][1:3] == ["-m", "e2e and not perf"]
     assert "nicegui_ui" not in captured["default_args"]
     assert "Playwright" in captured["title"]
 

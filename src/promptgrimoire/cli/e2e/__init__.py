@@ -703,7 +703,7 @@ def run_playwright_noretry_lane(user_args: list[str]) -> int:
 
     default_args = [
         "-m",
-        "e2e",
+        "e2e and not perf",
         "-x",
         "-v",
         "--tb=short",
@@ -759,7 +759,7 @@ def run_playwright_changed_lane(user_args: list[str]) -> int:
 
     default_args = [
         "-m",
-        "e2e",
+        "e2e and not perf",
         "--ff",
         "--depper",
         "--tb=long",
@@ -893,7 +893,7 @@ def _run_serial_playwright_e2e(
 
     default_args = [
         "-m",
-        "e2e",
+        "e2e and not perf",
         "--ff",
         "-v",
         "--tb=short",

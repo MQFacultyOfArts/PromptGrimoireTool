@@ -21,7 +21,7 @@ from promptgrimoire.db.acl import (
     get_privileged_user_ids_for_workspace,
     grant_permission,
 )
-from promptgrimoire.db.workspace_documents import list_document_headers
+from promptgrimoire.db.workspace_documents import get_document, list_document_headers
 from promptgrimoire.db.workspaces import (
     PlacementContext,
     create_workspace,
@@ -244,9 +244,11 @@ async def _render_workspace_view(
     _setup_client_sync(workspace_id, client, state)
     can_manage_sharing = state.is_owner or state.viewer_is_privileged
 
-    # Pre-load documents so the header can show the paragraph toggle
+    # Pre-load documents so the header can show the paragraph toggle.
+    # Two-query pattern: list_document_headers() defers the content column, so
+    # fetch the full document via get_document() before passing to the header.
     documents = await list_document_headers(workspace_id)
-    first_doc = documents[0] if documents else None
+    first_doc = await get_document(documents[0].id) if documents else None
 
     await render_workspace_header(
         state,

@@ -21,6 +21,7 @@ from uuid import UUID
 import structlog
 from nicegui import ui
 from selectolax.lexbor import LexborHTMLParser
+from sqlalchemy.orm.exc import DetachedInstanceError
 
 from promptgrimoire.db.exceptions import (
     HasAnnotationsError,
@@ -62,7 +63,7 @@ def _document_display_name(doc: WorkspaceDocument) -> str:
                 if len(text) > _PREVIEW_MAX_CHARS:
                     preview += "..."
                 return preview
-    except Exception:
+    except DetachedInstanceError:
         logger.debug("content_deferred_in_display_name", doc_id=str(doc.id))
     return "Untitled"
 

@@ -652,9 +652,9 @@ async def _build_first_source_panel(
 
         if docs:
             first_doc = await get_document(docs[0].id)
-            assert first_doc is not None, (
-                f"Document {docs[0].id} vanished between queries"
-            )
+            if first_doc is None:
+                logger.error("document_vanished", doc_id=str(docs[0].id))
+                return
             await render_document_container(
                 state,
                 first_doc,

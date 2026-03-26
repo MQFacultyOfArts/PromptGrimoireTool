@@ -31,6 +31,7 @@ from promptgrimoire.db.exceptions import (
 from promptgrimoire.db.workspace_documents import (
     count_document_clones,
     delete_document,
+    get_document,
     list_document_headers,
     update_document_content,
 )
@@ -205,7 +206,7 @@ async def open_manage_documents_dialog(state: PageState) -> None:
     dialog.open()
 
 
-def _open_edit_dialog(
+async def _open_edit_dialog(
     doc: WorkspaceDocument,
     state: PageState,
     manage_dialog: ui.dialog,
@@ -216,8 +217,18 @@ def _open_edit_dialog(
     (80vw) with the document's HTML content pre-loaded. Save persists
     the content and triggers document refresh. Cancel returns without
     saving.
+
+    Fetches the full document (including content) because the manage
+    dialog uses ``list_document_headers()`` which defers the content
+    column.
     """
     manage_dialog.close()
+
+    # Fetch full document with content — headers-only objects have deferred content
+    full_doc = await get_document(doc.id)
+    if full_doc is None:
+        ui.notify("Document not found", type="negative")
+        return
 
     with (
         ui.dialog() as edit_dialog,
@@ -229,7 +240,9 @@ def _open_edit_dialog(
         ui.separator().classes("flex-shrink-0")
 
         # QEditor scrolls internally via content-style; fills flex space
-        editor = ui.editor(value=doc.content or "").classes("w-full flex-1 min-h-0")
+        editor = ui.editor(value=full_doc.content or "").classes(
+            "w-full flex-1 min-h-0"
+        )
         editor.props(
             'data-testid="document-editor"'
             ' content-style="max-height: 60vh; overflow-y: auto"'

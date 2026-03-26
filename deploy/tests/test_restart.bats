@@ -29,14 +29,25 @@ SCRIPT="$BATS_TEST_DIRNAME/../restart.sh"
 }
 
 # ---------------------------------------------------------------------------
-# Token extraction
+# Token extraction (sources the exact grep|cut line from restart.sh)
 # ---------------------------------------------------------------------------
+
+# Extract the PRE_RESTART_TOKEN assignment line from restart.sh and evaluate
+# it with APP_DIR pointed at a temp directory.  This tests the actual script
+# logic, not a re-implementation.
+_extract_token() {
+    local app_dir="$1"
+    # shellcheck disable=SC2034  # APP_DIR used by eval'd line
+    APP_DIR="$app_dir"
+    eval "$(sed -n 's/^\(PRE_RESTART_TOKEN=.*\)/\1/p' "$SCRIPT" | head -1)"
+    echo "$PRE_RESTART_TOKEN"
+}
 
 @test "token extraction from .env reads PRE_RESTART_TOKEN" {
     tmpdir=$(mktemp -d)
     echo 'ADMIN__PRE_RESTART_TOKEN=test-secret-value' > "$tmpdir/.env"
 
-    result=$(grep '^ADMIN__PRE_RESTART_TOKEN=' "$tmpdir/.env" | cut -d= -f2-)
+    result=$(_extract_token "$tmpdir")
     [ "$result" = "test-secret-value" ]
 
     rm -rf "$tmpdir"
@@ -46,24 +57,29 @@ SCRIPT="$BATS_TEST_DIRNAME/../restart.sh"
     tmpdir=$(mktemp -d)
     echo 'DATABASE__URL=postgres://localhost/test' > "$tmpdir/.env"
 
-    result=$(grep '^ADMIN__PRE_RESTART_TOKEN=' "$tmpdir/.env" 2>/dev/null | cut -d= -f2-)
+    result=$(_extract_token "$tmpdir")
     [ -z "$result" ]
 
     rm -rf "$tmpdir"
 }
 
 # ---------------------------------------------------------------------------
-# Drain timeout defaults
+# Drain timeout (sources the exact DRAIN_TIMEOUT line from restart.sh)
 # ---------------------------------------------------------------------------
+
+_extract_drain_timeout() {
+    eval "$(sed -n 's/^\(DRAIN_TIMEOUT=.*\)/\1/p' "$SCRIPT" | head -1)"
+    echo "$DRAIN_TIMEOUT"
+}
 
 @test "DRAIN_TIMEOUT defaults to 30" {
     unset DRAIN_TIMEOUT
-    result=${DRAIN_TIMEOUT:-30}
+    result=$(_extract_drain_timeout)
     [ "$result" -eq 30 ]
 }
 
 @test "DRAIN_TIMEOUT is overridable" {
-    DRAIN_TIMEOUT=10
-    result=${DRAIN_TIMEOUT:-30}
+    export DRAIN_TIMEOUT=10
+    result=$(_extract_drain_timeout)
     [ "$result" -eq 10 ]
 }

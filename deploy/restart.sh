@@ -99,7 +99,7 @@ else
         echo "  WARNING: pre-restart endpoint failed — proceeding with restart" >&2
         pre_restart_response=""
     }
-    initial_count=$(echo "$pre_restart_response" | grep -o '"initial_count":[0-9]*' | cut -d: -f2)
+    initial_count=$(echo "$pre_restart_response" | grep -o '"initial_count":[0-9]*' | cut -d: -f2 || true)
     initial_count=${initial_count:-0}
     echo "  Initial connected clients: $initial_count"
 fi
@@ -120,7 +120,7 @@ if [[ "$initial_count" -gt 0 ]] && [[ -n "$PRE_RESTART_TOKEN" ]]; then
         current=$(curl -sf \
             -H "Authorization: Bearer $PRE_RESTART_TOKEN" \
             http://127.0.0.1:8080/api/connection-count 2>/dev/null \
-            | grep -o '"count":[0-9]*' | cut -d: -f2)
+            | grep -o '"count":[0-9]*' | cut -d: -f2 || true)
         current=${current:-0}
         if [[ "$current" -le "$threshold" ]]; then
             echo "  Drained to $current connections (≤${threshold}) after ${drain_elapsed}s"

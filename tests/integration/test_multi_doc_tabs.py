@@ -291,8 +291,15 @@ class TestMultiDocTabBar:
         assert _find_by_testid(nicegui_user, "tab-respond") is not None
 
     @pytest.mark.asyncio
-    async def test_zero_doc_workspace_shows_two_tabs(self, nicegui_user: User) -> None:
-        """AC1.5: Zero-doc workspace shows Organise + Respond only."""
+    async def test_zero_doc_workspace_shows_three_tabs(
+        self, nicegui_user: User
+    ) -> None:
+        """Zero-doc workspace shows placeholder Source + Organise + Respond.
+
+        The placeholder Source tab hosts the upload form so users can
+        add their first document.  It uses the sentinel name "Source"
+        (not a UUID) so ``_is_source_tab()`` treats it differently.
+        """
         email = "student-0docs@test.example.edu.au"
         ws_id = await _setup_workspace_with_docs(email, [])
 
@@ -300,9 +307,13 @@ class TestMultiDocTabBar:
         await nicegui_user.open(f"/annotation?workspace_id={ws_id}")
         await _should_see_testid(nicegui_user, "tab-organise")
 
-        # No source tabs
+        # Placeholder source tab exists (hosts upload form)
         tab1 = _find_by_testid(nicegui_user, "tab-source-1")
-        assert tab1 is None, "Should not have source tabs with 0 documents"
+        assert tab1 is not None, "Zero-doc workspace needs a Source tab for upload form"
+
+        # No second source tab
+        tab2 = _find_by_testid(nicegui_user, "tab-source-2")
+        assert tab2 is None, "Should not have a second source tab"
 
         # Organise + Respond present
         assert _find_by_testid(nicegui_user, "tab-organise") is not None

@@ -102,11 +102,6 @@ async def test_active_query_cancellation_self_heals(pool_engine):
 
     # Cancel 5 active server-side queries sequentially
     prev_invalidation_count = 0
-    pg_sleep_query = text(
-        "SELECT 1 FROM pg_stat_activity "
-        "WHERE state = 'active' AND query LIKE '%pg_sleep%' "
-        "AND pid != pg_backend_pid()"
-    )
     for _ in range(5):
 
         async def active_query():
@@ -116,14 +111,24 @@ async def test_active_query_cancellation_self_heals(pool_engine):
 
         task = asyncio.create_task(active_query())
 
-        # Wait until pg_sleep is visible in pg_stat_activity
-        async with sf() as check_session:
+        # Yield once so the event loop schedules active_query and it
+        # begins acquiring a connection + sending pg_sleep to PG.
+        await asyncio.sleep(0)  # noqa: PG001 -- yield, not a wait
 
-            async def _query_is_active(_q=pg_sleep_query, _s=check_session):
-                result = await _s.execute(_q)
+        # Poll pg_stat_activity until pg_sleep is visible — observable
+        # condition, not a timing guess.
+        _pg_sleep_q = text(
+            "SELECT 1 FROM pg_stat_activity "
+            "WHERE state = 'active' AND query LIKE '%pg_sleep%' "
+            "AND pid != pg_backend_pid()"
+        )
+
+        async def _query_is_active(_q=_pg_sleep_q) -> bool:
+            async with sf() as check_session:
+                result = await check_session.execute(_q)
                 return result.first() is not None
 
-            await _poll_until(_query_is_active)
+        await _poll_until(_query_is_active)
 
         task.cancel()
         with pytest.raises(asyncio.CancelledError):

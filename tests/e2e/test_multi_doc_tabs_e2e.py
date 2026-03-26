@@ -21,6 +21,7 @@ from playwright.sync_api import expect
 
 from promptgrimoire.config import get_settings
 from promptgrimoire.docs.helpers import select_chars, wait_for_text_walker
+from tests.e2e.card_helpers import add_comment_to_highlight
 from tests.e2e.conftest import _authenticate_page
 from tests.e2e.db_fixtures import _create_multi_doc_workspace
 from tests.e2e.export_tools import export_annotation_tex_text
@@ -217,6 +218,9 @@ class TestMultiDocAnnotateSecondDocument:
 
             # Switch to Source 2
             page.get_by_test_id("tab-source-2").click()
+            # Wait for doc 2 content to render before text walker check —
+            # otherwise wait_for_text_walker sees stale doc 1 nodes.
+            expect(page.locator("text=Detailed analysis")).to_be_visible(timeout=10000)
 
             with subtests.test(msg="text_walker_ready_on_doc2"):
                 wait_for_text_walker(page, timeout=10000)
@@ -368,17 +372,32 @@ class TestMultiDocExport:
             page.close()
             context.close()
 
-    def test_export_with_annotation_and_reflection(
+    def test_export_with_annotation_and_reflection(  # noqa: PLR0915
         self, browser: Browser, app_server: str, subtests: SubTests
     ) -> None:
-        """Annotate active doc, write a reflection, export, save for inspection.
+        """Annotate BOTH documents, add comments, write reflection, export.
 
-        Produces a .tex (fast) or .pdf (slow) at a known path so a human
-        can visually verify the export layout.  The saved file path is
-        printed to stdout for easy retrieval.
+        Uses select_chars (not select_text()) after tab switch for reliable
+        selection.  Verifies that the .tex output contains \\highLight and
+        \\annot markup in BOTH \\section*{} blocks, that comments appear in
+        the annotation bodies, and that the reflection section is present.
+
+        Produces a .tex (fast) or .pdf (slow) at a known path for human
+        visual inspection.
         """
         context = browser.new_context()
         page = context.new_page()
+
+        # Short comment for doc 1 sidenote, long comment for doc 2 endnote.
+        short_comment = "Key injury facts established here"
+        long_comment = (
+            "This statutory provision is critical because it establishes "
+            "the standard of care that the defendant was required to meet. "
+            "The interaction between the Civil Liability Act general "
+            "negligence principles and the specific WHS duty creates a "
+            "dual liability framework that strengthens the plaintiff case. "
+            "Discovery should target compliance records under both statutes."
+        )
 
         try:
             email = _authenticate_page(page, app_server)
@@ -408,17 +427,43 @@ class TestMultiDocExport:
             page.goto(f"{app_server}/annotation?workspace_id={ws_id}")
             wait_for_text_walker(page, timeout=15000)
 
-            # Annotate on Source 1 (the active tab)
+            # --- Annotate Source 1 (Case Summary) ---
             with subtests.test(msg="annotate_case_summary"):
-                doc_text = page.locator("[data-testid='doc-container'] p").first
-                doc_text.select_text()
+                start, end = find_text_range(page, "Ms Bennett, sustained")
+                select_chars(page, start, end)
                 toolbar_btn = page.locator("[data-testid='tag-toolbar'] button").first
                 toolbar_btn.wait_for(state="visible", timeout=5000)
                 toolbar_btn.click()
                 cards = page.locator("[data-testid='annotation-card']")
                 expect(cards.first).to_be_visible(timeout=5000)
 
-            # Write a reflection on the Respond tab
+            with subtests.test(msg="comment_on_case_summary"):
+                add_comment_to_highlight(page, short_comment, card_index=0)
+
+            # --- Switch to Source 2 and annotate ---
+            with subtests.test(msg="annotate_statutory_framework"):
+                page.get_by_test_id("tab-source-2").click()
+                # Wait for doc 2 content to render before text walker check —
+                # otherwise wait_for_text_walker sees stale doc 1 nodes.
+                expect(
+                    page.locator("text=general principles for determining")
+                ).to_be_visible(timeout=10000)
+                wait_for_text_walker(page, timeout=10000)
+
+                start2, end2 = find_text_range(
+                    page, "general principles for determining"
+                )
+                select_chars(page, start2, end2)
+                toolbar_btn2 = page.locator("[data-testid='tag-toolbar'] button").first
+                toolbar_btn2.wait_for(state="visible", timeout=5000)
+                toolbar_btn2.click()
+                cards2 = page.locator("[data-testid='annotation-card']")
+                expect(cards2.first).to_be_visible(timeout=5000)
+
+            with subtests.test(msg="comment_on_statutory_framework"):
+                add_comment_to_highlight(page, long_comment, card_index=0)
+
+            # --- Write reflection on Respond tab ---
             with subtests.test(msg="write_reflection"):
                 page.get_by_test_id("tab-respond").click()
                 editor = (
@@ -432,28 +477,101 @@ class TestMultiDocExport:
                     "The tension between the building inspection report "
                     "and the actual ceiling failure suggests either the "
                     "inspection methodology was inadequate or the defect "
-                    "developed after the inspection date. Further discovery "
-                    "should target the inspection protocol and any interim "
-                    "maintenance records.",
+                    "developed after the inspection date.",
                     delay=5,
                 )
 
-            # Export and save
-            with subtests.test(msg="export_and_save"):
+            # --- Export ---
+            with subtests.test(msg="export_completes"):
                 result = export_annotation_tex_text(page)
                 assert result.size_bytes and result.size_bytes > 0
 
-                from pathlib import Path as _Path
+            # --- Save artifact for human visual inspection ---
+            from pathlib import Path as _Path
 
-                ext = ".pdf" if result.is_pdf else ".tex"
-                save_dir = _Path("output/test_output/multi-doc-export")
-                save_dir.mkdir(parents=True, exist_ok=True)
-                save_path = save_dir / f"multi-doc-export{ext}"
-                save_path.write_text(result.text, encoding="utf-8")
-                print(f"\n  Multi-doc export saved to: {save_path}")
+            ext = ".pdf" if result.is_pdf else ".tex"
+            save_dir = _Path("output/test_output/multi-doc-export")
+            save_dir.mkdir(parents=True, exist_ok=True)
+            save_path = save_dir / f"multi-doc-export{ext}"
+            save_path.write_text(result.text, encoding="utf-8")
+            print(f"\n  Multi-doc export saved to: {save_path}")
 
+            # --- Assert LaTeX structure (tex mode only) ---
+            # In PDF mode we can only check text content, not markup.
+            if not result.is_pdf:
+                tex = result.text
+
+                # Split into sections at \section* boundaries
+                import re
+
+                sections = re.split(r"\\section\*\{", tex)
+                # sections[0] = preamble, sections[1:] = named sections
+                case_section = next(
+                    (s for s in sections if s.startswith("Case Summary")),
+                    None,
+                )
+                stat_section = next(
+                    (s for s in sections if s.startswith("Statutory Framework")),
+                    None,
+                )
+
+                with subtests.test(msg="tex_case_summary_has_highlight"):
+                    assert case_section is not None, (
+                        "\\section*{Case Summary} not found in .tex"
+                    )
+                    assert "\\highLight" in case_section, (
+                        "No \\highLight in Case Summary section"
+                    )
+
+                with subtests.test(msg="tex_case_summary_has_annot"):
+                    assert "\\annot" in case_section, (
+                        "No \\annot in Case Summary section"
+                    )
+
+                with subtests.test(msg="tex_case_summary_has_comment"):
+                    assert "hrulefill" in case_section, (
+                        "No comment separator in Case Summary annotation"
+                    )
+                    assert "Key injury facts" in case_section, (
+                        "Short comment text missing from Case Summary"
+                    )
+
+                with subtests.test(msg="tex_statutory_has_highlight"):
+                    assert stat_section is not None, (
+                        "\\section*{Statutory Framework} not found in .tex"
+                    )
+                    assert "\\highLight" in stat_section, (
+                        "No \\highLight in Statutory Framework section"
+                    )
+
+                with subtests.test(msg="tex_statutory_has_annot"):
+                    assert "\\annot" in stat_section, (
+                        "No \\annot in Statutory Framework section"
+                    )
+
+                with subtests.test(msg="tex_statutory_has_comment"):
+                    assert "hrulefill" in stat_section, (
+                        "No comment separator in Statutory Framework"
+                    )
+                    assert "dual liability framework" in stat_section, (
+                        "Long comment text missing from Statutory Framework"
+                    )
+
+                with subtests.test(msg="tex_has_flushannotendnotes"):
+                    assert "\\flushannotendnotes" in tex
+
+                with subtests.test(msg="tex_annot_count"):
+                    # Exactly 2 annotations: one per document
+                    annot_count = len(re.findall(r"\\annot\{", tex))
+                    assert annot_count == 2, (
+                        f"Expected 2 \\annot commands, found {annot_count}"
+                    )
+
+            # --- Content assertions (work in both tex and pdf modes) ---
             with subtests.test(msg="export_has_case_summary"):
-                assert "Ms Bennett" in result
+                # Use "plaintiff" not "Ms Bennett" — Pandoc line-wraps
+                # "Ms\nBennett" across lines, breaking exact match.
+                assert "plaintiff" in result
 
             with subtests.test(msg="export_has_statutory_framework"):
                 assert "Civil Liability Act" in result

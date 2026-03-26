@@ -40,6 +40,11 @@ Phase B addresses a separate operational problem: when the server is restarted t
 - **AC4.2 Edge:** Timeout after configurable seconds proceeds with restart (don't hang forever)
 - **AC4.3 Success:** HAProxy drain blocks new arrivals during application-level drain window
 
+### query-optimisation-and-graceful-restart-186.AC5: Memory leak diagnostic logging
+- **AC5.1 Success:** `memory_diagnostic` event emitted every 5 minutes to JSONL
+- **AC5.2 Success:** Includes NiceGUI snapshot fields (RSS, client counts, asyncio tasks) plus CRDT registry/presence sizes
+- **AC5.3 Edge:** Collection logic ported from NiceGUI #5660 draft; when upstream merges, swap to `from nicegui import diagnostics`
+
 ## Glossary
 
 - **CRDT (Conflict-free Replicated Data Type)**: A data structure (here, `pycrdt` / Y.js) that lets multiple clients edit the same document simultaneously and merge changes without conflicts. The canonical copy lives in the database; clients hold an in-memory replica that must be persisted before the server shuts down.
@@ -119,7 +124,7 @@ The two compound: Phase A reduces the data each page load transfers; Phase B ens
 **Goal:** Server can tell all connected clients to save state and navigate away.
 
 **Components:**
-- `POST /api/pre-restart` route in `src/promptgrimoire/pages/` — admin-only (pre-shared token from `PRE_RESTART_TOKEN` env var), returns `{"initial_count": N}` for deploy script baseline
+- `POST /api/pre-restart` route in `src/promptgrimoire/pages/` — admin-only (pre-shared token from `ADMIN__PRE_RESTART_TOKEN` env var), returns `{"initial_count": N}` for deploy script baseline
 - `GET /api/connection-count` — returns current connected client count for deploy script polling
 - Flush logic iterates `_workspace_presence` (already maps workspace → client with `nicegui_client` and `has_milkdown_editor` flag). For each Milkdown client: `client.run_javascript("window._getMilkdownMarkdown()")` → write to CRDT. Then `persist_all_dirty_workspaces()`. Then navigate each client via `client.run_javascript('window.location.href = "/restarting?return=" + encodeURIComponent(location.href)')`.
 - Uses `client.run_javascript()` per iterated client (not `ui.run_javascript()`) — matches the ban-disconnect pattern in `auth/client_registry.py`
@@ -151,7 +156,7 @@ The two compound: Phase A reduces the data each page load transfers; Phase B ens
 
 **Components:**
 - `deploy/restart.sh` — sequence: tests → `POST /api/pre-restart` (get initial count) → HAProxy drain (block new arrivals) → poll `GET /api/connection-count` until ≤5% of initial + 2s grace → `systemctl restart` → healthz → HAProxy ready
-- Auth: pre-shared token from `PRE_RESTART_TOKEN` env var, passed as `Authorization: Bearer $token`
+- Auth: pre-shared token from `ADMIN__PRE_RESTART_TOKEN` env var, passed as `Authorization: Bearer $token`
 - Timeout: configurable max wait (default 30s) before proceeding with restart regardless (don't hang forever on unresponsive clients)
 
 **Dependencies:** Phases 3–4
@@ -159,11 +164,26 @@ The two compound: Phase A reduces the data each page load transfers; Phase B ens
 **Done when:** Full deploy cycle works with zero data loss for connected users. Late-arriving users during drain window are blocked by HAProxy.
 <!-- END_PHASE_5 -->
 
+<!-- START_PHASE_6 -->
+### Phase 6: Memory leak diagnostic logging
+
+**Goal:** Zero-overhead periodic diagnostics to narrow memory leak investigation without tracemalloc.
+
+**Components:**
+- `src/promptgrimoire/diagnostics.py` — ported from NiceGUI #5660 draft (`nicegui/.worktrees/diagnostics-5660/nicegui/diagnostics.py`). Collects RSS (current via `/proc/self/status`, peak via `resource.getrusage`), NiceGUI client counts, asyncio task count. Adds PromptGrimoire-specific fields: CRDT registry size, presence dict sizes.
+- Periodic logger as 4th background task: emits flattened `memory_diagnostic` structlog event every 5 minutes.
+- When NiceGUI #5660 merges upstream, swap ported functions with `from nicegui import diagnostics`.
+
+**Dependencies:** None (independent of Phases 1–5, but ships in same PR)
+
+**Done when:** `memory_diagnostic` events appear in JSONL logs every 5 minutes with RSS, client counts, asyncio tasks, and CRDT registry/presence sizes.
+<!-- END_PHASE_6 -->
+
 ## Additional Considerations
 
 **Thundering herd:** The 1–5s random jitter on client reload prevents 200 simultaneous page loads when the server comes back. Without jitter, the first restart under load would immediately re-saturate the event loop.
 
-**Auth for pre-restart endpoint:** Pre-shared token from `PRE_RESTART_TOKEN` env var. The deploy script runs on the same server, so `curl -H "Authorization: Bearer $token"` is sufficient. No session cookie needed.
+**Auth for pre-restart endpoint:** Pre-shared token from `ADMIN__PRE_RESTART_TOKEN` env var. The deploy script runs on the same server, so `curl -H "Authorization: Bearer $token"` is sufficient. No session cookie needed.
 
 **Milkdown editor flush:** The `_workspace_presence` registry (in `pages/annotation/__init__.py`) already tracks which clients have Milkdown editors (`has_milkdown_editor` flag) and holds `nicegui_client` references. The pre-restart handler iterates this registry, calls `client.run_javascript("window._getMilkdownMarkdown()")` per Milkdown client, writes the result to the workspace's CRDT doc, then calls `persist_all_dirty_workspaces()`. This uses `client.run_javascript()` (not `ui.run_javascript()`) — the same per-client JS execution pattern as the ban-disconnect flow in `auth/client_registry.py`.
 

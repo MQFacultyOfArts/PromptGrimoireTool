@@ -30,7 +30,7 @@ from promptgrimoire.db.exceptions import (
 from promptgrimoire.db.workspace_documents import (
     count_document_clones,
     delete_document,
-    list_documents,
+    list_document_headers,
     update_document_content,
 )
 
@@ -49,17 +49,21 @@ def _document_display_name(doc: WorkspaceDocument) -> str:
     """Return a display name for a document.
 
     Uses the title if set, otherwise extracts the first 50 characters
-    of plain text from the HTML content.
+    of plain text from the HTML content. Returns "Untitled" when content
+    is deferred (headers-only query) or empty.
     """
     if doc.title:
         return doc.title
-    if doc.content:
-        text = LexborHTMLParser(doc.content).text(separator=" ").strip()
-        if text:
-            preview = text[:_PREVIEW_MAX_CHARS]
-            if len(text) > _PREVIEW_MAX_CHARS:
-                preview += "..."
-            return preview
+    try:
+        if doc.content:
+            text = LexborHTMLParser(doc.content).text(separator=" ").strip()
+            if text:
+                preview = text[:_PREVIEW_MAX_CHARS]
+                if len(text) > _PREVIEW_MAX_CHARS:
+                    preview += "..."
+                return preview
+    except Exception:
+        logger.debug("content_deferred_in_display_name", doc_id=str(doc.id))
     return "Untitled"
 
 
@@ -178,7 +182,7 @@ async def open_manage_documents_dialog(state: PageState) -> None:
     show an edit button (AC3.1). Annotated or template-cloned documents
     do not show an edit button (AC3.2).
     """
-    documents = await list_documents(state.workspace_id)
+    documents = await list_document_headers(state.workspace_id)
 
     with ui.dialog() as dialog, ui.card().classes("w-[32rem]"):
         ui.label("Manage Documents").classes("text-lg font-bold")

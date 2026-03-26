@@ -16,7 +16,7 @@ import structlog
 from nicegui import events, ui
 
 from promptgrimoire.crdt.persistence import get_persistence_manager
-from promptgrimoire.db.workspace_documents import get_document, list_documents
+from promptgrimoire.db.workspace_documents import get_document, list_document_headers
 from promptgrimoire.pages.annotation import (
     PageState,
     _workspace_presence,
@@ -645,15 +645,19 @@ async def _build_first_source_panel(
         if footer is not None:
             footer.clear()
 
-        docs = await list_documents(workspace_id)
+        docs = await list_document_headers(workspace_id)
         has_documents.clear()
         has_documents.append(bool(docs))
         logger.debug("[RENDER] documents loaded: count=%d", len(docs))
 
         if docs:
+            first_doc = await get_document(docs[0].id)
+            assert first_doc is not None, (
+                f"Document {docs[0].id} vanished between queries"
+            )
             await render_document_container(
                 state,
-                docs[0],
+                first_doc,
                 crdt_doc,
                 on_add_tag=on_add_tag if can_create_tags else None,
                 on_manage_tags=on_manage_tags,

@@ -11,11 +11,9 @@ import pytest
 class TestCollectMemory:
     """Tests for _collect_memory() RSS collection."""
 
+    @pytest.mark.skipif(sys.platform != "linux", reason="VmRSS only available on Linux")
     def test_returns_rss_on_linux(self) -> None:
         """AC5.2: current_rss_bytes is a positive integer on Linux."""
-        if sys.platform != "linux":
-            pytest.skip("VmRSS only available on Linux")
-
         from promptgrimoire.diagnostics import _collect_memory
 
         result = _collect_memory()

@@ -64,17 +64,16 @@ def collect_snapshot() -> dict[str, Any]:
 
     memory = _collect_memory()
 
-    # Access annotation module state without importing (avoids NiceGUI page
-    # registration side effects). Same pattern as pages/restart.py.
-    mod = sys.modules.get("promptgrimoire.pages.annotation")
-    ws_registry_size = 0
-    ws_presence_workspaces = 0
-    ws_presence_clients = 0
-    if mod is not None:
-        ws_registry_size = len(mod._workspace_registry._documents)
-        ws_presence = mod._workspace_presence
-        ws_presence_workspaces = len(ws_presence)
-        ws_presence_clients = sum(len(v) for v in ws_presence.values())
+    # Reuse the canonical lazy accessor from restart.py to avoid
+    # duplicating fragile sys.modules attribute access.
+    from promptgrimoire.pages.restart import _get_annotation_state  # noqa: PLC0415
+
+    workspace_presence, workspace_registry = _get_annotation_state()
+    ws_registry_size = (
+        len(workspace_registry._documents) if workspace_registry is not None else 0
+    )
+    ws_presence_workspaces = len(workspace_presence)
+    ws_presence_clients = sum(len(v) for v in workspace_presence.values())
 
     return {
         # Memory

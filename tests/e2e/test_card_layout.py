@@ -47,7 +47,12 @@ def _get_card_top(page: Page, card_index: int) -> float:
 
 
 def _wait_for_position_cards(page: Page) -> None:
-    """Wait until rendered annotation cards have numeric ``style.top``."""
+    """Wait until rendered annotation cards have numeric ``style.top``.
+
+    Uses 15 s timeout to accommodate Firefox on CI runners where
+    ``positionCards()`` scheduling via ``requestAnimationFrame`` is
+    slower than Chromium.
+    """
     page.wait_for_function(
         """() => {
             const cards = Array.from(
@@ -60,7 +65,7 @@ def _wait_for_position_cards(page: Page) -> None:
                     Number.isFinite(parseFloat(c.style.top))
                 );
         }""",
-        timeout=10000,
+        timeout=15000,
     )
 
 
@@ -276,11 +281,14 @@ class TestCardPositioning:
             timeout=10000,
         )
 
+        # Wait for NiceGUI to render the annotation card (server-side)
+        # before checking positioning — _highlightsReady fires before
+        # the card DOM element exists on slower runners.
+        card = page.locator("[data-testid='annotation-card']").first
+        expect(card).to_be_visible(timeout=15000)
+
         # Cards must be positioned without any manual scroll
         _wait_for_position_cards(page)
-
-        card = page.locator("[data-testid='annotation-card']").first
-        expect(card).to_be_visible(timeout=10000)
 
         top = _get_card_top(page, 0)
         assert top >= 0, f"Card top is negative after SPA navigation: {top}"

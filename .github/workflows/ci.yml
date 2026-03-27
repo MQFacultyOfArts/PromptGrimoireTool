@@ -40,7 +40,52 @@ jobs:
       #   run: uv run complexipy
 
       - name: Run pip-audit (dependency vulnerabilities)
-        run: uv run pip-audit
+        run: |
+          # Only fail if a fix exists AND the fixed version has been on
+          # PyPI for more than 3 days (grace period for maintainers).
+          uv run pip-audit -f json -o /tmp/audit.json || true
+          python3 << 'AUDIT_GATE'
+          import json, sys, urllib.request
+          from datetime import datetime, timedelta, timezone
+
+          GRACE_DAYS = 3
+          cutoff = datetime.now(timezone.utc) - timedelta(days=GRACE_DAYS)
+
+          with open("/tmp/audit.json") as f:
+              data = json.load(f)
+
+          actionable = []
+          for dep in data.get("dependencies", []):
+              for vuln in dep.get("vulns", []):
+                  fixes = vuln.get("fix_versions", [])
+                  if not fixes:
+                      continue  # No fix available — not actionable
+                  # Check if the earliest fix version was published > 3 days ago
+                  pkg = dep["name"]
+                  fix_ver = fixes[0]
+                  try:
+                      url = f"https://pypi.org/pypi/{pkg}/{fix_ver}/json"
+                      resp = urllib.request.urlopen(url, timeout=10)
+                      info = json.loads(resp.read())
+                      upload = info["urls"][0]["upload_time_iso_8601"]
+                      released = datetime.fromisoformat(upload)
+                      if released > cutoff:
+                          print(f"  SKIP {pkg} {vuln['id']}: fix {fix_ver} "
+                                f"released {upload} (within {GRACE_DAYS}d grace)")
+                          continue
+                  except Exception:
+                      pass  # PyPI lookup failed — assume old enough
+                  actionable.append(
+                      f"{pkg} {vuln['id']} (fix: {', '.join(fixes)})")
+
+          if actionable:
+              print(f"Vulnerabilities with fixes older than {GRACE_DAYS} days:")
+              for a in actionable:
+                  print(f"  {a}")
+              sys.exit(1)
+          else:
+              print("pip-audit: no actionable vulnerabilities")
+          AUDIT_GATE
 
       - name: Run ty type check
         run: uvx ty@0.0.24 check

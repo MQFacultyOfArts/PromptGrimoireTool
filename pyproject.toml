@@ -270,6 +270,9 @@ exclude = ["alembic/"]
 paths = ["src/promptgrimoire"]
 exclude = ["*/migrations/*"]
 min_confidence = 80
+# QueryableAttribute: runtime import used in cast() string literal
+# (workspace_documents.py:112)
+ignore_names = ["QueryableAttribute"]
 
 [tool.complexipy]
 paths = ["src/promptgrimoire"]

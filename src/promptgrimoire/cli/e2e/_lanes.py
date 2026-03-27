@@ -70,6 +70,7 @@ _NICEGUI_ALLOWLIST: tuple[str, ...] = (
     "test_respond_charac.py",
     "test_slot_deletion_race_369.py",
     "test_tag_management_crdt_sync.py",
+    "test_memory_leak_probe.py",
 )
 
 

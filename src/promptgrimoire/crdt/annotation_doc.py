@@ -20,6 +20,8 @@ if TYPE_CHECKING:
     from collections.abc import Callable
     from uuid import UUID
 
+    from promptgrimoire.db.models import Tag, TagGroup, Workspace
+
 logger = structlog.get_logger()
 logging.getLogger(__name__).setLevel(logging.WARNING)
 
@@ -913,6 +915,9 @@ def _reconcile_crdt_with_db(
 async def _ensure_crdt_tag_consistency(
     doc: AnnotationDocument,
     workspace_id: UUID,
+    *,
+    tags: list[Tag] | None = None,
+    tag_groups: list[TagGroup] | None = None,
 ) -> None:
     """Hydrate or reconcile CRDT tag maps against DB state.
 
@@ -921,13 +926,19 @@ async def _ensure_crdt_tag_consistency(
     DB entries missing from CRDT (DB is authoritative). Log discrepancies
     at WARNING level.
     """
-    from promptgrimoire.db.tags import (
-        list_tag_groups_for_workspace,
-        list_tags_for_workspace,
-    )
+    if tags is not None:
+        db_tags = tags
+    else:
+        from promptgrimoire.db.tags import list_tags_for_workspace
 
-    db_tags = await list_tags_for_workspace(workspace_id)
-    db_groups = await list_tag_groups_for_workspace(workspace_id)
+        db_tags = await list_tags_for_workspace(workspace_id)
+
+    if tag_groups is not None:
+        db_groups = tag_groups
+    else:
+        from promptgrimoire.db.tags import list_tag_groups_for_workspace
+
+        db_groups = await list_tag_groups_for_workspace(workspace_id)
     crdt_tags = doc.list_tags()
     crdt_groups = doc.list_tag_groups()
 
@@ -975,7 +986,7 @@ class AnnotationDocumentRegistry:
         return self._documents[doc_id]
 
     async def get_or_create_for_workspace(
-        self, workspace_id: UUID
+        self, workspace_id: UUID, *, workspace: Workspace | None = None
     ) -> AnnotationDocument:
         """Get existing document for workspace, load from DB, or create new.
 
@@ -983,6 +994,8 @@ class AnnotationDocumentRegistry:
 
         Args:
             workspace_id: The workspace UUID.
+            workspace: Pre-fetched Workspace object. When provided and has
+                crdt_state, the DB fetch is skipped (saving a query).
 
         Returns:
             The AnnotationDocument instance, restored from DB if available.
@@ -998,14 +1011,17 @@ class AnnotationDocumentRegistry:
 
         # Try to load from Workspace
         from promptgrimoire.crdt.persistence import get_persistence_manager
-        from promptgrimoire.db.workspaces import get_workspace
 
         doc = AnnotationDocument(doc_id)
 
         try:
-            workspace = await get_workspace(workspace_id)
-            if workspace and workspace.crdt_state:
-                doc.apply_update(workspace.crdt_state)
+            ws = workspace
+            if ws is None:
+                from promptgrimoire.db.workspaces import get_workspace
+
+                ws = await get_workspace(workspace_id)
+            if ws and ws.crdt_state:
+                doc.apply_update(ws.crdt_state)
                 logger.debug("Loaded workspace %s from database", workspace_id)
         except Exception:
             logger.exception("Failed to load workspace %s from database", workspace_id)

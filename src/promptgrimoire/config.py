@@ -103,6 +103,8 @@ class AppConfig(BaseModel):
     log_dir: Path = Path("logs")
     latexmk_path: str = ""
     reload: bool = True
+    diagnostic_interval_seconds: int = 300
+    memory_restart_threshold_mb: int = 3072
 
 
 class FeaturesConfig(BaseModel):

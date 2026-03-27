@@ -358,6 +358,7 @@ def _register_db_lifecycle(app: object) -> None:
     # Narrow the type so that .on_startup / .on_shutdown are visible
     assert isinstance(app, type(_app_module))  # noqa: S101 — runtime guard
 
+    from promptgrimoire.config import get_settings
     from promptgrimoire.crdt.persistence import (
         get_persistence_manager,
     )
@@ -397,8 +398,12 @@ def _register_db_lifecycle(app: object) -> None:
         _export_worker_task = asyncio.create_task(
             start_export_worker(),
         )
+        _app_config = get_settings().app
         _diagnostic_logger_task = asyncio.create_task(
-            start_diagnostic_logger(),
+            start_diagnostic_logger(
+                interval_seconds=_app_config.diagnostic_interval_seconds,
+                memory_restart_threshold_mb=_app_config.memory_restart_threshold_mb,
+            ),
         )
         log.info("database_connected")
 

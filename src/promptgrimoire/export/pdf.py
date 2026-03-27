@@ -45,7 +45,19 @@ _TEST_FLAGS = {"short_circuit_latexmk": False}
 
 # Cap concurrent LaTeX compilations to prevent OOM from stacked processes.
 # Each lualatex process uses 200-500MB; on an 8GB VM, 2 concurrent is safe.
-_compile_semaphore = asyncio.Semaphore(2)
+# Configurable via EXPORT__MAX_CONCURRENT_COMPILATIONS env var (default 2).
+# Standalone worker with MemoryMax=3G should use 1.
+_compile_semaphore: asyncio.Semaphore | None = None
+
+
+def _get_compile_semaphore() -> asyncio.Semaphore:
+    """Return the compilation semaphore, lazy-initialised from config."""
+    global _compile_semaphore  # noqa: PLW0603
+    if _compile_semaphore is None:
+        _compile_semaphore = asyncio.Semaphore(
+            get_settings().export.max_concurrent_compilations
+        )
+    return _compile_semaphore
 
 
 def set_latexmk_short_circuit(enabled: bool) -> None:
@@ -112,7 +124,7 @@ async def compile_latex(tex_path: Path, output_dir: Path | None = None) -> Path:
     if _TEST_FLAGS["short_circuit_latexmk"]:
         raise LaTeXCompileStageShortCircuit(tex_path)
 
-    async with _compile_semaphore:
+    async with _get_compile_semaphore():
         return await _run_latexmk(tex_path, output_dir)
 
 

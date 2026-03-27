@@ -116,6 +116,12 @@ class FeaturesConfig(BaseModel):
     worker_in_process: bool = True
 
 
+class ExportConfig(BaseModel):
+    """Export pipeline configuration."""
+
+    max_concurrent_compilations: int = 2
+
+
 class I18nConfig(BaseModel):
     """Internationalisation labels."""
 
@@ -303,6 +309,7 @@ class Settings(BaseSettings):
     app: AppConfig = AppConfig()
     alerting: AlertingConfig = AlertingConfig()
     admin: AdminConfig = AdminConfig()
+    export: ExportConfig = ExportConfig()
     features: FeaturesConfig = FeaturesConfig()
     dev: DevConfig = DevConfig()
     i18n: I18nConfig = I18nConfig()

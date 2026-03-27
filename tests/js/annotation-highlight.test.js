@@ -10,6 +10,7 @@ describe('annotation-highlight.js', () => {
     delete window._highlightsReady;
     delete window._annotSelectionBound;
     delete window._annotSelectionBoundFor;
+    delete window._lastAnnotSelRange;
     delete window._positionCardsMap;
     delete window._activeDocContainerId;
     delete window._demoSelectionBound;
@@ -646,6 +647,150 @@ describe('annotation-highlight.js', () => {
 
       const m = document.getElementById('highlight-menu');
       expect(m.style.top).toBe('642px'); // flipped position
+    });
+
+    // These tests use unique container IDs to avoid interference
+    // from stale event listeners (document.addEventListener callbacks
+    // persist across tests in happy-dom).
+
+    test('uses stored range when live selection is collapsed (Firefox fallback)', () => {
+      const cid = 'fallback-container';
+      const { container, textNodes } = domWithNodes(
+        `<p id="${cid}">Hello World</p>`,
+      );
+      document.body.appendChild(container);
+
+      const emitCallback = vi.fn();
+      setupAnnotationSelection(cid, emitCallback);
+
+      // Simulate selectionchange storing a valid range
+      window._lastAnnotSelRange = window._lastAnnotSelRange || {};
+      window._lastAnnotSelRange[cid] = {
+        startContainer: textNodes[0].node,
+        startOffset: 0,
+        endContainer: textNodes[0].node,
+        endOffset: 5,
+      };
+
+      // Live selection is collapsed (Firefox cleared it on focus)
+      vi.stubGlobal('getSelection', () => ({
+        isCollapsed: true,
+        rangeCount: 1,
+      }));
+
+      container.dispatchEvent(
+        new MouseEvent('mouseup', { bubbles: true }),
+      );
+      expect(emitCallback).toHaveBeenCalledWith({
+        start_char: 0,
+        end_char: 5,
+      });
+    });
+
+    test('clears stored range after consumption', () => {
+      const cid = 'consume-container';
+      const { container, textNodes } = domWithNodes(
+        `<p id="${cid}">Hello World</p>`,
+      );
+      document.body.appendChild(container);
+
+      const emitCallback = vi.fn();
+      setupAnnotationSelection(cid, emitCallback);
+
+      window._lastAnnotSelRange = window._lastAnnotSelRange || {};
+      window._lastAnnotSelRange[cid] = {
+        startContainer: textNodes[0].node,
+        startOffset: 0,
+        endContainer: textNodes[0].node,
+        endOffset: 5,
+      };
+
+      vi.stubGlobal('getSelection', () => ({
+        isCollapsed: true,
+        rangeCount: 1,
+      }));
+
+      container.dispatchEvent(
+        new MouseEvent('mouseup', { bubbles: true }),
+      );
+      expect(emitCallback).toHaveBeenCalledTimes(1);
+
+      // Second mouseup should NOT fire — stored range was consumed
+      container.dispatchEvent(
+        new MouseEvent('mouseup', { bubbles: true }),
+      );
+      expect(emitCallback).toHaveBeenCalledTimes(1);
+    });
+
+    test('selectionchange stores range for container', () => {
+      const cid = 'selchange-container';
+      const { container, textNodes } = domWithNodes(
+        `<p id="${cid}">Hello World</p>`,
+      );
+      document.body.appendChild(container);
+
+      const emitCallback = vi.fn();
+      setupAnnotationSelection(cid, emitCallback);
+
+      // Mock getSelection to return a valid selection in container
+      const mockRange = {
+        startContainer: textNodes[0].node,
+        startOffset: 0,
+        endContainer: textNodes[0].node,
+        endOffset: 5,
+        cloneRange() {
+          return { ...this };
+        },
+      };
+      vi.stubGlobal('getSelection', () => ({
+        isCollapsed: false,
+        rangeCount: 1,
+        getRangeAt: () => mockRange,
+      }));
+
+      document.dispatchEvent(new Event('selectionchange'));
+
+      expect(window._lastAnnotSelRange[cid]).toBeDefined();
+      expect(
+        window._lastAnnotSelRange[cid].startOffset,
+      ).toBe(0);
+      expect(
+        window._lastAnnotSelRange[cid].endOffset,
+      ).toBe(5);
+    });
+
+    test('selectionchange ignores selection outside container', () => {
+      const cid = 'selchange-outside';
+      const { container } = domWithNodes(
+        `<p id="${cid}">Hello</p>`,
+      );
+      document.body.appendChild(container);
+
+      const other = dom('<p id="other-outside">Other</p>');
+      document.body.appendChild(other);
+
+      const emitCallback = vi.fn();
+      setupAnnotationSelection(cid, emitCallback);
+
+      vi.stubGlobal('getSelection', () => ({
+        isCollapsed: false,
+        rangeCount: 1,
+        getRangeAt: () => ({
+          startContainer: other.firstChild,
+          startOffset: 0,
+          endContainer: other.firstChild,
+          endOffset: 5,
+          cloneRange() {
+            return { ...this };
+          },
+        }),
+      }));
+
+      document.dispatchEvent(new Event('selectionchange'));
+
+      expect(
+        window._lastAnnotSelRange?.[cid],
+      ).toBeUndefined();
     });
   });
   describe('simple wrappers', () => {

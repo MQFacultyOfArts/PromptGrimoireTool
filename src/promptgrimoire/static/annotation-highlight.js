@@ -329,14 +329,47 @@ function setupAnnotationSelection(containerId, emitCallback, menuId) {
     if (window._annotSelectionBoundFor[containerId]) return;
     window._annotSelectionBoundFor[containerId] = true;
     var effectiveMenuId = menuId || 'highlight-menu';
+
+    // Firefox clears the browser selection when focus transfers to a
+    // toolbar button (mousedown → focus change → selection collapsed).
+    // By the time the mouseup handler fires, getSelection() returns
+    // collapsed.  Store a cloned Range on selectionchange so the
+    // mouseup handler has a fallback.
+    window._lastAnnotSelRange = window._lastAnnotSelRange || {};
+    document.addEventListener('selectionchange', function() {
+        var container = document.getElementById(containerId);
+        if (!container) return;
+        var sel = window.getSelection();
+        if (!sel || sel.isCollapsed || !sel.rangeCount) return;
+        var range = sel.getRangeAt(0);
+        if (!container.contains(range.startContainer)) return;
+        if (!container.contains(range.endContainer)) return;
+        // Store a cloned Range — survives selection clearing.
+        window._lastAnnotSelRange[containerId] = range.cloneRange();
+    });
+
     document.addEventListener('mouseup', () => {
         const container = document.getElementById(containerId);
         if (!container) return;
+
+        // Try live selection first, fall back to stored range.
+        var range = null;
         const sel = window.getSelection();
-        // AC2.4: ignore collapsed selection (click without drag)
-        if (!sel || sel.isCollapsed || !sel.rangeCount) return;
-        const range = sel.getRangeAt(0);
-        // AC2.3: ignore selection outside the document container
+        if (sel && !sel.isCollapsed && sel.rangeCount > 0) {
+            var liveRange = sel.getRangeAt(0);
+            if (container.contains(liveRange.startContainer)
+                && container.contains(liveRange.endContainer)) {
+                range = liveRange;
+            }
+        }
+        if (!range && window._lastAnnotSelRange
+            && window._lastAnnotSelRange[containerId]) {
+            range = window._lastAnnotSelRange[containerId];
+        }
+        // AC2.4: no valid selection — ignore (click without drag)
+        if (!range) return;
+
+        // AC2.3: verify range is inside the document container
         if (!container.contains(range.startContainer)) return;
         if (!container.contains(range.endContainer)) return;
 
@@ -368,6 +401,11 @@ function setupAnnotationSelection(containerId, emitCallback, menuId) {
                 menu.style.left = endRect.left + 'px';
             }
             emitCallback({start_char: startChar, end_char: endChar});
+        }
+        // Clear stored range after consumption to prevent stale
+        // selections from firing on unrelated clicks.
+        if (window._lastAnnotSelRange) {
+            delete window._lastAnnotSelRange[containerId];
         }
     });
 }

@@ -158,11 +158,13 @@ class TestMemoryThresholdRestart:
 
     async def test_graceful_shutdown_calls_pre_restart_flow(self) -> None:
         """When threshold exceeded, graceful_memory_shutdown runs the
-        pre-restart flow (flush CRDT, navigate clients) then exits."""
+        pre-restart flow (flush CRDT, invalidate sessions, navigate
+        clients) then exits."""
         from promptgrimoire.diagnostics import graceful_memory_shutdown
 
         mock_flush = AsyncMock()
         mock_persist = AsyncMock()
+        mock_invalidate = AsyncMock()
         mock_navigate = AsyncMock()
 
         with (
@@ -173,6 +175,10 @@ class TestMemoryThresholdRestart:
             patch(
                 "promptgrimoire.diagnostics._persist_dirty_workspaces",
                 mock_persist,
+            ),
+            patch(
+                "promptgrimoire.diagnostics._invalidate_all_sessions",
+                mock_invalidate,
             ),
             patch(
                 "promptgrimoire.diagnostics._navigate_clients_to_restarting",
@@ -187,4 +193,66 @@ class TestMemoryThresholdRestart:
         assert exc_info.value.code == MEMORY_RESTART_EXIT_CODE
         mock_flush.assert_awaited_once()
         mock_persist.assert_awaited_once()
+        mock_invalidate.assert_awaited_once()
         mock_navigate.assert_awaited_once()
+
+
+class TestInvalidateAllSessions:
+    """Tests for _invalidate_all_sessions — session leak prevention."""
+
+    async def test_clears_auth_user_from_all_storage(self) -> None:
+        """All per-user storage dicts have auth_user removed."""
+        from nicegui import app
+
+        from promptgrimoire.diagnostics import _invalidate_all_sessions
+
+        # Simulate two users with stored sessions
+        fake_storage_a: dict[str, object] = {
+            "auth_user": {"email": "alice@example.com", "user_id": "aaa"},
+            "other_key": "preserved",
+        }
+        fake_storage_b: dict[str, object] = {
+            "auth_user": {"email": "bob@example.com", "user_id": "bbb"},
+        }
+        fake_users = {"sid_a": fake_storage_a, "sid_b": fake_storage_b}
+
+        original = app.storage._users
+        object.__setattr__(app.storage, "_users", fake_users)
+        try:
+            await _invalidate_all_sessions()
+        finally:
+            object.__setattr__(app.storage, "_users", original)
+
+        assert "auth_user" not in fake_storage_a
+        assert fake_storage_a["other_key"] == "preserved"
+        assert "auth_user" not in fake_storage_b
+
+    async def test_handles_empty_storage(self) -> None:
+        """No error when there are no user sessions."""
+        from nicegui import app
+
+        from promptgrimoire.diagnostics import _invalidate_all_sessions
+
+        original = app.storage._users
+        object.__setattr__(app.storage, "_users", {})
+        try:
+            await _invalidate_all_sessions()  # should not raise
+        finally:
+            object.__setattr__(app.storage, "_users", original)
+
+    async def test_handles_storage_without_auth_user(self) -> None:
+        """Sessions that lack auth_user are left untouched."""
+        from nicegui import app
+
+        from promptgrimoire.diagnostics import _invalidate_all_sessions
+
+        fake_storage: dict[str, object] = {"theme": "dark"}
+
+        original = app.storage._users
+        object.__setattr__(app.storage, "_users", {"sid_x": fake_storage})
+        try:
+            await _invalidate_all_sessions()
+        finally:
+            object.__setattr__(app.storage, "_users", original)
+
+        assert fake_storage == {"theme": "dark"}

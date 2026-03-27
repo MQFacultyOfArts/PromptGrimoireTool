@@ -459,3 +459,12 @@ Removed 2026-02-10. Same replacement as pylatexenc above. The Lark lexer grammar
 **Evidence:** `scripts/incident/parsers/pglog.py` imports `pgtoolkit.log`.
 **Serves:** Developers/operators (incident analysis tooling, dev-only dependency).
 **Why not alternatives:** Writing a PG log multi-line grouping state machine is error-prone. pgtoolkit is actively maintained by Dalibo and handles the format's edge cases (variable log_line_prefix, multi-line DETAIL/STATEMENT/HINT blocks).
+
+### sdnotify
+
+**Added:** 2026-03-27
+**Design plan:** docs/design-plans/2026-03-24-infra-split.md
+**Claim:** Pure-Python implementation of the systemd `sd_notify` protocol. Used by the standalone export worker to send `READY=1` and `WATCHDOG=1` heartbeats via `$NOTIFY_SOCKET`, enabling systemd watchdog auto-restart on worker failure.
+**Evidence:** `src/promptgrimoire/export/worker_main.py` imports `sdnotify.SystemdNotifier`.
+**Serves:** Production runtime (worker process monitoring).
+**Why not alternatives:** The `python-systemd` package requires the systemd C library at build time, adding a compile dependency. `sdnotify` is pure Python with no native dependencies — it reads `$NOTIFY_SOCKET` and writes to the Unix domain socket directly. Gracefully degrades on non-systemd systems (dev, CI).

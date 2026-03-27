@@ -1,8 +1,15 @@
 """Holding page during server restart.
 
-Polls ``/healthz`` every 2 seconds. On HTTP 200, waits a random 1-5 second
-jitter (thundering herd prevention) then redirects to the ``return`` query
-parameter, defaulting to ``/``.
+Two modes controlled by the ``manual`` query parameter:
+
+- **Auto mode** (default, ``manual`` absent): Polls ``/healthz`` every
+  2 seconds.  On HTTP 200, waits a random 1-5 s jitter then redirects.
+  Used by ``deploy/restart.sh`` operator-initiated deploys.
+
+- **Manual mode** (``manual=1``): Polls ``/healthz`` silently.  When
+  the server is ready, shows a "Return to …" button instead of
+  auto-redirecting.  Used by memory-threshold restarts to prevent a
+  thundering herd of 200+ clients reconnecting simultaneously.
 
 Uses ``@ui.page`` directly (not ``page_route``) so it is accessible
 regardless of authentication state — identical pattern to ``/banned``.
@@ -36,11 +43,37 @@ def _safe_return_url(raw: str) -> str:
     return "/"
 
 
+_TITLE_MAP: dict[str, str] = {
+    "/": "Home",
+    "/annotation": "Annotation",
+    "/courses": "Units",
+    "/login": "Login",
+}
+
+
+def _return_title(return_url: str) -> str:
+    """Derive a human-readable page title from the return URL path."""
+    path = return_url.split("?", maxsplit=1)[0].split("#", maxsplit=1)[0]
+    if path in _TITLE_MAP:
+        return _TITLE_MAP[path]
+    # Strip leading slash and use first segment, title-cased
+    segment = path.strip("/").split("/")[0]
+    return segment.replace("-", " ").replace("_", " ").title() if segment else "Home"
+
+
 @ui.page("/restarting")
 async def restarting_page() -> None:
-    """Display server-updating message with auto-redirect polling."""
+    """Display server-updating message with polling.
+
+    In auto mode (default): polls /healthz then redirects with jitter.
+    In manual mode (?manual=1): polls /healthz then shows a button.
+    """
     raw = ui.context.client.request.query_params.get("return", "/")
     return_url = _safe_return_url(raw)
+    manual = ui.context.client.request.query_params.get("manual") == "1"
+
+    # Derive a human-readable title from the return path
+    return_title = _return_title(return_url)
 
     with ui.column().classes("absolute-center items-center"):
         ui.icon("update", size="xl").classes("text-blue-500")
@@ -51,8 +84,59 @@ async def restarting_page() -> None:
             'data-testid="restarting-status"'
         )
 
-    # Inline JS: poll /healthz, jitter redirect
-    ui.add_body_html(f"""<script>
+    if manual:
+        # Manual mode: poll silently, show button when ready
+        ui.add_body_html(f"""<script>
+    (function() {{
+        const returnUrl = {_js_string(return_url)};
+        const returnTitle = {_js_string(return_title)};
+        const pollInterval = 2000;
+
+        async function pollHealthz() {{
+            try {{
+                const resp = await fetch("/healthz", {{method: "HEAD"}});
+                if (resp.ok) {{
+                    const statusEl = document.querySelector(
+                        '[data-testid="restarting-status"]'
+                    );
+                    if (statusEl) statusEl.textContent = "Server is ready.";
+                    const btnContainer = document.querySelector(
+                        '[data-testid="restarting-btn-container"]'
+                    );
+                    if (btnContainer) {{
+                        btnContainer.innerHTML = '';
+                        const btn = document.createElement('button');
+                        btn.textContent = "Return to " + returnTitle;
+                        btn.className = 'q-btn q-btn--flat q-btn--rectangle '
+                            + 'text-white bg-blue-500 q-mt-md';
+                        btn.style.padding = '12px 32px';
+                        btn.style.fontSize = '1.1rem';
+                        btn.style.cursor = 'pointer';
+                        btn.setAttribute('data-testid', 'restarting-return-btn');
+                        btn.onclick = function() {{
+                            window.location.href = returnUrl;
+                        }};
+                        btnContainer.appendChild(btn);
+                    }}
+                    return;
+                }}
+            }} catch (e) {{
+                // Server not ready yet
+            }}
+            setTimeout(pollHealthz, pollInterval);
+        }}
+
+        setTimeout(pollHealthz, pollInterval);
+    }})();
+    </script>""")
+        # Container for the button (injected by JS when server is ready)
+        ui.html(
+            '<div data-testid="restarting-btn-container"'
+            ' style="text-align:center;margin-top:16px"></div>'
+        )
+    else:
+        # Auto mode: poll and redirect with jitter
+        ui.add_body_html(f"""<script>
     (function() {{
         const returnUrl = {_js_string(return_url)};
         const pollInterval = 2000;
@@ -76,7 +160,6 @@ async def restarting_page() -> None:
             setTimeout(pollHealthz, pollInterval);
         }}
 
-        // Start polling after a brief initial delay (server just went down)
         setTimeout(pollHealthz, pollInterval);
     }})();
     </script>""")

@@ -93,12 +93,110 @@ def collect_snapshot() -> dict[str, Any]:
     }
 
 
-async def start_diagnostic_logger(*, interval_seconds: float = 300.0) -> None:
-    """Emit ``memory_diagnostic`` structlog event at regular intervals."""
+def _check_memory_threshold(snapshot: dict[str, Any], *, threshold_mb: int) -> bool:
+    """Return True if current RSS exceeds *threshold_mb*.
+
+    Returns False when:
+    - threshold_mb is 0 (feature disabled)
+    - current_rss_bytes is None (e.g. no /proc on non-Linux)
+    - RSS is below the threshold
+    """
+    if threshold_mb <= 0:
+        return False
+    rss_bytes = snapshot.get("current_rss_bytes")
+    if rss_bytes is None:
+        return False
+    return rss_bytes > threshold_mb * 1024 * 1024
+
+
+async def _flush_milkdown_to_crdt() -> None:
+    """Delegate to restart.py's flush implementation."""
+    from promptgrimoire.pages.restart import (  # noqa: PLC0415
+        _flush_milkdown_to_crdt as _flush,
+    )
+
+    await _flush()
+
+
+async def _persist_dirty_workspaces() -> None:
+    """Persist all dirty CRDT state to database."""
+    from promptgrimoire.crdt.persistence import get_persistence_manager  # noqa: PLC0415
+
+    await get_persistence_manager().persist_all_dirty_workspaces()
+
+
+async def _navigate_clients_to_restarting() -> None:
+    """Navigate all connected NiceGUI clients to /restarting."""
+    from nicegui import Client  # noqa: PLC0415
+
+    for client in list(Client.instances.values()):
+        if not client.has_socket_connection:
+            continue
+        try:
+            await client.run_javascript(
+                'window.location.href = "/restarting?manual=1&return="'
+                " + encodeURIComponent("
+                "location.pathname + location.search + location.hash)",
+                timeout=2.0,
+            )
+        except Exception:
+            logger.warning(
+                "memory_restart_navigate_failed",
+                client_id=client.id,
+                exc_info=True,
+            )
+
+
+# Exit code for memory-threshold restart. Distinctive so it's identifiable
+# in journal logs and systemd status (not 0, not 1, not a signal).
+MEMORY_RESTART_EXIT_CODE = 75
+
+
+async def graceful_memory_shutdown(*, rss_mb: int, threshold_mb: int) -> None:
+    """Flush state, navigate clients, and exit with a non-zero code.
+
+    Uses exit code 75 so systemd treats it as a failure (triggers
+    ``Restart=on-failure``) and the journal shows a distinctive status.
+    Logs at CRITICAL level so the Discord webhook processor fires.
+    """
+    logger.critical(
+        "memory_threshold_exceeded_restarting",
+        current_rss_mb=rss_mb,
+        threshold_mb=threshold_mb,
+    )
+    await _flush_milkdown_to_crdt()
+    await _persist_dirty_workspaces()
+    await _navigate_clients_to_restarting()
+    logger.info("memory_restart_complete", rss_mb=rss_mb)
+    raise SystemExit(MEMORY_RESTART_EXIT_CODE)
+
+
+async def start_diagnostic_logger(
+    *,
+    interval_seconds: float = 300.0,
+    memory_restart_threshold_mb: int = 3072,
+) -> None:
+    """Emit ``memory_diagnostic`` structlog event at regular intervals.
+
+    When *memory_restart_threshold_mb* > 0 and current RSS exceeds that
+    value, triggers a graceful shutdown: flush CRDT state, navigate
+    clients to ``/restarting``, then ``sys.exit(0)`` so systemd restarts
+    the process cleanly.
+    """
     while True:
         try:
             snapshot = collect_snapshot()
             logger.info("memory_diagnostic", **snapshot)
+            if _check_memory_threshold(
+                snapshot, threshold_mb=memory_restart_threshold_mb
+            ):
+                rss_bytes = snapshot["current_rss_bytes"]
+                await graceful_memory_shutdown(
+                    rss_mb=rss_bytes // (1024 * 1024),
+                    threshold_mb=memory_restart_threshold_mb,
+                )
+        except SystemExit:
+            raise
         except Exception:
             logger.exception("diagnostic_snapshot_failed")
         await asyncio.sleep(interval_seconds)

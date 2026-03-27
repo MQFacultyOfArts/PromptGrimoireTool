@@ -44,6 +44,11 @@ async def main() -> int:
         Exit code (0 for clean shutdown).
     """
     global _shutdown_event  # noqa: PLW0603 -- module-level event, set once per process
+    # Create the shutdown event before setup_logging() so that _handle_signal
+    # can reference it immediately after signal handlers are registered.
+    # setup_logging() may emit log records during configuration; if a signal
+    # arrives between event creation and handler registration (below), the
+    # module-level guard in _handle_signal safely ignores it.
     _shutdown_event = asyncio.Event()
 
     setup_logging()

@@ -51,13 +51,31 @@ _compile_semaphore: asyncio.Semaphore | None = None
 
 
 def _get_compile_semaphore() -> asyncio.Semaphore:
-    """Return the compilation semaphore, lazy-initialised from config."""
+    """Return the compilation semaphore, lazy-initialised from config.
+
+    Limitation: once created, the semaphore is cached for the lifetime of the
+    process.  Changes to ``EXPORT__MAX_CONCURRENT_COMPILATIONS`` via
+    ``monkeypatch.setenv`` after the semaphore has already been created will
+    have no effect.  Call :func:`reset_compile_semaphore` at the start of any
+    test that needs to exercise a different limit.
+    """
     global _compile_semaphore  # noqa: PLW0603
     if _compile_semaphore is None:
         _compile_semaphore = asyncio.Semaphore(
             get_settings().export.max_concurrent_compilations
         )
     return _compile_semaphore
+
+
+def reset_compile_semaphore() -> None:
+    """Clear the cached semaphore so the next call re-reads config.
+
+    Test seam — parallel to :func:`set_latexmk_short_circuit`.  Call this
+    before patching ``EXPORT__MAX_CONCURRENT_COMPILATIONS`` in tests so the
+    new value is picked up on the next :func:`_get_compile_semaphore` call.
+    """
+    global _compile_semaphore  # noqa: PLW0603
+    _compile_semaphore = None
 
 
 def set_latexmk_short_circuit(enabled: bool) -> None:

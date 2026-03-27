@@ -196,6 +196,12 @@ class TestStudentTagImport:
                 re.compile(r"Imported \d+ tag"), timeout=10000
             )
 
+            # Wait for the first notification to dismiss before proceeding —
+            # Firefox animation timing can leave it visible when the second
+            # notification arrives, causing a strict-mode violation on the
+            # `.q-notification` locator (resolves to 2 elements).
+            expect(page.locator(".q-notification")).to_have_count(0, timeout=10000)
+
             # Close dialog
             dialog.get_by_test_id("tag-management-done-btn").click()
             expect(dialog).to_be_hidden(timeout=5000)

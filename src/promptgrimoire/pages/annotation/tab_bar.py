@@ -624,11 +624,18 @@ async def _build_first_source_panel(
     on_manage_tags: TagCallback,
     can_create_tags: bool,
     footer: ui.element | None,
+    prefetched_first_doc: Any | None = None,
 ) -> None:
     """Build the first source document panel content.
 
     Contains the CRDT-backed document renderer wrapped in
     ``@ui.refreshable`` for in-place re-render on document upload.
+
+    Args:
+        prefetched_first_doc: Full document object pre-fetched by the
+            caller.  Consumed on the initial render to avoid a redundant
+            DB round-trip.  On subsequent ``.refresh()`` calls (e.g.
+            after upload) the closure re-fetches from the database.
     """
     assert state.crdt_doc is not None
     crdt_doc = state.crdt_doc
@@ -639,42 +646,67 @@ async def _build_first_source_panel(
     # on has_documents[0] without a second DB query.
     has_documents: list[bool] = []
 
+    # Sentinel: consumed on first call, then set to None so .refresh()
+    # re-fetches from the database.
+    _prefetched: list[Any | None] = [prefetched_first_doc]
+
+    async def _resolve_first_doc() -> Any | None:
+        """Return the first document, consuming pre-fetched data or re-fetching.
+
+        Updates ``has_documents`` side-channel.  Returns ``None`` when no
+        documents exist (caller renders empty state) or when the document
+        has been deleted between list and fetch.
+        """
+        cached_doc = _prefetched[0]
+        _prefetched[0] = None  # consume: next call will re-fetch
+
+        if cached_doc is not None:
+            has_documents.clear()
+            has_documents.append(True)
+            logger.debug("[RENDER] using pre-fetched document")
+            return cached_doc
+
+        # Refresh path (e.g. after upload) — re-fetch from DB
+        docs = await list_document_headers(workspace_id)
+        has_documents.clear()
+        has_documents.append(bool(docs))
+        logger.debug("[RENDER] documents loaded: count=%d", len(docs))
+        if not docs:
+            return None
+        first_doc = await get_document(docs[0].id)
+        if first_doc is None:
+            logger.error("document_vanished", doc_id=str(docs[0].id))
+        return first_doc
+
     @ui.refreshable
     async def document_container() -> None:
         """Load documents and render the first one, or show empty state."""
         if footer is not None:
             footer.clear()
 
-        docs = await list_document_headers(workspace_id)
-        has_documents.clear()
-        has_documents.append(bool(docs))
-        logger.debug("[RENDER] documents loaded: count=%d", len(docs))
-
-        if docs:
-            first_doc = await get_document(docs[0].id)
-            if first_doc is None:
-                logger.error("document_vanished", doc_id=str(docs[0].id))
-                return
-            await render_document_container(
-                state,
-                first_doc,
-                crdt_doc,
-                on_add_tag=on_add_tag if can_create_tags else None,
-                on_manage_tags=on_manage_tags,
-                footer=footer,
-            )
-        elif state.can_upload:
-            render_empty_template_toolbar(
-                state,
-                on_add_tag=on_add_tag if can_create_tags else None,
-                on_manage_tags=on_manage_tags,
-                can_create_tags=can_create_tags,
-                footer=footer,
-            )
-        else:
-            ui.label("This workspace has no documents yet.").classes(
-                "text-gray-500 italic mt-4"
-            )
+        first_doc = await _resolve_first_doc()
+        if first_doc is None:
+            if state.can_upload:
+                render_empty_template_toolbar(
+                    state,
+                    on_add_tag=on_add_tag if can_create_tags else None,
+                    on_manage_tags=on_manage_tags,
+                    can_create_tags=can_create_tags,
+                    footer=footer,
+                )
+            else:
+                ui.label("This workspace has no documents yet.").classes(
+                    "text-gray-500 italic mt-4"
+                )
+            return
+        await render_document_container(
+            state,
+            first_doc,
+            crdt_doc,
+            on_add_tag=on_add_tag if can_create_tags else None,
+            on_manage_tags=on_manage_tags,
+            footer=footer,
+        )
 
     await document_container()
     state.refresh_documents = document_container.refresh
@@ -720,6 +752,11 @@ async def _build_tab_panels(
         await _load_crdt_for_workspace(state, workspace_id)
 
         if documents:
+            # Fetch the full first document (with content) once for
+            # rendering.  Passed to _build_first_source_panel to avoid
+            # a redundant round-trip inside the @ui.refreshable closure.
+            first_doc = await get_document(documents[0].id)
+
             # First document: eager render
             with ui.tab_panel(str(documents[0].id)) as first_panel:
                 first_doc_tab = state.document_tabs[documents[0].id]
@@ -731,6 +768,7 @@ async def _build_tab_panels(
                     on_manage_tags=on_manage_tags,
                     can_create_tags=can_create_tags,
                     footer=footer,
+                    prefetched_first_doc=first_doc,
                 )
                 # Save rendered state into DocumentTabState
                 first_doc_tab.rendered = True

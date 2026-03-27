@@ -9,7 +9,7 @@ import structlog
 from nicegui import ui
 
 from promptgrimoire.db.workspace_documents import update_document_paragraph_settings
-from promptgrimoire.db.workspaces import get_placement_context
+from promptgrimoire.db.workspaces import PlacementContext, get_placement_context
 from promptgrimoire.input_pipeline.paragraph_map import (
     build_paragraph_map_for_json,
     inject_paragraph_attributes,
@@ -229,13 +229,28 @@ def _render_export_button(state: PageState, workspace_id: UUID) -> None:
 def _render_placement_chip(
     workspace_id: UUID,
     user_id: UUID | None,
+    prefetched_ctx: PlacementContext | None = None,
 ) -> ui.refreshable:
-    """Build and return a refreshable placement chip."""
+    """Build and return a refreshable placement chip.
+
+    Args:
+        prefetched_ctx: Pre-fetched placement context from the page-load
+            path.  Consumed on the initial render; subsequent ``.refresh()``
+            calls (e.g. after the user edits placement) re-fetch from DB.
+    """
+    _cached: list[PlacementContext | None] = [prefetched_ctx]
 
     @ui.refreshable
     async def placement_chip() -> None:
-        logger.debug("[HEADER] placement_chip: querying placement")
-        ctx = await get_placement_context(workspace_id)
+        cached = _cached[0]
+        _cached[0] = None  # consume: next .refresh() will re-fetch
+
+        if cached is not None:
+            ctx = cached
+            logger.debug("[HEADER] placement_chip: using pre-fetched context")
+        else:
+            logger.debug("[HEADER] placement_chip: querying placement")
+            ctx = await get_placement_context(workspace_id)
         logger.debug("[HEADER] placement_chip: got ctx, rendering chip")
         label, color, icon = _get_placement_chip_style(ctx)
         is_authenticated = user_id is not None
@@ -277,6 +292,7 @@ async def render_workspace_header(
     can_manage_sharing: bool = False,
     user_id: UUID | None = None,
     document: WorkspaceDocument | None = None,
+    placement_context: PlacementContext | None = None,
 ) -> None:
     """Render the header row with save status, user count, and export button.
 
@@ -336,7 +352,9 @@ async def render_workspace_header(
             ).props('outline color=primary data-testid="manage-documents-btn"')
 
         logger.debug("[HEADER] buttons done, calling placement_chip")
-        placement_chip = _render_placement_chip(workspace_id, user_id)
+        placement_chip = _render_placement_chip(
+            workspace_id, user_id, prefetched_ctx=placement_context
+        )
         await placement_chip()
         logger.debug("[HEADER] placement_chip awaited")
 

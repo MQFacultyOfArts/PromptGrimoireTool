@@ -165,10 +165,17 @@ def _register_db_lifecycle(app: object) -> None:
         _deadline_worker_task = asyncio.create_task(
             start_deadline_worker(),
         )
-        _export_worker_task = asyncio.create_task(
-            start_export_worker(),
-        )
-        _app_config = get_settings().app
+        _settings = get_settings()
+        if _settings.features.worker_in_process:
+            _export_worker_task = asyncio.create_task(start_export_worker())
+            log.info("export_worker_started", mode="in-process")
+        else:
+            log.info(
+                "export_worker_skipped",
+                mode="standalone",
+                reason="FEATURES__WORKER_IN_PROCESS=false",
+            )
+        _app_config = _settings.app
         _diagnostic_logger_task = asyncio.create_task(
             start_diagnostic_logger(
                 interval_seconds=_app_config.diagnostic_interval_seconds,
@@ -185,25 +192,19 @@ def _register_db_lifecycle(app: object) -> None:
             _export_worker_task, \
             _diagnostic_logger_task
         # Cancel background workers and await completion before DB teardown
-        tasks_to_cancel: list[asyncio.Task[None]] = []
-        if _search_worker_task is not None:
-            _search_worker_task.cancel()
-            tasks_to_cancel.append(_search_worker_task)
-            _search_worker_task = None
-        if _deadline_worker_task is not None:
-            _deadline_worker_task.cancel()
-            tasks_to_cancel.append(_deadline_worker_task)
-            _deadline_worker_task = None
-        if _export_worker_task is not None:
-            _export_worker_task.cancel()
-            tasks_to_cancel.append(_export_worker_task)
-            _export_worker_task = None
-        if _diagnostic_logger_task is not None:
-            _diagnostic_logger_task.cancel()
-            tasks_to_cancel.append(_diagnostic_logger_task)
-            _diagnostic_logger_task = None
-        if tasks_to_cancel:
-            await asyncio.gather(*tasks_to_cancel, return_exceptions=True)
+        all_tasks = [
+            _search_worker_task,
+            _deadline_worker_task,
+            _export_worker_task,
+            _diagnostic_logger_task,
+        ]
+        _search_worker_task = _deadline_worker_task = None
+        _export_worker_task = _diagnostic_logger_task = None
+        active = [t for t in all_tasks if t is not None]
+        for t in active:
+            t.cancel()
+        if active:
+            await asyncio.gather(*active, return_exceptions=True)
         # Persist all dirty CRDT documents before closing DB
         mgr = get_persistence_manager()
         await mgr.persist_all_dirty_workspaces()

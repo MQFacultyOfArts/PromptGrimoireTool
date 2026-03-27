@@ -21,7 +21,7 @@ from promptgrimoire.db.acl import (
     get_privileged_user_ids_for_workspace,
     grant_permission,
 )
-from promptgrimoire.db.workspace_documents import get_document, list_document_headers
+from promptgrimoire.db.workspace_documents import list_document_headers
 from promptgrimoire.db.workspaces import (
     PlacementContext,
     create_workspace,
@@ -244,11 +244,11 @@ async def _render_workspace_view(
     _setup_client_sync(workspace_id, client, state)
     can_manage_sharing = state.is_owner or state.viewer_is_privileged
 
-    # Pre-load documents so the header can show the paragraph toggle.
-    # Two-query pattern: list_document_headers() defers the content column, so
-    # fetch the full document via get_document() before passing to the header.
+    # Pre-load document headers (content column deferred via SQLAlchemy
+    # defer()).  The header only needs metadata (auto_number_paragraphs),
+    # so we pass the header-only doc — no full content fetch needed here.
+    # The full document is fetched by tab_bar.py for rendering.
     documents = await list_document_headers(workspace_id)
-    first_doc = await get_document(documents[0].id) if documents else None
 
     await render_workspace_header(
         state,
@@ -258,7 +258,8 @@ async def _render_workspace_view(
         shared_with_class=shared_with_class,
         can_manage_sharing=can_manage_sharing,
         user_id=_get_current_user_id(),
-        document=first_doc,
+        document=documents[0] if documents else None,
+        placement_context=ctx,
     )
 
     # Pre-load the Milkdown JS bundle so it's available when Tab 3 (Respond)

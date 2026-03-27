@@ -125,6 +125,23 @@ async def _persist_dirty_workspaces() -> None:
     await get_persistence_manager().persist_all_dirty_workspaces()
 
 
+async def _invalidate_all_sessions() -> None:
+    """Clear auth_user from all client storage to prevent session leakage.
+
+    Must run before restart to ensure no stale sessions survive the
+    reconnection thundering herd.  Users will need to re-authenticate
+    after the server comes back up.
+    """
+    from nicegui import app  # noqa: PLC0415
+
+    # _users is the server-side dict of all per-user PersistentDict
+    # instances, keyed by the browser-level storage ID.
+    user_stores = app.storage._users  # pyright: ignore[reportPrivateUsage]
+    for user_storage in user_stores.values():
+        user_storage.pop("auth_user", None)
+    logger.info("sessions_invalidated", count=len(user_stores))
+
+
 async def _navigate_clients_to_restarting() -> None:
     """Navigate all connected NiceGUI clients to /restarting."""
     from nicegui import Client  # noqa: PLC0415
@@ -166,6 +183,7 @@ async def graceful_memory_shutdown(*, rss_mb: int, threshold_mb: int) -> None:
     )
     await _flush_milkdown_to_crdt()
     await _persist_dirty_workspaces()
+    await _invalidate_all_sessions()
     await _navigate_clients_to_restarting()
     logger.info("memory_restart_complete", rss_mb=rss_mb)
     raise SystemExit(MEMORY_RESTART_EXIT_CODE)

@@ -124,6 +124,9 @@ ignore = [
 "src/promptgrimoire/__init__.py" = [
     "PLC0415",  # Late imports to avoid circular dependencies at startup
 ]
+"src/promptgrimoire/logging_config.py" = [
+    "PLC0415",  # Deferred imports to break circular dependency with config module
+]
 "src/promptgrimoire/llm/lorebook.py" = [
     "PLC0415",  # Import inside function to avoid circular imports with models
 ]

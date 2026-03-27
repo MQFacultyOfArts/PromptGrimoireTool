@@ -25,9 +25,9 @@ os.environ.setdefault("HELP__HELP_BACKEND", "mkdocs")
 port = int(sys.argv[1])
 
 # Enable logging so pool events and diagnostics are visible
-from promptgrimoire import _setup_logging
+from promptgrimoire.logging_config import setup_logging
 
-_setup_logging()
+setup_logging()
 
 # --- Event loop watchdog (runs on a separate thread) ---
 import asyncio

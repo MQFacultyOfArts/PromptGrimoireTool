@@ -36,8 +36,8 @@ def _setup_json_logging(tmp_path: Path) -> Path:
 
     Returns the log file path.
     """
-    from promptgrimoire import _setup_logging
     from promptgrimoire.config import AppConfig, DevConfig, Settings
+    from promptgrimoire.logging_config import setup_logging
 
     # Reset logging first
     root = logging.getLogger()
@@ -53,19 +53,19 @@ def _setup_json_logging(tmp_path: Path) -> Path:
     )
     with (
         patch(
-            "promptgrimoire._get_settings_for_logging",
+            "promptgrimoire.logging_config._get_settings_for_logging",
             return_value=settings,
         ),
         patch(
-            "promptgrimoire._get_current_branch_for_logging",
+            "promptgrimoire.logging_config._get_current_branch_for_logging",
             return_value="main",
         ),
         patch(
-            "promptgrimoire._branch_db_suffix_for_logging",
+            "promptgrimoire.logging_config._branch_db_suffix_for_logging",
             return_value="",
         ),
     ):
-        _setup_logging()
+        setup_logging()
 
     return tmp_path / "promptgrimoire.jsonl"
 

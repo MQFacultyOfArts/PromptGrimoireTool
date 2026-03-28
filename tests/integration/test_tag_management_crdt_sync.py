@@ -41,6 +41,7 @@ from tests.integration.nicegui_helpers import (
     _find_value_element_by_testid,
     _should_see_testid,
     wait_for,
+    wait_for_annotation_load,
 )
 
 _NICEGUI_TEST_APP = Path(__file__).parent / "nicegui_test_app.py"
@@ -110,6 +111,7 @@ class TestTagColourEditUpdatesCrdt:
         async with user_simulation(main_file=_NICEGUI_TEST_APP) as user:
             await _authenticate(user, email=email)
             await user.open(f"/annotation?workspace_id={ws_id}")
+            await wait_for_annotation_load(user)
             await _should_see_testid(user, "tag-settings-btn")
             _click_testid(user, "tag-settings-btn")
             await _should_see_testid(user, "tag-management-dialog")
@@ -153,6 +155,7 @@ class TestTagNameEditUpdatesCrdt:
         async with user_simulation(main_file=_NICEGUI_TEST_APP) as user:
             await _authenticate(user, email=email)
             await user.open(f"/annotation?workspace_id={ws_id}")
+            await wait_for_annotation_load(user)
             await _should_see_testid(user, "tag-settings-btn")
             _click_testid(user, "tag-settings-btn")
             await _should_see_testid(user, "tag-management-dialog")
@@ -202,6 +205,7 @@ class TestGroupColourEditUpdatesCrdt:
         async with user_simulation(main_file=_NICEGUI_TEST_APP) as user:
             await _authenticate(user, email=email)
             await user.open(f"/annotation?workspace_id={ws_id}")
+            await wait_for_annotation_load(user)
             await _should_see_testid(user, "tag-settings-btn")
             _click_testid(user, "tag-settings-btn")
             await _should_see_testid(user, "tag-management-dialog")

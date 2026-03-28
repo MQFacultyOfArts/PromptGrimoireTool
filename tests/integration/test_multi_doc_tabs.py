@@ -29,7 +29,7 @@ from tests.integration.conftest import _authenticate
 from tests.integration.nicegui_helpers import (
     _find_all_by_testid,
     _find_by_testid,
-    _should_see_testid,
+    wait_for_annotation_load,
 )
 
 if TYPE_CHECKING:
@@ -232,7 +232,7 @@ class TestMultiDocTabBar:
 
         await _authenticate(nicegui_user, email=email)
         await nicegui_user.open(f"/annotation?workspace_id={ws_id}")
-        await _should_see_testid(nicegui_user, "tab-source-1")
+        await wait_for_annotation_load(nicegui_user)
 
         # Verify 3 source tabs exist
         tab1 = _find_by_testid(nicegui_user, "tab-source-1")
@@ -276,7 +276,7 @@ class TestMultiDocTabBar:
 
         await _authenticate(nicegui_user, email=email)
         await nicegui_user.open(f"/annotation?workspace_id={ws_id}")
-        await _should_see_testid(nicegui_user, "tab-source-1")
+        await wait_for_annotation_load(nicegui_user)
 
         tab1 = _find_by_testid(nicegui_user, "tab-source-1")
         assert tab1 is not None, "Expected tab-source-1"
@@ -305,7 +305,7 @@ class TestMultiDocTabBar:
 
         await _authenticate(nicegui_user, email=email)
         await nicegui_user.open(f"/annotation?workspace_id={ws_id}")
-        await _should_see_testid(nicegui_user, "tab-organise")
+        await wait_for_annotation_load(nicegui_user)
 
         # Placeholder source tab exists (hosts upload form)
         tab1 = _find_by_testid(nicegui_user, "tab-source-1")
@@ -329,7 +329,7 @@ class TestMultiDocTabBar:
 
         await _authenticate(nicegui_user, email=email)
         await nicegui_user.open(f"/annotation?workspace_id={ws_id}")
-        await _should_see_testid(nicegui_user, "tab-source-1")
+        await wait_for_annotation_load(nicegui_user)
 
         tab1 = _find_by_testid(nicegui_user, "tab-source-1")
         assert tab1 is not None
@@ -351,7 +351,7 @@ class TestMultiDocTabBar:
 
         await _authenticate(nicegui_user, email=email)
         await nicegui_user.open(f"/annotation?workspace_id={ws_id}")
-        await _should_see_testid(nicegui_user, "tab-source-1")
+        await wait_for_annotation_load(nicegui_user)
 
         tab1 = _find_by_testid(nicegui_user, "tab-source-1")
         tab2 = _find_by_testid(nicegui_user, "tab-source-2")
@@ -388,7 +388,7 @@ class TestCrossDocumentIsolation:
 
         await _authenticate(nicegui_user, email=email)
         await nicegui_user.open(f"/annotation?workspace_id={ws_id}")
-        await _should_see_testid(nicegui_user, "tab-source-1")
+        await wait_for_annotation_load(nicegui_user)
 
         # First source tab (doc1) is active by default — it should have 0 cards
         cards = _find_all_by_testid(nicegui_user, "annotation-card")
@@ -417,7 +417,7 @@ class TestRapidTabSwitching:
 
         await _authenticate(nicegui_user, email=email)
         await nicegui_user.open(f"/annotation?workspace_id={ws_id}")
-        await _should_see_testid(nicegui_user, "tab-source-1")
+        await wait_for_annotation_load(nicegui_user)
 
         # The first source tab should have rendered content (document
         # container). The second should be empty (deferred).
@@ -450,7 +450,7 @@ class TestTabOverflow:
 
         await _authenticate(nicegui_user, email=email)
         await nicegui_user.open(f"/annotation?workspace_id={ws_id}")
-        await _should_see_testid(nicegui_user, "tab-source-1")
+        await wait_for_annotation_load(nicegui_user)
 
         # Verify all 8 source tabs exist
         for i in range(1, 9):

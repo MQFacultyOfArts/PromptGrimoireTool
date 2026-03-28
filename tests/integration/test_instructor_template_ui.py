@@ -30,6 +30,7 @@ from tests.integration.nicegui_helpers import (
     _should_not_see_testid,
     _should_see_testid,
     wait_for,
+    wait_for_annotation_load,
 )
 
 if TYPE_CHECKING:
@@ -135,6 +136,7 @@ class TestOpenTagManagementDialog:
 
         await _authenticate(nicegui_user, email=email)
         await nicegui_user.open(f"/annotation?workspace_id={ws_id}")
+        await wait_for_annotation_load(nicegui_user)
 
         # Wait for page to load
         await _should_see_testid(nicegui_user, "tag-settings-btn")
@@ -176,6 +178,7 @@ class TestCreateTagGroupAndTags:
 
         await _authenticate(nicegui_user, email=email)
         await nicegui_user.open(f"/annotation?workspace_id={ws_id}")
+        await wait_for_annotation_load(nicegui_user)
         await _should_see_testid(nicegui_user, "tag-settings-btn")
 
         # Open tag management dialog
@@ -253,6 +256,7 @@ class TestChangeTagColor:
 
         await _authenticate(nicegui_user, email=email)
         await nicegui_user.open(f"/annotation?workspace_id={ws_id}")
+        await wait_for_annotation_load(nicegui_user)
         await _should_see_testid(nicegui_user, "tag-settings-btn")
 
         # Open tag management dialog
@@ -317,6 +321,7 @@ class TestLockToggle:
 
         await _authenticate(nicegui_user, email=email)
         await nicegui_user.open(f"/annotation?workspace_id={ws_id}")
+        await wait_for_annotation_load(nicegui_user)
         await _should_see_testid(nicegui_user, "tag-settings-btn")
 
         # Open tag management dialog
@@ -387,6 +392,7 @@ class TestGroupReorder:
 
         await _authenticate(nicegui_user, email=email)
         await nicegui_user.open(f"/annotation?workspace_id={ws_id}")
+        await wait_for_annotation_load(nicegui_user)
         await _should_see_testid(nicegui_user, "tag-settings-btn")
 
         # Open tag management dialog
@@ -475,6 +481,7 @@ class TestImportTagsFromActivity:
         # Authenticate and open the TARGET template workspace
         await _authenticate(nicegui_user, email=email)
         await nicegui_user.open(f"/annotation?workspace_id={target_ws_id}")
+        await wait_for_annotation_load(nicegui_user)
         await _should_see_testid(nicegui_user, "tag-settings-btn")
 
         # Open tag management dialog

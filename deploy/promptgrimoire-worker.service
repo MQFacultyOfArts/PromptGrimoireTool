@@ -1,0 +1,42 @@
+[Unit]
+Description=PromptGrimoire Export Worker
+After=network-online.target postgresql.service pgbouncer.service
+Wants=network-online.target
+Requires=postgresql.service
+
+[Service]
+Type=notify
+User=promptgrimoire
+Group=promptgrimoire
+WorkingDirectory=/home/promptgrimoire/PromptGrimoireTool
+EnvironmentFile=/home/promptgrimoire/PromptGrimoireTool/.env
+
+ExecStart=/home/promptgrimoire/.local/bin/uv run python -m promptgrimoire.export.worker_main
+
+# Watchdog: restart if no heartbeat within 5 minutes
+WatchdogSec=300
+Restart=on-failure
+# Covers both watchdog timeouts and unexpected crashes
+RestartSec=5
+
+# Graceful shutdown: allow current job to finish (longest observed: ~90s)
+TimeoutStopSec=120
+KillSignal=SIGTERM
+
+# Resource controls: best-effort scheduling
+Nice=19
+IOSchedulingClass=idle
+CPUWeight=10
+MemoryMax=3G
+MemoryHigh=2560M
+OOMScoreAdjust=500
+
+# Security hardening
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/promptgrimoire/PromptGrimoireTool /tmp
+PrivateTmp=true
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

@@ -55,6 +55,7 @@ library references during development.
 ## investigations
 
 - [Causal Analysis: Connection Pool Shrinkage Under CancelledError (#403)](investigations/2026-03-21-pool-shrinkage-403.md)
+- [Investigation: Cross-User Session Contamination (#438)](investigations/2026-03-28-session-contamination-438.md)
 
 ## lark
 
@@ -79,6 +80,7 @@ library references during development.
 - [Event handler types and GenericEventArguments for ui.on() handlers](nicegui/events.md)
 - [NiceGUI 3.x client lifecycle events - on_connect, on_disconnect, on_delete, reconnect_timeout](nicegui/lifecycle.md)
 - [NiceGUI Multi-Client UI Synchronization](nicegui/multi-client-sync.md)
+- [Production memory management, client lifecycle, storage durability, and known leak patterns for NiceGUI 3.9.0](nicegui/production-memory-management.md)
 - [NiceGUI WebSocket, reactivity, multi-client handling, JS integration](nicegui/realtime.md)
 - [NiceGUI styling with CSS, Tailwind, Quasar props, and static files](nicegui/styling.md)
 - [NiceGUI E2E Testing with Playwright](nicegui/testing.md)

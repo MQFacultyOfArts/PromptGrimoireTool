@@ -440,6 +440,48 @@ def _register_db_lifecycle(app: object) -> None:
         await close_db()
 
 
+def _install_session_identity_tracing() -> None:
+    """Monkey-patch RequestTrackingMiddleware to log identity at middleware level.
+
+    Wraps ``call_next`` inside the existing dispatch so that every HTTP
+    request logs the session_id and asyncio task name *before* the page
+    handler background task is created.  Comparing this log with the
+    ``h7_page_identity`` log from ``page_route`` detects context
+    contamination (#438 / H7).
+    """
+    import asyncio as _asyncio
+    from typing import Any
+
+    from nicegui.storage import RequestTrackingMiddleware
+
+    _original_dispatch = RequestTrackingMiddleware.dispatch
+
+    async def _instrumented_dispatch(
+        self: Any,
+        request: Request,
+        call_next: Any,
+    ) -> Any:
+        async def _logging_call_next(req: Request) -> Any:
+            task = _asyncio.current_task()
+            task_name = task.get_name() if task else "no-task"
+            session_id = req.session.get("id", "missing")
+            path = str(req.url.path)
+            # Skip noisy paths — only log page routes
+            if not path.startswith(("/static/", "/_nicegui", "/healthz")):
+                log.info(
+                    "session_identity_at_middleware",
+                    ctx_session_id=session_id,
+                    task_name=task_name,
+                    path=path,
+                )
+            return await call_next(req)
+
+        return await _original_dispatch(self, request, _logging_call_next)
+
+    RequestTrackingMiddleware.dispatch = _instrumented_dispatch  # ty: ignore[invalid-assignment]
+    log.info("session_identity_tracing_installed")
+
+
 def main() -> None:
     """Entry point for the PromptGrimoire application."""
     from nicegui import app, ui
@@ -497,6 +539,12 @@ def main() -> None:
     port = settings.app.port
     storage_secret = settings.app.storage_secret.get_secret_value()
 
+    # --- Session identity tracing (#438) ---
+    # Monkey-patch RequestTrackingMiddleware to log the session_id at the
+    # middleware layer. This gives us a baseline to compare against the
+    # page_route log (which runs in a separate asyncio Task).
+    _install_session_identity_tracing()
+
     log.info("app_starting", version=get_version_string(), host="0.0.0.0", port=port)  # noqa: S104 — intentional bind
 
     ui.run(
@@ -506,7 +554,7 @@ def main() -> None:
         reload=settings.app.reload,
         show=False,
         storage_secret=storage_secret,
-        reconnect_timeout=30.0,
+        reconnect_timeout=15.0,
         show_welcome_message=False,
         log_config=None,  # Prevent uvicorn from overwriting our structlog config
     )

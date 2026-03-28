@@ -80,6 +80,9 @@ async def restarting_page() -> None:
         ui.label("Server updating, please wait...").classes(
             "text-2xl font-bold mt-4"
         ).props('data-testid="restarting-message"')
+        ui.label("You will need to log in again once the server is ready.").classes(
+            "text-md text-grey-7 mt-2"
+        )
         ui.label("Waiting for server...").classes("text-lg text-grey-7 mt-2").props(
             'data-testid="restarting-status"'
         )
@@ -106,7 +109,7 @@ async def restarting_page() -> None:
                     if (btnContainer) {{
                         btnContainer.innerHTML = '';
                         const btn = document.createElement('button');
-                        btn.textContent = "Return to " + returnTitle;
+                        btn.textContent = "Log in and return to " + returnTitle;
                         btn.className = 'q-btn q-btn--flat q-btn--rectangle '
                             + 'text-white bg-blue-500 q-mt-md';
                         btn.style.padding = '12px 32px';
@@ -114,7 +117,8 @@ async def restarting_page() -> None:
                         btn.style.cursor = 'pointer';
                         btn.setAttribute('data-testid', 'restarting-return-btn');
                         btn.onclick = function() {{
-                            window.location.href = returnUrl;
+                            window.location.href = "/login?return="
+                                + encodeURIComponent(returnUrl);
                         }};
                         btnContainer.appendChild(btn);
                     }}
@@ -148,9 +152,10 @@ async def restarting_page() -> None:
                     const jitter = 1000 + Math.random() * 4000;
                     const sel = '[data-testid="restarting-status"]';
                     const el = document.querySelector(sel);
-                    if (el) el.textContent = "Server ready, redirecting...";
+                    if (el) el.textContent = "Server ready, redirecting to login...";
                     setTimeout(function() {{
-                        window.location.href = returnUrl;
+                        window.location.href = "/login?return="
+                            + encodeURIComponent(returnUrl);
                     }}, jitter);
                     return;
                 }}

@@ -12,7 +12,6 @@ Route: /courses
 
 from __future__ import annotations
 
-import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, NamedTuple
 from urllib.parse import urlencode
@@ -78,8 +77,6 @@ from promptgrimoire.pages.registry import page_route
 from promptgrimoire.pages.ui_helpers import add_option_testids
 
 logger = structlog.get_logger()
-logging.getLogger(__name__).setLevel(logging.INFO)
-
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
 

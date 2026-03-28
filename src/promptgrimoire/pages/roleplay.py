@@ -8,7 +8,6 @@ Route: /roleplay
 
 from __future__ import annotations
 
-import logging
 from pathlib import Path
 from typing import TYPE_CHECKING
 from urllib.parse import urlencode
@@ -38,7 +37,6 @@ if TYPE_CHECKING:
     from nicegui.elements.scroll_area import ScrollArea
 
 logger = structlog.get_logger()
-logging.getLogger(__name__).setLevel(logging.INFO)
 
 
 def _get_default_user_name() -> str:

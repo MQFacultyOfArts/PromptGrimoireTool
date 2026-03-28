@@ -6,7 +6,6 @@ Uses either real Stytch or MockAuthClient based on DEV__AUTH_MOCK setting.
 
 from __future__ import annotations
 
-import logging
 import re
 from typing import TYPE_CHECKING
 from urllib.parse import urlencode
@@ -24,8 +23,6 @@ if TYPE_CHECKING:
     from starlette.requests import Request
 
 logger = structlog.get_logger()
-logging.getLogger(__name__).setLevel(logging.INFO)
-
 # Time to display error message before redirecting (seconds)
 _ERROR_DISPLAY_SECONDS = 0.5
 

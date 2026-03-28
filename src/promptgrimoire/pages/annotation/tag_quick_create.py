@@ -7,7 +7,6 @@ and ``_refresh_tag_state`` from ``tag_management_save`` (leaf module).
 
 from __future__ import annotations
 
-import logging
 import re
 from typing import TYPE_CHECKING
 from uuid import UUID
@@ -23,8 +22,6 @@ from promptgrimoire.pages.annotation.tag_management_save import (
 from promptgrimoire.ui_helpers import on_submit_with_value
 
 logger = structlog.get_logger()
-logging.getLogger(__name__).setLevel(logging.INFO)
-
 if TYPE_CHECKING:
     from promptgrimoire.pages.annotation import PageState
 

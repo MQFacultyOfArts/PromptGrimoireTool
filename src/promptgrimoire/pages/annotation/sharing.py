@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import logging
 from typing import TYPE_CHECKING
 
 import structlog
@@ -23,7 +22,6 @@ from promptgrimoire.db.users import get_user_by_email, get_user_by_id
 from promptgrimoire.db.workspaces import update_workspace_sharing
 
 logger = structlog.get_logger()
-logging.getLogger(__name__).setLevel(logging.INFO)
 
 
 def render_sharing_controls(

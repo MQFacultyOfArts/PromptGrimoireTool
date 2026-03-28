@@ -8,7 +8,6 @@ to avoid circular dependencies.
 
 from __future__ import annotations
 
-import logging
 from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
@@ -22,8 +21,6 @@ from promptgrimoire.db.exceptions import (
 )
 
 logger = structlog.get_logger()
-logging.getLogger(__name__).setLevel(logging.INFO)
-
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
 

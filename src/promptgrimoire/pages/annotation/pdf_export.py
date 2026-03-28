@@ -15,7 +15,6 @@ Includes pre-export word count enforcement (AC5, AC6):
 from __future__ import annotations
 
 import asyncio
-import logging
 from datetime import date, datetime
 from typing import TYPE_CHECKING, Any, cast
 from uuid import UUID
@@ -51,7 +50,6 @@ if TYPE_CHECKING:
     from promptgrimoire.pages.annotation import PageState
 
 logger = structlog.get_logger()
-logging.getLogger(__name__).setLevel(logging.INFO)
 
 
 def _server_local_export_date() -> date:

@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import logging
 import time as _time
 from typing import TYPE_CHECKING
 from uuid import uuid4
@@ -35,7 +34,6 @@ if TYPE_CHECKING:
     from nicegui import Client
 
 logger = structlog.get_logger()
-logging.getLogger(__name__).setLevel(logging.INFO)
 
 
 def resolve_broadcast_label(

@@ -14,7 +14,6 @@ Route: /demo/milkdown-spike (requires ENABLE_DEMO_PAGES=true)
 from __future__ import annotations
 
 import base64
-import logging
 from pathlib import Path
 from typing import TYPE_CHECKING
 from uuid import uuid4
@@ -30,8 +29,6 @@ if TYPE_CHECKING:
     from nicegui import Client
 
 logger = structlog.get_logger()
-logging.getLogger(__name__).setLevel(logging.INFO)
-
 # Serve the Milkdown bundle from static files
 _BUNDLE_DIR = Path(__file__).parent.parent / "static" / "milkdown" / "dist"
 app.add_static_files("/milkdown", str(_BUNDLE_DIR))

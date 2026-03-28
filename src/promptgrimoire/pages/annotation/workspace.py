@@ -8,7 +8,6 @@ Tab creation, change handling, and organise drag setup live in
 
 from __future__ import annotations
 
-import logging
 from typing import TYPE_CHECKING, Any, cast
 from urllib.parse import urlencode
 from uuid import UUID
@@ -60,7 +59,6 @@ if TYPE_CHECKING:
     from promptgrimoire.pages.annotation import PermissionLevel
 
 logger = structlog.get_logger()
-logging.getLogger(__name__).setLevel(logging.INFO)
 
 
 def _get_current_username() -> str:

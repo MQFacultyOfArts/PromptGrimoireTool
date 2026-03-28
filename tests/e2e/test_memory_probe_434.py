@@ -167,7 +167,7 @@ def _run_probe(
     ws_id: str,
     *,
     force_cleanup: bool,
-    cleanup_mode: str = "all",
+    cleanup_mode: str = "none",
 ) -> tuple[list[dict], str]:
     """Core probe loop: N cycles of connect/disconnect with measurement.
 
@@ -176,10 +176,12 @@ def _run_probe(
             (scrubbed test harness). If False, rely only on natural
             WebSocket disconnect + NiceGUI reconnect_timeout (0.5s in
             E2E server) for cleanup (production-like path).
-        cleanup_mode: Which cleanup action to run when force_cleanup is
-            True. Values: "all" (default), "clients_only", "eio_only",
-            "events_only". When force_cleanup is False, this controls
-            an optional targeted cleanup after the natural wait period.
+        cleanup_mode: Which cleanup action(s) to run via the cleanup
+            endpoint. Values: "none" (default — no targeted action),
+            "all", "clients_only", "eio_only", "events_only".
+            When force_cleanup is True, "none" is promoted to "all".
+            When force_cleanup is False, non-"none" values run a
+            targeted cleanup action after the natural wait period.
 
     Returns:
         (results list, formatted summary string)
@@ -251,11 +253,17 @@ def _run_probe(
         for ctx in contexts:
             ctx.close()
 
+        # Resolve effective cleanup mode: force_cleanup promotes "none"→"all"
+        effective_mode = cleanup_mode
+        if force_cleanup and cleanup_mode == "none":
+            effective_mode = "all"
+
+        cleanup_resp: dict | None = None
         if force_cleanup:
             # Scrubbed: wait for reconnect timeout then force-delete
             time.sleep(3.0)
-            cleanup_url = f"{app_server}/api/test/cleanup?mode={cleanup_mode}"
-            _fetch_json(cleanup_url, method="POST")
+            cleanup_url = f"{app_server}/api/test/cleanup?mode={effective_mode}"
+            cleanup_resp = _fetch_json(cleanup_url, method="POST")
             time.sleep(1.0)
         else:
             # Production-like: wait for natural cleanup only.
@@ -263,29 +271,30 @@ def _run_probe(
             # fires our on_client_delete() chain. Allow 5s total for
             # all 10 clients to complete the chain.
             time.sleep(5.0)
-            # Optional targeted cleanup after natural wait — used by
-            # isolation variants to test one action at a time.
-            if cleanup_mode != "all":
-                cleanup_url = f"{app_server}/api/test/cleanup?mode={cleanup_mode}"
-                _fetch_json(cleanup_url, method="POST")
+            # Targeted cleanup after natural wait — isolation variants
+            # run one specific action to measure its reclamation.
+            if effective_mode != "none":
+                cleanup_url = f"{app_server}/api/test/cleanup?mode={effective_mode}"
+                cleanup_resp = _fetch_json(cleanup_url, method="POST")
                 time.sleep(0.5)
 
         # GC + malloc_trim
         gc_data = _fetch_json(f"{app_server}/api/test/gc", method="POST")
         diag_data = _fetch_json(f"{app_server}/api/test/diagnostics")
 
-        results.append(
-            {
-                "cycle": cycle,
-                "phase": "after_gc",
-                "rss_after_trim_mb": (gc_data["rss_after_trim"] or 0) / 1048576,
-                "gc_collected": gc_data["gc_collected"],
-                "clients": diag_data["nicegui_clients"],
-                "presence_clients": diag_data["presence_total_clients"],
-                "ws_registry": diag_data["ws_registry"],
-                "tasks": diag_data["asyncio_tasks"],
-            }
-        )
+        result_entry: dict = {
+            "cycle": cycle,
+            "phase": "after_gc",
+            "rss_after_trim_mb": (gc_data["rss_after_trim"] or 0) / 1048576,
+            "gc_collected": gc_data["gc_collected"],
+            "clients": diag_data["nicegui_clients"],
+            "presence_clients": diag_data["presence_total_clients"],
+            "ws_registry": diag_data["ws_registry"],
+            "tasks": diag_data["asyncio_tasks"],
+        }
+        if cleanup_resp is not None:
+            result_entry["cleanup_resp"] = cleanup_resp
+        results.append(result_entry)
 
     summary = _format_results(results)
     return results, summary
@@ -410,7 +419,7 @@ class TestCleanupGapIsolation:
         account for the gap. If per-cycle growth drops to ~1 MB, client
         deletion is the key reclamation action.
         """
-        _results, summary = _run_probe(
+        results, summary = _run_probe(
             browser,
             app_server,
             pabai_workspace,
@@ -424,6 +433,14 @@ class TestCleanupGapIsolation:
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_text(summary, encoding="utf-8")
 
+        # Natural cleanup should have zeroed presence before targeted action
+        gc_results = [r for r in results if r["phase"] == "after_gc"]
+        final = gc_results[-1] if gc_results else results[-1]
+        assert final["presence_clients"] == 0, (
+            f"Presence not zero after natural+clients_only cleanup: "
+            f"{final['presence_clients']}"
+        )
+
     def test_cleanup_gap_eio_only(
         self,
         browser: Browser,
@@ -436,7 +453,7 @@ class TestCleanupGapIsolation:
         NiceGUI client deletion) account for the gap. These hold
         per-connection request objects and event handler registries.
         """
-        _results, summary = _run_probe(
+        results, summary = _run_probe(
             browser,
             app_server,
             pabai_workspace,
@@ -450,6 +467,13 @@ class TestCleanupGapIsolation:
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_text(summary, encoding="utf-8")
 
+        gc_results = [r for r in results if r["phase"] == "after_gc"]
+        final = gc_results[-1] if gc_results else results[-1]
+        assert final["presence_clients"] == 0, (
+            f"Presence not zero after natural+eio_only cleanup: "
+            f"{final['presence_clients']}"
+        )
+
     def test_cleanup_gap_events_only(
         self,
         browser: Browser,
@@ -462,7 +486,7 @@ class TestCleanupGapIsolation:
         handler not cancelling _waiting_for_connection.wait()) account
         for the gap. Each task retains its closure scope.
         """
-        _results, summary = _run_probe(
+        results, summary = _run_probe(
             browser,
             app_server,
             pabai_workspace,
@@ -475,3 +499,24 @@ class TestCleanupGapIsolation:
         out = Path("output/incident/e2e_probe_events_only.txt")
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_text(summary, encoding="utf-8")
+
+        gc_results = [r for r in results if r["phase"] == "after_gc"]
+        final = gc_results[-1] if gc_results else results[-1]
+        assert final["presence_clients"] == 0, (
+            f"Presence not zero after natural+events_only cleanup: "
+            f"{final['presence_clients']}"
+        )
+
+        # Verify Event.wait filter actually matched tasks — if orphan_wait
+        # is 0 on all cycles, the qualname filter may have stopped working
+        # (NiceGUI internal change) and results are silently invalid.
+        cleanup_resps = [r["cleanup_resp"] for r in gc_results if "cleanup_resp" in r]
+        if cleanup_resps:
+            total_orphans = sum(r["orphan_wait"] for r in cleanup_resps)
+            print(f"\n  Event.wait tasks cancelled: {total_orphans} total")
+            assert total_orphans > 0, (
+                "events_only cancelled zero Event.wait tasks across all "
+                "cycles — the qualname filter may no longer match. "
+                "Check NiceGUI internals for changes to "
+                "_waiting_for_connection.wait()."
+            )

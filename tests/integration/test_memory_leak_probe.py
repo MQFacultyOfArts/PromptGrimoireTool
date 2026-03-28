@@ -354,7 +354,7 @@ class TestMemoryLeakProbe:
             await _should_see_testid(nicegui_user, "doc-container")
 
             # Small pause to let async setup tasks complete
-            await asyncio.sleep(0.5)
+            await asyncio.sleep(0.5)  # noqa: PG001 — no observable condition to wait for
 
             # --- DISCONNECT: Explicitly delete old clients ---
             # nicegui_user.open() does NOT trigger the real
@@ -371,11 +371,11 @@ class TestMemoryLeakProbe:
             for c in old_clients:
                 c.delete()
             # Let delete handlers (our on_client_delete) run
-            await asyncio.sleep(0.5)
+            await asyncio.sleep(0.5)  # noqa: PG001 — waiting for on_client_delete async chain
 
             # Navigate away so we start fresh next cycle
             await nicegui_user.open("/login")
-            await asyncio.sleep(0.5)
+            await asyncio.sleep(0.5)  # noqa: PG001 — let page transition settle before measuring
 
             # --- MEASURE: Before GC ---
             results.snapshots.append(_take_snapshot(cycle, "before_gc"))

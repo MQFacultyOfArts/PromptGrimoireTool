@@ -131,15 +131,36 @@ async def _invalidate_all_sessions() -> None:
     Must run before restart to ensure no stale sessions survive the
     reconnection thundering herd.  Users will need to re-authenticate
     after the server comes back up.
+
+    NiceGUI's ``FilePersistentDict.backup()`` uses
+    ``background_tasks.create_lazy()`` — an async task that may never
+    flush to disk before ``systemctl restart`` kills the process.  To
+    guarantee the invalidation survives process death, we write each
+    modified storage file **synchronously** after clearing the key.
     """
     from nicegui import app  # noqa: PLC0415
+    from nicegui import json as nicegui_json  # noqa: PLC0415
+    from nicegui.persistence.file_persistent_dict import (  # noqa: PLC0415
+        FilePersistentDict,
+    )
 
-    # _users is the server-side dict of all per-user PersistentDict
-    # instances, keyed by the browser-level storage ID.
     user_stores = app.storage._users  # pyright: ignore[reportPrivateUsage]
+    flushed = 0
     for user_storage in user_stores.values():
-        user_storage.pop("auth_user", None)
-    logger.info("sessions_invalidated", count=len(user_stores))
+        if "auth_user" not in user_storage:
+            continue
+        # Remove the key from the in-memory ObservableDict.  Use
+        # dict.pop to bypass the on_change hook (which would schedule
+        # another lazy backup we can't await).
+        dict.pop(user_storage, "auth_user", None)
+        # Sync-write the file directly so the change survives SIGTERM.
+        if isinstance(user_storage, FilePersistentDict):
+            user_storage.filepath.write_text(
+                nicegui_json.dumps(user_storage),
+                encoding=user_storage.encoding,
+            )
+        flushed += 1
+    logger.info("sessions_invalidated", count=len(user_stores), flushed=flushed)
 
 
 async def _navigate_clients_to_restarting() -> None:
@@ -183,8 +204,10 @@ async def graceful_memory_shutdown(*, rss_mb: int, threshold_mb: int) -> None:
     )
     await _flush_milkdown_to_crdt()
     await _persist_dirty_workspaces()
-    await _invalidate_all_sessions()
+    # Navigate BEFORE invalidating — clients still rendering pages will
+    # hit `assert auth_user is not None` if sessions vanish mid-load.
     await _navigate_clients_to_restarting()
+    await _invalidate_all_sessions()
     logger.info("memory_restart_complete", rss_mb=rss_mb)
     raise SystemExit(MEMORY_RESTART_EXIT_CODE)
 

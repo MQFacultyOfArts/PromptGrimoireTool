@@ -296,9 +296,26 @@ def _run_probe(
             # fires our on_client_delete() chain. Allow 5s total for
             # all 10 clients to complete the chain.
             time.sleep(5.0)
-            # Targeted cleanup after natural wait — isolation variants
-            # run one specific action to measure its reclamation.
+
+            # Snapshot AFTER natural wait, BEFORE targeted action.
+            # This proves natural cleanup completed independently —
+            # without it, the targeted action could mask incomplete
+            # natural cleanup, weakening the causal read.
             if effective_mode != "none":
+                diag_pre = _fetch_json(f"{app_server}/api/test/diagnostics")
+                results.append(
+                    {
+                        "cycle": cycle,
+                        "phase": "after_natural",
+                        "rss_after_trim_mb": ((diag_pre["rss_bytes"] or 0) / 1048576),
+                        "gc_collected": 0,
+                        "clients": diag_pre["nicegui_clients"],
+                        "presence_clients": (diag_pre["presence_total_clients"]),
+                        "ws_registry": diag_pre["ws_registry"],
+                        "tasks": diag_pre["asyncio_tasks"],
+                    }
+                )
+
                 cleanup_url = f"{app_server}/api/test/cleanup?mode={effective_mode}"
                 cleanup_resp = _fetch_json(cleanup_url, method="POST")
                 time.sleep(0.5)
@@ -421,6 +438,52 @@ class TestMemoryProbe434:
             )
 
 
+def _assert_isolation_invariants(
+    results: list[dict],
+    mode_name: str,
+    positive_control_key: str,
+) -> None:
+    """Common assertions for cleanup gap isolation variants.
+
+    1. Natural cleanup completed BEFORE the targeted action ran
+       (presence == 0 on after_natural snapshots).
+    2. Everything clean after the full sequence (presence == 0 on
+       after_gc snapshots).
+    3. Positive control: the targeted action actually matched
+       something (cleanup_resp[key] > 0 on at least one cycle).
+    """
+    # Check natural cleanup completed before targeted action
+    natural_snaps = [r for r in results if r["phase"] == "after_natural"]
+    for snap in natural_snaps:
+        assert snap["presence_clients"] == 0, (
+            f"[{mode_name}] Natural cleanup incomplete before targeted "
+            f"action: presence={snap['presence_clients']} on cycle "
+            f"{snap['cycle']}. The 5s wait was insufficient — results "
+            f"are contaminated."
+        )
+
+    # Check final state
+    gc_results = [r for r in results if r["phase"] == "after_gc"]
+    if gc_results:
+        final = gc_results[-1]
+        assert final["presence_clients"] == 0, (
+            f"[{mode_name}] Presence not zero after full cleanup: "
+            f"{final['presence_clients']}"
+        )
+
+    # Positive control: targeted action matched something
+    cleanup_resps = [r["cleanup_resp"] for r in gc_results if "cleanup_resp" in r]
+    if cleanup_resps:
+        total = sum(r.get(positive_control_key, 0) for r in cleanup_resps)
+        print(f"\n  [{mode_name}] {positive_control_key}: {total} total")
+        assert total > 0, (
+            f"[{mode_name}] Targeted action matched zero targets "
+            f"({positive_control_key}=0 across all cycles). The mode "
+            f"may not be exercising its intended cleanup path — results "
+            f"are ambiguous."
+        )
+
+
 class TestCleanupGapIsolation:
     """Isolate which /api/test/cleanup action reclaims the ~5 MB/cycle gap.
 
@@ -458,13 +521,7 @@ class TestCleanupGapIsolation:
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_text(summary, encoding="utf-8")
 
-        # Natural cleanup should have zeroed presence before targeted action
-        gc_results = [r for r in results if r["phase"] == "after_gc"]
-        final = gc_results[-1] if gc_results else results[-1]
-        assert final["presence_clients"] == 0, (
-            f"Presence not zero after natural+clients_only cleanup: "
-            f"{final['presence_clients']}"
-        )
+        _assert_isolation_invariants(results, "clients_only", "deleted")
 
     def test_cleanup_gap_eio_only(
         self,
@@ -492,12 +549,7 @@ class TestCleanupGapIsolation:
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_text(summary, encoding="utf-8")
 
-        gc_results = [r for r in results if r["phase"] == "after_gc"]
-        final = gc_results[-1] if gc_results else results[-1]
-        assert final["presence_clients"] == 0, (
-            f"Presence not zero after natural+eio_only cleanup: "
-            f"{final['presence_clients']}"
-        )
+        _assert_isolation_invariants(results, "eio_only", "eio_closed")
 
     def test_cleanup_gap_events_only(
         self,
@@ -525,23 +577,4 @@ class TestCleanupGapIsolation:
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_text(summary, encoding="utf-8")
 
-        gc_results = [r for r in results if r["phase"] == "after_gc"]
-        final = gc_results[-1] if gc_results else results[-1]
-        assert final["presence_clients"] == 0, (
-            f"Presence not zero after natural+events_only cleanup: "
-            f"{final['presence_clients']}"
-        )
-
-        # Verify Event.wait filter actually matched tasks — if orphan_wait
-        # is 0 on all cycles, the qualname filter may have stopped working
-        # (NiceGUI internal change) and results are silently invalid.
-        cleanup_resps = [r["cleanup_resp"] for r in gc_results if "cleanup_resp" in r]
-        if cleanup_resps:
-            total_orphans = sum(r["orphan_wait"] for r in cleanup_resps)
-            print(f"\n  Event.wait tasks cancelled: {total_orphans} total")
-            assert total_orphans > 0, (
-                "events_only cancelled zero Event.wait tasks across all "
-                "cycles — the qualname filter may no longer match. "
-                "Check NiceGUI internals for changes to "
-                "_waiting_for_connection.wait()."
-            )
+        _assert_isolation_invariants(results, "events_only", "orphan_wait")

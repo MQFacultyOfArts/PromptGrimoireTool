@@ -6,12 +6,15 @@ Uses either real Stytch or MockAuthClient based on DEV__AUTH_MOCK setting.
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import re
 from typing import TYPE_CHECKING
 from urllib.parse import urlencode
 
 import structlog
 from nicegui import app, ui
+from nicegui.storage import request_contextvar
 
 from promptgrimoire.auth import derive_roles_from_metadata, get_auth_client
 from promptgrimoire.config import get_settings
@@ -132,9 +135,21 @@ def _get_session_user() -> dict | None:
     try:
         return app.storage.user.get("auth_user")
     except AssertionError:
-        logger.debug(
-            "storage_not_ready",
+        # Session identity mismatch on auth page path.
+        # Upgraded from debug to error with exc_info for Discord alerting.
+        _task = asyncio.current_task()
+        _task_name = _task.get_name() if _task else "no-task"
+        _ctx_session_id = "unknown"
+        with contextlib.suppress(Exception):
+            _req = request_contextvar.get()
+            if _req is not None:
+                _ctx_session_id = _req.session.get("id", "missing")
+        logger.error(
+            "session_storage_assertion_failed",
             detail="NiceGUI user storage accessed before middleware initialised it",
+            ctx_session_id=_ctx_session_id,
+            task_name=_task_name,
+            exc_info=True,
         )
         return None
 
@@ -151,6 +166,33 @@ def _set_session_user(
     is_admin: bool = False,
 ) -> None:
     """Store authenticated user in session storage."""
+    # --- Session identity tracing (#438) ---
+    # Log the session_id being written to, so we can correlate with
+    # the page_route read. If a write lands in the wrong session's
+    # storage, this log + the page_route log will show the mismatch.
+    _task_name = ""
+    _ctx_session_id = ""
+    try:
+        _task = asyncio.current_task()
+        _task_name = _task.get_name() if _task else "no-task"
+        _req = request_contextvar.get()
+        if _req is not None:
+            _ctx_session_id = _req.session.get("id", "missing")
+        else:
+            _ctx_session_id = "no-request"
+    except Exception:
+        _ctx_session_id = "error"
+
+    logger.info(
+        "session_identity_at_auth_write",
+        email=email,
+        auth_method=auth_method,
+        ctx_session_id=_ctx_session_id,
+        task_name=_task_name,
+        user_id=str(user_id) if user_id else None,
+    )
+    # --- end session identity tracing ---
+
     logger.info(
         "Login successful: email=%s, member_id=%s, auth_method=%s, user_id=%s",
         email,

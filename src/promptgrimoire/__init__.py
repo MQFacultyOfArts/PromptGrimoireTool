@@ -453,8 +453,8 @@ def _install_session_identity_tracing() -> None:
     Wraps ``call_next`` inside the existing dispatch so that every HTTP
     request logs the session_id and asyncio task name *before* the page
     handler background task is created.  Comparing this log with the
-    ``h7_page_identity`` log from ``page_route`` detects context
-    contamination (#438 / H7).
+    ``session_identity_at_page`` log from ``page_route`` detects context
+    contamination (#438).
     """
     import asyncio as _asyncio
     from typing import Any

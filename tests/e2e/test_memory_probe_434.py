@@ -62,10 +62,18 @@ pytestmark = [
 
 
 def _check_system_load() -> None:
-    """Skip perf tests if system load is too high for valid measurements."""
+    """Skip perf tests if system load is too high for valid measurements.
+
+    Override threshold with PERF_MAX_LOAD env var for manual runs
+    (e.g. PERF_MAX_LOAD=999 to bypass).
+    """
     load_1min = os.getloadavg()[0]
-    cpus = os.cpu_count() or 1
-    threshold = cpus * _MAX_LOAD_FACTOR
+    override = os.environ.get("PERF_MAX_LOAD")
+    if override:
+        threshold = float(override)
+    else:
+        cpus = os.cpu_count() or 1
+        threshold = cpus * _MAX_LOAD_FACTOR
     if load_1min > threshold:
         pytest.skip(
             f"System load too high for perf tests: {load_1min:.1f} "

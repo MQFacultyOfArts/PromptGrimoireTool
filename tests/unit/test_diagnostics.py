@@ -314,3 +314,46 @@ class TestInvalidateAllSessions:
 
         assert "auth_user" not in fake_storage
         assert fake_storage["keep"] is True
+
+
+class TestInvalidateSessionsOnDisk:
+    """Tests for invalidate_sessions_on_disk — startup session cleanup."""
+
+    def test_clears_auth_user_from_storage_files(self, tmp_path: Any) -> None:
+        """Startup invalidation removes auth_user from JSON files on disk."""
+        import json
+
+        from promptgrimoire.diagnostics import invalidate_sessions_on_disk
+
+        storage = tmp_path / ".nicegui"
+        storage.mkdir()
+        (storage / "storage-user-aaa.json").write_text(
+            json.dumps({"auth_user": {"email": "a@b.com"}, "theme": "dark"})
+        )
+        (storage / "storage-user-bbb.json").write_text(json.dumps({"theme": "light"}))
+
+        invalidate_sessions_on_disk(storage_dir=storage)
+
+        data_a = json.loads((storage / "storage-user-aaa.json").read_text())
+        assert "auth_user" not in data_a
+        assert data_a["theme"] == "dark"
+
+        # File without auth_user is untouched
+        data_b = json.loads((storage / "storage-user-bbb.json").read_text())
+        assert data_b == {"theme": "light"}
+
+    def test_handles_missing_storage_dir(self, tmp_path: Any) -> None:
+        """No error when storage directory doesn't exist."""
+        from promptgrimoire.diagnostics import invalidate_sessions_on_disk
+
+        invalidate_sessions_on_disk(storage_dir=tmp_path / "nonexistent")
+
+    def test_handles_corrupt_json(self, tmp_path: Any) -> None:
+        """Corrupt storage files are logged and skipped."""
+        from promptgrimoire.diagnostics import invalidate_sessions_on_disk
+
+        storage = tmp_path / ".nicegui"
+        storage.mkdir()
+        (storage / "storage-user-bad.json").write_text("not json{{{")
+
+        invalidate_sessions_on_disk(storage_dir=storage)  # should not raise

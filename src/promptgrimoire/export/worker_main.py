@@ -4,7 +4,7 @@ Entry point for running the export worker outside the NiceGUI app process.
 Invoked as: python -m promptgrimoire.export.worker_main
 
 Initialises logging, database engine, runs the poll loop, and handles
-SIGTERM for graceful shutdown.
+SIGTERM by cancelling the current job and shutting down.
 """
 
 from __future__ import annotations

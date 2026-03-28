@@ -554,7 +554,7 @@ The `-R` flag tells `pg_basebackup` to create `standby.signal` and write connect
 **Standby postgresql.conf (auto-created by `-R`, verify these exist in `postgresql.auto.conf`):**
 
 ```ini
-primary_conninfo = 'host=<DO_PRIMARY_IP> port=5432 user=replicator password=<password> sslmode=verify-full sslrootcert=/etc/ssl/certs/ca-certificates.crt'
+primary_conninfo = 'host=<DO_PRIMARY_IP> port=5432 user=replicator password=<password> application_name=nci_standby sslmode=verify-full sslrootcert=/etc/ssl/certs/ca-certificates.crt'
 primary_slot_name = 'nci_standby'
 recovery_target_timeline = 'latest'
 ```
@@ -563,11 +563,13 @@ recovery_target_timeline = 'latest'
 
 ```sql
 SELECT pid, usename, application_name, state, sync_state,
-       write_lag, flush_lag, replay_lag, slot_name
+       write_lag, flush_lag, replay_lag
 FROM pg_stat_replication;
 ```
 
-Expected: `state = 'streaming'`, `slot_name = 'nci_standby'`.
+Expected: `state = 'streaming'`, `application_name = 'nci_standby'`.
+
+Note: `pg_stat_replication` does not have a `slot_name` column in PostgreSQL 16. The standby is identified by `application_name`, which is set via `primary_conninfo` (defaults to `walreceiver` unless overridden). To include the standby's application name, add `application_name=nci_standby` to `primary_conninfo`.
 
 If the standby has been offline long enough that WAL was reclaimed (beyond `max_slot_wal_keep_size`), the replication slot becomes invalidated. In that case, drop and recreate the slot on the primary, then re-run the full `pg_basebackup` bootstrap above.
 
@@ -1044,7 +1046,7 @@ When the system is under memory pressure, the kernel kills processes in order of
 
 The worker sends `sd_notify` heartbeats to systemd. If no heartbeat arrives within `WatchdogSec=300` (5 minutes), systemd considers the worker hung and restarts it automatically. This catches deadlocks and infinite loops without manual intervention.
 
-The worker also uses `TimeoutStopSec=120` to allow a graceful shutdown — the current export job (longest observed: ~90 seconds) finishes before the process is killed.
+The worker cancels the in-flight export job on SIGTERM and shuts down. `TimeoutStopSec=30` gives headroom for asyncio cleanup and database connection teardown. In-flight exports are marked as failed and can be retried by the user.
 
 ### Logs
 
@@ -1065,9 +1067,10 @@ In production, the main app must **not** run the export worker in-process. Set i
 
 ```bash
 FEATURES__WORKER_IN_PROCESS=false
+EXPORT__MAX_CONCURRENT_COMPILATIONS=1
 ```
 
-When `true` (the default for development), the app spawns the worker as an asyncio task. When `false`, the app assumes the worker runs as a separate systemd service and does not start one internally.
+`FEATURES__WORKER_IN_PROCESS=false` tells the app not to spawn the worker in-process (the separate systemd service handles it). `EXPORT__MAX_CONCURRENT_COMPILATIONS=1` limits concurrent LaTeX compilations — the standalone worker's `MemoryMax=3G` only supports one concurrent lualatex process (each uses 200-500 MB).
 
 ## 11. HAProxy
 

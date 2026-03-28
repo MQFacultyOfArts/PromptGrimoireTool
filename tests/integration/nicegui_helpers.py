@@ -136,6 +136,36 @@ def _find_value_element_by_testid(user: User, testid: str) -> ValueElement | Non
 
 
 # ---------------------------------------------------------------------------
+# Annotation page readiness gate
+# ---------------------------------------------------------------------------
+
+
+async def wait_for_annotation_load(
+    user: User,
+    *,
+    timeout: float = 15.0,
+) -> None:
+    """Wait for the annotation page's deferred background load to finish.
+
+    The annotation page returns a spinner immediately and loads content
+    via ``background_tasks.create()``.  NiceGUI's ``user.open()``
+    returns before the background task completes.
+
+    Polls for a hidden ``data-testid="annotation-ready"`` marker element
+    that ``_load_workspace_content`` creates on both success and error
+    paths.  This is deterministic — no timeout guessing.
+
+    Args:
+        user: NiceGUI test user.
+        timeout: Maximum seconds to wait.
+    """
+    await wait_for(
+        lambda: _find_by_testid(user, "annotation-ready") is not None,
+        timeout=timeout,
+    )
+
+
+# ---------------------------------------------------------------------------
 # Assertion helpers
 # ---------------------------------------------------------------------------
 

@@ -361,8 +361,12 @@ async def _load_workspace_content(
             if protect:
                 inject_copy_protection()
 
-            # Signal to E2E tests that content has loaded
+            # Signal load complete: JS flag for E2E, marker element
+            # for NiceGUI integration tests.
             ui.run_javascript("window.__loadComplete = true")
+            ui.element("div").props(
+                'data-testid="annotation-ready" style="display:none"'
+            )
 
     except Exception:
         logger.exception(
@@ -375,3 +379,6 @@ async def _load_workspace_content(
                 with content_container:
                     ui.notify("Failed to load workspace", type="negative")
                 ui.run_javascript("window.__loadComplete = true")
+                ui.element("div").props(
+                    'data-testid="annotation-ready" style="display:none"'
+                )

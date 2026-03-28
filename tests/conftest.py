@@ -415,7 +415,7 @@ async def _healthz(_request):
 
 app.routes.insert(0, Route("/healthz", _healthz, methods=["GET", "HEAD"]))
 
-# Session identity page — exercises the full @ui.page path for H7 testing.
+# Session identity page — exercises the full @ui.page path for #438 testing.
 @ui.page("/test/session-identity")
 async def _session_identity_page():
     import asyncio

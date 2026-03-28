@@ -347,7 +347,7 @@ event loop work.  The test was replaced by the PABAI version below.
 
 ### E2E reproducer test — PABAI workload (not reproduced)
 
-**Test:** `tests/e2e/test_h7_session_contamination.py::test_concurrent_pabai_identity`
+**Test:** `tests/e2e/test_session_contamination.py::test_concurrent_pabai_identity`
 
 **Design:**
 - 10 independent Playwright instances

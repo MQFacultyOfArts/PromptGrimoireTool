@@ -181,7 +181,7 @@ app.routes.insert(0, Route("/healthz", _healthz, methods=["GET", "HEAD"]))
 
 
 # Session identity page — exercises the full @ui.page -> background_tasks.create
-# path.  Used by test_h7_session_contamination.py to verify that concurrent page
+# path.  Used by test_session_contamination.py to verify that concurrent page
 # loads resolve the correct request_contextvar (and thus the correct user storage).
 @ui.page("/test/session-identity")
 async def _session_identity_page() -> None:

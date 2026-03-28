@@ -45,6 +45,10 @@ _EXCLUDED_FILES: set[str] = {
     "test_guide_testid_guard.py",
     # NiceGUI test helpers use placeholder testids in docstrings
     "nicegui_helpers.py",
+    # Session contamination reproducer (#438) uses testids from test-only
+    # routes in conftest.py and cli/e2e/_server_script.py, not pages/
+    "test_session_contamination.py",
+    "conftest.py",
 }
 
 

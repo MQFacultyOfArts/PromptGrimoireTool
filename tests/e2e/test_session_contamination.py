@@ -1,9 +1,11 @@
-"""H7 discriminating test: concurrent PABAI page loads must not cross-contaminate.
+"""Session contamination reproducer (#438).
+
+Concurrent PABAI page loads must not cross-contaminate.
 
 Issue: #438 (cross-user session contamination)
 
-Hypothesis H7: Under event loop saturation, NiceGUI's page handler runs in an
-asyncio Task (background_tasks.create at page.py:172) that may inherit a stale
+Under event loop saturation, NiceGUI's page handler runs in an asyncio Task
+(background_tasks.create at page.py:172) that may inherit a stale
 request_contextvar from another concurrent request.  app.storage.user then
 resolves to the wrong user's storage.
 
@@ -23,7 +25,7 @@ This reproduces production conditions far better than a toy endpoint.
 Each thread owns its own Playwright instance — no shared event loop.
 
 Run with:
-  uv run grimoire e2e run -k "test_h7" --serial
+  uv run grimoire e2e run -k "test_session_contamination" --serial
 """
 
 from __future__ import annotations
@@ -139,7 +141,7 @@ def _run_session(
 
             # Authenticate
             unique_id = uuid4().hex[:8]
-            email = f"h7-{unique_id}@test.example.edu.au"
+            email = f"sc-{unique_id}@test.example.edu.au"
             result.expected_email = email
             page.goto(
                 f"{app_server}/auth/callback?token=mock-token-{email}",
@@ -173,9 +175,10 @@ def _run_session(
                         wait_until="domcontentloaded",
                         timeout=60000,
                     )
-                    # Give the server time to process all concurrent
-                    # background tasks (the interleaving window).
-                    page.wait_for_timeout(3000)
+                    # Wait for the annotation page to fully render before
+                    # checking identity — the interleaving window is during
+                    # the heavy annotation load.
+                    page.wait_for_load_state("networkidle")  # noqa: PG001
 
                     # NOW check identity via the lightweight page.
                     # If contextvar was contaminated during the heavy
@@ -227,7 +230,7 @@ def _ensure_pabai_workspace(conninfo: str) -> str:
     return PABAI_WORKSPACE_ID
 
 
-class TestH7SessionContamination:
+class TestSessionContamination:
     """Concurrent PABAI page loads must not cross-contaminate sessions."""
 
     def test_concurrent_pabai_identity(
@@ -258,7 +261,7 @@ class TestH7SessionContamination:
                     results[i],
                     N_ROUNDS,
                 ),
-                name=f"h7-session-{i}",
+                name=f"session-contamination-{i}",
             )
             for i in range(N_SESSIONS)
         ]

@@ -55,7 +55,9 @@ library references during development.
 ## investigations
 
 - [Causal Analysis: Connection Pool Shrinkage Under CancelledError (#403)](investigations/2026-03-21-pool-shrinkage-403.md)
+- [Investigation: Unbounded Memory Growth (#434)](investigations/2026-03-27-memory-leak-434.md)
 - [Causal Analysis: Deferred Load E2E Test Failures (#377)](investigations/2026-03-28-deferred-load-e2e-failures.md)
+- [Investigation: Cross-User Session Contamination (#438)](investigations/2026-03-28-session-contamination-438.md)
 
 ## lark
 

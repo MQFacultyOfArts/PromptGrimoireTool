@@ -5,10 +5,13 @@ hit the annotation page simultaneously, rendering a heavy workspace
 (181 KB CRDT, 190 highlights, 11 tags, 426 KB document). All disconnect,
 server-side GC + malloc_trim runs, RSS is measured. Repeated for N cycles.
 
-Two variants:
+Five variants:
 - **Forced cleanup**: /api/test/cleanup between cycles (scrubbed test harness)
 - **Natural cleanup**: no forced cleanup, only WebSocket disconnect + timeout
   (production-like, answers: "does natural cleanup actually free memory?")
+- **Cleanup gap isolation** (3 variants): natural cleanup + ONE targeted
+  action (clients_only / eio_only / events_only). Identifies which
+  /api/test/cleanup action reclaims the ~5 MB/cycle natural-vs-forced gap.
 
 Discriminates:
 - **Leak**: RSS grows linearly per cycle after gc+trim
@@ -164,6 +167,7 @@ def _run_probe(
     ws_id: str,
     *,
     force_cleanup: bool,
+    cleanup_mode: str = "all",
 ) -> tuple[list[dict], str]:
     """Core probe loop: N cycles of connect/disconnect with measurement.
 
@@ -172,6 +176,10 @@ def _run_probe(
             (scrubbed test harness). If False, rely only on natural
             WebSocket disconnect + NiceGUI reconnect_timeout (0.5s in
             E2E server) for cleanup (production-like path).
+        cleanup_mode: Which cleanup action to run when force_cleanup is
+            True. Values: "all" (default), "clients_only", "eio_only",
+            "events_only". When force_cleanup is False, this controls
+            an optional targeted cleanup after the natural wait period.
 
     Returns:
         (results list, formatted summary string)
@@ -246,7 +254,8 @@ def _run_probe(
         if force_cleanup:
             # Scrubbed: wait for reconnect timeout then force-delete
             time.sleep(3.0)
-            _fetch_json(f"{app_server}/api/test/cleanup", method="POST")
+            cleanup_url = f"{app_server}/api/test/cleanup?mode={cleanup_mode}"
+            _fetch_json(cleanup_url, method="POST")
             time.sleep(1.0)
         else:
             # Production-like: wait for natural cleanup only.
@@ -254,6 +263,12 @@ def _run_probe(
             # fires our on_client_delete() chain. Allow 5s total for
             # all 10 clients to complete the chain.
             time.sleep(5.0)
+            # Optional targeted cleanup after natural wait — used by
+            # isolation variants to test one action at a time.
+            if cleanup_mode != "all":
+                cleanup_url = f"{app_server}/api/test/cleanup?mode={cleanup_mode}"
+                _fetch_json(cleanup_url, method="POST")
+                time.sleep(0.5)
 
         # GC + malloc_trim
         gc_data = _fetch_json(f"{app_server}/api/test/gc", method="POST")
@@ -370,3 +385,93 @@ class TestMemoryProbe434:
                 f"clients remain after natural cleanup "
                 f"(cleanup chain may still be in progress)"
             )
+
+
+class TestCleanupGapIsolation:
+    """Isolate which /api/test/cleanup action reclaims the ~5 MB/cycle gap.
+
+    Each variant: natural cleanup (5s wait) + ONE targeted cleanup action
+    + GC. Comparing per-cycle RSS growth across variants identifies which
+    action(s) account for the difference between natural (~6 MB/cycle)
+    and forced (~1 MB/cycle) cleanup.
+
+    Run with: uv run grimoire e2e perf -k test_cleanup_gap
+    """
+
+    def test_cleanup_gap_clients_only(
+        self,
+        browser: Browser,
+        app_server: str,
+        pabai_workspace: str,
+    ) -> None:
+        """Natural cleanup + force-delete remaining NiceGUI clients.
+
+        Tests whether stale Client instances (missed by natural timeout)
+        account for the gap. If per-cycle growth drops to ~1 MB, client
+        deletion is the key reclamation action.
+        """
+        _results, summary = _run_probe(
+            browser,
+            app_server,
+            pabai_workspace,
+            force_cleanup=False,
+            cleanup_mode="clients_only",
+        )
+
+        print(f"\n=== Cleanup gap: clients_only ===\n{summary}")
+
+        out = Path("output/incident/e2e_probe_clients_only.txt")
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(summary, encoding="utf-8")
+
+    def test_cleanup_gap_eio_only(
+        self,
+        browser: Browser,
+        app_server: str,
+        pabai_workspace: str,
+    ) -> None:
+        """Natural cleanup + disconnect orphan engine.io sessions.
+
+        Tests whether stale engine.io WebSocket sessions (surviving after
+        NiceGUI client deletion) account for the gap. These hold
+        per-connection request objects and event handler registries.
+        """
+        _results, summary = _run_probe(
+            browser,
+            app_server,
+            pabai_workspace,
+            force_cleanup=False,
+            cleanup_mode="eio_only",
+        )
+
+        print(f"\n=== Cleanup gap: eio_only ===\n{summary}")
+
+        out = Path("output/incident/e2e_probe_eio_only.txt")
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(summary, encoding="utf-8")
+
+    def test_cleanup_gap_events_only(
+        self,
+        browser: Browser,
+        app_server: str,
+        pabai_workspace: str,
+    ) -> None:
+        """Natural cleanup + cancel orphan Event.wait tasks.
+
+        Tests whether leaked Event.wait tasks (from NiceGUI's page
+        handler not cancelling _waiting_for_connection.wait()) account
+        for the gap. Each task retains its closure scope.
+        """
+        _results, summary = _run_probe(
+            browser,
+            app_server,
+            pabai_workspace,
+            force_cleanup=False,
+            cleanup_mode="events_only",
+        )
+
+        print(f"\n=== Cleanup gap: events_only ===\n{summary}")
+
+        out = Path("output/incident/e2e_probe_events_only.txt")
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(summary, encoding="utf-8")

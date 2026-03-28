@@ -247,59 +247,73 @@ def _task_summary(tasks):
 # Cleanup endpoint: force-delete stale NiceGUI clients and engine.io
 # sessions between tests. Disconnects at both layers to prevent
 # task accumulation. See docs/e2e-debugging.md.
+#
+# mode parameter controls which cleanup actions run:
+#   all (default) — all three actions (original behaviour)
+#   clients_only  — force-delete NiceGUI clients + their SIDs only
+#   eio_only      — disconnect orphan engine.io sessions only
+#   events_only   — cancel orphan Event.wait tasks only
 @app.post("/api/test/cleanup")
-async def _cleanup():
+async def _cleanup(mode: str = "all"):
     from nicegui import Client, core
 
     _cleanup_logger = structlog.get_logger("e2e.cleanup")
     before = len(Client.instances)
     tasks_before = len(asyncio.all_tasks())
-    stale_ids = list(Client.instances.keys())
+    t_total = _time.monotonic()
     deleted = 0
     sids_closed = 0
-    t_total = _time.monotonic()
-    for cid in stale_ids:
-        c = Client.instances.get(cid)
-        if c is not None:
-            for sid in list(c._socket_to_document_id.keys()):
-                try:
-                    await core.sio.disconnect(sid)
-                    sids_closed += 1
-                except Exception:
-                    pass
-            c.delete()
-            deleted += 1
-            await asyncio.sleep(0)
-    # Also disconnect any orphan engine.io sessions (WebSocket receive
+    eio_closed = 0
+    orphan_wait = 0
+
+    # Action 1: Force-delete NiceGUI clients and their socket.io SIDs
+    if mode in ("all", "clients_only"):
+        stale_ids = list(Client.instances.keys())
+        for cid in stale_ids:
+            c = Client.instances.get(cid)
+            if c is not None:
+                for sid in list(c._socket_to_document_id.keys()):
+                    try:
+                        await core.sio.disconnect(sid)
+                        sids_closed += 1
+                    except Exception:
+                        pass
+                c.delete()
+                deleted += 1
+                await asyncio.sleep(0)
+
+    # Action 2: Disconnect orphan engine.io sessions (WebSocket receive
     # tasks from connections whose NiceGUI client was already deleted
     # via the normal disconnect→delete_content→delete path).
-    eio_closed = 0
-    for eio_sid in list(core.sio.eio.sockets.keys()):
-        try:
-            await core.sio.eio.disconnect(eio_sid)
-            eio_closed += 1
-        except Exception:
-            pass
-    # Cancel orphan Event.wait tasks leaked by NiceGUI's page handler.
-    # page.py creates background_tasks.create(client._waiting_for_connection.wait())
-    # but never cancels it when the page result completes first.
-    # See handle_handshake() which CLEARS _waiting_for_connection (not sets it).
-    from nicegui import background_tasks as _bt
+    if mode in ("all", "eio_only"):
+        for eio_sid in list(core.sio.eio.sockets.keys()):
+            try:
+                await core.sio.eio.disconnect(eio_sid)
+                eio_closed += 1
+            except Exception:
+                pass
 
-    orphan_wait = 0
-    for t in list(_bt.running_tasks):
-        if not t.done():
-            coro = t.get_coro()
-            qn = getattr(coro, "__qualname__", "") if coro else ""
-            if qn == "Event.wait":
-                t.cancel()
-                orphan_wait += 1
+    # Action 3: Cancel orphan Event.wait tasks leaked by NiceGUI's page
+    # handler. See handle_handshake() which CLEARS _waiting_for_connection
+    # (not sets it), leaving the wait() task orphaned.
+    if mode in ("all", "events_only"):
+        from nicegui import background_tasks as _bt
+
+        for t in list(_bt.running_tasks):
+            if not t.done():
+                coro = t.get_coro()
+                qn = getattr(coro, "__qualname__", "") if coro else ""
+                if qn == "Event.wait":
+                    t.cancel()
+                    orphan_wait += 1
+
     await asyncio.sleep(0)  # let cancellations propagate
     elapsed_total = _time.monotonic() - t_total
     tasks_after = len(asyncio.all_tasks())
     _cleanup_logger.debug(
-        "CLEANUP: clients=%d/%d sids=%d eio=%d orphan_wait=%d"
+        "CLEANUP[%s]: clients=%d/%d sids=%d eio=%d orphan_wait=%d"
         " tasks=%d->%d elapsed=%.3fs",
+        mode,
         deleted,
         before,
         sids_closed,
@@ -310,6 +324,7 @@ async def _cleanup():
         elapsed_total,
     )
     return {
+        "mode": mode,
         "deleted": deleted,
         "before": before,
         "sids_closed": sids_closed,

@@ -396,3 +396,64 @@ sudo -u promptgrimoire /opt/promptgrimoire/.venv/bin/python -c "..."
 ```
 
 If CRDT bytes differ but text is identical, the binary representation may have been re-encoded. This is acceptable — the semantic content is what matters. If text differs, investigate before proceeding.
+
+---
+
+## Appendix C: Post-migration smoke tests
+
+Manual verification that the application works correctly on DO after DNS cutover. Run at T+16 during cutover.
+
+### Test 1: Login
+
+1. Navigate to `https://grimoire.drbbs.org`
+2. Login via magic link or passkey
+
+**Expected:** Dashboard loads. User sees their courses/workspaces.
+
+### Test 2: Open workspace
+
+1. Navigate to a known workspace (pick one used in the CRDT spot-check)
+
+**Expected:** Milkdown editor loads with existing CRDT content. Annotations and highlights are visible on the source document.
+
+### Test 3: Trigger export
+
+1. Open a workspace that has annotations
+2. Click "Export to PDF"
+
+**Expected:** Export job appears in queue. PDF downloads after processing completes.
+
+### Test 4: Real-time collaboration
+
+*Requires two people or two browser sessions.*
+
+1. Both open the same workspace
+2. One person types in the editor
+
+**Expected:** The other person sees the changes within 2-3 seconds.
+
+### Test 5: Verify worker
+
+```bash
+# On DO:
+systemctl status promptgrimoire-worker
+# Expected: active (running)
+
+journalctl -u promptgrimoire-worker -n 20
+# Expected: heartbeat log entries visible
+```
+
+### Test 6: Verify monitoring
+
+```bash
+# External healthcheck:
+curl https://grimoire.drbbs.org/healthz
+# Expected: ok
+```
+
+- Check Discord channel for error alerts since cutover — there should be none.
+- Confirm UptimeRobot shows UP status for the new IP.
+
+### Gate
+
+All 6 tests must pass before declaring migration complete. Any failure triggers the smoke test rollback procedure (see Rollback § Smoke test fails at T+16).

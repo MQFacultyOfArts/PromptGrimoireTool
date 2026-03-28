@@ -16,6 +16,7 @@ import sys
 
 import structlog
 
+from promptgrimoire import sd_notify
 from promptgrimoire.config import get_settings
 from promptgrimoire.db import close_db, init_db
 from promptgrimoire.export.worker import start_export_worker
@@ -61,15 +62,23 @@ async def main() -> int:
 
     await init_db()
 
+    sd_notify.notify("READY=1")
+    logger.info("worker_ready")
+
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGTERM, signal.SIGINT):
         loop.add_signal_handler(sig, _handle_signal, sig)
 
-    worker_task = asyncio.create_task(start_export_worker())
+    worker_task = asyncio.create_task(
+        start_export_worker(
+            on_poll_cycle=lambda: sd_notify.notify("WATCHDOG=1"),
+        ),
+    )
 
     # Wait for shutdown signal
     await _shutdown_event.wait()
 
+    sd_notify.notify("STOPPING=1")
     logger.info("worker_shutting_down")
     worker_task.cancel()
     with contextlib.suppress(asyncio.CancelledError):

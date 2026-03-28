@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import logging
 import os
 import shutil
 import time
@@ -41,7 +40,6 @@ if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
 
 logger = structlog.get_logger()
-logging.getLogger(__name__).setLevel(logging.INFO)
 
 
 def _drop_database_with_debug(db_url: str, *, context: str) -> None:

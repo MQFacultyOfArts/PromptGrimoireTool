@@ -20,7 +20,10 @@ import pytest
 
 from promptgrimoire.config import get_settings
 from tests.integration.conftest import _authenticate
-from tests.integration.nicegui_helpers import _should_see_testid
+from tests.integration.nicegui_helpers import (
+    _should_see_testid,
+    wait_for_annotation_load,
+)
 from tests.integration.test_query_efficiency import count_queries
 
 if TYPE_CHECKING:
@@ -134,6 +137,7 @@ class TestPageLoadQueryCeiling:
         # Count ALL queries during page load
         with count_queries(sync_engine) as counter:
             await nicegui_user.open(f"/annotation?workspace_id={ws_id}")
+            await wait_for_annotation_load(nicegui_user)
             await _should_see_testid(nicegui_user, "doc-container")
 
         # Baseline measured at 32 SQL statements (2026-03-27).

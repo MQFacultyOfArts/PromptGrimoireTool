@@ -12,7 +12,6 @@ for the full investigation.
 
 from __future__ import annotations
 
-import logging
 from collections.abc import Awaitable, Callable
 from typing import Any
 
@@ -21,7 +20,6 @@ from nicegui import ui  # noqa: TC002 — used at runtime (html_id, .on())
 from nicegui.events import GenericEventArguments  # noqa: TC002 — used at runtime
 
 logger = structlog.get_logger()
-logging.getLogger(__name__).setLevel(logging.INFO)
 
 
 def on_submit_with_value(

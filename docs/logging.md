@@ -83,11 +83,7 @@ Each module sets an explicit log level appropriate to its role. The root logger 
 | Database (`db/engine`, `db/wargames`, `db/tags`) | WARNING | Only surface connection/query problems |
 | Configuration (`config`) | INFO | Settings resolution |
 
-To toggle a module to DEBUG for troubleshooting, add to the module:
-
-```python
-logging.getLogger(__name__).setLevel(logging.DEBUG)
-```
+**Do not** use per-module `logging.getLogger(__name__).setLevel()` calls. Level filtering is configured globally via structlog; per-module overrides suppress debug output and are redundant. A guard test (`tests/unit/test_setlevel_guard.py`) enforces this. To adjust log verbosity, change the global structlog level configuration.
 
 ## Discord Alerting
 
@@ -125,12 +121,9 @@ This sends a test alert to the configured webhook and reports the HTTP response 
 Every module should use structlog at module level:
 
 ```python
-import logging
-
 import structlog
 
 logger = structlog.get_logger()
-logging.getLogger(__name__).setLevel(logging.INFO)  # adjust per category
 ```
 
 Key rules:

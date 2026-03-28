@@ -9,7 +9,6 @@ Route: /logs
 from __future__ import annotations
 
 import json
-import logging
 from pathlib import Path
 
 import structlog
@@ -21,7 +20,6 @@ from promptgrimoire.pages.registry import page_route
 from promptgrimoire.pages.roleplay_access import require_roleplay_page_access
 
 logger = structlog.get_logger()
-logging.getLogger(__name__).setLevel(logging.INFO)
 
 
 def parse_log_file(path: Path) -> tuple[dict | None, list[dict]]:

@@ -7,7 +7,6 @@ and SSO authentication.
 
 from __future__ import annotations
 
-import logging
 from typing import Any
 from urllib.parse import urlencode
 
@@ -25,8 +24,6 @@ from promptgrimoire.auth.models import (
 )
 
 logger = structlog.get_logger()
-logging.getLogger(__name__).setLevel(logging.INFO)
-
 # Stytch API base URLs
 STYTCH_TEST_API = "https://test.stytch.com"
 STYTCH_LIVE_API = "https://api.stytch.com"

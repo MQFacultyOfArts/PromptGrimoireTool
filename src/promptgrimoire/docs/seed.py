@@ -10,7 +10,6 @@ from __future__ import annotations
 import asyncio
 import concurrent.futures
 import contextlib
-import logging
 
 import structlog
 from sqlmodel import select
@@ -21,7 +20,6 @@ from promptgrimoire.db.models import Course
 from promptgrimoire.db.users import create_user, get_user_by_email
 
 logger = structlog.get_logger()
-logging.getLogger(__name__).setLevel(logging.INFO)
 
 
 async def _ensure_user(email: str, display_name: str) -> None:

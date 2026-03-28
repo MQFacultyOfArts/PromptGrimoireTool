@@ -10,7 +10,6 @@ External tokenisers:
 
 from __future__ import annotations
 
-import logging
 import re
 import unicodedata
 import warnings
@@ -34,8 +33,6 @@ except ImportError as exc:
 from uniseg.wordbreak import words as uniseg_words  # noqa: E402
 
 logger = structlog.get_logger()
-logging.getLogger(__name__).setLevel(logging.INFO)
-
 try:
     _MECAB_TAGGER = MeCab.Tagger("-Owakati")
 except RuntimeError as exc:

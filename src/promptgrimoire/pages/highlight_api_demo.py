@@ -13,7 +13,6 @@ Route: /demo/highlight-api (requires ENABLE_DEMO_PAGES=true)
 from __future__ import annotations
 
 import json
-import logging
 from pathlib import Path
 from typing import Any
 
@@ -26,8 +25,6 @@ from promptgrimoire.pages.layout import require_demo_enabled
 from promptgrimoire.pages.registry import page_route
 
 logger = structlog.get_logger()
-logging.getLogger(__name__).setLevel(logging.INFO)
-
 # --- Fixture path (pre-processed workspace export, no pipeline needed) ---
 _FIXTURE_PATH = (
     Path(__file__).parent.parent.parent.parent

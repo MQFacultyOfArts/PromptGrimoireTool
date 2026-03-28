@@ -44,6 +44,7 @@ from tests.integration.nicegui_helpers import (
     _fire_event_listeners_async,
     _should_see_testid,
     wait_for,
+    wait_for_annotation_load,
 )
 
 if TYPE_CHECKING:
@@ -285,6 +286,7 @@ class TestAnnotateTabExportFilename:
 
         await _authenticate(nicegui_user, email=email)
         await nicegui_user.open(f"/annotation?workspace_id={ws_id}")
+        await wait_for_annotation_load(nicegui_user)
         await _should_see_testid(nicegui_user, "export-pdf-btn")
 
         job = await _click_export_and_wait_for_job(nicegui_user, user_id, ws_id)
@@ -321,6 +323,7 @@ class TestRespondTabExportFilename:
 
         await _authenticate(nicegui_user, email=email)
         await nicegui_user.open(f"/annotation?workspace_id={ws_id}")
+        await wait_for_annotation_load(nicegui_user)
         await _should_see_testid(nicegui_user, "export-pdf-btn")
 
         # Switch to Respond tab
@@ -361,6 +364,7 @@ class TestLooseWorkspaceExportFilename:
 
         await _authenticate(nicegui_user, email=email)
         await nicegui_user.open(f"/annotation?workspace_id={ws_id}")
+        await wait_for_annotation_load(nicegui_user)
         await _should_see_testid(nicegui_user, "export-pdf-btn")
 
         job = await _click_export_and_wait_for_job(nicegui_user, user_id, ws_id)

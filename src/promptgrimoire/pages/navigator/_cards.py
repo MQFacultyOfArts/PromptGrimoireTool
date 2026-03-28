@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import dataclasses
-import logging
 from typing import TYPE_CHECKING
 
 import structlog
@@ -33,7 +32,6 @@ if TYPE_CHECKING:
     from promptgrimoire.pages.navigator._helpers import PageState
 
 logger = structlog.get_logger()
-logging.getLogger(__name__).setLevel(logging.INFO)
 
 
 def _update_row_title(

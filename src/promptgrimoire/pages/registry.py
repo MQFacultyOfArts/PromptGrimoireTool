@@ -7,7 +7,6 @@ automatic navigation generation based on user permissions.
 from __future__ import annotations
 
 import functools
-import logging
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Literal
 
@@ -19,8 +18,6 @@ from promptgrimoire.auth import is_privileged_user
 from promptgrimoire.config import get_settings
 
 logger = structlog.get_logger()
-logging.getLogger(__name__).setLevel(logging.INFO)
-
 if TYPE_CHECKING:
     from collections.abc import Callable
 

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, cast
@@ -50,8 +49,6 @@ if TYPE_CHECKING:
     from promptgrimoire.wargame.agents import StudentSummary, TurnResult
 
 _logger = structlog.get_logger()
-logging.getLogger(__name__).setLevel(logging.WARNING)
-
 _DUPLICATE_CODENAME_CONSTRAINT = "uq_wargame_team_activity_codename"
 # SQLModel exposes mapped attributes as scalar Python types to `ty`, so we grab
 # the underlying SQLAlchemy table columns when we need SQL expression objects.

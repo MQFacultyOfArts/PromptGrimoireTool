@@ -24,6 +24,7 @@ from tests.integration.nicegui_helpers import (
     _find_by_testid,
     _should_see_testid,
     wait_for,
+    wait_for_annotation_load,
 )
 
 if TYPE_CHECKING:
@@ -248,7 +249,7 @@ async def _open_respond_tab(user: User, ws_id: UUID, email: str) -> None:
 
     await _authenticate(user, email=email)
     await user.open(f"/annotation?workspace_id={ws_id}")
-    await _should_see_testid(user, "tab-source-1")
+    await wait_for_annotation_load(user)
 
     # Find tab_panels and switch to Respond
     with user:

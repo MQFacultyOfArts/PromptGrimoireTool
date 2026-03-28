@@ -8,7 +8,6 @@ polling-loop pattern as deadline_worker.py and search_worker.py.
 from __future__ import annotations
 
 import asyncio
-import logging
 import secrets
 import shutil
 import tempfile
@@ -31,7 +30,6 @@ if TYPE_CHECKING:
     from promptgrimoire.db.models import ExportJob
 
 logger = structlog.get_logger()
-logging.getLogger(__name__).setLevel(logging.INFO)
 
 
 async def _process_job(job: ExportJob) -> None:

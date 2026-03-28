@@ -12,7 +12,6 @@ of the old marker-insertion -> marker-replacement pipeline.
 from __future__ import annotations
 
 import asyncio
-import logging
 import re
 import subprocess
 from pathlib import Path
@@ -31,8 +30,6 @@ from promptgrimoire.input_pipeline.paragraph_map import (
 )
 
 logger = structlog.get_logger()
-logging.getLogger(__name__).setLevel(logging.INFO)
-
 # Path to highlight.lua Pandoc filter (always included for annotation export)
 _HIGHLIGHT_FILTER = Path(__file__).parent / "filters" / "highlight.lua"
 

@@ -25,6 +25,24 @@ with contextlib.suppress(ImportError):
 logger = structlog.get_logger()
 
 
+async def measure_event_loop_lag() -> float:
+    """Measure event-loop lag in milliseconds.
+
+    Schedules a no-op callback via ``call_soon`` and measures how long
+    the event loop takes to execute it. On an idle loop this is <1 ms;
+    under saturation it grows proportionally to queue depth.
+    """
+    loop = asyncio.get_running_loop()
+    future: asyncio.Future[float] = loop.create_future()
+    t0 = loop.time()
+
+    def _resolve() -> None:
+        future.set_result((loop.time() - t0) * 1000.0)
+
+    loop.call_soon(_resolve)
+    return await future
+
+
 def _collect_memory() -> dict[str, Any]:
     """Collect memory usage metrics.
 
@@ -90,6 +108,8 @@ def collect_snapshot() -> dict[str, Any]:
         "app_ws_registry": ws_registry_size,
         "app_ws_presence_workspaces": ws_presence_workspaces,
         "app_ws_presence_clients": ws_presence_clients,
+        # Event loop responsiveness (filled by async caller)
+        "event_loop_lag_ms": None,
     }
 
 
@@ -269,6 +289,7 @@ async def start_diagnostic_logger(
     while True:
         try:
             snapshot = collect_snapshot()
+            snapshot["event_loop_lag_ms"] = await measure_event_loop_lag()
             logger.info("memory_diagnostic", **snapshot)
             if _check_memory_threshold(
                 snapshot, threshold_mb=memory_restart_threshold_mb

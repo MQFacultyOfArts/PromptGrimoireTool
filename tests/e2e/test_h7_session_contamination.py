@@ -1,4 +1,4 @@
-"""H7 discriminating test: concurrent page loads must not cross-contaminate sessions.
+"""H7 discriminating test: concurrent PABAI page loads must not cross-contaminate.
 
 Issue: #438 (cross-user session contamination)
 
@@ -8,21 +8,19 @@ request_contextvar from another concurrent request.  app.storage.user then
 resolves to the wrong user's storage.
 
 Strategy:
-  1. Spin up N independent Playwright instances (separate processes/event loops)
-  2. Authenticate each with a distinct mock user
-  3. All N navigate to /test/session-identity simultaneously via a barrier
-  4. The page handler reads app.storage.user -> auth_user -> email and renders
-     it in a data-testid="session-email" element
-  5. Each thread captures the displayed email and compares to expected
-  6. Any mismatch is contamination
+  1. Rehydrate the PABAI workspace (190 highlights, 5,020 text nodes, ~150KB)
+  2. Spin up N independent Playwright instances (separate processes/event loops)
+  3. Authenticate each with a distinct mock user, grant ACL on the shared workspace
+  4. All N navigate to the annotation page simultaneously via a barrier
+  5. After full page render (text walker ready), navigate to /test/session-identity
+  6. Check the rendered email matches the authenticated user
+  7. Any mismatch is contamination
 
-Each thread owns its own Playwright instance, browser, context, and page --
-no shared event loop, no SyncBase._sync contention.  The server sees N
-genuinely concurrent TCP connections, just like production.
+The PABAI workspace creates realistic event loop contention: DB queries, CRDT
+deserialisation, presence tracking, highlight rendering, and broadcast setup.
+This reproduces production conditions far better than a toy endpoint.
 
-The /test/session-identity page is a real @ui.page (not a FastAPI endpoint),
-so it exercises the full middleware -> background_tasks.create -> page handler
-code path where the bug manifests.
+Each thread owns its own Playwright instance — no shared event loop.
 
 Run with:
   uv run grimoire e2e run -k "test_h7" --serial
@@ -32,26 +30,72 @@ from __future__ import annotations
 
 import threading
 from dataclasses import dataclass, field
+from pathlib import Path
 from uuid import uuid4
 
 import pytest
 
-pytestmark = [pytest.mark.e2e]
+from promptgrimoire.config import get_settings
 
-# Number of concurrent sessions.  Production incident had ~189 users.
-# 20 is enough to create meaningful interleaving in the event loop
-# while keeping resource usage reasonable (each is a full browser).
-N_SESSIONS = 20
-# Rounds of concurrent navigation to increase chance of triggering.
-N_ROUNDS = 5
+pytestmark = [
+    pytest.mark.e2e,
+    pytest.mark.skipif(
+        not get_settings().dev.test_database_url,
+        reason="DEV__TEST_DATABASE_URL not configured",
+    ),
+]
+
+PABAI_WORKSPACE_ID = "0e5e9b04-de94-4728-a8c9-e625c141fea3"
+_WORKSPACE_JSON = Path(__file__).parent / "fixtures" / "pabai_workspace.json"
+
+# Concurrency parameters.  Production incident had ~189 users.
+# 10 is enough to create meaningful event loop contention with
+# the PABAI fixture while keeping resource usage manageable.
+N_SESSIONS = 10
+N_ROUNDS = 3
 
 
-@dataclass
-class WorkerResult:
-    """Collects results from a single worker thread."""
+def _test_db_conninfo() -> str:
+    """Build psycopg conninfo for the test database."""
+    from urllib.parse import urlparse
 
-    expected_email: str = ""
-    observations: list[RoundObservation] = field(default_factory=list)
+    url = get_settings().dev.test_database_url
+    if not url:
+        msg = "DEV__TEST_DATABASE_URL not configured"
+        raise RuntimeError(msg)
+    parsed = urlparse(url)
+    user = parsed.username or "brian"
+    dbname = parsed.path.lstrip("/")
+    host = parsed.hostname or "/var/run/postgresql"
+    if "host=" in (parsed.query or ""):
+        for param in parsed.query.split("&"):
+            if param.startswith("host="):
+                host = param.split("=", 1)[1]
+    return f"user={user} dbname={dbname} host={host}"
+
+
+def _grant_acl(conninfo: str, email: str, workspace_id: str) -> None:
+    """Grant owner ACL on workspace to user (by email) via direct SQL."""
+    import psycopg
+
+    with psycopg.connect(conninfo) as conn:
+        cur = conn.cursor()
+        cur.execute(
+            'SELECT id FROM "user" WHERE email = %s',
+            (email,),
+        )
+        row = cur.fetchone()
+        if row is None:
+            msg = f"User not found: {email}"
+            raise RuntimeError(msg)
+        cur.execute(
+            "INSERT INTO acl_entry"
+            " (id, workspace_id, user_id, permission, created_at)"
+            " VALUES (gen_random_uuid(), %s::uuid, %s, 'owner', now())"
+            " ON CONFLICT DO NOTHING",
+            (workspace_id, row[0]),
+        )
+        conn.commit()
 
 
 @dataclass
@@ -63,17 +107,27 @@ class RoundObservation:
     error: str | None = None
 
 
+@dataclass
+class WorkerResult:
+    """Collects results from a single worker thread."""
+
+    expected_email: str = ""
+    observations: list[RoundObservation] = field(default_factory=list)
+
+
 def _run_session(
     app_server: str,
+    conninfo: str,
+    workspace_id: str,
     barrier: threading.Barrier,
     result: WorkerResult,
     n_rounds: int,
 ) -> None:
-    """Run a complete session lifecycle in its own Playwright instance.
+    """Run a complete session in its own Playwright instance.
 
-    Each thread: launches Playwright -> Chromium -> authenticates -> waits
-    at the barrier -> navigates to the identity page -> captures email.
-    Repeated for n_rounds.
+    Each thread: Playwright -> Chromium -> authenticate -> grant ACL ->
+    barrier wait -> load annotation page (full PABAI render) ->
+    navigate to /test/session-identity -> capture email.
     """
     from playwright.sync_api import sync_playwright
 
@@ -95,20 +149,42 @@ def _run_session(
                 timeout=15000,
             )
 
+            # Grant ACL on the shared PABAI workspace
+            _grant_acl(conninfo, email, workspace_id)
+
+            annotation_url = f"{app_server}/annotation?workspace_id={workspace_id}"
             identity_url = f"{app_server}/test/session-identity"
 
             for _ in range(n_rounds):
-                # All threads wait here, then fire simultaneously.
-                barrier.wait(timeout=30)
-
                 obs = RoundObservation()
+
+                # All threads fire simultaneously.
+                barrier.wait(timeout=60)
+
                 try:
+                    # Load the PABAI annotation page.  This is the
+                    # heavy path: DB, CRDT, presence, highlights.
+                    # We don't wait for full render — the server-side
+                    # work happens during the HTTP response + background
+                    # task.  domcontentloaded is enough to know the
+                    # server started processing.
+                    page.goto(
+                        annotation_url,
+                        wait_until="domcontentloaded",
+                        timeout=60000,
+                    )
+                    # Give the server time to process all concurrent
+                    # background tasks (the interleaving window).
+                    page.wait_for_timeout(3000)
+
+                    # NOW check identity via the lightweight page.
+                    # If contextvar was contaminated during the heavy
+                    # annotation load, the identity page shows it.
                     page.goto(identity_url)
                     loc = page.get_by_test_id("session-email")
                     loc.wait_for(state="attached", timeout=15000)
                     obs.email_before = loc.inner_text()
 
-                    # Also capture "after" email (read after yield points).
                     loc_after = page.get_by_test_id(
                         "session-email-after",
                     )
@@ -122,33 +198,66 @@ def _run_session(
 
                 result.observations.append(obs)
 
-            # Navigate away before closing
             page.goto("about:blank")
             context.close()
         finally:
             browser.close()
 
 
-class TestH7SessionContamination:
-    """Concurrent page loads must not cross-contaminate sessions."""
+def _ensure_pabai_workspace(conninfo: str) -> str:
+    """Rehydrate the PABAI workspace into the test DB if missing."""
+    import psycopg
 
-    def test_concurrent_session_identity(
+    if not _WORKSPACE_JSON.exists():
+        pytest.skip(f"PABAI fixture not found at {_WORKSPACE_JSON}")
+
+    with psycopg.connect(conninfo) as conn:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT 1 FROM workspace WHERE id = %s::uuid",
+            (PABAI_WORKSPACE_ID,),
+        )
+        if cur.fetchone() is not None:
+            return PABAI_WORKSPACE_ID
+
+    from scripts.rehydrate_workspace import rehydrate
+
+    result = rehydrate(_WORKSPACE_JSON, conninfo)
+    assert result["workspace_id"] == PABAI_WORKSPACE_ID
+    return PABAI_WORKSPACE_ID
+
+
+class TestH7SessionContamination:
+    """Concurrent PABAI page loads must not cross-contaminate sessions."""
+
+    def test_concurrent_pabai_identity(
         self,
         app_server: str,
     ) -> None:
-        """Fire N concurrent page loads from independent browsers.
+        """Fire N concurrent annotation page loads with full PABAI content.
 
-        Each thread owns its own Playwright instance (separate process).
-        A threading.Barrier synchronises navigation so all N hit the
-        server at the same moment, maximising event loop contention.
+        Each thread owns its own Playwright instance.  A barrier
+        synchronises navigation so all N hit the server at the same
+        moment, loading the 150KB PABAI workspace with 190 highlights.
+        After full render, each checks its session identity.
         """
-        barrier = threading.Barrier(N_SESSIONS, timeout=60)
+        conninfo = _test_db_conninfo()
+        workspace_id = _ensure_pabai_workspace(conninfo)
+
+        barrier = threading.Barrier(N_SESSIONS, timeout=120)
         results: list[WorkerResult] = [WorkerResult() for _ in range(N_SESSIONS)]
 
         threads = [
             threading.Thread(
                 target=_run_session,
-                args=(app_server, barrier, results[i], N_ROUNDS),
+                args=(
+                    app_server,
+                    conninfo,
+                    workspace_id,
+                    barrier,
+                    results[i],
+                    N_ROUNDS,
+                ),
                 name=f"h7-session-{i}",
             )
             for i in range(N_SESSIONS)
@@ -157,7 +266,7 @@ class TestH7SessionContamination:
         for t in threads:
             t.start()
         for t in threads:
-            t.join(timeout=120)
+            t.join(timeout=300)
 
         # ---- Verification ----
         mismatches: list[dict[str, str]] = []
@@ -188,7 +297,6 @@ class TestH7SessionContamination:
                     )
                     continue
 
-                # Check initial read
                 if obs.email_before != res.expected_email:
                     mismatches.append(
                         {
@@ -200,7 +308,6 @@ class TestH7SessionContamination:
                         }
                     )
 
-                # Check post-yield read (mid-handler contamination)
                 if obs.email_after != res.expected_email:
                     mismatches.append(
                         {

@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import asyncio
 import html as html_module
-import logging
 import re
 from typing import Literal
 
@@ -42,8 +41,6 @@ from promptgrimoire.input_pipeline.text_extraction import (
 )
 
 logger = structlog.get_logger()
-logging.getLogger(__name__).setLevel(logging.INFO)
-
 # Content types supported by the pipeline
 CONTENT_TYPES = ("html", "rtf", "docx", "pdf", "text")
 ContentType = Literal["html", "rtf", "docx", "pdf", "text"]

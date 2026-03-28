@@ -362,11 +362,12 @@ class PageState:
 # Section 3: Submodule imports (types above are now available)
 # ---------------------------------------------------------------------------
 
-from promptgrimoire.db.workspaces import get_workspace  # noqa: E402
+from nicegui import background_tasks  # noqa: E402
+
 from promptgrimoire.pages.annotation.css import _setup_page_styles  # noqa: E402
 from promptgrimoire.pages.annotation.workspace import (  # noqa: E402
     _create_workspace_and_redirect,
-    _render_workspace_view,
+    _load_workspace_content,
 )
 from promptgrimoire.pages.layout import page_layout  # noqa: E402
 from promptgrimoire.pages.registry import page_route  # noqa: E402
@@ -382,6 +383,10 @@ from promptgrimoire.pages.registry import page_route  # noqa: E402
 )
 async def annotation_page(client: Client) -> None:
     """Annotation workspace page.
+
+    Renders a skeleton with spinner immediately, then schedules
+    content loading via a background task.  DB work happens off the
+    page handler so NiceGUI never sees a slow response.
 
     Query params:
         workspace_id: UUID of existing workspace to load
@@ -404,19 +409,30 @@ async def annotation_page(client: Client) -> None:
             )
             ui.notify("Invalid workspace ID", type="negative")
 
-    # Pre-fetch workspace record for _render_workspace_view
-    ws = None
-    if workspace_id:
-        ws = await get_workspace(workspace_id)
-
-    heading = ws.title if ws and ws.title else "Annotation Workspace"
-    with page_layout(heading, drawer_open=False, footer=True) as footer_el:
+    with page_layout(
+        "Annotation Workspace", drawer_open=False, footer=True
+    ) as footer_el:
         if workspace_id:
-            logger.debug("[PAGE] annotation_page: rendering workspace %s", workspace_id)
-            await _render_workspace_view(workspace_id, client, ws, footer=footer_el)
-            logger.debug("[PAGE] annotation_page: render complete for %s", workspace_id)
+            # Skeleton: spinner visible immediately, content loaded async
+            content_container = ui.column().classes("w-full items-center q-pa-lg")
+            with content_container:
+                ui.spinner("dots", size="xl").props(
+                    'data-testid="workspace-loading-spinner"'
+                )
+
+            # Schedule content loading as a background task
+            task = background_tasks.create(
+                _load_workspace_content(
+                    workspace_id, client, content_container, footer=footer_el
+                )
+            )
+            _background_tasks.add(task)
+            task.add_done_callback(_background_tasks.discard)
+
+            # Cancel loading if client disconnects during load
+            client.on_disconnect(task.cancel)
         else:
-            # Show create workspace form
+            # Show create workspace form (synchronous — fast, no DB)
             ui.label("No workspace selected. Create a new one:").classes("mb-2").props(
                 'data-testid="workspace-status-msg"'
             )

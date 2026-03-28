@@ -22,7 +22,10 @@ from typing import TYPE_CHECKING
 import pytest
 from playwright.sync_api import expect
 
-from promptgrimoire.docs.helpers import wait_for_text_walker
+from promptgrimoire.docs.helpers import (
+    wait_for_annotation_ready,
+    wait_for_text_walker,
+)
 from tests.e2e.conftest import _authenticate_page
 from tests.e2e.paste_helpers import simulate_paste
 
@@ -51,6 +54,7 @@ def upload_ready_page(browser: Browser, app_server: str) -> Generator[Page]:
     page.goto(f"{app_server}/annotation")
     page.get_by_test_id("create-workspace-btn").click()
     page.wait_for_url(re.compile(r"workspace_id="))
+    wait_for_annotation_ready(page)
 
     yield page
 

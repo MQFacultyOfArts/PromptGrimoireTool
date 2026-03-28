@@ -6,7 +6,6 @@ Tags are per-workspace annotation categories; TagGroups visually group them.
 
 from __future__ import annotations
 
-import logging
 import re
 from contextlib import contextmanager
 from dataclasses import dataclass, field
@@ -32,8 +31,6 @@ from promptgrimoire.db.exceptions import (
 from promptgrimoire.db.models import Tag, TagGroup
 
 logger = structlog.get_logger()
-logging.getLogger(__name__).setLevel(logging.WARNING)
-
 if TYPE_CHECKING:
     from collections.abc import Iterator
     from uuid import UUID

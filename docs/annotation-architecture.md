@@ -1,8 +1,27 @@
 # Annotation Page Architecture
 
-*Last updated: 2026-03-15*
+*Last updated: 2026-03-28*
 
 The annotation page (`pages/annotation/`) is a 29-module package split from a monolith.
+
+## Deferred Background Loading (#377)
+
+The annotation page uses a skeleton+spinner pattern. The page handler returns immediately with a loading spinner; all DB work and UI rendering happens in a `background_tasks.create()` coroutine.
+
+**Load sequence:**
+1. `annotation_page()` in `__init__.py` renders a skeleton container with `ui.spinner("dots")` and injects the Milkdown bundle `<script>` tag
+2. `_load_workspace_content()` in `workspace.py` runs as a background task:
+   - Calls `resolve_annotation_context()` (single DB session for workspace, ACL, placement, tags)
+   - Clears the spinner container and renders full workspace UI via `with client:`
+   - Calls `_update_page_title()` to set browser tab title and visible header via JS
+3. Error states (not found, no access) render inside the same container
+
+**Key functions:**
+- `resolve_annotation_context(workspace_id, user_id)` in `db/workspaces.py` -- consolidates 5+ DB calls (workspace fetch, ACL resolution, placement context, privileged user IDs, tags/tag groups) into a single `AsyncSession`. Returns `AnnotationContext` frozen dataclass.
+- `_load_workspace_content(workspace_id, client, container, footer)` -- replaces the former `_render_workspace_view()`. Runs inside `background_tasks.create()`.
+- `_update_page_title(title)` -- sets `document.title` and updates `[data-testid="page-header-title"]` via `ui.run_javascript()`.
+
+**Invariant:** The Milkdown `<script>` tag must be in the page skeleton (`__init__.py`), not in the background task. The Respond tab's `_createMilkdownEditor` call needs it in the DOM before the deferred content renders.
 
 ## Layout
 
@@ -63,7 +82,7 @@ Multi-document workspaces use a three-tab bar (Source, Respond, Organise) with d
 
 - `tab_bar.py` -- Tab creation (`build_tabs`), tab change handler factory (`_make_tab_change_handler`), deferred tab panel rendering (`_build_tab_panels`), and SortableJS drag-and-drop wiring for the Organise tab (`_setup_organise_drag`). Extracted from `workspace.py` in Phase 6 to separate tab mechanics from workspace assembly.
 - `tab_state.py` -- `DocumentTabState` dataclass holding per-document UI state: `document_id`, `tab`/`panel` element references, `document_container`/`cards_container`, `annotation_cards` dict, `card_snapshots`, `rendered` flag, and `cards_epoch` counter. Created for Phase 7 multi-document support so each source tab tracks its own rendering state independently.
-- `workspace.py` -- Top-level workspace entry point (`render_workspace`). Handles auth/ACL resolution, document container rendering, and tag management callbacks. Tab management was extracted to `tab_bar.py`; workspace now imports `build_tabs`, `_make_tab_change_handler`, `_setup_organise_drag`, and `_build_tab_panels` from there.
+- `workspace.py` -- Top-level workspace entry point (`_load_workspace_content`, formerly `_render_workspace_view`). Runs as a background task for deferred loading. Receives pre-resolved `AnnotationContext` from `db/workspaces.py`, renders document containers, and wires tag management callbacks. Tab management was extracted to `tab_bar.py`; workspace now imports `build_tabs`, `_make_tab_change_handler`, `_setup_organise_drag`, and `_build_tab_panels` from there.
 
 ## Broadcast & Presence (`broadcast.py`)
 
@@ -81,7 +100,7 @@ Two new modules support word count limits in the annotation page:
 - `word_count_badge.py` -- Pure functions. `format_word_count_badge(count, word_minimum, word_limit)` returns a `BadgeState` (text + CSS classes) for the header badge. Colour logic: red (over limit or below minimum), amber (approaching limit at 90%), neutral (within range).
 - `word_count_enforcement.py` -- Re-export shim. The canonical implementation lives at `src/promptgrimoire/word_count_enforcement.py` (package root). This shim keeps annotation-package imports working. Only export-related code may import enforcement symbols (AC7 guard tests enforce this).
 
-`PageState` carries four word count fields populated from `PlacementContext` during `_resolve_workspace_context()`: `word_minimum`, `word_limit`, `word_limit_enforcement`, and `word_count_badge` (the live `ui.label` element). The badge updates on every keystroke in the respond tab via `word_count()` from `src/promptgrimoire/word_count.py`.
+`PageState` carries four word count fields populated from `PlacementContext` during workspace content loading: `word_minimum`, `word_limit`, `word_limit_enforcement`, and `word_count_badge` (the live `ui.label` element). The badge updates on every keystroke in the respond tab via `word_count()` from `src/promptgrimoire/word_count.py`.
 
 ## Card Layout (Compact/Expandable)
 

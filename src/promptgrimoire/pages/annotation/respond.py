@@ -22,7 +22,6 @@ from __future__ import annotations
 
 import base64
 import json
-import logging
 from typing import TYPE_CHECKING, Any
 
 import structlog
@@ -45,8 +44,6 @@ if TYPE_CHECKING:
     from promptgrimoire.pages.annotation.tags import TagInfo
 
 logger = structlog.get_logger()
-logging.getLogger(__name__).setLevel(logging.INFO)
-
 # Initial split percentage for the reference panel (left side of splitter)
 _REFERENCE_PANEL_SPLIT = 25
 

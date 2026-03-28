@@ -272,6 +272,8 @@ _ALLOWED_TEST_OS_ENVIRON_GET = {
     _TESTS_DIR / "integration" / "test_db_cloning.py",
     # pool cancellation reads DATABASE__URL for direct engine (skip if unset)
     _TESTS_DIR / "integration" / "test_pool_cancellation.py",
+    # memory probe reads PERF_MAX_LOAD + MALLOC_ARENA_MAX (test-runner flags)
+    _TESTS_DIR / "e2e" / "test_memory_probe_434.py",
 }
 
 

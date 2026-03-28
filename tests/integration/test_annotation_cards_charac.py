@@ -25,6 +25,7 @@ from tests.integration.nicegui_helpers import (
     _fire_event_listeners,
     _should_see_testid,
     wait_for,
+    wait_for_annotation_load,
 )
 
 if TYPE_CHECKING:
@@ -276,6 +277,7 @@ class TestAnnotateCardRendering:
 
         await _authenticate(nicegui_user, email=email)
         await nicegui_user.open(f"/annotation?workspace_id={ws_id}")
+        await wait_for_annotation_load(nicegui_user)
         await _should_see_testid(nicegui_user, "annotation-card")
 
         cards = _find_all_by_testid(nicegui_user, "annotation-card")
@@ -289,6 +291,7 @@ class TestAnnotateCardRendering:
 
         await _authenticate(nicegui_user, email=email)
         await nicegui_user.open(f"/annotation?workspace_id={ws_id}")
+        await wait_for_annotation_load(nicegui_user)
         await _should_see_testid(nicegui_user, "annotation-card")
 
         cards = _find_all_by_testid(nicegui_user, "annotation-card")
@@ -307,6 +310,7 @@ class TestAnnotateCardRendering:
 
         await _authenticate(nicegui_user, email=email)
         await nicegui_user.open(f"/annotation?workspace_id={ws_id}")
+        await wait_for_annotation_load(nicegui_user)
         await _should_see_testid(nicegui_user, "annotation-card")
 
         # Find the card with the long text (start_char=50)
@@ -348,6 +352,7 @@ class TestAnnotateCardRendering:
 
         await _authenticate(nicegui_user, email=email)
         await nicegui_user.open(f"/annotation?workspace_id={ws_id}")
+        await wait_for_annotation_load(nicegui_user)
         await _should_see_testid(nicegui_user, "annotation-card")
 
         badges = _find_all_by_testid(nicegui_user, "comment-count")
@@ -364,6 +369,7 @@ class TestAnnotateCardRendering:
 
         await _authenticate(nicegui_user, email=email)
         await nicegui_user.open(f"/annotation?workspace_id={ws_id}")
+        await wait_for_annotation_load(nicegui_user)
         await _should_see_testid(nicegui_user, "annotation-card")
 
         cards = _find_all_by_testid(nicegui_user, "annotation-card")
@@ -387,6 +393,7 @@ class TestAnnotateCardRendering:
 
         await _authenticate(nicegui_user, email=email)
         await nicegui_user.open(f"/annotation?workspace_id={ws_id}")
+        await wait_for_annotation_load(nicegui_user)
         await _should_see_testid(nicegui_user, "annotation-card")
 
         expand_btns = _find_all_by_testid(nicegui_user, "card-expand-btn")
@@ -403,6 +410,7 @@ class TestAnnotateCardRendering:
 
         await _authenticate(nicegui_user, email=email)
         await nicegui_user.open(f"/annotation?workspace_id={ws_id}")
+        await wait_for_annotation_load(nicegui_user)
         await _should_see_testid(nicegui_user, "annotation-card")
 
         # card-detail elements exist but are not visible
@@ -944,6 +952,7 @@ class TestDiffChangedHighlights:
 
         await _authenticate(nicegui_user, email=email)
         await nicegui_user.open(f"/annotation?workspace_id={ws_id}")
+        await wait_for_annotation_load(nicegui_user)
         await _should_see_testid(nicegui_user, "annotation-card")
 
         # The card at start_char=10 should now have Evidence colour (#ff7f0e)
@@ -980,6 +989,7 @@ class TestDiffChangedHighlights:
 
         await _authenticate(nicegui_user, email=email)
         await nicegui_user.open(f"/annotation?workspace_id={ws_id}")
+        await wait_for_annotation_load(nicegui_user)
         await _should_see_testid(nicegui_user, "annotation-card")
 
         # The badge on HL1 card should show "2"
@@ -1015,6 +1025,7 @@ class TestDiffChangedHighlights:
 
         await _authenticate(nicegui_user, email=email)
         await nicegui_user.open(f"/annotation?workspace_id={ws_id}")
+        await wait_for_annotation_load(nicegui_user)
         await _should_see_testid(nicegui_user, "annotation-card")
 
         # HL2 (start_char=50) should still have Evidence colour
@@ -1097,6 +1108,7 @@ class TestRapidCRDTUpdates:
 
         await _authenticate(nicegui_user, email=email)
         await nicegui_user.open(f"/annotation?workspace_id={ws_id}")
+        await wait_for_annotation_load(nicegui_user)
         await _should_see_testid(nicegui_user, "annotation-card")
 
         cards = _find_all_by_testid(nicegui_user, "annotation-card")
@@ -1141,6 +1153,7 @@ class TestRapidCRDTUpdates:
 
         await _authenticate(nicegui_user, email=email)
         await nicegui_user.open(f"/annotation?workspace_id={ws_id}")
+        await wait_for_annotation_load(nicegui_user)
         await _should_see_testid(nicegui_user, "annotation-card")
 
         cards = _find_all_by_testid(nicegui_user, "annotation-card")
@@ -1188,6 +1201,7 @@ class TestRapidCRDTUpdates:
 
         await _authenticate(nicegui_user, email=email)
         await nicegui_user.open(f"/annotation?workspace_id={ws_id}")
+        await wait_for_annotation_load(nicegui_user)
         await _should_see_testid(nicegui_user, "annotation-card")
 
         cards = _find_all_by_testid(nicegui_user, "annotation-card")

@@ -19,6 +19,7 @@ file.  Serial mode shares a single server + DB.
 
 from __future__ import annotations
 
+import os
 import re
 import time
 from typing import TYPE_CHECKING
@@ -106,8 +107,20 @@ def _print_results(results: list[dict]) -> None:
         print(f"    {r['label']}: {r['elapsed_ms']:5d}ms [{status}]{detail}")
 
 
+_MAX_LOAD_AVG = 10.0
+
+
 class TestConcurrentPageLoad:
     """Measure annotation page load degradation as connected clients increase."""
+
+    @pytest.fixture(autouse=True)
+    def _load_guard(self) -> None:
+        load_1min = os.getloadavg()[0]
+        if load_1min > _MAX_LOAD_AVG:
+            pytest.skip(
+                f"System load too high for perf tests: "
+                f"{load_1min:.1f} > {_MAX_LOAD_AVG:.0f}."
+            )
 
     def test_concurrent_page_load(
         self,

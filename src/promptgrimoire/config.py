@@ -8,7 +8,6 @@ Tests construct ``Settings(_env_file=None, ...)`` directly for isolation.
 from __future__ import annotations
 
 import hashlib
-import logging
 import re
 from functools import lru_cache
 from pathlib import Path
@@ -19,8 +18,6 @@ from pydantic import BaseModel, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 logger = structlog.get_logger()
-logging.getLogger(__name__).setLevel(logging.INFO)
-
 # ---------------------------------------------------------------------------
 # Path resolution for worktree-aware .env loading
 # ---------------------------------------------------------------------------

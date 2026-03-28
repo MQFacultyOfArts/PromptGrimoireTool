@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import asyncio
 import io
-import logging
 import re
 
 import fitz
@@ -17,7 +16,6 @@ import pymupdf4llm
 import structlog
 
 logger = structlog.get_logger()
-logging.getLogger(__name__).setLevel(logging.INFO)
 
 
 class ConversionError(Exception):

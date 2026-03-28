@@ -204,7 +204,9 @@ def _render_header(title: str, user: dict | None) -> ui.button:
     """Build the header bar. Returns the menu button for drawer wiring."""
     with ui.header().classes("bg-primary items-center q-py-xs"):
         menu_btn = ui.button(icon="menu").props("flat color=white")
-        ui.label(title).classes("text-h6 text-white q-ml-sm")
+        ui.label(title).classes("text-h6 text-white q-ml-sm").props(
+            'data-testid="page-header-title"'
+        )
         ui.element("div").classes("flex-grow")
         _render_help_button()
         if user:

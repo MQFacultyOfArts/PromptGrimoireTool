@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import logging
 import time as _time
 from typing import TYPE_CHECKING
 from uuid import uuid4
@@ -35,7 +34,6 @@ if TYPE_CHECKING:
     from nicegui import Client
 
 logger = structlog.get_logger()
-logging.getLogger(__name__).setLevel(logging.INFO)
 
 
 def resolve_broadcast_label(
@@ -150,6 +148,7 @@ async def _broadcast_cursor_update(
         await _broadcast_js_to_others(workspace_key, client_id, js)
         return
     color = state.user_color
+    ctnr_id = state.doc_container_id
     for cid, presence in list(clients.items()):
         if cid == client_id or presence.nicegui_client is None:
             continue
@@ -162,13 +161,19 @@ async def _broadcast_cursor_update(
             sender_is_privileged=state.viewer_is_privileged,
         )
         js = _render_js(
-            t"renderRemoteCursor("
-            t"document.getElementById({state.doc_container_id})"
-            t", {client_id}, {char_index}"
-            t", {name}, {color})"
+            t"if (typeof renderRemoteCursor"
+            t"    === 'function')"
+            t"  renderRemoteCursor("
+            t"    document.getElementById("
+            t"      {ctnr_id}),"
+            t"    {client_id}, {char_index},"
+            t"    {name}, {color})"
         )
         with contextlib.suppress(Exception):
-            await presence.nicegui_client.run_javascript(js, timeout=2.0)
+            await presence.nicegui_client.run_javascript(
+                js,
+                timeout=2.0,
+            )
 
 
 async def _broadcast_selection_update(
@@ -201,11 +206,17 @@ async def _broadcast_selection_update(
         )
         ctnr = state.doc_container_id
         js = _render_js(
-            t"renderRemoteSelection("
-            t"{client_id}, {start}, {end}, {name}, {color}, {ctnr})"
+            t"if (typeof renderRemoteSelection"
+            t"    === 'function')"
+            t"  renderRemoteSelection("
+            t"    {client_id}, {start}, {end},"
+            t"    {name}, {color}, {ctnr})"
         )
         with contextlib.suppress(Exception):
-            await presence.nicegui_client.run_javascript(js, timeout=2.0)
+            await presence.nicegui_client.run_javascript(
+                js,
+                timeout=2.0,
+            )
 
 
 def _replay_existing_cursors(
@@ -228,11 +239,22 @@ def _replay_existing_cursors(
         if presence.cursor_char is not None:
             char = presence.cursor_char
             color = presence.color
+            ctnr_id = state.doc_container_id
             js = _render_js(
-                t"renderRemoteCursor("
-                t"document.getElementById({state.doc_container_id})"
-                t", {cid}, {char}"
-                t", {resolved_name}, {color})"
+                t"(function poll(n) {{"
+                t"  if (n > 100) return;"
+                t"  if (typeof renderRemoteCursor"
+                t"      !== 'function') {{"
+                t"    setTimeout(poll, 50, n+1);"
+                t"    return;"
+                t"  }}"
+                t"  var c = document.getElementById("
+                t"    {ctnr_id});"
+                t"  if (!c) return;"
+                t"  renderRemoteCursor("
+                t"    c, {cid}, {char},"
+                t"    {resolved_name}, {color});"
+                t"}})(0)"
             )
             ui.run_javascript(js)
         if presence.selection_start is not None and presence.selection_end is not None:
@@ -241,9 +263,17 @@ def _replay_existing_cursors(
             color = presence.color
             ctnr = state.doc_container_id
             js = _render_js(
-                t"renderRemoteSelection("
-                t"{cid}, {s_start}, {s_end},"
-                t" {resolved_name}, {color}, {ctnr})"
+                t"(function poll(n) {{"
+                t"  if (n > 100) return;"
+                t"  if (typeof renderRemoteSelection"
+                t"      !== 'function') {{"
+                t"    setTimeout(poll, 50, n+1);"
+                t"    return;"
+                t"  }}"
+                t"  renderRemoteSelection("
+                t"    {cid}, {s_start}, {s_end},"
+                t"    {resolved_name}, {color}, {ctnr});"
+                t"}})(0)"
             )
             ui.run_javascript(js)
 

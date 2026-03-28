@@ -15,7 +15,6 @@ Architecture:
 
 from __future__ import annotations
 
-import logging
 from typing import Any
 
 import structlog
@@ -46,9 +45,6 @@ from promptgrimoire.input_pipeline.html_input import (
 from promptgrimoire.input_pipeline.paragraph_map import lookup_para_ref
 
 logger = structlog.get_logger()
-logging.getLogger(__name__).setLevel(logging.INFO)
-
-
 # ---------------------------------------------------------------------------
 # Region data structure
 # ---------------------------------------------------------------------------

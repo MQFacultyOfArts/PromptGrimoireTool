@@ -141,7 +141,10 @@ def _register_db_lifecycle(app: object) -> None:
     from promptgrimoire.deadline_worker import (
         start_deadline_worker,
     )
-    from promptgrimoire.diagnostics import start_diagnostic_logger
+    from promptgrimoire.diagnostics import (
+        invalidate_sessions_on_disk,
+        start_diagnostic_logger,
+    )
     from promptgrimoire.export.worker import start_export_worker
     from promptgrimoire.search_worker import start_search_worker
 
@@ -157,6 +160,10 @@ def _register_db_lifecycle(app: object) -> None:
             _deadline_worker_task, \
             _export_worker_task, \
             _diagnostic_logger_task
+        # Clear stale sessions from disk before accepting connections.
+        # Guarantees clean auth state regardless of how the previous
+        # process died (SIGTERM, OOM, crash, bare systemctl restart).
+        invalidate_sessions_on_disk()
         await init_db()
         await verify_schema(get_engine())
         _search_worker_task = asyncio.create_task(
@@ -217,8 +224,8 @@ def _install_session_identity_tracing() -> None:
     Wraps ``call_next`` inside the existing dispatch so that every HTTP
     request logs the session_id and asyncio task name *before* the page
     handler background task is created.  Comparing this log with the
-    ``h7_page_identity`` log from ``page_route`` detects context
-    contamination (#438 / H7).
+    ``session_identity_at_page`` log from ``page_route`` detects context
+    contamination (#438).
     """
     import asyncio as _asyncio
     from typing import Any

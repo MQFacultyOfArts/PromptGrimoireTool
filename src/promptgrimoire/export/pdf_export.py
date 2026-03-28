@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import asyncio
 import html
-import logging
 import re
 import shutil
 import subprocess
@@ -31,8 +30,6 @@ from promptgrimoire.export.unicode_latex import detect_scripts
 from promptgrimoire.word_count_enforcement import check_word_count_violation
 
 logger = structlog.get_logger()
-logging.getLogger(__name__).setLevel(logging.INFO)
-
 # Path to the .sty file that contains all static LaTeX preamble content
 STY_SOURCE = Path(__file__).parent / "promptgrimoire-export.sty"
 

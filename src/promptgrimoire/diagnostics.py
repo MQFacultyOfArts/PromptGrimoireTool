@@ -25,6 +25,24 @@ with contextlib.suppress(ImportError):
 logger = structlog.get_logger()
 
 
+async def measure_event_loop_lag() -> float:
+    """Measure event-loop lag in milliseconds.
+
+    Schedules a no-op callback via ``call_soon`` and measures how long
+    the event loop takes to execute it. On an idle loop this is <1 ms;
+    under saturation it grows proportionally to queue depth.
+    """
+    loop = asyncio.get_running_loop()
+    future: asyncio.Future[float] = loop.create_future()
+    t0 = loop.time()
+
+    def _resolve() -> None:
+        future.set_result((loop.time() - t0) * 1000.0)
+
+    loop.call_soon(_resolve)
+    return await future
+
+
 def _collect_memory() -> dict[str, Any]:
     """Collect memory usage metrics.
 
@@ -90,6 +108,8 @@ def collect_snapshot() -> dict[str, Any]:
         "app_ws_registry": ws_registry_size,
         "app_ws_presence_workspaces": ws_presence_workspaces,
         "app_ws_presence_clients": ws_presence_clients,
+        # Event loop responsiveness (filled by async caller)
+        "event_loop_lag_ms": None,
     }
 
 
@@ -163,6 +183,48 @@ async def _invalidate_all_sessions() -> None:
     logger.info("sessions_invalidated", count=len(user_stores), flushed=flushed)
 
 
+def invalidate_sessions_on_disk(storage_dir: Path | None = None) -> None:
+    """Clear auth_user from all NiceGUI storage files on disk.
+
+    Called at app startup to guarantee no stale sessions survive
+    regardless of how the previous process died (SIGTERM, OOM, crash).
+    Operates on the raw JSON files, not in-memory PersistentDict
+    instances (which are empty at startup).
+
+    Args:
+        storage_dir: Directory containing ``storage-user-*.json`` files.
+            Defaults to NiceGUI's configured storage path, falling back
+            to ``.nicegui`` in the working directory.
+    """
+    import json  # noqa: PLC0415
+
+    if storage_dir is None:
+        from nicegui import core  # noqa: PLC0415
+
+        raw = core.app.storage.path if hasattr(core.app.storage, "path") else None
+        storage_dir = Path(".nicegui") if raw is None else Path(raw)
+
+    if not storage_dir.exists():
+        logger.debug("startup_invalidation_skipped", reason="no storage directory")
+        return
+
+    cleared = 0
+    for path in storage_dir.glob("storage-user-*.json"):
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+            if "auth_user" in data:
+                del data["auth_user"]
+                path.write_text(json.dumps(data), encoding="utf-8")
+                cleared += 1
+        except Exception:
+            logger.warning(
+                "startup_invalidation_file_error", path=str(path), exc_info=True
+            )
+
+    if cleared:
+        logger.info("startup_sessions_invalidated", cleared=cleared)
+
+
 async def _navigate_clients_to_restarting() -> None:
     """Navigate all connected NiceGUI clients to /restarting."""
     from nicegui import Client  # noqa: PLC0415
@@ -227,6 +289,7 @@ async def start_diagnostic_logger(
     while True:
         try:
             snapshot = collect_snapshot()
+            snapshot["event_loop_lag_ms"] = await measure_event_loop_lag()
             logger.info("memory_diagnostic", **snapshot)
             if _check_memory_threshold(
                 snapshot, threshold_mb=memory_restart_threshold_mb

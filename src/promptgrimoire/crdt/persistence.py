@@ -7,7 +7,6 @@ to avoid overwhelming the database during rapid edits.
 from __future__ import annotations
 
 import asyncio
-import logging
 from typing import TYPE_CHECKING
 
 import structlog
@@ -18,7 +17,6 @@ if TYPE_CHECKING:
     from promptgrimoire.crdt.annotation_doc import AnnotationDocument
 
 logger = structlog.get_logger()
-logging.getLogger(__name__).setLevel(logging.WARNING)
 
 
 class PersistenceManager:

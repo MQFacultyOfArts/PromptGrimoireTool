@@ -233,7 +233,7 @@ src/promptgrimoire/
 │   ├── tags.py          # Tag/TagGroup CRUD, import (ImportResult), reorder, deletion guards, CRDT cleanup
 │   ├── wargames.py      # Wargame team CRUD, ACL, roster ingestion, turn cycle orchestration
 │   ├── workspace_documents.py  # Document CRUD (add, list, reorder, update content)
-│   └── workspaces.py    # Workspace CRUD (create, get)
+│   └── workspaces.py    # Workspace CRUD (create, get), resolve_annotation_context (single-session page load)
 ├── wargame/             # Pure-domain helpers for wargame scenarios
 │   ├── agents.py        # PydanticAI agent definitions (turn_agent, summary_agent)
 │   ├── codenames.py     # Unique codename generation (coolname slugs, collision avoidance)
@@ -324,11 +324,31 @@ Stytch handles magic link login, passkey authentication, RBAC, and class invitat
 
 **Ban enforcement:** The `page_route` decorator in `pages/registry.py` checks `is_user_banned()` before every page handler. Banned users are redirected to `/banned`. The client registry enables real-time disconnection of active sessions when a ban is applied via CLI.
 
+**Login return URL:** `/login` honours `?return=<path>` — stashes in `app.storage.user["post_login_return"]`, all auth success paths use `_post_login_destination()` to redirect after auth. Open-redirect guard rejects absolute/protocol-relative URLs.
+
+## Restart & Session Invalidation
+
+Sessions are invalidated on **every** restart path. This is a critical invariant — NiceGUI's `FilePersistentDict` uses lazy async writes that don't survive SIGTERM.
+
+| Restart path | Mechanism |
+|---|---|
+| `deploy/restart.sh` | `POST /api/pre-restart` → sync-writes storage files with `auth_user` removed |
+| Memory threshold | `graceful_memory_shutdown()` → same sync-write, navigates to `/restarting` |
+| Bare `systemctl restart` / crash | `invalidate_sessions_on_disk()` at app startup — iterates `.nicegui/storage-user-*.json` on disk |
+
+**Key implementation details:**
+- `_invalidate_all_sessions()` in `diagnostics.py` uses `dict.pop()` (not `PersistentDict.pop()`) to bypass the lazy `on_change` → `backup()` hook, then sync-writes each file via `filepath.write_text()`.
+- `pre_restart_handler` in `pages/restart.py` parallelizes client disconnect via `asyncio.gather` with a 5s global timeout. Does NOT navigate to `/restarting` — HAProxy's 503 page (`deploy/503.http`) handles the UX for manual deploys.
+- HAProxy reads `errorfile` content at config load time. Editing 503.http requires `systemctl reload haproxy` to take effect.
+- `reconnect_timeout=15.0` in `ui.run()` — balances UX vs memory (each disconnected client holds its full UI tree in memory for this duration).
+
+See [docs/deployment.md](docs/deployment.md) for full operations guide and [docs/nicegui/production-memory-management.md](docs/nicegui/production-memory-management.md) for NiceGUI-specific constraints.
+
 ## Logging
 
 Structured JSON logging via structlog. Full details in [docs/logging.md](docs/logging.md).
 
-**Key rules:** `logger = structlog.get_logger()` at module level. Every `except` block must call `logger.exception()` or `logger.warning()` — no silent swallowing. No `print()` calls in `src/promptgrimoire/` except `cli/` (guard test enforces this).
+**Key rules:** `logger = structlog.get_logger()` at module level. Every `except` block must call `logger.exception()` or `logger.warning()` — no silent swallowing. No `print()` calls in `src/promptgrimoire/` except `cli/` (guard test enforces this). Do not call `logging.getLogger(__name__).setLevel()` — structlog level filtering is global; guard test (`test_setlevel_guard.py`) enforces this.
 
 **Logging setup:** `logging_config.setup_logging()` is the single entry point for structured logging configuration. Extracted from `__init__.py` so both the NiceGUI app and standalone export worker can initialise logging without importing NiceGUI.
 

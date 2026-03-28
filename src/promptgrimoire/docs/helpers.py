@@ -13,6 +13,62 @@ if TYPE_CHECKING:
     from playwright.sync_api import Page
 
 
+def wait_for_annotation_ready(page: Page, *, timeout: int = 15000) -> None:
+    """Wait for the annotation page's deferred load to complete.
+
+    The annotation page uses ``background_tasks.create()`` to load
+    workspace content after the page handler returns.  This helper
+    waits for the background task to signal completion via
+    ``window.__loadComplete``.
+
+    Must be called after navigating to ``/annotation?workspace_id=…``.
+    No-op if the current URL does not contain ``workspace_id=``
+    (non-deferred pages like the create-workspace form).
+
+    Fails fast with diagnostic state when the load doesn't complete
+    within *timeout* ms.
+
+    Args:
+        page: Playwright page.
+        timeout: Maximum wait time in milliseconds.
+    """
+    if "workspace_id=" not in page.url:
+        return
+
+    try:
+        page.wait_for_function(
+            "() => window.__loadComplete === true",
+            timeout=timeout,
+        )
+    except Exception as exc:
+        if "Timeout" not in type(exc).__name__:
+            raise
+        url = page.url
+        diag = page.evaluate(
+            "() => ({"
+            "  loadComplete: window.__loadComplete,"
+            "  spinner: !!document.querySelector("
+            "    '[data-testid=\"workspace-loading-spinner\"]'),"
+            "  statusMsg: (document.querySelector("
+            "    '[data-testid=\"workspace-status-msg\"]')"
+            "    || {}).textContent || null,"
+            "  scripts: Array.from("
+            "    document.querySelectorAll('script[src]'))"
+            "    .map(s => s.src)"
+            "    .filter(s => s.includes('annotation'))"
+            "})"
+        )
+        msg = (
+            f"Annotation page deferred load timeout"
+            f" ({timeout}ms). URL: {url}"
+            f" __loadComplete: {diag['loadComplete']}"
+            f" spinner visible: {diag['spinner']}"
+            f" status: {diag['statusMsg']!r}"
+            f" scripts: {diag['scripts']}"
+        )
+        raise type(exc)(msg) from None
+
+
 def wait_for_text_walker(page: Page, *, timeout: int = 15000) -> None:
     """Wait for the text walker to initialise (readiness gate).
 
@@ -20,10 +76,16 @@ def wait_for_text_walker(page: Page, *, timeout: int = 15000) -> None:
     the text walker has built its node map before any interactions that
     depend on character offsets or highlight rendering.
 
+    On annotation pages with deferred loading, waits for
+    ``__loadComplete`` first (via :func:`wait_for_annotation_ready`).
+
     Args:
         page: Playwright page.
         timeout: Maximum wait time in milliseconds.
     """
+    # Gate on deferred load completion before checking text walker
+    wait_for_annotation_ready(page, timeout=timeout)
+
     try:
         page.wait_for_function(
             "() => document.querySelector('[data-testid=\"doc-container\"]')"

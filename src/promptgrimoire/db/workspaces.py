@@ -22,6 +22,9 @@ from promptgrimoire.db.models import (
     Activity,
     Course,
     CourseEnrollment,
+    Permission,
+    Tag,
+    TagGroup,
     User,
     Week,
     Workspace,
@@ -218,6 +221,224 @@ class WorkspaceExportMetadata:
     activity_title: str | None
     workspace_title: str | None
     owner_display_name: str | None
+
+
+@dataclass(frozen=True)
+class AnnotationContext:
+    """All data needed for annotation page load, resolved in a single session.
+
+    Replaces 5+ separate DB function calls that each opened their own session:
+    - get_workspace()
+    - check_workspace_access() -> resolve_permission()
+    - get_placement_context()
+    - get_privileged_user_ids_for_workspace()
+    - list_tags_for_workspace() + list_tag_groups_for_workspace()
+    """
+
+    workspace: Workspace
+    permission: str | None
+    """Effective permission for the requesting user. None = no access."""
+    placement: PlacementContext
+    privileged_user_ids: frozenset[str]
+    """String-form User.id values for staff/admins.
+
+    Matches CRDT annotation author format.
+    """
+    tags: list[Tag]
+    tag_groups: list[TagGroup]
+
+
+async def _resolve_enrollment_permission(
+    session: AsyncSession,
+    workspace: Workspace,
+    course_id: UUID,
+    user_id: UUID,
+) -> str | None:
+    """Derive permission from course enrollment for a single user.
+
+    Returns the derived permission string or None if the user has no
+    enrollment-based access. Extracted from resolve_annotation_context
+    to keep branch/statement counts within linter limits.
+    """
+    enrollment_result = await session.exec(
+        select(CourseEnrollment).where(
+            CourseEnrollment.course_id == course_id,
+            CourseEnrollment.user_id == user_id,
+        )
+    )
+    enrollment = enrollment_result.one_or_none()
+    if enrollment is None:
+        return None
+
+    course = await session.get(Course, course_id)
+    if course is None:
+        return None
+
+    staff_roles = await get_staff_roles()
+    if enrollment.role in staff_roles:
+        return course.default_instructor_permission
+
+    if not workspace.shared_with_class:
+        return None
+
+    # Activity override for allow_sharing (identity map absorbs re-fetch)
+    activity_override = None
+    if workspace.activity_id is not None:
+        activity = await session.get(Activity, workspace.activity_id)
+        if activity is not None:
+            activity_override = activity.allow_sharing
+    allow_sharing = resolve_tristate(activity_override, course.default_allow_sharing)
+    return "peer" if allow_sharing else None
+
+
+async def _resolve_effective_permission(
+    session: AsyncSession,
+    workspace: Workspace,
+    placement: PlacementContext,
+    user_id: UUID,
+) -> str | None:
+    """Resolve the effective permission for a user on a workspace.
+
+    Combines explicit ACL lookup with enrollment-derived access,
+    picking the highest permission level. Returns None if no access.
+    Extracted from resolve_annotation_context to keep branch/statement
+    counts within linter limits.
+    """
+    # Explicit ACL lookup
+    explicit_result = await session.exec(
+        select(ACLEntry).where(
+            ACLEntry.workspace_id == workspace.id,
+            ACLEntry.user_id == user_id,
+        )
+    )
+    explicit = explicit_result.one_or_none()
+
+    # Enrollment-derived access
+    course_id = placement.course_id
+    if course_id is None and workspace.course_id is not None:
+        course_id = workspace.course_id
+
+    derived_permission: str | None = None
+    if course_id is not None:
+        derived_permission = await _resolve_enrollment_permission(
+            session, workspace, course_id, user_id
+        )
+
+    # Highest wins
+    if explicit and derived_permission:
+        level_result = await session.exec(
+            select(Permission.name, Permission.level).where(
+                Permission.name.in_([explicit.permission, derived_permission])  # type: ignore[unresolved-attribute]  -- Column has in_ at runtime
+            )
+        )
+        levels = dict(level_result.all())
+        e_level = levels[explicit.permission]
+        d_level = levels[derived_permission]
+        return explicit.permission if e_level >= d_level else derived_permission
+    if explicit:
+        return explicit.permission
+    return derived_permission
+
+
+async def _resolve_privileged_user_ids(
+    session: AsyncSession,
+    workspace: Workspace,
+    placement: PlacementContext,
+) -> frozenset[str]:
+    """Collect string-form user IDs for staff and admin users.
+
+    Staff are resolved from course enrollment; admins from the User table.
+    Returns a frozenset suitable for AnnotationContext.privileged_user_ids.
+    """
+    staff_ids: set[str] = set()
+    priv_course_id = placement.course_id or workspace.course_id
+    if priv_course_id is not None:
+        staff_roles = await get_staff_roles()
+        staff_result = await session.exec(
+            select(CourseEnrollment.user_id).where(
+                CourseEnrollment.course_id == priv_course_id,
+                CourseEnrollment.role.in_(staff_roles),  # type: ignore[unresolved-attribute]  -- Column has in_ at runtime
+            )
+        )
+        staff_ids = {str(uid) for uid in staff_result.all()}
+
+    admin_result = await session.exec(
+        select(User.id).where(User.is_admin == True)  # noqa: E712
+    )
+    admin_ids = {str(uid) for uid in admin_result.all()}
+    return frozenset(staff_ids | admin_ids)
+
+
+async def resolve_annotation_context(
+    workspace_id: UUID,
+    user_id: UUID,
+    *,
+    is_admin: bool = False,
+) -> AnnotationContext | None:
+    """Resolve all data needed for annotation page load in a single session.
+
+    Returns None if workspace does not exist.
+    """
+    async with get_session() as session:
+        # 1. Workspace fetch
+        workspace = await session.get(Workspace, workspace_id)
+        if workspace is None:
+            return None
+
+        # 2. Hierarchy resolution — reuse existing private helpers
+        template_result = await session.exec(
+            select(Activity).where(Activity.template_workspace_id == workspace_id)
+        )
+        is_template = template_result.first() is not None
+
+        if workspace.activity_id is not None:
+            placement = await _resolve_activity_placement(
+                session, workspace.activity_id
+            )
+        elif workspace.course_id is not None:
+            placement = await _resolve_course_placement(session, workspace.course_id)
+        else:
+            placement = PlacementContext(placement_type="loose")
+        if is_template:
+            placement = replace(placement, is_template=True)
+
+        # 3. Permission resolution (inline to avoid double-fetch)
+        if is_admin:
+            permission: str | None = "owner"
+        else:
+            permission = await _resolve_effective_permission(
+                session, workspace, placement, user_id
+            )
+
+        # 4. Privileged user IDs (staff + admins)
+        privileged_user_ids = await _resolve_privileged_user_ids(
+            session, workspace, placement
+        )
+
+        # 5. Tags and tag groups
+        tags_result = await session.exec(
+            select(Tag)
+            .where(Tag.workspace_id == workspace_id)
+            .order_by(Tag.order_index)  # type: ignore[arg-type]  -- Column expression valid at runtime
+        )
+        tags = list(tags_result.all())
+
+        groups_result = await session.exec(
+            select(TagGroup)
+            .where(TagGroup.workspace_id == workspace_id)
+            .order_by(TagGroup.order_index)  # type: ignore[arg-type]  -- Column expression valid at runtime
+        )
+        tag_groups = list(groups_result.all())
+
+        # 6. Return
+        return AnnotationContext(
+            workspace=workspace,
+            permission=permission,
+            placement=placement,
+            privileged_user_ids=privileged_user_ids,
+            tags=tags,
+            tag_groups=tag_groups,
+        )
 
 
 async def get_workspace_export_metadata(

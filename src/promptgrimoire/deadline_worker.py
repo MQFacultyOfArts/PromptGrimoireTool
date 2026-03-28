@@ -9,7 +9,6 @@ search_worker.py.
 from __future__ import annotations
 
 import asyncio
-import logging
 from datetime import UTC, datetime
 
 import structlog
@@ -18,7 +17,6 @@ from sqlalchemy import text
 from promptgrimoire.db.engine import get_session
 
 logger = structlog.get_logger()
-logging.getLogger(__name__).setLevel(logging.INFO)
 
 
 async def check_expired_deadlines() -> int:

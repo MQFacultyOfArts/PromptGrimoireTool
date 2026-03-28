@@ -55,9 +55,18 @@ def _render_add_content_form(
         f"_pastedHtml_{content_input.id}",
         f"_platformHint_{content_input.id}",
     )
-    ui.add_body_html(
-        _build_paste_intercept_script(paste_var, platform_var, str(content_input.id))
+    # NOTE: ui.add_body_html('<script>...') does NOT execute inline
+    # scripts when delivered via WebSocket (insertAdjacentHTML ignores
+    # <script> tags).  In the deferred-load path the socket is already
+    # connected, so we must use ui.run_javascript() instead.
+    # _build_paste_intercept_script returns a <script>…</script> block;
+    # we strip the wrapper and eval the JS directly.
+    raw_script = _build_paste_intercept_script(
+        paste_var, platform_var, str(content_input.id)
     )
+    # Strip <script> and </script> tags to get bare JS
+    js_body = raw_script.replace("<script>", "").replace("</script>", "").strip()
+    ui.run_javascript(js_body)
 
     async def handle_add_document() -> None:
         """Process input and add document to workspace."""

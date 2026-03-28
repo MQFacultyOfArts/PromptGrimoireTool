@@ -6328,6 +6328,153 @@ It catches any divergence that would cause highlights to render at wrong positio
 
 **Verifies:** Every except block logs or re-raises (logging_discord.py excluded because structlog inside a structlog processor would recurse)
 
+### No logging.getLogger().setLevel() in source
+**File:** tests/unit/test_setlevel_guard.py::test_no_setlevel_calls_in_source
+1. Walk all .py files in src/promptgrimoire/ (excluding __pycache__)
+2. AST-parse each file
+3. Find any `logging.getLogger(...).setLevel(...)` call nodes
+4. Assert no violations found
+
+**Verifies:** Per-module setLevel calls are not reintroduced -- structlog's global config handles level filtering; per-module overrides suppress debug output through the stdlib bridge
+
+### structlog debug output not suppressed
+**File:** tests/unit/test_structlog_debug_output.py::test_debug_messages_appear_in_structlog_output
+1. Use structlog `capture_logs()` context manager
+2. Call `structlog.get_logger().debug("test_debug_visible", key="value")`
+3. Assert exactly 1 captured log with event="test_debug_visible", log_level="debug"
+
+**Verifies:** setLevel removal was meaningful -- debug messages are no longer suppressed by stdlib level filtering (AC4.2)
+
+## Annotation Page -- Deferred Load (E2E)
+
+### Spinner visible then content loads
+**File:** tests/e2e/test_deferred_load.py::TestDeferredPageLoad::test_spinner_visible_then_content_loads
+1. Create workspace via DB fixture, authenticate, navigate to annotation page
+2. Assert loading spinner (data-testid="workspace-loading-spinner") is visible
+3. Wait for `window.__loadComplete === true` (background task completion signal)
+4. Assert spinner is no longer visible (container replaced with content)
+5. Assert doc-container is visible (real annotation UI rendered)
+
+**Verifies:** Skeleton-first loading pattern: spinner shows immediately, content replaces it after background DB+render task completes (AC1.2, AC3.1)
+
+### Page header shows workspace title after deferred load
+**File:** tests/e2e/test_deferred_load.py::TestDeferredPageLoad::test_page_header_shows_workspace_title
+1. Create workspace with specific title, authenticate, navigate
+2. Wait for `window.__loadComplete === true`
+3. Assert header element (data-testid="page-header-title") shows workspace title (not generic "Annotation Workspace")
+4. Assert `document.title` matches workspace title
+
+**Verifies:** `_update_page_title()` correctly updates both the visible header and browser tab title after deferred load
+
+### Invalid workspace shows not-found error
+**File:** tests/e2e/test_deferred_load.py::TestDeferredPageLoad::test_invalid_workspace_shows_not_found
+1. Authenticate user, navigate to annotation page with non-existent UUID
+2. Assert status message (data-testid="workspace-status-msg") appears with "not found"
+
+**Verifies:** Error handling renders inside the deferred-load container for missing workspaces (AC3.2)
+
+## Annotation Page -- resolve_annotation_context (Integration)
+
+### Activity-placed workspace resolution
+**File:** tests/integration/test_annotation_context.py::TestResolveAnnotationContextActivityPlaced::test_activity_placed_workspace
+1. Create Course -> Week -> Activity -> Workspace hierarchy in DB
+2. Grant owner permission to user
+3. Call resolve_annotation_context(ws_id, user_id)
+4. Assert placement_type="activity", activity_title, course_code, course_name, week_number all correct
+5. Assert permission="owner"
+
+**Verifies:** Single-session resolution correctly walks the full Activity hierarchy
+
+### Course-placed workspace resolution
+**File:** tests/integration/test_annotation_context.py::TestResolveAnnotationContextCoursePlaced::test_course_placed_workspace
+1. Create Course + Workspace with course_id set
+2. Call resolve_annotation_context
+3. Assert placement_type="course", course fields populated, activity fields None
+
+**Verifies:** Course-only placement skips activity/week resolution
+
+### Standalone workspace resolution
+**File:** tests/integration/test_annotation_context.py::TestResolveAnnotationContextStandalone::test_standalone_workspace
+1. Create bare workspace (no course, no activity)
+2. Call resolve_annotation_context
+3. Assert placement_type="loose", all hierarchy fields None
+
+**Verifies:** Loose workspaces have minimal placement context
+
+### Template detection (activity-placed and standalone)
+**File:** tests/integration/test_annotation_context.py::TestResolveAnnotationContextTemplate
+1. test_template_activity_placed: workspace IS the activity's template_workspace_id -> is_template=True, placement_type="activity"
+2. test_template_standalone: workspace has no activity_id but an activity points to it -> is_template=True, placement_type="loose"
+
+**Verifies:** Template detection works via both direct placement and reverse FK lookup
+
+### Permission resolution (explicit ACL, admin bypass, default deny)
+**File:** tests/integration/test_annotation_context.py::TestResolveAnnotationContextPermission
+1. test_explicit_acl_permission: grant "editor" -> permission="editor"
+2. test_admin_bypass: no ACL + is_admin=True -> permission="owner"
+3. test_default_deny_no_acl_no_enrollment: no ACL, no enrollment -> permission=None
+
+**Verifies:** Permission resolution matches existing check_workspace_access semantics within single session
+
+### Privileged user IDs include staff
+**File:** tests/integration/test_annotation_context.py::TestResolveAnnotationContextPrivilegedUsers::test_privileged_users_includes_staff
+1. Create course with instructor enrollment
+2. Create activity-placed workspace
+3. Call resolve_annotation_context
+4. Assert instructor's user ID in privileged_user_ids
+
+**Verifies:** Staff enrolled in the workspace's course appear in the privileged set
+
+### Tags and tag groups returned
+**File:** tests/integration/test_annotation_context.py::TestResolveAnnotationContextTags::test_tags_and_tag_groups
+1. Create workspace with TagGroup + 2 Tags
+2. Call resolve_annotation_context
+3. Assert tags in order, tag_groups present
+
+**Verifies:** Tag/group prefetch returns correct data ordered by order_index
+
+### Nonexistent workspace returns None
+**File:** tests/integration/test_annotation_context.py::TestResolveAnnotationContextNonexistent::test_nonexistent_workspace
+1. Call resolve_annotation_context with random UUIDs
+2. Assert result is None
+
+**Verifies:** Missing workspace handled gracefully (no exception)
+
+## CRDT Pre-Fetch (Integration)
+
+### Registry uses pre-fetched workspace
+**File:** tests/integration/test_crdt_prefetch.py::TestRegistryPreFetchedWorkspace::test_with_prefetched_workspace
+1. Create workspace, seed CRDT state with a highlight
+2. Fetch workspace object, call registry.get_or_create_for_workspace(ws_id, workspace=ws)
+3. Assert highlight data present in returned document
+
+**Verifies:** Pre-fetched workspace kwarg skips redundant DB fetch in AnnotationDocumentRegistry
+
+### Registry fetches from DB when kwarg omitted
+**File:** tests/integration/test_crdt_prefetch.py::TestRegistryPreFetchedWorkspace::test_without_workspace_kwarg
+1. Create workspace with CRDT state
+2. Call registry.get_or_create_for_workspace(ws_id) without workspace kwarg
+3. Assert highlight data present
+
+**Verifies:** Backward compatibility -- omitting workspace kwarg still works
+
+### Tag consistency uses pre-fetched tags
+**File:** tests/integration/test_crdt_prefetch.py::TestTagConsistencyPreFetched::test_with_prefetched_tags
+1. Create workspace with TagGroup + Tag in DB
+2. Fetch tags/groups from DB
+3. Call _ensure_crdt_tag_consistency(doc, ws_id, tags=db_tags, tag_groups=db_groups)
+4. Assert CRDT tags/groups match DB data
+
+**Verifies:** Pre-fetched tags kwarg skips redundant DB queries in tag consistency check
+
+### Tag consistency fetches from DB when kwargs omitted
+**File:** tests/integration/test_crdt_prefetch.py::TestTagConsistencyPreFetched::test_without_tags_kwarg
+1. Create workspace with TagGroup + Tag in DB
+2. Call _ensure_crdt_tag_consistency(doc, ws_id) without kwargs
+3. Assert CRDT tags/groups match DB data
+
+**Verifies:** Backward compatibility -- omitting tags kwargs still fetches from DB
+
 ## Structured Logging -- Export Instrumentation (Unit)
 
 ### Export produces stage events with timing

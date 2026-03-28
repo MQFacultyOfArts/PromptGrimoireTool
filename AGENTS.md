@@ -92,7 +92,7 @@ When operating autonomously (e.g., executing implementation plans, working on PR
 
 Structured JSON logging via structlog. Full details in `docs/logging.md`.
 
-- **Logger convention:** `logger = structlog.get_logger()` at module level. All modules use structlog, not stdlib logging.
+- **Logger convention:** `logger = structlog.get_logger()` at module level. All modules use structlog, not stdlib logging. Do not call `logging.getLogger(__name__).setLevel()` -- structlog's level filtering is global. Guard test (`test_setlevel_guard.py`) enforces this.
 - **Exception handling rule:** Every `except` block must log (`logger.exception()` or `logger.warning()`). No silent exception swallowing. `get_session()` enforces this automatically: `BusinessLogicError` subclasses are logged at WARNING; all other exceptions at ERROR (triggering Discord alerting).
 - **Context propagation:** `page_route` decorator auto-binds `user_id` and `request_path`. Workspace handlers bind `workspace_id`.
 - **Print guard:** No `print()` in `src/promptgrimoire/` except `cli/`. Guard test enforces this.

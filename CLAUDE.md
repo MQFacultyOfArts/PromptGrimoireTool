@@ -232,7 +232,7 @@ src/promptgrimoire/
 │   ├── tags.py          # Tag/TagGroup CRUD, import (ImportResult), reorder, deletion guards, CRDT cleanup
 │   ├── wargames.py      # Wargame team CRUD, ACL, roster ingestion, turn cycle orchestration
 │   ├── workspace_documents.py  # Document CRUD (add, list, reorder, update content)
-│   └── workspaces.py    # Workspace CRUD (create, get)
+│   └── workspaces.py    # Workspace CRUD (create, get), resolve_annotation_context (single-session page load)
 ├── wargame/             # Pure-domain helpers for wargame scenarios
 │   ├── agents.py        # PydanticAI agent definitions (turn_agent, summary_agent)
 │   ├── codenames.py     # Unique codename generation (coolname slugs, collision avoidance)
@@ -340,7 +340,7 @@ See [docs/deployment.md](docs/deployment.md) for full operations guide and [docs
 
 Structured JSON logging via structlog. Full details in [docs/logging.md](docs/logging.md).
 
-**Key rules:** `logger = structlog.get_logger()` at module level. Every `except` block must call `logger.exception()` or `logger.warning()` — no silent swallowing. No `print()` calls in `src/promptgrimoire/` except `cli/` (guard test enforces this).
+**Key rules:** `logger = structlog.get_logger()` at module level. Every `except` block must call `logger.exception()` or `logger.warning()` — no silent swallowing. No `print()` calls in `src/promptgrimoire/` except `cli/` (guard test enforces this). Do not call `logging.getLogger(__name__).setLevel()` — structlog level filtering is global; guard test (`test_setlevel_guard.py`) enforces this.
 
 ## Conventions
 

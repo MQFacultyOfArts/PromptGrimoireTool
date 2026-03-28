@@ -55,7 +55,6 @@ library references during development.
 ## investigations
 
 - [Causal Analysis: Connection Pool Shrinkage Under CancelledError (#403)](investigations/2026-03-21-pool-shrinkage-403.md)
-- [Investigation: Cross-User Session Contamination (#438)](investigations/2026-03-28-session-contamination-438.md)
 
 ## lark
 

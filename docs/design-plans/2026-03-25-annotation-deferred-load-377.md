@@ -6,13 +6,13 @@
 
 The annotation page blocks the NiceGUI event loop for 3+ seconds during page load, performing 10+ sequential DB round-trips with extensive redundancy (workspace fetched 4×, hierarchy walked 3×, documents listed 2×). With PgBouncer NullPool migration pending, each round-trip becomes a real connection acquire, compounding the problem.
 
-This design eliminates the blocking by (1) returning a skeleton page immediately via `background_tasks.create()`, and (2) batching the redundant DB calls into a unified context resolver with JOINed queries. Experimental measurement shows the skeleton renders in <15ms vs 400ms+ for the current blocking approach.
+This design eliminates the blocking by (1) returning a skeleton page immediately via `background_tasks.create()`, and (2) consolidating redundant DB calls into a unified context resolver (`resolve_annotation_context`) that fetches all page data in one function and threads prefetched results through downstream consumers. Experimental measurement shows the skeleton renders in <15ms vs 400ms+ for the current blocking approach.
 
 ## Definition of Done
 
 1. **Annotation page handler returns immediately** — renders page skeleton with a loading state (spinner/skeleton), then kicks off DB work as an async background task. Eliminates "Response not ready after 3.0 seconds" warnings.
 
-2. **Unified DB context resolution** — single session, JOINed queries, at most 3 DB sessions total (context resolution, documents, CRDT load). Reduces current 10 DB calls / 4× workspace fetch / 3× hierarchy walk to minimal round-trips.
+2. **Unified DB context resolution** — single function resolving all annotation page data (workspace, permission, placement context, tags, privileged users) and threading prefetched results to downstream consumers (CRDT consistency, tag registry). Reduces redundant fetches (workspace was fetched 4×, hierarchy walked 3×).
 
 3. **Progressive hydration** — once DB work completes, populate the UI (header, document, toolbar, cards). Page transitions from loading state to fully rendered.
 

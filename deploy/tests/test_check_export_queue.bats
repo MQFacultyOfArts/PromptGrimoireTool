@@ -139,7 +139,10 @@ _run_script() {
     _stub_psql "15|2026-03-28 01:00:00+00"
     _run_script
     [ "$status" -eq 0 ]
-    grep -q "2026-03-28" "$CURL_LOG"
+    # Assert the full timestamp string — not just the date prefix — to catch
+    # whitespace-stripping bugs that collapse "2026-03-28 01:00:00" into
+    # "2026-03-2801:00:00".
+    grep -q "2026-03-28 01:00:00" "$CURL_LOG"
 }
 
 # ---------------------------------------------------------------------------

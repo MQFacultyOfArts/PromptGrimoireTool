@@ -97,6 +97,18 @@ Structured JSON logging via structlog. Full details in `docs/logging.md`.
 - **Context propagation:** `page_route` decorator auto-binds `user_id` and `request_path`. Workspace handlers bind `workspace_id`.
 - **Print guard:** No `print()` in `src/promptgrimoire/` except `cli/`. Guard test enforces this.
 - **Discord alerting:** ERROR/CRITICAL events fire Discord webhook embeds (configured via `ALERTING__DISCORD_WEBHOOK_URL`). Fire-and-forget, deduplicated by `(exception_type, logger_name)` within 60s.
+- **Logging setup:** `logging_config.setup_logging()` is the single entry point. Extracted from `__init__.py` so both the NiceGUI app and standalone export worker initialise logging without importing NiceGUI.
+
+## Export Worker Architecture
+
+The export worker (PDF compilation) runs in two modes controlled by `FEATURES__WORKER_IN_PROCESS` (default: `true`):
+
+- **In-process** (`true`): Worker runs as an `asyncio.Task` inside the NiceGUI process.
+- **Standalone** (`false`): Separate systemd service (`promptgrimoire-worker.service`), entry point `python -m promptgrimoire.export.worker_main`. Isolates CPU-heavy LaTeX compilation. Uses `NullPool` via `DATABASE__USE_NULL_POOL=true`.
+
+Key contracts: `sd_notify.py` sends `READY=1`/`WATCHDOG=1`/`STOPPING=1` to systemd. `SIGTERM` triggers graceful cancellation. `deploy/restart.sh` manages worker lifecycle (stop before app restart, start after `/healthz`).
+
+Config: `EXPORT__MAX_CONCURRENT_COMPILATIONS` (int, default 2), `FEATURES__WORKER_IN_PROCESS` (bool, default true), `DATABASE__USE_NULL_POOL` (bool, default false).
 
 ## Architecture References
 Before modifying core systems, reference the detailed documentation in the `docs/` folder:
@@ -106,6 +118,8 @@ Before modifying core systems, reference the detailed documentation in the `docs
 - Web UI & Routing: `docs/annotation-architecture.md`
 - Input Pipeline (HTML/DOCX/PDF): `docs/input-pipeline.md`
 - Export Pipeline: `docs/export.md`
+- Deployment & Worker Isolation: `docs/deployment.md`
+- Migration Runbook: `docs/migration-checklist.md`
 - Structured Logging: `docs/logging.md`
 - Testing: `docs/testing.md`
 

@@ -461,6 +461,20 @@ RELOAD;
 
 > **Ref:** [PgBouncer usage (SHOW commands)](https://www.pgbouncer.org/usage.html)
 
+### NullPool for application connections
+
+SQLAlchemy's default connection pool creates a **second pool** on top of PgBouncer — the double-pooling pathology. Connections sit idle in SQLAlchemy's pool while PgBouncer counts them as active server connections, wasting PostgreSQL backend slots and causing pool exhaustion under load.
+
+The fix is `NullPool`: SQLAlchemy opens a new connection for each request and closes it immediately after use, letting PgBouncer handle all pooling. Set in production `.env`:
+
+```bash
+DATABASE__USE_NULL_POOL=true
+```
+
+This is only needed when PgBouncer is in the path. In development (direct PostgreSQL), the default SQLAlchemy pool is fine.
+
+> **Ref:** [SQLAlchemy NullPool](https://docs.sqlalchemy.org/en/20/core/pooling.html#using-a-pool-instance-directly), [PgBouncer FAQ: application-side pooling](https://www.pgbouncer.org/faq.html)
+
 ## 8. Application Setup
 
 ```bash
@@ -824,6 +838,78 @@ sudo journalctl -u promptgrimoire -f
 ```
 
 > **Ref:** [systemd.service(5)](https://www.freedesktop.org/software/systemd/man/systemd.service.html), [systemd.exec(5) sandboxing](https://www.freedesktop.org/software/systemd/man/systemd.exec.html#Sandboxing)
+
+> **See also:** § 10a for the export worker service, which runs PDF exports in an isolated process with independent resource controls.
+
+## 10a. Export Worker Service
+
+The export worker runs PDF/LaTeX exports as a **separate systemd service**, isolated from the main application. This provides:
+
+- **OOM isolation** — a runaway export cannot crash the app; the kernel kills the worker first
+- **Independent restart** — the worker can be restarted without affecting user sessions
+- **Resource controls** — best-effort CPU/IO scheduling prevents exports from starving the UI
+
+### Installation
+
+```bash
+sudo cp deploy/promptgrimoire-worker.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable promptgrimoire-worker
+sudo systemctl start promptgrimoire-worker
+```
+
+### Resource controls
+
+The worker unit file applies best-effort scheduling so exports never compete with the interactive app:
+
+| Directive | Value | Effect |
+|-----------|-------|--------|
+| `Nice` | `19` | Lowest CPU scheduling priority |
+| `IOSchedulingClass` | `idle` | I/O only when no other process needs disk |
+| `CPUWeight` | `10` | 10% CPU weight vs default 100 (systemd cgroups v2) |
+| `MemoryMax` | `3G` | Hard memory cap; OOM-killed if exceeded |
+| `MemoryHigh` | `2560M` | Soft limit; kernel reclaims aggressively above this |
+| `OOMScoreAdjust` | `500` | Positive score = killed before lower-scored processes |
+
+### Kernel OOM kill order
+
+When the system is under memory pressure, the kernel kills processes in order of their OOM score. The systemd units are configured so expendable services die first:
+
+| Service | `OOMScoreAdjust` | Kill order |
+|---------|-------------------|------------|
+| Export worker | `500` | 1st (expendable) |
+| App (`promptgrimoire`) | `0` (default) | 2nd |
+| PgBouncer | `-500` (recommended) | 3rd |
+| PostgreSQL | `-1000` | Last (protect data) |
+
+### Watchdog
+
+The worker sends `sd_notify` heartbeats to systemd. If no heartbeat arrives within `WatchdogSec=300` (5 minutes), systemd considers the worker hung and restarts it automatically. This catches deadlocks and infinite loops without manual intervention.
+
+The worker also uses `TimeoutStopSec=120` to allow a graceful shutdown — the current export job (longest observed: ~90 seconds) finishes before the process is killed.
+
+### Logs
+
+```bash
+# Follow worker logs
+sudo journalctl -u promptgrimoire-worker -f
+
+# Recent worker logs (last hour)
+sudo journalctl -u promptgrimoire-worker --since "1 hour ago"
+
+# Worker restarts (watchdog or crash)
+sudo journalctl -u promptgrimoire-worker | grep -E "Started|Stopped|watchdog"
+```
+
+### Feature flag
+
+In production, the main app must **not** run the export worker in-process. Set in `.env`:
+
+```bash
+FEATURES__WORKER_IN_PROCESS=false
+```
+
+When `true` (the default for development), the app spawns the worker as an asyncio task. When `false`, the app assumes the worker runs as a separate systemd service and does not start one internally.
 
 ## 11. HAProxy
 

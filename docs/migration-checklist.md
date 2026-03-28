@@ -228,3 +228,171 @@ SELECT * FROM pg_stat_replication;
 - Monitoring pointing at DO
 - DNS TTL restored to 3600s
 - NCI demoted to standby role
+
+---
+
+## Appendix A: Row count verification
+
+Run on **both** NCI (before dump) and DO (after restore). All counts must match exactly.
+
+### Quick estimate (fast, uses pg statistics)
+
+```sql
+-- Estimated row counts from PostgreSQL statistics
+-- Good for sanity check; may differ by a few rows from exact counts
+SELECT schemaname, relname, n_live_tup
+FROM pg_stat_user_tables
+ORDER BY schemaname, relname;
+```
+
+### Exact counts (slower, authoritative)
+
+```sql
+-- Exact counts for all 19 application tables
+-- Run ANALYZE first on DO to update statistics after restore
+ANALYZE;
+
+SELECT 'acl_entry' AS table_name, count(*) FROM acl_entry
+UNION ALL SELECT 'activity', count(*) FROM activity
+UNION ALL SELECT 'course', count(*) FROM course
+UNION ALL SELECT 'course_enrollment', count(*) FROM course_enrollment
+UNION ALL SELECT 'course_role', count(*) FROM course_role
+UNION ALL SELECT 'export_job', count(*) FROM export_job
+UNION ALL SELECT 'export_job_status', count(*) FROM export_job_status
+UNION ALL SELECT 'permission', count(*) FROM permission
+UNION ALL SELECT 'student_group', count(*) FROM student_group
+UNION ALL SELECT 'student_group_membership', count(*) FROM student_group_membership
+UNION ALL SELECT 'tag', count(*) FROM tag
+UNION ALL SELECT 'tag_group', count(*) FROM tag_group
+UNION ALL SELECT 'user', count(*) FROM "user"
+UNION ALL SELECT 'wargame_config', count(*) FROM wargame_config
+UNION ALL SELECT 'wargame_message', count(*) FROM wargame_message
+UNION ALL SELECT 'wargame_team', count(*) FROM wargame_team
+UNION ALL SELECT 'week', count(*) FROM week
+UNION ALL SELECT 'workspace', count(*) FROM workspace
+UNION ALL SELECT 'workspace_document', count(*) FROM workspace_document
+ORDER BY table_name;
+```
+
+### One-liner for diff comparison
+
+```bash
+# On NCI — save counts to file:
+sudo -u promptgrimoire psql -d promptgrimoire -tA -c "
+SELECT 'acl_entry', count(*) FROM acl_entry
+UNION ALL SELECT 'activity', count(*) FROM activity
+UNION ALL SELECT 'course', count(*) FROM course
+UNION ALL SELECT 'course_enrollment', count(*) FROM course_enrollment
+UNION ALL SELECT 'course_role', count(*) FROM course_role
+UNION ALL SELECT 'export_job', count(*) FROM export_job
+UNION ALL SELECT 'export_job_status', count(*) FROM export_job_status
+UNION ALL SELECT 'permission', count(*) FROM permission
+UNION ALL SELECT 'student_group', count(*) FROM student_group
+UNION ALL SELECT 'student_group_membership', count(*) FROM student_group_membership
+UNION ALL SELECT 'tag', count(*) FROM tag
+UNION ALL SELECT 'tag_group', count(*) FROM tag_group
+UNION ALL SELECT 'user', count(*) FROM \"user\"
+UNION ALL SELECT 'wargame_config', count(*) FROM wargame_config
+UNION ALL SELECT 'wargame_message', count(*) FROM wargame_message
+UNION ALL SELECT 'wargame_team', count(*) FROM wargame_team
+UNION ALL SELECT 'week', count(*) FROM week
+UNION ALL SELECT 'workspace', count(*) FROM workspace
+UNION ALL SELECT 'workspace_document', count(*) FROM workspace_document
+ORDER BY 1;
+" > /tmp/nci_counts.txt
+
+# On DO — save counts to file:
+sudo -u promptgrimoire psql -d promptgrimoire -tA -c "
+SELECT 'acl_entry', count(*) FROM acl_entry
+UNION ALL SELECT 'activity', count(*) FROM activity
+UNION ALL SELECT 'course', count(*) FROM course
+UNION ALL SELECT 'course_enrollment', count(*) FROM course_enrollment
+UNION ALL SELECT 'course_role', count(*) FROM course_role
+UNION ALL SELECT 'export_job', count(*) FROM export_job
+UNION ALL SELECT 'export_job_status', count(*) FROM export_job_status
+UNION ALL SELECT 'permission', count(*) FROM permission
+UNION ALL SELECT 'student_group', count(*) FROM student_group
+UNION ALL SELECT 'student_group_membership', count(*) FROM student_group_membership
+UNION ALL SELECT 'tag', count(*) FROM tag
+UNION ALL SELECT 'tag_group', count(*) FROM tag_group
+UNION ALL SELECT 'user', count(*) FROM \"user\"
+UNION ALL SELECT 'wargame_config', count(*) FROM wargame_config
+UNION ALL SELECT 'wargame_message', count(*) FROM wargame_message
+UNION ALL SELECT 'wargame_team', count(*) FROM wargame_team
+UNION ALL SELECT 'week', count(*) FROM week
+UNION ALL SELECT 'workspace', count(*) FROM workspace
+UNION ALL SELECT 'workspace_document', count(*) FROM workspace_document
+ORDER BY 1;
+" > /tmp/do_counts.txt
+
+# Compare (transfer one file via scp first):
+diff /tmp/nci_counts.txt /tmp/do_counts.txt
+# Expected: no output (files identical)
+```
+
+**Gate:** `diff` produces no output. Any difference means the restore is incomplete — do NOT proceed.
+
+---
+
+## Appendix B: CRDT spot-check
+
+Verifies that binary CRDT state survived dump/restore intact by extracting human-readable text from 3-5 workspaces and comparing between servers.
+
+### Step 1: Pick workspaces to check
+
+```sql
+-- Find 5 recently updated workspaces with CRDT state
+SELECT id, title, octet_length(crdt_state) AS crdt_bytes
+FROM workspace
+WHERE crdt_state IS NOT NULL
+ORDER BY updated_at DESC NULLS LAST
+LIMIT 5;
+```
+
+Record the workspace IDs. Use the same IDs on both servers.
+
+### Step 2: Extract CRDT text from each workspace
+
+```bash
+# Run on BOTH NCI and DO for each workspace ID
+WORKSPACE_ID="<uuid-from-step-1>"
+
+sudo -u promptgrimoire psql -d promptgrimoire -tA -c \
+  "SELECT encode(crdt_state, 'base64') FROM workspace WHERE id = '$WORKSPACE_ID'" \
+  | python3 -c "
+import sys, base64, pycrdt
+
+data = base64.b64decode(sys.stdin.read().strip())
+doc = pycrdt.Doc()
+doc.apply_update(data)
+
+for key in sorted(doc.keys()):
+    obj = doc.get(key)
+    if hasattr(obj, '__str__'):
+        text = str(obj)[:200]
+        print(f'{key}: {text}')
+" > /tmp/crdt_${WORKSPACE_ID}.txt
+```
+
+### Step 3: Compare output
+
+```bash
+# Transfer NCI file to DO (or vice versa), then diff:
+diff /tmp/crdt_${WORKSPACE_ID}.txt /tmp/crdt_${WORKSPACE_ID}_do.txt
+# Expected: no output (files identical)
+```
+
+Repeat for all 5 workspace IDs.
+
+**Gate:** All 5 diffs produce no output. Any difference in CRDT text means binary data was corrupted during transfer — do NOT proceed.
+
+### Troubleshooting
+
+If `python3 -c` fails with `ModuleNotFoundError: No module named 'pycrdt'`:
+
+```bash
+# Use the app's virtualenv instead:
+sudo -u promptgrimoire /opt/promptgrimoire/.venv/bin/python -c "..."
+```
+
+If CRDT bytes differ but text is identical, the binary representation may have been re-encoded. This is acceptable — the semantic content is what matters. If text differs, investigate before proceeding.

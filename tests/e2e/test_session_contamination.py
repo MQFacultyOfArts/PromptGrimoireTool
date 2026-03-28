@@ -41,6 +41,7 @@ from promptgrimoire.config import get_settings
 
 pytestmark = [
     pytest.mark.e2e,
+    pytest.mark.perf,
     pytest.mark.skipif(
         not get_settings().dev.test_database_url,
         reason="DEV__TEST_DATABASE_URL not configured",

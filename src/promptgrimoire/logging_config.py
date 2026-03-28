@@ -67,18 +67,12 @@ def _get_git_commit() -> str:
         return "unknown"
 
 
-# Fields that only belong in JSON file output, not dev console.
-_CONSOLE_STRIP_KEYS = frozenset(
-    {
-        "pid",
-        "branch",
-        "commit",
-        "timestamp",
-        "user_id",
-        "workspace_id",
-        "request_path",
-    }
-)
+# Keys always stripped from console output (metadata, not useful interactively).
+_CONSOLE_ALWAYS_STRIP = frozenset({"pid", "branch", "commit", "timestamp"})
+
+# Keys stripped from console only when their value is None (context fields
+# that are informative when bound but noisy when unset).
+_CONSOLE_STRIP_IF_NONE = frozenset({"user_id", "workspace_id", "request_path"})
 
 
 def _clean_for_console(
@@ -87,9 +81,10 @@ def _clean_for_console(
     event_dict: structlog.types.EventDict,
 ) -> structlog.types.EventDict:
     """Strip global/null fields from console; keep in JSON file."""
-    for key in _CONSOLE_STRIP_KEYS:
-        val = event_dict.get(key)
-        if val is None or key in ("pid", "branch", "commit", "timestamp"):
+    for key in _CONSOLE_ALWAYS_STRIP:
+        event_dict.pop(key, None)
+    for key in _CONSOLE_STRIP_IF_NONE:
+        if event_dict.get(key) is None:
             event_dict.pop(key, None)
     return event_dict
 

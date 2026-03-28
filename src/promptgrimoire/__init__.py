@@ -310,9 +310,6 @@ def main() -> None:
 
     if settings.database.url:
         _bootstrap_database(settings.database.url)
-
-    # Database lifecycle hooks (only if DATABASE__URL is configured)
-    if settings.database.url:
         _register_db_lifecycle(app)
 
     port = settings.app.port

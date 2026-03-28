@@ -523,6 +523,54 @@ The `max_slot_wal_keep_size` limit ensures that if the standby is offline for an
 
 > **Ref:** [PostgreSQL 16 WAL Configuration](https://www.postgresql.org/docs/16/runtime-config-replication.html), [Replication Slots](https://www.postgresql.org/docs/16/warm-standby.html#STREAMING-REPLICATION-SLOTS)
 
+### Standby configuration and bootstrap (NCI)
+
+**Initial bootstrap (run on NCI standby):**
+
+```bash
+# Stop PostgreSQL on standby
+sudo systemctl stop postgresql@16-main
+
+# Clear existing data directory
+sudo -u postgres rm -rf /var/lib/postgresql/16/main/*
+
+# Take base backup from primary (-R creates standby.signal and connection config)
+sudo -u postgres pg_basebackup \
+  -h <DO_PRIMARY_IP> \
+  -U replicator \
+  -D /var/lib/postgresql/16/main \
+  -Fp -Xs -P -R \
+  -S nci_standby
+
+# Verify standby.signal was created
+ls -la /var/lib/postgresql/16/main/standby.signal
+
+# Start PostgreSQL (will begin streaming)
+sudo systemctl start postgresql@16-main
+```
+
+The `-R` flag tells `pg_basebackup` to create `standby.signal` and write connection settings to `postgresql.auto.conf`. The `-S nci_standby` flag binds the standby to the replication slot created on the primary, ensuring WAL retention even if the standby disconnects temporarily.
+
+**Standby postgresql.conf (auto-created by `-R`, verify these exist in `postgresql.auto.conf`):**
+
+```ini
+primary_conninfo = 'host=<DO_PRIMARY_IP> port=5432 user=replicator password=<password> sslmode=verify-full sslrootcert=/etc/ssl/certs/ca-certificates.crt'
+primary_slot_name = 'nci_standby'
+recovery_target_timeline = 'latest'
+```
+
+**Verification query (run on primary):**
+
+```sql
+SELECT pid, usename, application_name, state, sync_state,
+       write_lag, flush_lag, replay_lag, slot_name
+FROM pg_stat_replication;
+```
+
+Expected: `state = 'streaming'`, `slot_name = 'nci_standby'`.
+
+If the standby has been offline long enough that WAL was reclaimed (beyond `max_slot_wal_keep_size`), the replication slot becomes invalidated. In that case, drop and recreate the slot on the primary, then re-run the full `pg_basebackup` bootstrap above.
+
 ## 8. Application Setup
 
 ```bash

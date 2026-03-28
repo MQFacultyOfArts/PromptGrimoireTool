@@ -6,12 +6,15 @@ automatic navigation generation based on user permissions.
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import functools
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Literal
 
 import structlog
 from nicegui import app, ui
+from nicegui.storage import request_contextvar
 from structlog.contextvars import bind_contextvars, clear_contextvars
 
 from promptgrimoire.auth import is_privileged_user
@@ -99,6 +102,21 @@ def _register_client(user_id: str) -> None:
     client_registry.register(_UUID(user_id), ui.context.client)
 
 
+def _get_session_identity() -> tuple[str, str]:
+    """Read contextvar session ID and asyncio task name for tracing (#438)."""
+    task_name = ""
+    ctx_session_id = "error"
+    with contextlib.suppress(Exception):
+        task = asyncio.current_task()
+        task_name = task.get_name() if task else "no-task"
+        req = request_contextvar.get()
+        if req is not None:
+            ctx_session_id = req.session.get("id", "missing")
+        else:
+            ctx_session_id = "no-request"
+    return ctx_session_id, task_name
+
+
 def page_route(
     route: str,
     *,
@@ -149,12 +167,37 @@ def page_route(
         @functools.wraps(func)
         async def _with_log_context(*args: object, **kwargs: object) -> None:
             clear_contextvars()
+
+            _ctx_session_id, _task_name = _get_session_identity()
+
             user_id = None
             try:
                 auth_user = app.storage.user.get("auth_user")
                 user_id = auth_user.get("user_id") if auth_user else None
             except RuntimeError:
                 logger.debug("storage_unavailable", route=route)
+            except AssertionError:
+                # Session identity mismatch — session_id not in _users.
+                # Log with full context for correlation with middleware log.
+                # exc_info=True ensures DiscordAlertProcessor fires and
+                # includes the exception type in the dedup key.
+                logger.error(
+                    "session_storage_assertion_failed",
+                    route=route,
+                    ctx_session_id=_ctx_session_id,
+                    task_name=_task_name,
+                    exc_info=True,
+                )
+
+            # Session identity tracing (#438): always log for correlation
+            logger.info(
+                "session_identity_at_page",
+                route=route,
+                ctx_session_id=_ctx_session_id,
+                task_name=_task_name,
+                user_id=user_id,
+            )
+
             bind_contextvars(user_id=user_id, request_path=route)
 
             # Ban check: runs for any authenticated user regardless of

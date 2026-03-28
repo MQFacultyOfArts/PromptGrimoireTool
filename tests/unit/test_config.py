@@ -114,6 +114,8 @@ class TestDatabaseConfig:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """infra-split.AC2.2: use_null_pool defaults to False."""
+        # Clear any DATABASE__ vars injected by CI — pydantic-settings
+        # env overrides take precedence over field defaults.
         for key in list(os.environ):
             if key.startswith("DATABASE__"):
                 monkeypatch.delenv(key, raising=False)

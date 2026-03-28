@@ -7,7 +7,6 @@ and comment threads across multiple connected clients.
 
 from __future__ import annotations
 
-import logging
 from contextvars import ContextVar
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
@@ -23,8 +22,6 @@ if TYPE_CHECKING:
     from promptgrimoire.db.models import Tag, TagGroup, Workspace
 
 logger = structlog.get_logger()
-logging.getLogger(__name__).setLevel(logging.WARNING)
-
 # Async-safe storage for the origin client ID during updates.
 _origin_var: ContextVar[str | None] = ContextVar("annotation_origin", default=None)
 

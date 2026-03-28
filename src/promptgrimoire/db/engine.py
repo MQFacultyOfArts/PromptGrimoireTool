@@ -6,7 +6,6 @@ Includes connection pool instrumentation for diagnostics.
 
 from __future__ import annotations
 
-import logging
 import os
 import time as _time
 from contextlib import asynccontextmanager
@@ -29,9 +28,7 @@ if TYPE_CHECKING:
     from sqlalchemy.pool import _ConnectionRecord
 
 logger = structlog.get_logger()
-logging.getLogger(__name__).setLevel(logging.WARNING)
 _pool_logger = structlog.get_logger(f"{__name__}.pool")
-logging.getLogger(f"{__name__}.pool").setLevel(logging.INFO)
 
 
 def _pool_status(pool: object) -> str:

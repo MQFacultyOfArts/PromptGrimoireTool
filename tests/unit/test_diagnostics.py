@@ -290,3 +290,104 @@ class TestInvalidateAllSessions:
             object.__setattr__(app.storage, "_users", original)
 
         assert fake_storage == {"theme": "dark"}
+
+    async def test_sync_writes_file_persistent_dict(self, tmp_path: Any) -> None:
+        """FilePersistentDict storage files are written synchronously.
+
+        NiceGUI's backup() uses create_lazy() which may not flush before
+        SIGTERM.  _invalidate_all_sessions must write the file directly.
+        """
+        from nicegui import app
+        from nicegui.persistence.file_persistent_dict import FilePersistentDict
+
+        from promptgrimoire.diagnostics import _invalidate_all_sessions
+
+        # Create a real FilePersistentDict backed by a temp file
+        storage_file = tmp_path / "storage-test-user.json"
+        storage_file.write_text('{"auth_user": {"email": "a@b.com"}, "theme": "dark"}')
+
+        fpd = FilePersistentDict(storage_file, encoding="utf-8")
+        fpd.initialize_sync()
+        assert "auth_user" in fpd
+
+        original = app.storage._users
+        object.__setattr__(app.storage, "_users", {"test-user": fpd})
+        try:
+            await _invalidate_all_sessions()
+        finally:
+            object.__setattr__(app.storage, "_users", original)
+
+        # In-memory: auth_user removed, other keys preserved
+        assert "auth_user" not in fpd
+        assert fpd["theme"] == "dark"
+
+        # On-disk: file was written synchronously (survives SIGTERM)
+        import json
+
+        on_disk = json.loads(storage_file.read_text(encoding="utf-8"))
+        assert "auth_user" not in on_disk
+        assert on_disk["theme"] == "dark"
+
+    async def test_sync_write_skips_non_file_storage(self) -> None:
+        """Non-FilePersistentDict storage still has auth_user cleared."""
+        from nicegui import app
+
+        from promptgrimoire.diagnostics import _invalidate_all_sessions
+
+        fake_storage: dict[str, object] = {
+            "auth_user": {"email": "x@y.com"},
+            "keep": True,
+        }
+
+        original = app.storage._users
+        object.__setattr__(app.storage, "_users", {"sid": fake_storage})
+        try:
+            await _invalidate_all_sessions()
+        finally:
+            object.__setattr__(app.storage, "_users", original)
+
+        assert "auth_user" not in fake_storage
+        assert fake_storage["keep"] is True
+
+
+class TestInvalidateSessionsOnDisk:
+    """Tests for invalidate_sessions_on_disk — startup session cleanup."""
+
+    def test_clears_auth_user_from_storage_files(self, tmp_path: Any) -> None:
+        """Startup invalidation removes auth_user from JSON files on disk."""
+        import json
+
+        from promptgrimoire.diagnostics import invalidate_sessions_on_disk
+
+        storage = tmp_path / ".nicegui"
+        storage.mkdir()
+        (storage / "storage-user-aaa.json").write_text(
+            json.dumps({"auth_user": {"email": "a@b.com"}, "theme": "dark"})
+        )
+        (storage / "storage-user-bbb.json").write_text(json.dumps({"theme": "light"}))
+
+        invalidate_sessions_on_disk(storage_dir=storage)
+
+        data_a = json.loads((storage / "storage-user-aaa.json").read_text())
+        assert "auth_user" not in data_a
+        assert data_a["theme"] == "dark"
+
+        # File without auth_user is untouched
+        data_b = json.loads((storage / "storage-user-bbb.json").read_text())
+        assert data_b == {"theme": "light"}
+
+    def test_handles_missing_storage_dir(self, tmp_path: Any) -> None:
+        """No error when storage directory doesn't exist."""
+        from promptgrimoire.diagnostics import invalidate_sessions_on_disk
+
+        invalidate_sessions_on_disk(storage_dir=tmp_path / "nonexistent")
+
+    def test_handles_corrupt_json(self, tmp_path: Any) -> None:
+        """Corrupt storage files are logged and skipped."""
+        from promptgrimoire.diagnostics import invalidate_sessions_on_disk
+
+        storage = tmp_path / ".nicegui"
+        storage.mkdir()
+        (storage / "storage-user-bad.json").write_text("not json{{{")
+
+        invalidate_sessions_on_disk(storage_dir=storage)  # should not raise

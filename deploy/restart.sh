@@ -67,6 +67,21 @@ sudo -u promptgrimoire env PATH="$PG_PATH" git -C "$APP_DIR" pull --rebase
 step "uv sync"
 sudo -u promptgrimoire env PATH="$PG_PATH" "$UV" --directory "$APP_DIR" sync
 
+# 2b. Prune stale NiceGUI user-storage files (> 7 days old)
+NICEGUI_STORAGE="$APP_DIR/.nicegui"
+step "Pruning stale NiceGUI storage files"
+if [[ -d "$NICEGUI_STORAGE" ]]; then
+    stale_count=$(find "$NICEGUI_STORAGE" -name "storage-user-*.json" -mtime +7 | wc -l)
+    if [[ "$stale_count" -gt 0 ]]; then
+        find "$NICEGUI_STORAGE" -name "storage-user-*.json" -mtime +7 -delete
+        echo "  Removed $stale_count stale storage files"
+    else
+        echo "  No stale storage files to remove"
+    fi
+else
+    echo "  No .nicegui directory found — skipping"
+fi
+
 # 3. Tests (e-stop)
 if [[ "$SKIP_TESTS" == "false" ]]; then
     step "Running unit tests (e-stop — will abort deploy on failure)"

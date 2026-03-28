@@ -151,12 +151,8 @@ async def pre_restart_handler(request: Request) -> JSONResponse:
     # Persist all dirty CRDT state to database
     await get_persistence_manager().persist_all_dirty_workspaces()
 
-    # Invalidate all sessions so no stale auth survives the restart
-    from promptgrimoire.diagnostics import _invalidate_all_sessions  # noqa: PLC0415
-
-    await _invalidate_all_sessions()
-
-    # Navigate all connected clients to the restarting page
+    # Navigate BEFORE invalidating — clients still rendering pages will
+    # hit `assert auth_user is not None` if sessions vanish mid-load.
     for client in list(Client.instances.values()):
         if not client.has_socket_connection:
             continue
@@ -173,6 +169,11 @@ async def pre_restart_handler(request: Request) -> JSONResponse:
                 client_id=client.id,
                 exc_info=True,
             )
+
+    # Invalidate all sessions so no stale auth survives the restart
+    from promptgrimoire.diagnostics import _invalidate_all_sessions  # noqa: PLC0415
+
+    await _invalidate_all_sessions()
 
     logger.info("pre_restart_complete", initial_count=initial_count)
     return JSONResponse({"initial_count": initial_count})

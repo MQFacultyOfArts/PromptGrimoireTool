@@ -130,6 +130,9 @@ class TestPreRestartFlush:
         mock_client_class = MagicMock()
         mock_client_class.instances = {"c1": mock_client}
 
+        async def tracking_invalidate() -> None:
+            call_order.append("invalidate")
+
         with (
             patch(
                 "promptgrimoire.pages.restart.get_settings",
@@ -144,6 +147,10 @@ class TestPreRestartFlush:
                 "promptgrimoire.crdt.persistence.get_persistence_manager",
                 return_value=mock_persist_mgr,
             ),
+            patch(
+                "promptgrimoire.diagnostics._invalidate_all_sessions",
+                AsyncMock(side_effect=tracking_invalidate),
+            ),
         ):
             resp = await pre_restart_handler(_make_request(token="test-token"))
 
@@ -151,10 +158,16 @@ class TestPreRestartFlush:
 
         # AC2.4: extraction before persist
         assert call_order.index("extract_milkdown") < call_order.index("persist")
-        # AC2.2: navigation happened
-        assert "navigate" in call_order
-        # AC2.1: persist was called
-        assert "persist" in call_order
+        # Navigate before invalidate — clients still rendering will crash
+        # on `assert auth_user is not None` if sessions vanish mid-load.
+        assert call_order.index("navigate") < call_order.index("invalidate")
+        # All four steps happened
+        assert set(call_order) == {
+            "extract_milkdown",
+            "persist",
+            "navigate",
+            "invalidate",
+        }
 
     @pytest.mark.asyncio
     async def test_tolerates_disconnected_client(self) -> None:
@@ -247,26 +260,35 @@ class TestPreRestartSessionInvalidation:
         )
 
     @pytest.mark.asyncio
-    async def test_invalidation_runs_after_persist(self) -> None:
-        """Sessions must be invalidated after CRDT state is persisted."""
+    async def test_invalidation_runs_after_navigate(self) -> None:
+        """Sessions must be invalidated after clients are navigated away.
+
+        Invalidating while clients are still rendering pages causes
+        ``assert auth_user is not None`` crashes in page handlers.
+        """
         from promptgrimoire.pages.restart import pre_restart_handler
 
         call_order: list[str] = []
 
         mock_persist_mgr = MagicMock()
-
-        async def tracking_persist() -> None:
-            call_order.append("persist")
-
-        mock_persist_mgr.persist_all_dirty_workspaces = AsyncMock(
-            side_effect=tracking_persist
-        )
+        mock_persist_mgr.persist_all_dirty_workspaces = AsyncMock()
 
         async def tracking_invalidate() -> None:
             call_order.append("invalidate")
 
+        mock_client = MagicMock()
+        mock_client.has_socket_connection = True
+        mock_client.id = "nav-test"
+
+        async def tracking_run_js(code: str, timeout: float = 5.0) -> object:  # noqa: ARG001
+            if "restarting" in code:
+                call_order.append("navigate")
+            return None
+
+        mock_client.run_javascript = AsyncMock(side_effect=tracking_run_js)
+
         mock_client_class = MagicMock()
-        mock_client_class.instances = {}
+        mock_client_class.instances = {"c1": mock_client}
 
         with (
             patch(
@@ -290,7 +312,7 @@ class TestPreRestartSessionInvalidation:
             resp = await pre_restart_handler(_make_request(token="test-token"))
 
         assert resp.status_code == 200
-        assert call_order == ["persist", "invalidate"]
+        assert call_order.index("navigate") < call_order.index("invalidate")
 
 
 class TestConnectionCount:

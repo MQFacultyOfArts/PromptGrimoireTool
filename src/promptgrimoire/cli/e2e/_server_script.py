@@ -180,6 +180,35 @@ async def _healthz(_request):
 app.routes.insert(0, Route("/healthz", _healthz, methods=["GET", "HEAD"]))
 
 
+# Session identity page — exercises the full @ui.page -> background_tasks.create
+# path.  Used by test_h7_session_contamination.py to verify that concurrent page
+# loads resolve the correct request_contextvar (and thus the correct user storage).
+@ui.page("/test/session-identity")
+async def _session_identity_page() -> None:
+    # First read: capture identity immediately.
+    auth_user = app.storage.user.get("auth_user")
+    email_before = auth_user.get("email", "unknown") if auth_user else "unauthenticated"
+
+    # Yield aggressively to maximise interleaving with concurrent requests.
+    # In production, real page handlers yield many times (DB queries, CRDT loads).
+    for _ in range(10):
+        await asyncio.sleep(0)
+
+    # Second read: check if identity is still the same after yielding.
+    # If request_contextvar was overwritten by another request between yields,
+    # this read would resolve a different user's storage.
+    auth_user_after = app.storage.user.get("auth_user")
+    email_after = (
+        auth_user_after.get("email", "unknown")
+        if auth_user_after
+        else "unauthenticated"
+    )
+
+    # Render both: test checks email_before == email_after == expected.
+    ui.label(email_before).props('data-testid="session-email"')
+    ui.label(email_after).props('data-testid="session-email-after"')
+
+
 # Diagnostic endpoint: pool + pg_stat + NiceGUI client stats
 @app.get("/api/test/diagnostics")
 async def _diagnostics():

@@ -415,6 +415,16 @@ async def _healthz(_request):
 
 app.routes.insert(0, Route("/healthz", _healthz, methods=["GET", "HEAD"]))
 
+# Session identity page — exercises the full @ui.page path for H7 testing.
+@ui.page("/test/session-identity")
+async def _session_identity_page():
+    import asyncio
+    auth_user = app.storage.user.get("auth_user")
+    email = auth_user.get("email", "unknown") if auth_user else "unauthenticated"
+    await asyncio.sleep(0)
+    ui.label(email).props('data-testid="session-email"')
+
+
 # Diagnostic endpoint: pool + pg_stat + NiceGUI client stats
 @app.get("/api/test/diagnostics")
 async def _diagnostics():

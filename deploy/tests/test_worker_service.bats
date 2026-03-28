@@ -63,10 +63,10 @@ UNIT_FILE="$BATS_TEST_DIRNAME/../promptgrimoire-worker.service"
 }
 
 # ---------------------------------------------------------------------------
-# Graceful shutdown
+# Shutdown behaviour
 # ---------------------------------------------------------------------------
 
-@test "TimeoutStopSec is set (graceful drain)" {
+@test "TimeoutStopSec is set (cleanup headroom)" {
     run grep -E '^TimeoutStopSec=' "$UNIT_FILE"
     [ "$status" -eq 0 ]
 }

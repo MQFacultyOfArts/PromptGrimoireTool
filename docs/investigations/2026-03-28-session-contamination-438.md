@@ -315,9 +315,9 @@ has not been demonstrated under production-equivalent load.
 
 Versions: anyio 4.12.1, starlette 0.50.0, nicegui 3.9.0.
 
-### E2E reproducer test (inconclusive)
+### E2E reproducer test — lightweight endpoint (inconclusive)
 
-**Test:** `tests/e2e/test_h7_session_contamination.py`
+**Test:** `tests/e2e/test_h7_session_contamination.py::test_concurrent_session_identity`
 
 **Design:**
 - 20 independent Playwright instances (separate processes/event loops)
@@ -330,58 +330,102 @@ Versions: anyio 4.12.1, starlette 0.50.0, nicegui 3.9.0.
 - Test captures both emails and compares to expected
 - 5 rounds = 100 total concurrent page loads
 
-**Result:** All 100 page loads returned the correct email, both before
-and after yield points.  No contamination detected.
+**Result:** All 100 page loads returned the correct email.
 
 **Critical limitation:** The test page does effectively zero work
-(`asyncio.sleep(0)` x10).  Production annotation pages load from
-PostgreSQL, deserialise CRDT blobs (up to ~150KB), set up presence
-tracking, and render thousands of DOM nodes.  The test does not
-reproduce event loop saturation, which is the precondition for H7.
-**This result is inconclusive — the test does not simulate production
-conditions.**  A follow-up test must use the PABAI fixture (190
-highlights, 5,020 text nodes) to create realistic load.
+(`asyncio.sleep(0)` x10).  This does not reproduce event loop
+saturation.  **Inconclusive.**
 
-## Hypothesis Ranking (updated 2026-03-28, post-student-reports)
+### E2E reproducer test — PABAI workload (not reproduced)
+
+**Test:** `tests/e2e/test_h7_session_contamination.py::test_concurrent_pabai_identity`
+
+**Design:**
+- 10 independent Playwright instances
+- Each authenticates, gets owner ACL on the shared PABAI workspace
+  (190 highlights, 5,020 text nodes, ~150KB)
+- `threading.Barrier` synchronises all 10 to load the annotation page
+  simultaneously
+- Annotation page handler performs real DB queries, CRDT
+  deserialisation, presence setup, highlight rendering, broadcast
+  registration
+- After annotation page load (domcontentloaded + 3s settle), each
+  navigates to `/test/session-identity` to check identity
+- 3 rounds = 30 total concurrent PABAI page loads
+
+**Result:** All 30 identity checks returned the correct email.  Under
+this load, the annotation page could not fully render within 30s when
+all 10 fired simultaneously (text walker timeout in initial run),
+confirming genuine event loop contention.  Despite this contention,
+identity was preserved.
+
+**Assessment:** The contextvar isolation chain holds under 10-way
+concurrent PABAI load with genuine event loop saturation.  This is
+meaningful evidence that the standard page-load path is not the
+contamination vector.  However, this still does not reproduce:
+- Production concurrency levels (~189 users)
+- The specific sleep → reconnection → reload trigger from both reports
+- Concurrent SSO callback writes (the persistent contamination path)
+- The SIGABRT crash at 12:12 and its effect on persistent storage files
+- Memory pressure (production was near 4GB / OOM threshold)
+
+**Evidence grade:** The page-load path is **not demonstrated** as the
+cause under these conditions.  The bug remains **plausible** via a
+mechanism this test does not exercise.
+
+## Hypothesis Ranking (updated 2026-03-28, post-PABAI-reproducer)
 
 | # | Hypothesis | Consistent? | Evidence grade | Priority |
 |---|-----------|-------------|---------------|----------|
-| **H7** | **request_contextvar mismatch** | **Yes** | **Plausible (not yet reproduced)** | **Highest** |
+| **H7** | **request_contextvar mismatch** | **Yes** | **Plausible — not reproduced under PABAI load** | **Highest** |
 | H5 | Shared workspace | **Weakened by Report 2** | Possible for Report 1 only | **Demoted** |
 | H2 | SSO race during crash | Possible | Possible | Low |
 | H3 | Socket.io mismatch | No | Speculative | Low |
 
-**Rationale:** Report 2's cross-unit contamination weakens H5
-significantly.  H7 remains the leading hypothesis: the 5 storage
+**Rationale:** Report 2's cross-unit contamination rules out H5 for
+that report.  H7 remains the leading hypothesis: the 5 storage
 assertion failures (confirmed facts) prove that `request_contextvar`
-resolves to wrong session_ids under production load.  The E2E test did
-not reproduce this, but the test is acknowledged as insufficient (no
-production-equivalent workload).
+resolved to wrong session_ids under production conditions.  The PABAI
+E2E test created genuine event loop saturation but did not reproduce
+contamination, which narrows the possible trigger conditions.
+
+The gap between the E2E test and production is:
+1. **Concurrency scale:** 10 vs ~189 concurrent users
+2. **Trigger pattern:** concurrent page loads vs sleep/reconnect/reload
+3. **Write path:** the test only exercises reads; the persistent
+   contamination requires a write (`_set_session_user` at `auth.py:148`)
+   during a contaminated context
+4. **Memory/crash state:** the 12:12 SIGABRT may have corrupted
+   `.nicegui/storage-user-*.json` files on disk
 
 ## Revised Next Steps
 
-1. **Rebuild E2E reproducer with PABAI fixture.** Each of the 20
-   sessions must load the full 150KB PABAI workspace (190 highlights,
-   5,020 text nodes) to create realistic event loop contention.  The
-   current toy endpoint is insufficient.
-
-2. **Instrument the identity chain in production.** Add structured
+1. **Instrument the identity chain in production.** Add structured
    logging at `RequestTrackingMiddleware.dispatch` and `page_route`
    (log session_id + asyncio task name at both points).  If these
-   ever diverge, H7 is confirmed.
+   ever diverge, H7 is confirmed.  This is the fastest path to a
+   definitive answer.
 
-3. **Monitor for new assertion failures.** The 5 storage assertion
-   failures in structlog are the strongest evidence of a real bug.
-   Add Discord alerting for these so new occurrences are caught
-   immediately.
+2. **Add Discord alerting for storage assertion failures.** The 5
+   existing failures are the strongest direct evidence.  Immediate
+   notification of new occurrences enables correlation with user
+   reports.
+
+3. **Build a concurrent SSO callback reproducer.** The persistent
+   contamination requires a write to `app.storage.user` during a
+   contaminated context.  The write path is `_set_session_user()`
+   at `auth.py:148`, called during SSO/magic-link callbacks.  A test
+   that fires concurrent auth callbacks (not just page loads) would
+   exercise the dangerous path.
 
 4. **Investigate the persistent storage write path.** Report 2's
    persistence across refresh means `auth_user` was written to the
-   wrong session's `FilePersistentDict`.  The write path is
-   `_set_session_user()` at `auth.py:148`.  If the contextvar is
-   contaminated during SSO callback processing, the write goes to
-   the wrong storage file.  This is the mechanism that creates
-   persistent cross-user contamination.
+   wrong session's `FilePersistentDict`.  Even if the contextvar
+   mechanism is correct, a SIGABRT crash during a `FilePersistentDict`
+   write could corrupt the JSON file, potentially swapping auth_user
+   blobs between session files.  Examine the SIGABRT crash at 12:12
+   and whether any storage-user-*.json files were written during that
+   window.
 
 ## Defensive Fixes Applied
 

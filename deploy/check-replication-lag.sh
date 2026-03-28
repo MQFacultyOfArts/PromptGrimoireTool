@@ -14,7 +14,10 @@ THRESHOLD="${REPLICATION_LAG_THRESHOLD:-300}"
 DB_NAME="${DB_NAME:-promptgrimoire}"
 DB_USER="${DB_USER:-promptgrimoire}"
 ENV_FILE="${ENV_FILE:-/opt/promptgrimoire/.env}"
-SLOT_NAME="${SLOT_NAME:-nci_standby}"
+# Filter by application_name set in the standby's primary_conninfo.
+# pg_stat_replication does NOT have a slot_name column in PG16;
+# application_name is the correct identifier for filtering standbys.
+STANDBY_APP="${STANDBY_APP:-nci_standby}"
 
 # Read webhook URL from .env
 WEBHOOK_URL=""
@@ -26,9 +29,10 @@ if [[ -z "$WEBHOOK_URL" ]]; then
     exit 0
 fi
 
-# Query pg_stat_replication for replay lag on the target slot
+# Query pg_stat_replication for replay lag, filtering by application_name.
+# STANDBY_APP must not contain single quotes (default 'nci_standby' is safe).
 RESULT=$(psql -U "$DB_USER" -d "$DB_NAME" -tA -c \
-    "SELECT COALESCE(EXTRACT(EPOCH FROM replay_lag)::integer, -1) AS lag_seconds, state, COALESCE(slot_name, 'none') AS slot FROM pg_stat_replication WHERE slot_name = '$SLOT_NAME';") # SLOT_NAME must not contain single quotes (default 'nci_standby' is safe)
+    "SELECT COALESCE(EXTRACT(EPOCH FROM replay_lag)::integer, -1) AS lag_seconds, state, application_name FROM pg_stat_replication WHERE application_name = '$STANDBY_APP';")
 
 HOSTNAME=$(hostname)
 TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
@@ -38,10 +42,10 @@ if [[ -z "$RESULT" ]]; then
     curl -s -o /dev/null -H "Content-Type: application/json" -d "{
       \"embeds\": [{
         \"title\": \"[CRITICAL] Standby disconnected\",
-        \"description\": \"No active replication for slot **${SLOT_NAME}**\",
+        \"description\": \"No active replication for standby **${STANDBY_APP}**\",
         \"color\": 16711680,
         \"fields\": [
-          {\"name\": \"Slot\", \"value\": \"${SLOT_NAME}\", \"inline\": true},
+          {\"name\": \"Standby\", \"value\": \"${STANDBY_APP}\", \"inline\": true},
           {\"name\": \"server\", \"value\": \"${HOSTNAME}\", \"inline\": true}
         ],
         \"timestamp\": \"${TIMESTAMP}\"
@@ -50,10 +54,10 @@ if [[ -z "$RESULT" ]]; then
     exit 0
 fi
 
-# Parse psql output: lag_seconds|state|slot
+# Parse psql output: lag_seconds|state|application_name
 LAG_SECONDS=$(echo "$RESULT" | cut -d'|' -f1 | tr -d '[:space:]')
 STATE=$(echo "$RESULT" | cut -d'|' -f2 | tr -d '[:space:]')
-SLOT=$(echo "$RESULT" | cut -d'|' -f3 | tr -d '[:space:]')
+APP=$(echo "$RESULT" | cut -d'|' -f3 | tr -d '[:space:]')
 
 # lag_seconds = -1 means replay_lag is NULL (standby connected, no writes pending — normal)
 if [[ "$LAG_SECONDS" -eq -1 ]]; then
@@ -74,7 +78,7 @@ curl -s -o /dev/null -H "Content-Type: application/json" -d "{
     \"fields\": [
       {\"name\": \"Lag (seconds)\", \"value\": \"${LAG_SECONDS}\", \"inline\": true},
       {\"name\": \"State\", \"value\": \"${STATE}\", \"inline\": true},
-      {\"name\": \"Slot\", \"value\": \"${SLOT}\", \"inline\": true},
+      {\"name\": \"Standby\", \"value\": \"${APP}\", \"inline\": true},
       {\"name\": \"server\", \"value\": \"${HOSTNAME}\", \"inline\": true}
     ],
     \"timestamp\": \"${TIMESTAMP}\"

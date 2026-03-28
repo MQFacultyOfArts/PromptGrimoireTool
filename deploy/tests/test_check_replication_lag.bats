@@ -159,7 +159,7 @@ _run_script() {
     grep -q '"streaming"' "$CURL_LOG"
 }
 
-@test "Discord embed includes slot name" {
+@test "Discord embed includes standby name" {
     _write_env
     _stub_psql "600|streaming|nci_standby"
     _run_script
@@ -228,24 +228,24 @@ _run_script() {
 }
 
 # ---------------------------------------------------------------------------
-# SLOT_NAME override env variable
+# STANDBY_APP override env variable
 # ---------------------------------------------------------------------------
 
-@test "SLOT_NAME override appears in disconnected-alert curl payload" {
+@test "STANDBY_APP override appears in disconnected-alert curl payload" {
     _write_env
     _stub_psql_empty
-    _run_script SLOT_NAME=custom_slot
+    _run_script STANDBY_APP=custom_standby
     [ "$status" -eq 0 ]
     [ -f "$CURL_LOG" ]
-    grep -q "custom_slot" "$CURL_LOG"
+    grep -q "custom_standby" "$CURL_LOG"
 }
 
 # ---------------------------------------------------------------------------
 # SQL query correctness
 # ---------------------------------------------------------------------------
 
-@test "script queries pg_stat_replication with slot filter" {
+@test "script queries pg_stat_replication with application_name filter" {
     grep -q 'pg_stat_replication' "$SCRIPT"
-    grep -q 'slot_name' "$SCRIPT"
+    grep -q 'application_name' "$SCRIPT"
     grep -q 'replay_lag' "$SCRIPT"
 }

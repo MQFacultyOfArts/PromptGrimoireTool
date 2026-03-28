@@ -70,6 +70,7 @@ class TestCollectSnapshot:
             "app_ws_registry",
             "app_ws_presence_workspaces",
             "app_ws_presence_clients",
+            "event_loop_lag_ms",
         }
         assert expected_keys == set(snapshot.keys())
 
@@ -99,6 +100,39 @@ class TestCollectSnapshot:
         assert snapshot["clients_total"] == 3
         assert snapshot["clients_connected"] == 2
         assert snapshot["asyncio_tasks_total"] == 5
+
+
+class TestEventLoopLag:
+    """Tests for event-loop lag measurement."""
+
+    def test_snapshot_includes_event_loop_lag_key(self) -> None:
+        """collect_snapshot includes event_loop_lag_ms key (None until async fill)."""
+        mock_client_class = MagicMock()
+        mock_client_class.instances = {}
+
+        with (
+            patch("nicegui.Client", mock_client_class),
+            patch(
+                "promptgrimoire.diagnostics.asyncio.all_tasks",
+                return_value=set(),
+            ),
+        ):
+            from promptgrimoire.diagnostics import collect_snapshot
+
+            snapshot = collect_snapshot()
+
+        assert "event_loop_lag_ms" in snapshot
+        # Sync collect_snapshot returns None; async caller fills it
+        assert snapshot["event_loop_lag_ms"] is None
+
+    async def test_measure_event_loop_lag_returns_milliseconds(self) -> None:
+        """measure_event_loop_lag returns lag in milliseconds."""
+        from promptgrimoire.diagnostics import measure_event_loop_lag
+
+        lag = await measure_event_loop_lag()
+        assert isinstance(lag, float)
+        # On an idle event loop, lag should be under 100ms
+        assert 0.0 <= lag < 100.0
 
 
 class TestMemoryThresholdRestart:

@@ -163,6 +163,48 @@ async def _invalidate_all_sessions() -> None:
     logger.info("sessions_invalidated", count=len(user_stores), flushed=flushed)
 
 
+def invalidate_sessions_on_disk(storage_dir: Path | None = None) -> None:
+    """Clear auth_user from all NiceGUI storage files on disk.
+
+    Called at app startup to guarantee no stale sessions survive
+    regardless of how the previous process died (SIGTERM, OOM, crash).
+    Operates on the raw JSON files, not in-memory PersistentDict
+    instances (which are empty at startup).
+
+    Args:
+        storage_dir: Directory containing ``storage-user-*.json`` files.
+            Defaults to NiceGUI's configured storage path, falling back
+            to ``.nicegui`` in the working directory.
+    """
+    import json  # noqa: PLC0415
+
+    if storage_dir is None:
+        from nicegui import core  # noqa: PLC0415
+
+        raw = core.app.storage.path if hasattr(core.app.storage, "path") else None
+        storage_dir = Path(".nicegui") if raw is None else Path(raw)
+
+    if not storage_dir.exists():
+        logger.debug("startup_invalidation_skipped", reason="no storage directory")
+        return
+
+    cleared = 0
+    for path in storage_dir.glob("storage-user-*.json"):
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+            if "auth_user" in data:
+                del data["auth_user"]
+                path.write_text(json.dumps(data), encoding="utf-8")
+                cleared += 1
+        except Exception:
+            logger.warning(
+                "startup_invalidation_file_error", path=str(path), exc_info=True
+            )
+
+    if cleared:
+        logger.info("startup_sessions_invalidated", cleared=cleared)
+
+
 async def _navigate_clients_to_restarting() -> None:
     """Navigate all connected NiceGUI clients to /restarting."""
     from nicegui import Client  # noqa: PLC0415

@@ -28,7 +28,7 @@ fi
 
 # Query pg_stat_replication for replay lag on the target slot
 RESULT=$(psql -U "$DB_USER" -d "$DB_NAME" -tA -c \
-    "SELECT COALESCE(EXTRACT(EPOCH FROM replay_lag)::integer, -1) AS lag_seconds, state, COALESCE(slot_name, 'none') AS slot FROM pg_stat_replication WHERE slot_name = '$SLOT_NAME';")
+    "SELECT COALESCE(EXTRACT(EPOCH FROM replay_lag)::integer, -1) AS lag_seconds, state, COALESCE(slot_name, 'none') AS slot FROM pg_stat_replication WHERE slot_name = '$SLOT_NAME';") # SLOT_NAME must not contain single quotes (default 'nci_standby' is safe)
 
 HOSTNAME=$(hostname)
 TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
@@ -80,3 +80,4 @@ curl -s -o /dev/null -H "Content-Type: application/json" -d "{
     \"timestamp\": \"${TIMESTAMP}\"
   }]
 }" "$WEBHOOK_URL"
+exit 0

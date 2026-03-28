@@ -228,6 +228,19 @@ _run_script() {
 }
 
 # ---------------------------------------------------------------------------
+# SLOT_NAME override env variable
+# ---------------------------------------------------------------------------
+
+@test "SLOT_NAME override appears in disconnected-alert curl payload" {
+    _write_env
+    _stub_psql_empty
+    _run_script SLOT_NAME=custom_slot
+    [ "$status" -eq 0 ]
+    [ -f "$CURL_LOG" ]
+    grep -q "custom_slot" "$CURL_LOG"
+}
+
+# ---------------------------------------------------------------------------
 # SQL query correctness
 # ---------------------------------------------------------------------------
 

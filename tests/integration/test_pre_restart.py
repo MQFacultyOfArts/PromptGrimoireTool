@@ -200,6 +200,99 @@ class TestPreRestartFlush:
         assert resp.status_code == 200
 
 
+class TestPreRestartSessionInvalidation:
+    """Session invalidation must run during pre-restart."""
+
+    @pytest.mark.asyncio
+    async def test_pre_restart_calls_invalidate_all_sessions(self) -> None:
+        """Manual restart via restart.sh must invalidate sessions."""
+        from promptgrimoire.pages.restart import pre_restart_handler
+
+        mock_persist_mgr = MagicMock()
+        mock_persist_mgr.persist_all_dirty_workspaces = AsyncMock()
+
+        mock_client_class = MagicMock()
+        mock_client_class.instances = {}
+
+        invalidate_called = False
+
+        async def tracking_invalidate() -> None:
+            nonlocal invalidate_called
+            invalidate_called = True
+
+        with (
+            patch(
+                "promptgrimoire.pages.restart.get_settings",
+                return_value=_mock_settings(),
+            ),
+            patch("nicegui.Client", mock_client_class),
+            patch(
+                "promptgrimoire.pages.restart._get_annotation_state",
+                return_value=({}, None),
+            ),
+            patch(
+                "promptgrimoire.crdt.persistence.get_persistence_manager",
+                return_value=mock_persist_mgr,
+            ),
+            patch(
+                "promptgrimoire.diagnostics._invalidate_all_sessions",
+                AsyncMock(side_effect=tracking_invalidate),
+            ),
+        ):
+            resp = await pre_restart_handler(_make_request(token="test-token"))
+
+        assert resp.status_code == 200
+        assert invalidate_called, (
+            "pre_restart_handler must call _invalidate_all_sessions"
+        )
+
+    @pytest.mark.asyncio
+    async def test_invalidation_runs_after_persist(self) -> None:
+        """Sessions must be invalidated after CRDT state is persisted."""
+        from promptgrimoire.pages.restart import pre_restart_handler
+
+        call_order: list[str] = []
+
+        mock_persist_mgr = MagicMock()
+
+        async def tracking_persist() -> None:
+            call_order.append("persist")
+
+        mock_persist_mgr.persist_all_dirty_workspaces = AsyncMock(
+            side_effect=tracking_persist
+        )
+
+        async def tracking_invalidate() -> None:
+            call_order.append("invalidate")
+
+        mock_client_class = MagicMock()
+        mock_client_class.instances = {}
+
+        with (
+            patch(
+                "promptgrimoire.pages.restart.get_settings",
+                return_value=_mock_settings(),
+            ),
+            patch("nicegui.Client", mock_client_class),
+            patch(
+                "promptgrimoire.pages.restart._get_annotation_state",
+                return_value=({}, None),
+            ),
+            patch(
+                "promptgrimoire.crdt.persistence.get_persistence_manager",
+                return_value=mock_persist_mgr,
+            ),
+            patch(
+                "promptgrimoire.diagnostics._invalidate_all_sessions",
+                AsyncMock(side_effect=tracking_invalidate),
+            ),
+        ):
+            resp = await pre_restart_handler(_make_request(token="test-token"))
+
+        assert resp.status_code == 200
+        assert call_order == ["persist", "invalidate"]
+
+
 class TestConnectionCount:
     """Test GET /api/connection-count."""
 

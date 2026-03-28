@@ -7,6 +7,7 @@ Uses either real Stytch or MockAuthClient based on DEV__AUTH_MOCK setting.
 from __future__ import annotations
 
 import logging
+import re
 from typing import TYPE_CHECKING
 from urllib.parse import urlencode
 
@@ -27,6 +28,21 @@ logging.getLogger(__name__).setLevel(logging.INFO)
 
 # Time to display error message before redirecting (seconds)
 _ERROR_DISPLAY_SECONDS = 0.5
+
+_SAFE_RETURN_RE = re.compile(r"^/([^/].*)?$")
+
+
+def _post_login_destination() -> str:
+    """Return the URL to navigate to after successful login.
+
+    Reads and clears ``post_login_return`` from ``app.storage.user``.
+    Falls back to ``"/"`` if absent or invalid (open-redirect guard).
+    """
+    raw = app.storage.user.pop("post_login_return", "/")
+    if isinstance(raw, str) and _SAFE_RETURN_RE.match(raw):
+        return raw
+    return "/"
+
 
 # Allowed email domains for magic link login
 _ALLOWED_MAGIC_LINK_DOMAINS: frozenset[str] = frozenset(
@@ -494,9 +510,14 @@ def _build_mock_login_section() -> None:
 @ui.page("/login")
 async def login_page() -> None:
     """Login page with AAF SSO, Google OAuth, magic link, and GitHub OAuth."""
+    # Stash ?return= so post-auth callbacks can redirect back
+    raw_return = _get_query_param("return")
+    if raw_return and isinstance(raw_return, str) and _SAFE_RETURN_RE.match(raw_return):
+        app.storage.user["post_login_return"] = raw_return
+
     user = _get_session_user()
     if user:
-        ui.navigate.to("/")
+        ui.navigate.to(_post_login_destination())
         return
 
     # Inject before login UI so the overlay covers the form immediately.
@@ -556,7 +577,7 @@ async def _handle_magic_link_callback(token: str | None) -> None:
             user_id=user_id,
             is_admin=is_admin,
         )
-        ui.navigate.to("/")
+        ui.navigate.to(_post_login_destination())
     else:
         logger.warning("Magic link auth failed: %s", result.error)
         ui.label(f"Error: {result.error}").classes("text-red-500").props(
@@ -619,7 +640,7 @@ async def _handle_sso_callback(token: str | None) -> None:
             user_id=user_id,
             is_admin=is_admin,
         )
-        ui.navigate.to("/")
+        ui.navigate.to(_post_login_destination())
     else:
         logger.warning("SSO auth failed: %s", result.error)
         ui.label(f"Error: {result.error}").classes("text-red-500").props(
@@ -665,7 +686,7 @@ async def _handle_oauth_callback(token: str | None) -> None:
             user_id=user_id,
             is_admin=is_admin,
         )
-        ui.navigate.to("/")
+        ui.navigate.to(_post_login_destination())
     else:
         logger.warning("OAuth auth failed: %s", result.error)
         ui.label(f"Error: {result.error}").classes("text-red-500").props(

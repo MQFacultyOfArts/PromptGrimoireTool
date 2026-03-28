@@ -1,286 +1,55 @@
 # Migration Checklist: NCI to DigitalOcean Cutover
 
-**Purpose:** Zero-data-loss migration of PromptGrimoire from NCI Cloud to DigitalOcean with under 1 hour downtime.
+**Purpose:** Migrate PromptGrimoire from NCI Cloud to DigitalOcean with zero data loss.
 
-**Acceptance criteria:** infra-split.AC8.1 (row counts match), infra-split.AC8.2 (CRDT spot-check), infra-split.AC8.3 (smoke test passes).
+**Acceptance criteria:** infra-split.AC8.1 (row counts match), infra-split.AC8.3 (smoke test passes).
 
----
-
-## Pre-migration (48+ hours before cutover)
-
-### Step 1: Lower DNS TTL
-
-**Action:** Change `grimoire.drbbs.org` A record TTL from 3600s to 60s. Wait 48 hours for caches to expire.
-
-**Verify:**
-
-```bash
-dig grimoire.drbbs.org | grep TTL
-# Expected: TTL shows <= 60
-```
-
-**Gate:** TTL confirmed at 60s before proceeding to cutover.
+**Assumptions:**
+- NCI app is already stopped (public access down by choice)
+- No rehearsal environment — dev is prod
+- Old export PDFs are not migrated — students re-export on DO
+- Replication is deferred to post-stabilisation (not a day-0 requirement)
 
 ---
 
-### Step 2: Provision DO droplet
+## Phase 1: Provision DO (while NCI dump runs)
 
-**Action:** Create 16 vCPU / 32 GB droplet in SYD1, Ubuntu 24.04. Follow `docs/deployment.md` from scratch. Install all services: PostgreSQL, PgBouncer, HAProxy, TinyTeX, app, worker.
+### Step 1: pg_dump on NCI
 
-**Verify:**
+Start the dump first — it runs while you provision DO.
 
-```bash
-curl https://<DO_IP>/healthz
-# Expected: ok
-```
-
-**Gate:** Healthcheck returns `ok` on DO droplet (using test domain or direct IP).
-
----
-
-### Step 3: Rehearsal migration
-
-**Action:** Full `pg_dump` from NCI, `pg_restore` on DO, verify counts and CRDT integrity.
+**Branch A — App is still reachable locally on NCI:**
 
 ```bash
-# On NCI:
-pg_dump -Fc -h /var/run/postgresql -U promptgrimoire promptgrimoire > rehearsal.dump
-
-# Transfer to DO:
-scp rehearsal.dump do-server:/tmp/
-
-# On DO:
-pg_restore -d promptgrimoire -h /var/run/postgresql -U promptgrimoire rehearsal.dump
-```
-
-**Verify:**
-
-- Run row count verification (see Appendix A)
-- Run CRDT spot-check (see Appendix B)
-
-**Gate:** All row counts match. CRDT text extraction produces identical output on both servers.
-
----
-
-## Cutover (~30 minutes)
-
-All times relative to T+0 (start of maintenance window).
-
-| Time | Action | Expected result |
-|------|--------|-----------------|
-| T-24h | Announce maintenance window via Discord | Users informed |
-| T+0 | Flush CRDT state on NCI | `{"initial_count": N}` |
-| T+1 | HAProxy maintenance mode on NCI | 503 served to new requests |
-| T+2 | Stop app on NCI | Service stopped cleanly |
-| T+3 | `pg_dump` on NCI | Dump file created |
-| T+4 | Transfer dump to DO | File transferred, sha256 matches |
-| T+5 | `pg_restore` on DO | Restore completes without errors |
-| T+6 | **VERIFICATION GATE** | Row counts + CRDT check pass |
-| T+9 | Start app + worker on DO | Healthcheck returns `ok` |
-| T+11 | Update DNS A record to DO IP | DNS propagating |
-| T+12 | HAProxy ready on DO | Traffic flowing to app |
-| T+16 | **SMOKE TEST GATE** | All smoke tests pass |
-| T+21 | Restore DNS TTL to 3600s | TTL back to normal |
-
-### Detailed cutover commands
-
-**T+0 -- Flush CRDT state:**
-
-```bash
+# Flush CRDT state before dump (only if app process is running)
 curl -sf -X POST -H "Authorization: Bearer $TOKEN" http://127.0.0.1:8080/api/pre-restart
 # Expected: {"initial_count": N}
-```
 
-**T+1 -- HAProxy maintenance mode on NCI:**
-
-```bash
-echo "set server be_promptgrimoire/app state maint" | socat stdio /run/haproxy/admin.sock
-```
-
-**T+2 -- Stop app on NCI:**
-
-```bash
+# Then stop the app
 systemctl stop promptgrimoire
 ```
 
-**T+3 -- pg_dump on NCI:**
+**Branch B — App is already stopped:**
+
+CRDT state was flushed on the last clean shutdown (the `pre-restart` endpoint is called by `deploy/restart.sh` before every stop). If the app crashed or was killed without a clean stop, some in-flight CRDT edits from the last few seconds before the crash may be lost. For a university annotation tool that has been down for hours, this is acceptable.
+
+**Dump (both branches):**
 
 ```bash
 sudo -u promptgrimoire pg_dump -Fc -h /var/run/postgresql promptgrimoire \
   -f /home/promptgrimoire/migration.dump
+
+# Gate: dump must be non-empty
 [[ -s /home/promptgrimoire/migration.dump ]] \
   || { echo "ERROR: dump is empty — do NOT proceed"; exit 1; }
-# Record file size and checksum:
+
 ls -lh /home/promptgrimoire/migration.dump
 sha256sum /home/promptgrimoire/migration.dump
 ```
 
-**T+4 -- Transfer to DO:**
+**Save NCI row counts** (while dump transfers):
 
 ```bash
-scp /home/promptgrimoire/migration.dump do-server:/tmp/
-# Verify checksum on DO:
-ssh do-server sha256sum /tmp/migration.dump
-```
-
-**T+5 -- pg_restore on DO:**
-
-```bash
-pg_restore -d promptgrimoire -h /var/run/postgresql -U promptgrimoire --clean --if-exists /tmp/migration.dump
-```
-
-**T+6 -- Verification gate:**
-
-Run row count verification (Appendix A) and CRDT spot-check (Appendix B) on both NCI and DO. All counts must match. CRDT text must be identical.
-
-- **IF FAIL:** Do NOT start DO app. DNS stays on NCI. Resume NCI service (see Rollback below).
-
-**T+9 -- Start app + worker on DO:**
-
-```bash
-systemctl start promptgrimoire promptgrimoire-worker
-# Wait for healthy:
-curl -sf http://127.0.0.1:8080/healthz
-# Expected: ok
-```
-
-**T+11 -- Update DNS:**
-
-Change `grimoire.drbbs.org` A record to DO droplet IP.
-
-**T+12 -- HAProxy ready on DO:**
-
-```bash
-echo "set server be_promptgrimoire/app state ready" | socat stdio /run/haproxy/admin.sock
-```
-
-**T+16 -- Smoke test gate:**
-
-Run post-migration smoke tests (see Appendix C).
-
-- **IF FAIL:** Revert DNS to NCI IP. Start NCI services. Investigate DO issue.
-
-**T+21 -- Restore DNS TTL:**
-
-Change `grimoire.drbbs.org` A record TTL back to 3600s.
-
----
-
-## Rollback procedures
-
-### Verification fails at T+6
-
-1. Do NOT start DO app
-2. DNS stays pointing at NCI
-3. `systemctl start promptgrimoire` on NCI
-4. HAProxy ready on NCI: `echo "set server be_promptgrimoire/app state ready" | socat stdio /run/haproxy/admin.sock`
-5. Investigate dump/restore failure on DO
-
-### Smoke test fails at T+16
-
-1. Revert DNS A record to NCI IP
-2. Start NCI services: `systemctl start promptgrimoire`
-3. HAProxy ready on NCI
-4. Investigate DO issue offline
-
-### General rollback window
-
-Keep NCI running for 2x original TTL (2 hours) after successful cutover as warm standby. Do not decommission until post-cutover replication is confirmed.
-
----
-
-## Post-cutover
-
-### Step 1: Configure NCI as streaming replication standby
-
-Follow section 7b in deployment guide to set up NCI as a streaming replication standby for the DO primary.
-
-**Verify:**
-
-```sql
--- On DO (primary):
-SELECT * FROM pg_stat_replication;
--- Expected: NCI appears as streaming client
-```
-
-**Gate:** Replication lag under 1 MB and state shows `streaming`.
-
----
-
-### Step 2: Clean up NCI
-
-- Remove old cron jobs from NCI
-- Disable app systemd units (keep PostgreSQL running for replication)
-
----
-
-### Step 3: Update monitoring
-
-- UptimeRobot: Update healthcheck URL to DO IP
-- Beszel: Reconfigure agent/hub for DO server
-- Discord alerts: Verify alerts fire correctly from DO
-
-**Gate:** Monitoring confirmed active on DO. No stale NCI alerts.
-
----
-
-### Step 4: Declare migration complete
-
-- All smoke tests passing on DO
-- Replication confirmed from DO to NCI standby
-- Monitoring pointing at DO
-- DNS TTL restored to 3600s
-- NCI demoted to standby role
-
----
-
-## Appendix A: Row count verification
-
-Run on **both** NCI (before dump) and DO (after restore). All counts must match exactly.
-
-### Quick estimate (fast, uses pg statistics)
-
-```sql
--- Estimated row counts from PostgreSQL statistics
--- Good for sanity check; may differ by a few rows from exact counts
-SELECT schemaname, relname, n_live_tup
-FROM pg_stat_user_tables
-ORDER BY schemaname, relname;
-```
-
-### Exact counts (slower, authoritative)
-
-```sql
--- Exact counts for all 19 application tables
--- Run ANALYZE first on DO to update statistics after restore
-ANALYZE;
-
-SELECT 'acl_entry' AS table_name, count(*) FROM acl_entry
-UNION ALL SELECT 'activity', count(*) FROM activity
-UNION ALL SELECT 'course', count(*) FROM course
-UNION ALL SELECT 'course_enrollment', count(*) FROM course_enrollment
-UNION ALL SELECT 'course_role', count(*) FROM course_role
-UNION ALL SELECT 'export_job', count(*) FROM export_job
-UNION ALL SELECT 'export_job_status', count(*) FROM export_job_status
-UNION ALL SELECT 'permission', count(*) FROM permission
-UNION ALL SELECT 'student_group', count(*) FROM student_group
-UNION ALL SELECT 'student_group_membership', count(*) FROM student_group_membership
-UNION ALL SELECT 'tag', count(*) FROM tag
-UNION ALL SELECT 'tag_group', count(*) FROM tag_group
-UNION ALL SELECT 'user', count(*) FROM "user"
-UNION ALL SELECT 'wargame_config', count(*) FROM wargame_config
-UNION ALL SELECT 'wargame_message', count(*) FROM wargame_message
-UNION ALL SELECT 'wargame_team', count(*) FROM wargame_team
-UNION ALL SELECT 'week', count(*) FROM week
-UNION ALL SELECT 'workspace', count(*) FROM workspace
-UNION ALL SELECT 'workspace_document', count(*) FROM workspace_document
-ORDER BY table_name;
-```
-
-### One-liner for diff comparison
-
-```bash
-# On NCI — save counts to file:
 sudo -u promptgrimoire psql -d promptgrimoire -tA -c "
 SELECT 'acl_entry', count(*) FROM acl_entry
 UNION ALL SELECT 'activity', count(*) FROM activity
@@ -303,9 +72,56 @@ UNION ALL SELECT 'workspace', count(*) FROM workspace
 UNION ALL SELECT 'workspace_document', count(*) FROM workspace_document
 ORDER BY 1;
 " > /tmp/nci_counts.txt
+```
 
-# On DO — save counts to file:
+### Step 2: Provision DO droplet
+
+**In parallel with dump/transfer.** 16 vCPU / 32 GB, SYD1, Ubuntu 24.04.
+
+Follow `docs/deployment.md` from scratch:
+
+1. PostgreSQL 16
+2. Create `promptgrimoire` user, clone repo to `/opt/promptgrimoire`
+3. `uv sync`
+4. HAProxy with TLS (Let's Encrypt cert for `grimoire.drbbs.org` — get this before DNS switch using DNS-01 challenge or the old cert)
+5. TinyTeX
+6. systemd units for app + worker (from `deploy/`)
+7. `.env` file — copy from NCI and update paths. **Critical settings:**
+   ```bash
+   FEATURES__WORKER_IN_PROCESS=false
+   EXPORT__MAX_CONCURRENT_COMPILATIONS=1
+   ```
+
+**Do NOT start the app or worker yet.**
+
+### Step 3: Transfer dump to DO
+
+```bash
+scp /home/promptgrimoire/migration.dump do-server:/tmp/
+
+# Verify checksum on DO:
+ssh do-server sha256sum /tmp/migration.dump
+# Must match NCI checksum from Step 1
+```
+
+**Gate:** Checksums match.
+
+---
+
+## Phase 2: Restore and verify (DO stays dark)
+
+### Step 4: pg_restore on DO
+
+```bash
+sudo -u promptgrimoire pg_restore -d promptgrimoire \
+  -h /var/run/postgresql --clean --if-exists /tmp/migration.dump
+```
+
+### Step 5: Row count verification
+
+```bash
 sudo -u promptgrimoire psql -d promptgrimoire -tA -c "
+ANALYZE;
 SELECT 'acl_entry', count(*) FROM acl_entry
 UNION ALL SELECT 'activity', count(*) FROM activity
 UNION ALL SELECT 'course', count(*) FROM course
@@ -328,136 +144,133 @@ UNION ALL SELECT 'workspace_document', count(*) FROM workspace_document
 ORDER BY 1;
 " > /tmp/do_counts.txt
 
-# Compare (transfer one file via scp first):
+# Compare against NCI counts (transfer nci_counts.txt to DO first):
 diff /tmp/nci_counts.txt /tmp/do_counts.txt
 # Expected: no output (files identical)
 ```
 
-**Gate:** `diff` produces no output. Any difference means the restore is incomplete — do NOT proceed.
+**Gate:** `diff` produces no output. Any difference = restore incomplete. Do NOT proceed.
 
----
+### Step 6: Invalidate old export jobs
 
-## Appendix B: CRDT spot-check
-
-Verifies that binary CRDT state survived dump/restore intact by extracting human-readable text from 3-5 workspaces and comparing between servers.
-
-### Step 1: Pick workspaces to check
+Old export PDFs lived in NCI's PrivateTmp — they are gone. Mark all completed exports as expired so the UI doesn't show stale download links:
 
 ```sql
--- Find 5 recently updated workspaces with CRDT state
-SELECT id, title, octet_length(crdt_state) AS crdt_bytes
-FROM workspace
-WHERE crdt_state IS NOT NULL
-ORDER BY updated_at DESC NULLS LAST
-LIMIT 5;
+UPDATE export_job
+SET status = 'expired'
+WHERE status = 'completed';
 ```
 
-Record the workspace IDs. Use the same IDs on both servers.
+### Step 7: Start services on DO (localhost only)
 
-### Step 2: Extract CRDT text from each workspace
+HAProxy stays in maintenance mode — no public traffic reaches the app.
 
 ```bash
-# Run on BOTH NCI and DO for each workspace ID
-WORKSPACE_ID="<uuid-from-step-1>"
+# Ensure HAProxy is in maintenance mode (blocks public traffic)
+echo "set server be_promptgrimoire/app state maint" | socat stdio /run/haproxy/admin.sock
 
-sudo -u promptgrimoire psql -d promptgrimoire -tA -c \
-  "SELECT encode(crdt_state, 'base64') FROM workspace WHERE id = '$WORKSPACE_ID'" \
-  | python3 -c "
-import sys, base64, pycrdt
+# Start app and worker
+systemctl start promptgrimoire promptgrimoire-worker
 
-data = base64.b64decode(sys.stdin.read().strip())
-doc = pycrdt.Doc()
-doc.apply_update(data)
-
-for key in sorted(doc.keys()):
-    try:
-        text_obj = doc.get(key, type=pycrdt.Text)
-        print(f'{key}: {str(text_obj)[:200]}')
-    except Exception:
-        print(f'{key}: (not a Text field — skipping)')
-" > /tmp/crdt_${WORKSPACE_ID}.txt
+# Wait for healthcheck
+for i in $(seq 1 30); do
+  curl -sf http://127.0.0.1:8080/healthz && break
+  sleep 2
+done
+# Expected: ok
 ```
 
-### Step 3: Compare output
+**Gate:** `/healthz` returns `ok` on localhost.
+
+### Step 8: Localhost smoke tests (DO still dark)
+
+All tests run against `localhost:8080`. Public traffic is still blocked.
+
+**8a. Smoke export (CJK + emoji compilation):**
 
 ```bash
-# Transfer NCI file to DO (or vice versa), then diff:
-diff /tmp/crdt_${WORKSPACE_ID}.txt /tmp/crdt_${WORKSPACE_ID}_do.txt
-# Expected: no output (files identical)
+cd /opt/promptgrimoire
+sudo -u promptgrimoire uv run grimoire test smoke-export
+# Expected: PDF generated successfully
 ```
 
-Repeat for all 5 workspace IDs.
-
-**Gate:** All 5 diffs produce no output. Any difference in CRDT text means binary data was corrupted during transfer — do NOT proceed.
-
-### Troubleshooting
-
-If `python3 -c` fails with `ModuleNotFoundError: No module named 'pycrdt'`:
+**8b. Mass export check:**
 
 ```bash
-# Use the app's virtualenv instead:
-sudo -u promptgrimoire /opt/promptgrimoire/.venv/bin/python -c "..."
+sudo -u promptgrimoire uv run grimoire export run --scope server --only-errors \
+  -o /tmp/migration_export_check
+# Expected: all workspaces export successfully (or only pre-existing failures)
 ```
 
-If CRDT bytes differ but text is identical, the binary representation may have been re-encoded. This is acceptable — the semantic content is what matters. If text differs, investigate before proceeding.
+This is the real verification — every workspace's export pipeline works on DO. `--only-errors` keeps only failures for investigation.
 
----
-
-## Appendix C: Post-migration smoke tests
-
-Manual verification that the application works correctly on DO after DNS cutover. Run at T+16 during cutover.
-
-### Test 1: Login
-
-1. Navigate to `https://grimoire.drbbs.org`
-2. Login via magic link or passkey
-
-**Expected:** Dashboard loads. User sees their courses/workspaces.
-
-### Test 2: Open workspace
-
-1. Navigate to a known workspace (pick one used in the CRDT spot-check)
-
-**Expected:** Milkdown editor loads with existing CRDT content. Annotations and highlights are visible on the source document.
-
-### Test 3: Trigger export
-
-1. Open a workspace that has annotations
-2. Click "Export to PDF"
-
-**Expected:** Export job appears in queue. PDF downloads after processing completes.
-
-### Test 4: Real-time collaboration
-
-*Requires two people or two browser sessions.*
-
-1. Both open the same workspace
-2. One person types in the editor
-
-**Expected:** The other person sees the changes within 2-3 seconds.
-
-### Test 5: Verify worker
+**8c. Verify worker:**
 
 ```bash
-# On DO:
 systemctl status promptgrimoire-worker
 # Expected: active (running)
 
 journalctl -u promptgrimoire-worker -n 20
-# Expected: heartbeat log entries visible
+# Expected: worker_ready and poll cycle entries visible
 ```
 
-### Test 6: Verify monitoring
+**Gate:** smoke-export passes, mass export has no new failures, worker is running. If any fail, investigate on DO. NCI dump is safe — you can re-restore.
+
+---
+
+## Phase 3: Go live
+
+### Step 9: DNS switch
+
+Update `grimoire.drbbs.org` A record to DO droplet IP.
+
+If DNS TTL was lowered in advance (recommended: 60s, 48h before), propagation is fast. If not, propagation takes up to the current TTL (likely 3600s / 1 hour).
+
+### Step 10: Open HAProxy on DO
 
 ```bash
-# External healthcheck:
-curl https://grimoire.drbbs.org/healthz
-# Expected: ok
+echo "set server be_promptgrimoire/app state ready" | socat stdio /run/haproxy/admin.sock
 ```
 
-- Check Discord channel for error alerts since cutover — there should be none.
-- Confirm UptimeRobot shows UP status for the new IP.
+### Step 11: Public smoke test
 
-### Gate
+1. Navigate to `https://grimoire.drbbs.org` in a browser
+2. Login via magic link or passkey — dashboard loads, workspaces visible
+3. Open a workspace — editor loads with CRDT content, annotations visible
+4. (If two people available) Real-time collaboration — edits appear within 2-3 seconds
 
-All 6 tests must pass before declaring migration complete. Any failure triggers the smoke test rollback procedure (see Rollback § Smoke test fails at T+16).
+**Gate:** Login, workspace load, and (optionally) collaboration work through the public URL.
+
+### Step 12: Update monitoring
+
+- UptimeRobot: Update healthcheck URL to DO IP
+- Beszel: Reconfigure agent/hub for DO server
+- Discord alerts: Verify webhook fires from DO (`uv run grimoire admin webhook`)
+
+---
+
+## Phase 4: Stabilisation (next 24 hours)
+
+### Soak period
+
+Observe DO for 24 hours with Discord alerts active before declaring migration complete. Check:
+
+- No ERROR/CRITICAL alerts in Discord
+- UptimeRobot shows 100% uptime
+- `journalctl -u promptgrimoire --since "1 hour ago" --priority=err` — no errors
+- Memory usage stable (Beszel dashboard, `systemctl status promptgrimoire` RSS)
+
+### Restore DNS TTL
+
+After soak period, change `grimoire.drbbs.org` TTL back to 3600s.
+
+### Replication (deferred — not day-0)
+
+Once DO is stable under real load, optionally configure NCI as streaming replication standby per `docs/deployment.md` section 7b. This is a safety net, not a prerequisite.
+
+### Declare migration complete
+
+- [ ] 24h soak period passed with no critical alerts
+- [ ] DNS TTL restored to 3600s
+- [ ] Monitoring confirmed active on DO
+- [ ] NCI old app units disabled (`systemctl disable promptgrimoire`)

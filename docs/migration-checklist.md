@@ -106,16 +106,19 @@ systemctl stop promptgrimoire
 **T+3 -- pg_dump on NCI:**
 
 ```bash
-sudo -u promptgrimoire pg_dump -Fc -h /var/run/postgresql promptgrimoire > migration.dump
+sudo -u promptgrimoire pg_dump -Fc -h /var/run/postgresql promptgrimoire \
+  -f /home/promptgrimoire/migration.dump
+[[ -s /home/promptgrimoire/migration.dump ]] \
+  || { echo "ERROR: dump is empty — do NOT proceed"; exit 1; }
 # Record file size and checksum:
-ls -lh migration.dump
-sha256sum migration.dump
+ls -lh /home/promptgrimoire/migration.dump
+sha256sum /home/promptgrimoire/migration.dump
 ```
 
 **T+4 -- Transfer to DO:**
 
 ```bash
-scp migration.dump do-server:/tmp/
+scp /home/promptgrimoire/migration.dump do-server:/tmp/
 # Verify checksum on DO:
 ssh do-server sha256sum /tmp/migration.dump
 ```
@@ -123,7 +126,7 @@ ssh do-server sha256sum /tmp/migration.dump
 **T+5 -- pg_restore on DO:**
 
 ```bash
-pg_restore -d promptgrimoire -h /var/run/postgresql -U promptgrimoire --clean --if-exists migration.dump
+pg_restore -d promptgrimoire -h /var/run/postgresql -U promptgrimoire --clean --if-exists /tmp/migration.dump
 ```
 
 **T+6 -- Verification gate:**
@@ -367,10 +370,11 @@ doc = pycrdt.Doc()
 doc.apply_update(data)
 
 for key in sorted(doc.keys()):
-    obj = doc.get(key)
-    if hasattr(obj, '__str__'):
-        text = str(obj)[:200]
-        print(f'{key}: {text}')
+    try:
+        text_obj = doc.get(key, type=pycrdt.Text)
+        print(f'{key}: {str(text_obj)[:200]}')
+    except Exception:
+        print(f'{key}: (not a Text field — skipping)')
 " > /tmp/crdt_${WORKSPACE_ID}.txt
 ```
 

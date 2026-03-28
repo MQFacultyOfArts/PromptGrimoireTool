@@ -84,8 +84,8 @@ class TestPreRestartFlush:
             if "getMilkdownMarkdown" in code:
                 call_order.append("extract_milkdown")
                 return "# Draft markdown"
-            if "restarting" in code:
-                call_order.append("navigate")
+            if "reload" in code:
+                call_order.append("disconnect")
                 return None
             return None
 
@@ -156,18 +156,12 @@ class TestPreRestartFlush:
 
         assert resp.status_code == 200
 
-        # AC2.4: extraction before persist
+        # AC2.4: extraction before persist before invalidate
         assert call_order.index("extract_milkdown") < call_order.index("persist")
-        # Navigate before invalidate — clients still rendering will crash
-        # on `assert auth_user is not None` if sessions vanish mid-load.
-        assert call_order.index("navigate") < call_order.index("invalidate")
-        # All four steps happened
-        assert set(call_order) == {
-            "extract_milkdown",
-            "persist",
-            "navigate",
-            "invalidate",
-        }
+        assert call_order.index("persist") < call_order.index("invalidate")
+        # Disconnect happens after invalidate (HAProxy 503 handles UX)
+        assert "disconnect" in call_order
+        assert call_order.index("invalidate") < call_order.index("disconnect")
 
     @pytest.mark.asyncio
     async def test_tolerates_disconnected_client(self) -> None:
@@ -260,35 +254,23 @@ class TestPreRestartSessionInvalidation:
         )
 
     @pytest.mark.asyncio
-    async def test_invalidation_runs_after_navigate(self) -> None:
-        """Sessions must be invalidated after clients are navigated away.
-
-        Invalidating while clients are still rendering pages causes
-        ``assert auth_user is not None`` crashes in page handlers.
-        """
+    async def test_disconnect_calls_all_clients(self) -> None:
+        """All connected clients get run_javascript('reload') called."""
         from promptgrimoire.pages.restart import pre_restart_handler
-
-        call_order: list[str] = []
 
         mock_persist_mgr = MagicMock()
         mock_persist_mgr.persist_all_dirty_workspaces = AsyncMock()
 
-        async def tracking_invalidate() -> None:
-            call_order.append("invalidate")
-
-        mock_client = MagicMock()
-        mock_client.has_socket_connection = True
-        mock_client.id = "nav-test"
-
-        async def tracking_run_js(code: str, timeout: float = 5.0) -> object:  # noqa: ARG001
-            if "restarting" in code:
-                call_order.append("navigate")
-            return None
-
-        mock_client.run_javascript = AsyncMock(side_effect=tracking_run_js)
+        clients = []
+        for i in range(3):
+            c = MagicMock()
+            c.has_socket_connection = True
+            c.id = f"client-{i}"
+            c.run_javascript = AsyncMock(return_value=None)
+            clients.append(c)
 
         mock_client_class = MagicMock()
-        mock_client_class.instances = {"c1": mock_client}
+        mock_client_class.instances = {f"c{i}": c for i, c in enumerate(clients)}
 
         with (
             patch(
@@ -306,13 +288,16 @@ class TestPreRestartSessionInvalidation:
             ),
             patch(
                 "promptgrimoire.diagnostics._invalidate_all_sessions",
-                AsyncMock(side_effect=tracking_invalidate),
+                AsyncMock(),
             ),
         ):
             resp = await pre_restart_handler(_make_request(token="test-token"))
 
         assert resp.status_code == 200
-        assert call_order.index("navigate") < call_order.index("invalidate")
+        for c in clients:
+            c.run_javascript.assert_called_once()
+            call_code = c.run_javascript.call_args[0][0]
+            assert "reload" in call_code
 
 
 class TestConnectionCount:

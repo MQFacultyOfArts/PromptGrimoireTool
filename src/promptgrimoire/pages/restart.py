@@ -128,22 +128,27 @@ async def _flush_milkdown_to_crdt() -> None:
 
 
 async def pre_restart_handler(request: Request) -> JSONResponse:
-    """Flush CRDT state and navigate all clients to /restarting.
+    """Flush CRDT state and invalidate sessions before manual restart.
 
     POST /api/pre-restart -- requires Bearer token matching
     ADMIN__PRE_RESTART_TOKEN.
+
+    Does NOT navigate clients to /restarting. HAProxy's 503 maintenance
+    page handles the user-facing restart UX. Previous approach navigated
+    sequentially (2s timeout x N clients) and raced with HAProxy drain.
     """
     error = _validate_restart_token(request)
     if error is not None:
         return error
 
+    import asyncio  # noqa: PLC0415
+
     from nicegui import Client  # noqa: PLC0415
 
     from promptgrimoire.crdt.persistence import get_persistence_manager  # noqa: PLC0415
 
-    initial_count = len(
-        [c for c in Client.instances.values() if c.has_socket_connection]
-    )
+    connected = [c for c in Client.instances.values() if c.has_socket_connection]
+    initial_count = len(connected)
 
     # Flush Milkdown content to CRDT for all connected editors
     await _flush_milkdown_to_crdt()
@@ -151,31 +156,44 @@ async def pre_restart_handler(request: Request) -> JSONResponse:
     # Persist all dirty CRDT state to database
     await get_persistence_manager().persist_all_dirty_workspaces()
 
-    # Navigate BEFORE invalidating — clients still rendering pages will
-    # hit `assert auth_user is not None` if sessions vanish mid-load.
-    for client in list(Client.instances.values()):
-        if not client.has_socket_connection:
-            continue
-        try:
-            await client.run_javascript(
-                'window.location.href = "/restarting?return="'
-                " + encodeURIComponent("
-                "location.pathname + location.search + location.hash)",
-                timeout=2.0,
-            )
-        except Exception:
-            logger.warning(
-                "pre_restart_navigate_failed",
-                client_id=client.id,
-                exc_info=True,
-            )
-
     # Invalidate all sessions so no stale auth survives the restart
     from promptgrimoire.diagnostics import _invalidate_all_sessions  # noqa: PLC0415
 
     await _invalidate_all_sessions()
 
-    logger.info("pre_restart_complete", initial_count=initial_count)
+    # Trigger a reload on connected clients so they disconnect cleanly.
+    # Parallelized with a 5s global timeout — unresponsive clients are
+    # logged and skipped rather than blocking the deploy for minutes.
+    async def _disconnect_client(client: Client) -> None:
+        try:
+            await client.run_javascript(
+                "window.location.reload()",
+                timeout=1.0,
+            )
+        except Exception:
+            logger.debug(
+                "pre_restart_disconnect_skipped",
+                client_id=client.id,
+            )
+
+    try:
+        await asyncio.wait_for(
+            asyncio.gather(
+                *(_disconnect_client(c) for c in connected),
+                return_exceptions=True,
+            ),
+            timeout=5.0,
+        )
+    except TimeoutError:
+        logger.warning(
+            "pre_restart_disconnect_timeout",
+            remaining=len(connected),
+        )
+
+    logger.info(
+        "pre_restart_complete",
+        initial_count=initial_count,
+    )
     return JSONResponse({"initial_count": initial_count})
 
 

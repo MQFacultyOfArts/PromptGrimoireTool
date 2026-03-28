@@ -8,6 +8,7 @@ Tab creation, change handling, and organise drag setup live in
 
 from __future__ import annotations
 
+import json
 from typing import TYPE_CHECKING, Any, cast
 from urllib.parse import urlencode
 from uuid import UUID
@@ -159,12 +160,12 @@ def _create_tag_callbacks(
 def _update_page_title(title: str | None) -> None:
     """Update browser tab title AND visible header after deferred load."""
     if title:
-        escaped = title.replace("'", "\\'")
+        safe = json.dumps(title)  # JSON-escaped, double-quoted
         ui.run_javascript(
-            f"document.title = '{escaped}';"
+            f"document.title = {safe};"
             " var h = document.querySelector("
             "  '[data-testid=\"page-header-title\"]');"
-            f" if (h) h.textContent = '{escaped}';"
+            f" if (h) h.textContent = {safe};"
         )
 
 

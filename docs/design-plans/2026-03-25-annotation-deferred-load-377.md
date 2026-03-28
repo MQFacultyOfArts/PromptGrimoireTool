@@ -124,37 +124,15 @@ async def resolve_annotation_context(
     """
 ```
 
-Returns a dataclass/NamedTuple with all resolved data. The design envisioned a single JOIN for the hierarchy walk (shown below for reference), but the implementation uses sequential queries within a single function to consolidate redundant fetches:
+Returns an `AnnotationContext` dataclass with all resolved data. The implementation uses sequential queries within a single function — the same individual queries as before, but called once each instead of redundantly across multiple call sites. The hierarchy walk covers three workspace states:
 
-```sql
--- Activity-placed: workspace.activity_id → activity → week → course
--- Course-placed:   workspace.course_id → course (no activity/week)
--- Standalone:      both NULL
-SELECT w.*,
-       a.id AS activity_id_resolved, a.title AS activity_title,
-       a.template_workspace_id,
-       wk.id AS week_id, wk.number AS week_number,
-       COALESCE(c_via_week.id, c_direct.id) AS course_id,
-       COALESCE(c_via_week.code, c_direct.code) AS course_code,
-       COALESCE(c_via_week.name, c_direct.name) AS course_name,
-       COALESCE(c_via_week.copy_protection, c_direct.copy_protection) AS copy_protection,
-       COALESCE(c_via_week.allow_sharing, c_direct.allow_sharing) AS allow_sharing,
-       COALESCE(c_via_week.allow_tag_creation, c_direct.allow_tag_creation) AS allow_tag_creation,
-       COALESCE(c_via_week.anonymous_sharing, c_direct.anonymous_sharing) AS anonymous_sharing
-FROM workspace w
-LEFT JOIN activity a ON a.id = w.activity_id
-LEFT JOIN week wk ON wk.id = a.week_id
-LEFT JOIN course c_via_week ON c_via_week.id = wk.course_id
-LEFT JOIN course c_direct ON c_direct.id = w.course_id AND w.activity_id IS NULL
-WHERE w.id = :workspace_id
-```
+- **Activity-placed:** workspace → activity → week → course
+- **Course-placed:** workspace → course (no activity/week)
+- **Standalone:** no parent hierarchy
 
-Two JOIN paths cover all three workspace states:
-- **Activity-placed:** `w.activity_id` → `a` → `wk` → `c_via_week` (c_direct is NULL because activity_id IS NOT NULL)
-- **Course-placed:** `w.course_id` → `c_direct` (a/wk/c_via_week are NULL)
-- **Standalone:** all JOINs return NULL
+Template detection uses `activity.template_workspace_id` when activity-placed, plus a reverse lookup (`SELECT activity WHERE template_workspace_id = :workspace_id`) for standalone workspaces.
 
-Template detection is included: `a.template_workspace_id` in the result set. The resolver checks `template_workspace_id == workspace_id` to set `is_template`. Additionally, standalone workspaces need a reverse lookup (`SELECT activity WHERE template_workspace_id = :workspace_id`) to detect whether they *are* a template — this is a second query in the same session.
+**Future optimisation (not implemented):** A single JOIN query could replace the sequential hierarchy walk. See `db/workspaces.py` TODO at the existing `get_placement_context()`. Deferred because the consolidation into one function already eliminates the 3× redundant walks that were the main cost.
 
 ### Deferred Loading: Experimental Results
 
@@ -248,7 +226,7 @@ Run `grimoire e2e perf` before/after. Compare responseEnd timing. Verify no "Res
 | Background task fails after skeleton renders — user sees spinner forever | User stuck on loading screen | Wrap task in try/except, show error notification on failure, hide spinner |
 | User interacts with skeleton before content loads (e.g., clicks non-existent buttons) | Confusing UX | Skeleton has no interactive elements — just spinner and grey header text |
 | `with client:` fails if client disconnects during DB work | Orphaned task, potential errors | `background_tasks.create()` handles shutdown cancellation; `client._deleted` guard in `with` block |
-| JOIN query returns different results than sequential queries (e.g., LEFT JOIN nulls) | Incorrect permission/placement resolution | Test with workspaces in all states: activity-placed, course-placed, standalone, template |
+| Consolidated resolver returns different results than original separate functions | Incorrect permission/placement resolution | Test with workspaces in all states: activity-placed, course-placed, standalone, template |
 | #186 merge creates conflicts in workspace.py entry point | Merge pain | Phase 2 changes are localised to `_render_workspace_view` → `_load_workspace_content` rename. #186's tab building is called from within the task, not restructured. |
 
 ## Acceptance Criteria
@@ -295,7 +273,7 @@ Run `grimoire e2e perf` before/after. Compare responseEnd timing. Verify no "Res
 | **Skeleton** | Minimal page structure (header placeholder, spinner, empty tab panels) rendered by the page handler before DB work begins |
 | **Progressive hydration** | Pattern where the skeleton is populated incrementally as data becomes available from background tasks |
 | **Unified context resolver** | Single function (`resolve_annotation_context`) that replaces 5+ separate DB functions, each of which opened their own session |
-| **Hierarchy walk** | The chain of sequential single-row SELECTs: Workspace → Activity → Week → Course. Currently performed 3× per page load. |
+| **Hierarchy walk** | The chain of sequential single-row SELECTs: Workspace → Activity → Week → Course. Was performed 3× per page load; now consolidated into `resolve_annotation_context()`. |
 | **NullPool** | SQLAlchemy pool strategy where no connections are held — each operation acquires and releases a real connection. Required for PgBouncer transaction mode. |
 | **`with client:`** | NiceGUI context manager that routes server-side UI updates to the correct browser tab. Required when updating UI elements from background tasks. |
 | **Fire-and-forget** | Async task created without awaiting its result. Must be stored in `_background_tasks` set to prevent garbage collection. |

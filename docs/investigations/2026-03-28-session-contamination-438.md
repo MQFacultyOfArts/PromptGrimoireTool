@@ -68,13 +68,19 @@ The session identity flows through:
 Browser session cookie (signed, contains UUID)
   → Starlette SessionMiddleware decodes cookie
     → request.session['id'] = UUID
-      → RequestTrackingMiddleware creates _users[UUID]
-        → request_contextvar.set(request)
+      → RequestTrackingMiddleware.dispatch (storage.py:31-38):
+        1. request_contextvar.set(request)           ← line 32
+        2. creates _users[session_id] if missing     ← lines 37-38
           → page handler (background task) reads request_contextvar
             → app.storage.user resolves _users[session_id]
               → PersistentDict['auth_user'] = {email, user_id, ...}
                 → page_route reads auth_user → resolves workspace access
 ```
+
+Note: the contextvar is set BEFORE storage creation.  This ordering
+matters for H7: if a second request's `request_contextvar.set()` runs
+between step 1 and the page handler reading it, the handler gets the
+wrong request.
 
 Contamination at any link causes one user to see another's data.
 
@@ -119,9 +125,16 @@ latter is more precise — NiceGUI's page decorator spawns the page
 handler in a separate asyncio Task via `background_tasks.create()`
 (`page.py:172`, which calls `core.loop.create_task()` at
 `background_tasks.py:27`). The new Task copies the current context at
-creation time. If `request_contextvar` has been overwritten by another
-concurrent request before the Task copies the context, the page handler
-inherits the wrong request.
+creation time.
+
+Note: `request_contextvar` is task-local (each asyncio Task gets an
+independent copy via `contextvars.copy_context()`).  A simple
+"overwrite by another concurrent request" cannot happen across separate
+tasks.  The plausible mechanism is that the wrong context was already
+present at task creation — i.e., a task-boundary leakage upstream in
+the BaseHTTPMiddleware/anyio.TaskGroup chain, or a context copy
+happening at a moment when the parent task's context has been
+contaminated by an earlier step in the middleware pipeline.
 
 **Co-occurring symptoms in incident window (16:30–17:30 AEDT):**
 ```bash
@@ -143,11 +156,14 @@ of context timing mismatches between concurrent requests.
 
 ### H7: request_contextvar mismatch on page path (LEADING)
 
-**Mechanism:** Under event loop saturation, `request_contextvar` carries
-the wrong request into a page handler's background task. The middleware
-runs correctly for each request (creates storage, sets contextvar), but
-`core.loop.create_task()` copies the context at a moment when another
-request's `request_contextvar.set()` has already overwritten the value.
+**Mechanism:** Under event loop saturation, the page handler's
+background task (created by `core.loop.create_task()` at
+`background_tasks.py:27`) inherits a context that already contains the
+wrong `request_contextvar`.  Since `request_contextvar` is task-local
+(each Task gets a `contextvars.copy_context()`), the contamination must
+occur upstream — either at the BaseHTTPMiddleware / anyio.TaskGroup
+boundary (Starlette 0.50.0, `base.py:148`), or because the parent
+task's context was already wrong when `create_task()` copied it.
 
 The assertion failures are the **detectable** variant — the inherited
 session_id doesn't exist in `_users`, so the assert fires. The
@@ -261,12 +277,16 @@ Key details from Report 2:
    "another student's annotations" which could be either a shared
    workspace or full identity contamination.
 
-2. **Persistence across refresh rules out transient state.** The
-   contamination survived a full page reload.  This means the
-   server-side `app.storage.user` (a `FilePersistentDict` keyed by
-   session cookie UUID) contains the wrong `auth_user` blob.  The
-   contamination is in the persistent storage file, not in a transient
-   contextvar.
+2. **Persistence across refresh implies persistent identity mismatch.**
+   The contamination survived a full page reload and required logout to
+   fix.  This means the identity resolution chain produced the wrong
+   `auth_user` consistently across requests — not a one-off transient
+   contextvar glitch.  Two mechanisms could explain this:
+   (a) `auth_user` was written to the wrong session's
+   `FilePersistentDict` during an SSO callback (write-path corruption),
+   or (b) the session cookie or session_id mapping persistently resolves
+   to the wrong storage bucket (read-path corruption).  The reports do
+   not discriminate between these.
 
 3. **Sleep/reconnection trigger pattern.** Both reports involve laptop
    sleep followed by reconnection.  This points at the websocket
@@ -315,26 +335,15 @@ has not been demonstrated under production-equivalent load.
 
 Versions: anyio 4.12.1, starlette 0.50.0, nicegui 3.9.0.
 
-### E2E reproducer test — lightweight endpoint (inconclusive)
+### E2E reproducer test — lightweight endpoint (inconclusive, superseded)
 
-**Test:** `tests/e2e/test_h7_session_contamination.py::test_concurrent_session_identity`
+The initial version of the test (commit `7184032f`, since replaced)
+used 20 Playwright instances navigating to `/test/session-identity`,
+a page that only does `asyncio.sleep(0)` x10.  All 100 page loads
+returned the correct email.
 
-**Design:**
-- 20 independent Playwright instances (separate processes/event loops)
-- Each authenticates with a distinct mock user email
-- `threading.Barrier` synchronises all 20 navigations to fire at the
-  same instant
-- Each navigates to `/test/session-identity` (a real `@ui.page`)
-- Page handler reads `app.storage.user.get("auth_user")` BEFORE and
-  AFTER 10 yield points
-- Test captures both emails and compares to expected
-- 5 rounds = 100 total concurrent page loads
-
-**Result:** All 100 page loads returned the correct email.
-
-**Critical limitation:** The test page does effectively zero work
-(`asyncio.sleep(0)` x10).  This does not reproduce event loop
-saturation.  **Inconclusive.**
+**This result is inconclusive:** the test page does effectively zero
+event loop work.  The test was replaced by the PABAI version below.
 
 ### E2E reproducer test — PABAI workload (not reproduced)
 

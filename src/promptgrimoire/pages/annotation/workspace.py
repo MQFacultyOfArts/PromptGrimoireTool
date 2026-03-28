@@ -157,10 +157,15 @@ def _create_tag_callbacks(
 
 
 def _update_page_title(title: str | None) -> None:
-    """Set the browser tab title via JS after deferred load resolves."""
+    """Update browser tab title AND visible header after deferred load."""
     if title:
         escaped = title.replace("'", "\\'")
-        ui.run_javascript(f"document.title = '{escaped}';")
+        ui.run_javascript(
+            f"document.title = '{escaped}';"
+            " var h = document.querySelector("
+            "  '[data-testid=\"page-header-title\"]');"
+            f" if (h) h.textContent = '{escaped}';"
+        )
 
 
 def _show_error_ui(

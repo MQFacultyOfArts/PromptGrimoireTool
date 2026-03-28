@@ -38,9 +38,16 @@ pytestmark = [
 ]
 
 
+_WORKSPACE_TITLE = "Deferred Load Test Workspace"
+
+
 @pytest.fixture
 def workspace_page(browser: Browser, app_server: str) -> Generator[tuple[Page, str]]:
     """Authenticated page with a workspace for deferred load testing."""
+    import os
+
+    from sqlalchemy import create_engine, text
+
     context = browser.new_context()
     page = context.new_page()
 
@@ -50,6 +57,17 @@ def workspace_page(browser: Browser, app_server: str) -> Generator[tuple[Page, s
     _authenticate_page(page, app_server, email=email)
 
     workspace_id = _create_workspace_via_db(email, "<p>Deferred load test content</p>")
+
+    # Set workspace title so the header update test can verify it.
+    db_url = os.environ["DATABASE__URL"]
+    sync_url = db_url.replace("postgresql+asyncpg://", "postgresql+psycopg://")
+    engine = create_engine(sync_url)
+    with engine.begin() as conn:
+        conn.execute(
+            text("UPDATE workspace SET title = :title WHERE id = CAST(:ws AS uuid)"),
+            {"title": _WORKSPACE_TITLE, "ws": workspace_id},
+        )
+    engine.dispose()
 
     yield page, f"{app_server}/annotation?workspace_id={workspace_id}"
 
@@ -87,6 +105,36 @@ class TestDeferredPageLoad:
         # document; tag toolbar holds the tag buttons.
         doc = page.locator('[data-testid="doc-container"]')
         expect(doc).to_be_visible(timeout=5000)
+
+    def test_page_header_shows_workspace_title(
+        self, workspace_page: tuple[Page, str]
+    ) -> None:
+        """Page header and browser title update to workspace name.
+
+        The skeleton renders "Annotation Workspace" immediately.
+        After the background task completes, both the visible header
+        and document.title should reflect the actual workspace name.
+        """
+        page, url = workspace_page
+        page.goto(url)
+
+        # Wait for deferred load to finish
+        page.wait_for_function(
+            "() => window.__loadComplete === true",
+            timeout=30_000,
+        )
+
+        # Visible header should show the workspace title, not
+        # the generic skeleton "Annotation Workspace".
+        header = page.get_by_test_id("page-header-title")
+        expect(header).to_be_visible(timeout=5000)
+        expect(header).to_have_text(_WORKSPACE_TITLE, timeout=5000)
+
+        # Browser tab title should match the visible header
+        doc_title = page.title()
+        assert doc_title == _WORKSPACE_TITLE, (
+            f"document.title {doc_title!r} != expected {_WORKSPACE_TITLE!r}"
+        )
 
     def test_invalid_workspace_shows_not_found(
         self, browser: Browser, app_server: str

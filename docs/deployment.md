@@ -1,6 +1,6 @@
 # Deployment Guide — PromptGrimoire
 
-*Last updated: 2026-03-15*
+*Last updated: 2026-03-28*
 *Target: NCI Cloud VM — Ubuntu 24.04 LTS, 4 vCPU / 8GB RAM, 60GB boot volume, grimoire.drbbs.org*
 
 ## Architecture Overview
@@ -1499,7 +1499,7 @@ sudo /opt/promptgrimoire/deploy/restart.sh              # full: pull, sync, test
 sudo /opt/promptgrimoire/deploy/restart.sh --skip-tests  # skip unit tests (faster)
 ```
 
-The deploy script (`deploy/restart.sh`) runs: `git pull` → `uv sync --no-dev` → unit tests (e-stop on failure) → HAProxy drain (lets in-flight requests finish) → HAProxy maintenance mode (serves friendly 503 page) → `systemctl restart` → wait for `/healthz` → HAProxy back to ready.
+The deploy script (`deploy/restart.sh`) runs: `git pull` → `uv sync` → prune stale NiceGUI storage files → unit tests (e-stop on failure) → update HAProxy 503 page → pre-restart flush (CRDT persist + session invalidation + parallel client disconnect) → HAProxy drain → wait for connections to drain → HAProxy maintenance (serves 503 page with healthz polling + login button) → `systemctl restart` → wait for `/healthz` → HAProxy back to ready.
 
 Alembic migrations run automatically on app start.
 
@@ -1605,6 +1605,107 @@ grimoire-run grimoire seed run
 
 Idempotent — safe to run multiple times.
 
+### Planned maintenance (take site offline)
+
+HAProxy reads `errorfile` content at config load time. Editing the file on disk
+does **not** take effect until HAProxy reloads.
+
+1. Edit the 503 page with your custom message:
+   ```bash
+   sudo vim /etc/haproxy/errors/503.http
+   ```
+2. Reload HAProxy so it picks up the new file:
+   ```bash
+   sudo systemctl reload haproxy
+   ```
+3. Stop the app (HAProxy must have no backend before it serves 503 — if the
+   app is still running, HAProxy routes to it instead of serving the error page):
+   ```bash
+   sudo systemctl stop promptgrimoire
+   ```
+4. Put HAProxy in maintenance mode:
+   ```bash
+   echo 'set server be_promptgrimoire/app state maint' | sudo socat stdio /run/haproxy/admin.sock
+   ```
+
+Users now see your custom 503 page.
+
+**Bring it back up:**
+
+```bash
+sudo systemctl start promptgrimoire
+# Wait for /healthz
+until curl -sf http://127.0.0.1:8080/healthz > /dev/null 2>&1; do sleep 1; done
+echo 'set server be_promptgrimoire/app state ready' | sudo socat stdio /run/haproxy/admin.sock
+```
+
+**Important:** Always restore the standard 503 page after planned maintenance,
+otherwise the next deploy will overwrite it with the repo version anyway:
+```bash
+sudo cp /opt/promptgrimoire/deploy/503.http /etc/haproxy/errors/503.http
+sudo systemctl reload haproxy
+```
+
+### Session invalidation on restart
+
+Sessions are invalidated in three ways, covering all restart paths:
+
+| Restart path | Mechanism | How it works |
+|---|---|---|
+| `deploy/restart.sh` | `POST /api/pre-restart` | Flushes CRDT, sync-writes storage files with `auth_user` removed |
+| Memory threshold auto-restart | `graceful_memory_shutdown()` | Same sync-write, then navigates clients to `/restarting` |
+| Bare `systemctl restart` / OOM / crash | `invalidate_sessions_on_disk()` at startup | Iterates `.nicegui/storage-user-*.json` on disk, removes `auth_user` before accepting connections |
+
+After any restart, users must log in again. The HAProxy 503 page (manual deploys)
+and the NiceGUI `/restarting` page (auto-restart) both inform users of this.
+
+### Memory threshold auto-restart
+
+The app monitors RSS every `APP__DIAGNOSTIC_INTERVAL_SECONDS` (default: 60s).
+When RSS exceeds `APP__MEMORY_RESTART_THRESHOLD_MB` (default: 2560):
+
+1. Logs `memory_threshold_exceeded_restarting` at CRITICAL (triggers Discord alert)
+2. Flushes Milkdown editors to CRDT
+3. Persists dirty CRDT state to database
+4. Navigates connected clients to `/restarting?manual=1` (shows "Log in" button when ready)
+5. Sync-writes session invalidation to disk
+6. Exits with code 75 (systemd `Restart=on-failure` triggers automatic restart)
+
+**Tuning** (in `/opt/promptgrimoire/.env`):
+```bash
+APP__DIAGNOSTIC_INTERVAL_SECONDS=60      # Check interval (lower = faster response)
+APP__MEMORY_RESTART_THRESHOLD_MB=2560    # RSS threshold (lower = more headroom before saturation)
+# Set to 0 to disable auto-restart:
+# APP__MEMORY_RESTART_THRESHOLD_MB=0
+```
+
+Changes require a restart to take effect.
+
+### NiceGUI storage file cleanup
+
+NiceGUI stores per-user session data in `.nicegui/storage-user-*.json` files
+that are **never automatically cleaned up**. `deploy/restart.sh` prunes files
+older than 7 days on each deploy. For manual cleanup:
+
+```bash
+# As promptgrimoire user:
+find /opt/promptgrimoire/.nicegui -name "storage-user-*.json" -mtime +7 -delete
+```
+
+### HAProxy recovery
+
+If a deploy fails mid-restart and HAProxy is stuck in drain or maintenance mode:
+
+```bash
+# Check current state
+echo 'show servers state' | sudo socat stdio /run/haproxy/admin.sock
+
+# Restore normal traffic
+echo 'set server be_promptgrimoire/app state ready' | sudo socat stdio /run/haproxy/admin.sock
+```
+
+**Note:** `socat` to the admin socket requires root. Use `sudo`.
+
 ---
 
 ## Quick Reference
@@ -1618,7 +1719,8 @@ Idempotent — safe to run multiple times.
 | Deploy key | `/home/promptgrimoire/.ssh/id_ed25519` |
 | systemd unit | `/etc/systemd/system/promptgrimoire.service` |
 | HAProxy config | `/etc/haproxy/haproxy.cfg` |
-| HAProxy 503 page | `/etc/haproxy/errors/503.http` (source: `deploy/503.http`) |
+| HAProxy 503 page | `/etc/haproxy/errors/503.http` (source: `deploy/503.http`) — reload HAProxy after editing |
+| NiceGUI storage | `/opt/promptgrimoire/.nicegui/storage-user-*.json` (pruned on deploy) |
 | Deploy script | `/opt/promptgrimoire/deploy/restart.sh` |
 | HAProxy combined cert | `/etc/haproxy/certs/grimoire.drbbs.org.pem` |
 | Let's Encrypt certs | `/etc/letsencrypt/live/grimoire.drbbs.org/` |
@@ -1638,7 +1740,7 @@ Idempotent — safe to run multiple times.
 ## Known Limitations
 
 - **Hot reload** is on by default (`PROMPTGRIMOIRE_RELOAD=1`). `run_prod.py` disables it. `run.py` (dev) keeps it.
-- **Single process.** NiceGUI + uvicorn handles connections asynchronously. No horizontal scaling. PgBouncer handles connection pooling for up to 500 concurrent clients.
+- **Single process.** NiceGUI + uvicorn handles connections asynchronously. No horizontal scaling. Practical ceiling ~300-400 concurrent users before GC pauses and memory pressure become untenable. See `docs/nicegui/production-memory-management.md`. PgBouncer handles connection pooling for up to 500 concurrent clients.
 - **PDF export blocks briefly.** LaTeX compilation is CPU-bound. Under heavy concurrent export load, consider `asyncio.to_thread()` wrapping (tracked in perf epic #142).
 - **Initial cert only uses port 80 standalone.** The first `certbot certonly --standalone` requires port 80 free (HAProxy not yet running). All subsequent renewals use standalone on port 8402 behind HAProxy with zero downtime.
 

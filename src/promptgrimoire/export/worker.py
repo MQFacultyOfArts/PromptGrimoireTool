@@ -148,6 +148,9 @@ async def start_export_worker(
             logger.exception("export_worker_iteration_failed")
 
         if on_poll_cycle is not None:
-            on_poll_cycle()
+            try:
+                on_poll_cycle()
+            except Exception:
+                logger.warning("on_poll_cycle_failed", exc_info=True)
 
         await asyncio.sleep(poll_interval)

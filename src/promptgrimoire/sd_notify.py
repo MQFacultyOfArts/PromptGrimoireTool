@@ -11,10 +11,6 @@ from __future__ import annotations
 import os
 import socket
 
-import structlog
-
-logger = structlog.get_logger()
-
 
 def notify(message: str) -> bool:
     """Send a notification to systemd via NOTIFY_SOCKET.

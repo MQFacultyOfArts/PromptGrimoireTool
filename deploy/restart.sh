@@ -146,7 +146,7 @@ if [[ "$initial_count" -gt 0 ]] && [[ -n "$PRE_RESTART_TOKEN" ]]; then
     fi
 fi
 
-# 8. Stop worker gracefully (TimeoutStopSec=120 lets current job finish)
+# 8. Stop worker gracefully (overlaps with drain wait)
 HAS_WORKER=false
 if systemctl list-unit-files promptgrimoire-worker.service | grep -q promptgrimoire-worker; then
     HAS_WORKER=true

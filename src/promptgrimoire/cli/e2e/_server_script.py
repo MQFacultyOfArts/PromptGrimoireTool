@@ -201,11 +201,15 @@ async def _diagnostics():
 
     pool = _state.engine.sync_engine.pool if _state.engine else None
     pm = get_persistence_manager()
+    from promptgrimoire.diagnostics import _collect_memory
+
+    mem = _collect_memory()
     all_tasks = asyncio.all_tasks()
     return {
         "pool": (_pool_status(pool) if pool else "no engine"),
         "engine_id": id(_state.engine),
         "engine_is_none": _state.engine is None,
+        "rss_bytes": mem.get("current_rss_bytes"),
         "nicegui_clients": len(Client.instances),
         "nicegui_delete_tasks": sum(
             len(c._delete_tasks) for c in Client.instances.values()
@@ -314,6 +318,36 @@ async def _cleanup():
         "tasks_before": tasks_before,
         "tasks_after": tasks_after,
         "elapsed": elapsed_total,
+    }
+
+
+# GC + malloc_trim endpoint for memory probe (#434).
+# Forces Python gc.collect() and glibc malloc_trim(0), returns
+# before/after RSS and collection counts.
+@app.post("/api/test/gc")
+async def _gc():
+    import ctypes
+    import gc
+
+    from promptgrimoire.diagnostics import _collect_memory
+
+    rss_before = _collect_memory().get("current_rss_bytes")
+    collected_1 = gc.collect()
+    collected_2 = gc.collect()  # second pass for weak ref callbacks
+    rss_after_gc = _collect_memory().get("current_rss_bytes")
+    trimmed = False
+    try:
+        libc = ctypes.CDLL("libc.so.6")
+        trimmed = libc.malloc_trim(0) != 0
+    except OSError:
+        pass
+    rss_after_trim = _collect_memory().get("current_rss_bytes")
+    return {
+        "rss_before": rss_before,
+        "rss_after_gc": rss_after_gc,
+        "rss_after_trim": rss_after_trim,
+        "gc_collected": collected_1 + collected_2,
+        "malloc_trimmed": trimmed,
     }
 
 

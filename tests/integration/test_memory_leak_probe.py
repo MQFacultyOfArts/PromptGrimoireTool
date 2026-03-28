@@ -172,7 +172,9 @@ def _take_snapshot(
 # ---------------------------------------------------------------------------
 
 
-HEAVY_FIXTURE = Path(__file__).parent / "fixtures" / "workspace_heavy.json"
+HEAVY_FIXTURE = (
+    Path(__file__).parent / "fixtures" / "workspace_pabai_190hl_scrubbed.json"
+)
 
 
 async def _rehydrate_heavy_workspace(email: str) -> UUID:
@@ -190,6 +192,7 @@ async def _rehydrate_heavy_workspace(email: str) -> UUID:
     from promptgrimoire.db.acl import grant_permission
     from promptgrimoire.db.engine import get_session
     from promptgrimoire.db.models import (
+        Tag,
         Workspace,
         WorkspaceDocument,
     )
@@ -198,6 +201,7 @@ async def _rehydrate_heavy_workspace(email: str) -> UUID:
     data = json.loads(HEAVY_FIXTURE.read_text(encoding="utf-8"))
     ws_data = data["workspace"]
     docs_data = data.get("documents", [])
+    tags_data = data.get("tags", [])
 
     workspace_id = UUID(ws_data["id"])
 
@@ -210,7 +214,13 @@ async def _rehydrate_heavy_workspace(email: str) -> UUID:
         # Clean any prior run
         from sqlmodel import select
 
-        # Delete existing docs for this workspace
+        # Delete existing tags and docs for this workspace
+        old_tags = (
+            await session.exec(select(Tag).where(Tag.workspace_id == workspace_id))
+        ).all()
+        for t in old_tags:
+            await session.delete(t)
+
         old_docs = (
             await session.exec(
                 select(WorkspaceDocument).where(
@@ -253,6 +263,22 @@ async def _rehydrate_heavy_workspace(email: str) -> UUID:
                 source_type=doc_data.get("source_type", "paste"),
             )
             session.add(doc)
+
+        # Insert tags (needed for highlight rendering)
+        for tag_data in tags_data:
+            tag = Tag(
+                id=UUID(tag_data["id"]),
+                workspace_id=workspace_id,
+                group_id=UUID(tag_data["group_id"])
+                if tag_data.get("group_id")
+                else None,
+                name=tag_data.get("name", "Tag"),
+                description=tag_data.get("description", ""),
+                color=tag_data.get("color", "#1f77b4"),
+                locked=tag_data.get("locked", False),
+                order_index=tag_data.get("order_index", 0),
+            )
+            session.add(tag)
 
         await session.commit()
 

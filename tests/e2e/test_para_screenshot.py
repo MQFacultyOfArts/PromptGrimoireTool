@@ -21,6 +21,7 @@ from uuid import uuid4
 import pytest
 from playwright.sync_api import expect
 
+from promptgrimoire.docs.helpers import wait_for_annotation_ready
 from tests.e2e.paste_helpers import simulate_paste
 
 if TYPE_CHECKING:
@@ -82,6 +83,7 @@ def page_with_paste(browser: Browser, app_server: str) -> Generator[Page]:
     page.goto(f"{app_server}/annotation")
     page.get_by_test_id("create-workspace-btn").click()
     page.wait_for_url(re.compile(r"workspace_id="))
+    wait_for_annotation_ready(page)
 
     yield page
 

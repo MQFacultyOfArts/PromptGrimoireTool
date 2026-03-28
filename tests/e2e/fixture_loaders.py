@@ -12,7 +12,10 @@ from typing import TYPE_CHECKING
 
 from playwright.sync_api import expect
 
-from promptgrimoire.docs.helpers import wait_for_text_walker
+from promptgrimoire.docs.helpers import (
+    wait_for_annotation_ready,
+    wait_for_text_walker,
+)
 from tests.e2e.paste_helpers import simulate_paste
 from tests.e2e.tag_helpers import _seed_tags_for_workspace
 
@@ -54,6 +57,7 @@ def setup_workspace_with_content(
     page.goto(f"{app_server}/annotation")
     page.get_by_test_id("create-workspace-btn").click()
     page.wait_for_url(re.compile(r"workspace_id="))
+    wait_for_annotation_ready(page)
 
     content_input = page.get_by_test_id("content-editor").locator(".q-editor__content")
     content_input.fill(content)
@@ -112,6 +116,7 @@ def _load_fixture_via_paste(
     page.goto(f"{app_server}/annotation")
     page.get_by_test_id("create-workspace-btn").click()
     page.wait_for_url(re.compile(r"workspace_id="))
+    wait_for_annotation_ready(page)
 
     # Read fixture HTML (handle both .html.gz and plain .html)
     if fixture_path.suffix == ".gz":

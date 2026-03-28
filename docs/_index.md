@@ -55,6 +55,7 @@ library references during development.
 ## investigations
 
 - [Causal Analysis: Connection Pool Shrinkage Under CancelledError (#403)](investigations/2026-03-21-pool-shrinkage-403.md)
+- [Causal Analysis: Deferred Load E2E Test Failures (#377)](investigations/2026-03-28-deferred-load-e2e-failures.md)
 
 ## lark
 

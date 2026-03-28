@@ -412,6 +412,11 @@ async def annotation_page(client: Client) -> None:
     with page_layout(
         "Annotation Workspace", drawer_open=False, footer=True
     ) as footer_el:
+        # Milkdown bundle must be in the DOM before the Respond tab
+        # tries to call window._createMilkdownEditor.  Load it at
+        # page level so it's available regardless of deferred timing.
+        ui.add_body_html('<script src="/milkdown/milkdown-bundle.js"></script>')
+
         if workspace_id:
             # Skeleton: spinner visible immediately, content loaded async
             content_container = ui.column().classes("w-full items-center q-pa-lg")

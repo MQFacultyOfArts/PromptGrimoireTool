@@ -156,6 +156,13 @@ def _create_tag_callbacks(
     return on_add_tag, on_manage_tags
 
 
+def _update_page_title(title: str | None) -> None:
+    """Set the browser tab title via JS after deferred load resolves."""
+    if title:
+        escaped = title.replace("'", "\\'")
+        ui.run_javascript(f"document.title = '{escaped}';")
+
+
 def _show_error_ui(
     client: Client,
     container: ui.element,
@@ -310,7 +317,9 @@ async def _load_workspace_content(
                 placement_context=ctx,
             )
 
-            ui.add_body_html('<script src="/milkdown/milkdown-bundle.js"></script>')
+            # Update page title now we have the workspace name
+            # (skeleton used generic "Annotation Workspace").
+            _update_page_title(context.workspace.title)
 
             first_doc_tab_name = str(documents[0].id) if documents else "Source"
             state.initialised_tabs = {first_doc_tab_name}

@@ -27,6 +27,7 @@ import json
 import os
 import time
 import urllib.request
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 from uuid import uuid4
@@ -170,28 +171,108 @@ def _authenticate_and_grant(
         conn.commit()
 
 
+def _probe_provenance() -> dict[str, str]:
+    """Capture run provenance: timestamp, loadavg, arena config, CPU count."""
+    load_1m, load_5m, load_15m = os.getloadavg()
+    arena_max = os.environ.get("MALLOC_ARENA_MAX", "default")
+    return {
+        "timestamp": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "loadavg_1m": f"{load_1m:.2f}",
+        "loadavg_5m": f"{load_5m:.2f}",
+        "loadavg_15m": f"{load_15m:.2f}",
+        "malloc_arena_max": arena_max,
+        "nproc": str(os.cpu_count() or 0),
+    }
+
+
 def _format_results(results: list[dict]) -> str:
-    """Format probe results as a readable table."""
+    """Format probe results with per-cycle deltas and trend."""
     hdr = (
-        "cycle | phase      | rss_MB | gc_collected"
+        "cycle | phase      | rss_MB | delta_MB | gc_collected"
         " | clients | presence | ws_reg | tasks"
     )
     sep = (
-        "------|------------|--------|----------"
+        "------|------------|--------|---------|----------"
         "----|---------|----------|--------|------"
     )
     lines = [hdr, sep]
+
+    # Track previous after_gc RSS for delta computation
+    prev_gc_rss: float | None = None
+
     for r in results:
+        delta = ""
+        if r["phase"] == "after_gc":
+            if prev_gc_rss is not None:
+                d = r["rss_after_trim_mb"] - prev_gc_rss
+                delta = f"{d:+7.1f}"
+            else:
+                delta = "     --"
+            prev_gc_rss = r["rss_after_trim_mb"]
+        else:
+            delta = "       "
+
         lines.append(
             f"{r['cycle']:>5} | {r['phase']:<10}"
             f" | {r['rss_after_trim_mb']:>6.0f}"
+            f" | {delta}"
             f" | {r['gc_collected']:>12}"
             f" | {r['clients']:>7}"
             f" | {r['presence_clients']:>8}"
             f" | {r['ws_registry']:>6}"
             f" | {r['tasks']:>5}"
         )
+
+    # Trend summary: cycles 3-5 deltas (late-cycle, post-cold-start)
+    gc_results = [r for r in results if r["phase"] == "after_gc"]
+    if len(gc_results) >= 3:
+        rss_values = [r["rss_after_trim_mb"] for r in gc_results]
+        deltas = [rss_values[i] - rss_values[i - 1] for i in range(1, len(rss_values))]
+        all_avg = sum(deltas) / len(deltas) if deltas else 0
+
+        # Late-cycle: last 3 deltas (cycles 3-5 if 5 cycles)
+        late_deltas = deltas[-3:] if len(deltas) >= 3 else deltas
+        late_avg = sum(late_deltas) / len(late_deltas) if late_deltas else 0
+
+        lines.append("")
+        lines.append("--- Trend summary ---")
+        total_growth = rss_values[-1] - rss_values[0]
+        n_cycles = len(gc_results) - 1
+        lines.append(
+            f"Total RSS: {rss_values[0]:.0f} -> "
+            f"{rss_values[-1]:.0f} MB "
+            f"(+{total_growth:.0f} MB over {n_cycles} cycles)"
+        )
+        lines.append(f"All-cycle avg delta: {all_avg:+.1f} MB/cycle")
+        lines.append(f"Late-cycle avg delta (last 3): {late_avg:+.1f} MB/cycle")
+        lines.append(f"Per-cycle deltas: {', '.join(f'{d:+.1f}' for d in deltas)}")
+
     return "\n".join(lines)
+
+
+def _write_probe_output(variant: str, summary: str) -> Path:
+    """Write probe output with ISO datetime, arena variant, and provenance header.
+
+    Filename: e2e_probe_{variant}_arena-{arena}_{ISO-datetime}.txt
+    """
+    prov = _probe_provenance()
+    ts = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+    arena = prov["malloc_arena_max"]
+    filename = f"e2e_probe_{variant}_arena-{arena}_{ts}.txt"
+
+    header_lines = [
+        f"# Probe: {variant}",
+        f"# Timestamp: {prov['timestamp']}",
+        f"# MALLOC_ARENA_MAX: {arena}",
+        f"# nproc: {prov['nproc']}",
+        f"# loadavg: {prov['loadavg_1m']} {prov['loadavg_5m']} {prov['loadavg_15m']}",
+        "",
+    ]
+
+    out = Path("output/incident") / filename
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text("\n".join(header_lines) + summary, encoding="utf-8")
+    return out
 
 
 def _run_probe(
@@ -371,9 +452,8 @@ class TestMemoryProbe434:
 
         print(f"\n=== Forced cleanup ===\n{summary}")
 
-        out = Path("output/incident/e2e_probe_forced.txt")
-        out.parent.mkdir(parents=True, exist_ok=True)
-        out.write_text(summary, encoding="utf-8")
+        out = _write_probe_output("forced", summary)
+        print(f"  Output: {out}")
 
         gc_results = [r for r in results if r["phase"] == "after_gc"]
         if len(gc_results) >= 3:
@@ -415,9 +495,8 @@ class TestMemoryProbe434:
 
         print(f"\n=== Natural cleanup ===\n{summary}")
 
-        out = Path("output/incident/e2e_probe_natural.txt")
-        out.parent.mkdir(parents=True, exist_ok=True)
-        out.write_text(summary, encoding="utf-8")
+        out = _write_probe_output("natural", summary)
+        print(f"  Output: {out}")
 
         gc_results = [r for r in results if r["phase"] == "after_gc"]
         if len(gc_results) >= 3:
@@ -525,9 +604,8 @@ class TestCleanupGapIsolation:
 
         print(f"\n=== Cleanup gap: clients_only ===\n{summary}")
 
-        out = Path("output/incident/e2e_probe_clients_only.txt")
-        out.parent.mkdir(parents=True, exist_ok=True)
-        out.write_text(summary, encoding="utf-8")
+        out = _write_probe_output("clients_only", summary)
+        print(f"  Output: {out}")
 
         _assert_isolation_invariants(results, "clients_only", "deleted")
 
@@ -553,9 +631,8 @@ class TestCleanupGapIsolation:
 
         print(f"\n=== Cleanup gap: eio_only ===\n{summary}")
 
-        out = Path("output/incident/e2e_probe_eio_only.txt")
-        out.parent.mkdir(parents=True, exist_ok=True)
-        out.write_text(summary, encoding="utf-8")
+        out = _write_probe_output("eio_only", summary)
+        print(f"  Output: {out}")
 
         _assert_isolation_invariants(results, "eio_only", "eio_closed")
 
@@ -581,8 +658,7 @@ class TestCleanupGapIsolation:
 
         print(f"\n=== Cleanup gap: events_only ===\n{summary}")
 
-        out = Path("output/incident/e2e_probe_events_only.txt")
-        out.parent.mkdir(parents=True, exist_ok=True)
-        out.write_text(summary, encoding="utf-8")
+        out = _write_probe_output("events_only", summary)
+        print(f"  Output: {out}")
 
         _assert_isolation_invariants(results, "events_only", "orphan_wait")

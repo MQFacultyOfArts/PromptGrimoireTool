@@ -12,7 +12,13 @@ from __future__ import annotations
 import os
 from typing import TYPE_CHECKING
 
-from promptgrimoire.config import ExportConfig, FeaturesConfig, I18nConfig, Settings
+from promptgrimoire.config import (
+    DatabaseConfig,
+    ExportConfig,
+    FeaturesConfig,
+    I18nConfig,
+    Settings,
+)
 
 if TYPE_CHECKING:
     import pytest
@@ -94,3 +100,33 @@ class TestExportConfig:
         """ExportConfig accepts max_concurrent_compilations kwarg."""
         cfg = ExportConfig(max_concurrent_compilations=3)
         assert cfg.max_concurrent_compilations == 3
+
+
+class TestDatabaseConfig:
+    """DatabaseConfig sub-model tests for use_null_pool flag.
+
+    Verifies:
+    - infra-split.AC2.1: DATABASE__USE_NULL_POOL=true overrides to True
+    - infra-split.AC2.2: use_null_pool defaults to False
+    """
+
+    def test_use_null_pool_defaults_false(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """infra-split.AC2.2: use_null_pool defaults to False."""
+        for key in list(os.environ):
+            if key.startswith("DATABASE__"):
+                monkeypatch.delenv(key, raising=False)
+        s = Settings(_env_file=None)  # type: ignore[call-arg]
+        assert s.database.use_null_pool is False
+
+    def test_use_null_pool_true_via_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """infra-split.AC2.1: DATABASE__USE_NULL_POOL=true overrides to True."""
+        monkeypatch.setenv("DATABASE__USE_NULL_POOL", "true")
+        s = Settings(_env_file=None)  # type: ignore[call-arg]
+        assert s.database.use_null_pool is True
+
+    def test_database_config_direct(self) -> None:
+        """DatabaseConfig accepts use_null_pool kwarg."""
+        cfg = DatabaseConfig(use_null_pool=True)
+        assert cfg.use_null_pool is True

@@ -66,6 +66,7 @@ class DatabaseConfig(BaseModel):
     """
 
     url: str | None = None
+    use_null_pool: bool = False
     pool_size: int = 80
     max_overflow: int = 15
     pool_pre_ping: bool = True

@@ -571,6 +571,56 @@ Expected: `state = 'streaming'`, `slot_name = 'nci_standby'`.
 
 If the standby has been offline long enough that WAL was reclaimed (beyond `max_slot_wal_keep_size`), the replication slot becomes invalidated. In that case, drop and recreate the slot on the primary, then re-run the full `pg_basebackup` bootstrap above.
 
+### Manual failover procedure
+
+Automated failover is explicitly out of scope — over-engineering for a megs-sized DB with nightly backups. This is a manual procedure for when the DO primary is lost or being decommissioned.
+
+**1. Verify standby is caught up:**
+
+```sql
+-- On primary (if still accessible)
+SELECT pg_current_wal_lsn();
+
+-- On standby
+SELECT pg_last_wal_replay_lsn();
+```
+
+Both should match (or be very close). If the primary is down, skip this step — the standby will replay whatever WAL it has received.
+
+**2. Stop the primary** (or it's already down):
+
+```bash
+sudo systemctl stop postgresql@16-main
+```
+
+**3. Promote the standby:**
+
+```sql
+-- On NCI standby
+SELECT pg_promote();
+```
+
+Or via command line: `sudo -u postgres pg_ctl promote -D /var/lib/postgresql/16/main`
+
+The `standby.signal` file is removed automatically on promotion. The standby becomes a read-write primary.
+
+**4. Update application connection:**
+
+- Update PgBouncer config to point at NCI's PostgreSQL
+- Or update `DATABASE__URL` in `.env` to NCI's address
+- Restart app: `systemctl restart promptgrimoire promptgrimoire-worker`
+
+**5. Update DNS** (if needed):
+
+- Point `grimoire.drbbs.org` A record to NCI IP
+- Or update HAProxy backend to NCI
+
+**6. Verify:**
+
+```bash
+curl https://grimoire.drbbs.org/healthz
+```
+
 ## 8. Application Setup
 
 ```bash

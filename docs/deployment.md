@@ -1,7 +1,8 @@
 # Deployment Guide — PromptGrimoire
 
-*Last updated: 2026-03-15*
-*Target: NCI Cloud VM — Ubuntu 24.04 LTS, 4 vCPU / 8GB RAM, 60GB boot volume, grimoire.drbbs.org*
+*Last updated: 2026-03-28*
+*Target: DigitalOcean — Ubuntu 24.04 LTS, 16 vCPU / 32 GB RAM, 400 GB SSD, SYD1, grimoire.drbbs.org*
+*Previous: NCI Cloud VM — 4 vCPU / 8 GB RAM, 60 GB Cinder volume*
 
 ## Architecture Overview
 
@@ -227,7 +228,16 @@ ioping -c 20 /
 rm -f /tmp/seqwrite.0.0 /tmp/randmix.*.0
 ```
 
-NCI Cinder (likely Ceph-backed): expect ~100–200 MB/s sequential, ~5k–10k random IOPS, ~0.5–2ms latency. Record these numbers — they feed into PostgreSQL tuning in Step 7.
+Record these numbers — they feed into PostgreSQL tuning in Step 7.
+
+| Metric | NCI Cinder (4 vCPU / 8 GB) | DO SSD (16 vCPU / 32 GB) |
+|--------|---------------------------|--------------------------|
+| Sequential write | ~100–200 MB/s | not benchmarked |
+| Random 4K IOPS | ~5k–10k | ~19.5k |
+| Read latency (4K) | ~0.5–2 ms | ~354 µs |
+| Write latency (4K) | — | ~10 µs |
+
+*DO benchmarks recorded 2026-03-28 during migration.*
 
 > **Ref:** [fio documentation](https://fio.readthedocs.io/en/latest/)
 
@@ -258,14 +268,21 @@ These settings are reload-settable — `pg_reload_conf()` activates them immedia
 
 ### Performance tuning
 
-The default PostgreSQL configuration is tuned for compatibility, not performance. These settings are critical for an SSD-backed OLTP workload serving 500+ concurrent users.
+The default PostgreSQL configuration is tuned for compatibility, not performance. These settings are critical for an SSD-backed OLTP workload serving 500+ concurrent users. Values below are for the **DO deployment (16 vCPU / 32 GB RAM)**; NCI values (4 vCPU / 8 GB) are shown for reference.
 
 ```bash
 sudo -u postgres psql <<'SQL'
--- Memory: entire DB fits in shared_buffers; tell planner about OS cache
-ALTER SYSTEM SET shared_buffers = '2GB';
-ALTER SYSTEM SET effective_cache_size = '6GB';
-ALTER SYSTEM SET work_mem = '16MB';
+-- Memory: 25% of RAM for shared_buffers, 50% for effective_cache_size
+ALTER SYSTEM SET shared_buffers = '8GB';
+ALTER SYSTEM SET effective_cache_size = '16GB';
+ALTER SYSTEM SET work_mem = '12MB';
+ALTER SYSTEM SET maintenance_work_mem = '2GB';
+
+-- Large shared_buffers benefit from huge pages (reduces TLB misses)
+ALTER SYSTEM SET huge_pages = 'try';
+
+-- JIT compilation adds overhead for short OLTP queries
+ALTER SYSTEM SET jit = 'off';
 
 -- SSD: random reads are nearly as fast as sequential
 ALTER SYSTEM SET random_page_cost = 1.1;
@@ -285,7 +302,7 @@ ALTER SYSTEM SET log_min_duration_statement = 1000;
 SQL
 ```
 
-Restart PostgreSQL to apply (`shared_buffers` and `max_connections` require restart):
+Restart PostgreSQL to apply (`shared_buffers`, `max_connections`, `huge_pages` require restart):
 
 ```bash
 sudo systemctl restart postgresql
@@ -297,18 +314,21 @@ Verify non-default settings:
 sudo -u postgres psql -c "SELECT name, setting, source FROM pg_settings WHERE source = 'override' ORDER BY name;"
 ```
 
-| Setting | Default | Tuned | Why |
-|---------|---------|-------|-----|
-| `shared_buffers` | 128 MB | 2 GB | Entire DB fits in RAM; default wastes 7.8 GB |
-| `effective_cache_size` | 4 GB | 6 GB | Tells planner to prefer index scans (shared_buffers + OS cache) |
-| `work_mem` | 4 MB | 16 MB | Safe with PgBouncer limiting real connections to ~80 |
-| `random_page_cost` | 4.0 | 1.1 | Default assumes spinning disk; SSD random ≈ sequential |
-| `effective_io_concurrency` | 1 | 200 | SSD can service many parallel reads |
-| `checkpoint_completion_target` | 0.5 | 0.9 | Spreads checkpoint I/O over 90% of interval, less spike |
-| `max_wal_size` | 1 GB | 2 GB | Reduces checkpoint frequency |
-| `max_connections` | 100 | 120 | 80 from PgBouncer + worker + vacuum + backup + psql |
-| `statement_timeout` | 0 | 30s | Kills runaway queries; override per-session for long jobs |
-| `log_min_duration_statement` | -1 | 1000ms | Logs slow queries for diagnosis |
+| Setting | Default | NCI (8 GB) | DO (32 GB) | Why |
+|---------|---------|------------|------------|-----|
+| `shared_buffers` | 128 MB | 2 GB | 8 GB | 25% of RAM; entire DB fits in cache |
+| `effective_cache_size` | 4 GB | 6 GB | 16 GB | 50% of RAM; tells planner to prefer index scans |
+| `work_mem` | 4 MB | 16 MB | 12 MB | Per-operation memory; lower is safer under high concurrency (work_mem × ops can blow out RAM) |
+| `maintenance_work_mem` | 64 MB | — | 2 GB | ~6% of RAM; faster VACUUM and index rebuilds |
+| `huge_pages` | `try` | — | `try` | Reduces TLB misses with large shared_buffers |
+| `jit` | `on` | — | `off` | JIT overhead hurts short OLTP queries more than it helps |
+| `random_page_cost` | 4.0 | 1.1 | 1.1 | Default assumes spinning disk; SSD random ≈ sequential |
+| `effective_io_concurrency` | 1 | 200 | 200 | SSD can service many parallel reads |
+| `checkpoint_completion_target` | 0.5 | 0.9 | 0.9 | Spreads checkpoint I/O over 90% of interval, less spike |
+| `max_wal_size` | 1 GB | 2 GB | 2 GB | Reduces checkpoint frequency |
+| `max_connections` | 100 | 120 | 120 | 80 from PgBouncer + worker + vacuum + backup + psql |
+| `statement_timeout` | 0 | 30s | 30s | Kills runaway queries; override per-session for long jobs |
+| `log_min_duration_statement` | -1 | 1000ms | 1000ms | Logs slow queries for diagnosis |
 
 > **Ref:** [PostgreSQL 16 resource consumption](https://www.postgresql.org/docs/16/runtime-config-resource.html), [PostgreSQL 16 WAL configuration](https://www.postgresql.org/docs/16/wal-configuration.html), [PostgreSQL wiki: tuning](https://wiki.postgresql.org/wiki/Tuning_Your_PostgreSQL_Server), [pgtune](https://pgtune.leopard.in.ua/)
 
@@ -535,8 +555,11 @@ sudo systemctl stop postgresql@16-main
 sudo -u postgres rm -rf /var/lib/postgresql/16/main/*
 
 # Take base backup from primary (-R creates standby.signal and connection config)
+# Use a dedicated PostgreSQL hostname covered by the server certificate
+# (for example `db-primary.grimoire.drbbs.org`), not a raw IP, because
+# sslmode=verify-full checks the certificate name against the host value.
 sudo -u postgres pg_basebackup \
-  -h <DO_PRIMARY_IP> \
+  -h <DO_PRIMARY_HOSTNAME> \
   -U replicator \
   -D /var/lib/postgresql/16/main \
   -Fp -Xs -P -R \
@@ -551,10 +574,12 @@ sudo systemctl start postgresql@16-main
 
 The `-R` flag tells `pg_basebackup` to create `standby.signal` and write connection settings to `postgresql.auto.conf`. The `-S nci_standby` flag binds the standby to the replication slot created on the primary, ensuring WAL retention even if the standby disconnects temporarily.
 
+`sslmode=verify-full` requires hostname validation. Do not use the DO public IP here unless the PostgreSQL server certificate includes that IP in its Subject Alternative Name. The recommended setup is a dedicated DNS name such as `db-primary.grimoire.drbbs.org` that resolves to the DO primary and is covered by the certificate. If you cannot provision a hostname-backed certificate yet, explicitly downgrade to `sslmode=verify-ca` and document that deviation.
+
 **Standby postgresql.conf (auto-created by `-R`, verify these exist in `postgresql.auto.conf`):**
 
 ```ini
-primary_conninfo = 'host=<DO_PRIMARY_IP> port=5432 user=replicator password=<password> application_name=nci_standby sslmode=verify-full sslrootcert=/etc/ssl/certs/ca-certificates.crt'
+primary_conninfo = 'host=<DO_PRIMARY_HOSTNAME> port=5432 user=replicator password=<password> application_name=nci_standby sslmode=verify-full sslrootcert=/etc/ssl/certs/ca-certificates.crt'
 primary_slot_name = 'nci_standby'
 recovery_target_timeline = 'latest'
 ```
@@ -606,18 +631,25 @@ Or via command line: `sudo -u postgres pg_ctl promote -D /var/lib/postgresql/16/
 
 The `standby.signal` file is removed automatically on promotion. The standby becomes a read-write primary.
 
-**4. Update application connection:**
+**4. Keep the application topology unchanged (PgBouncer stays in path):**
 
-Production uses `DATABASE__URL` with a direct Unix socket (`host=/var/run/postgresql`), not PgBouncer. After promoting NCI:
+Production normally connects through the local PgBouncer socket:
 
 ```bash
-# On NCI, edit .env to point at local PostgreSQL (now the primary)
-# DATABASE__URL should use the local Unix socket:
-#   DATABASE__URL=postgresql+asyncpg://promptgrimoire@/promptgrimoire?host=/var/run/postgresql
+# DATABASE__URL should continue to use the local PgBouncer socket:
+#   DATABASE__URL=postgresql+asyncpg://promptgrimoire@/promptgrimoire?host=/run/pgbouncer&port=6432
 
-# Restart the app on NCI
+# PgBouncer on NCI should point at the local PostgreSQL socket:
+#   promptgrimoire = host=/var/run/postgresql port=5432 dbname=promptgrimoire
+
+# If PgBouncer was stopped on NCI, start or restart it first
+sudo systemctl restart pgbouncer
+
+# Then restart the app and worker
 sudo systemctl restart promptgrimoire promptgrimoire-worker
 ```
+
+No `DATABASE__URL` change is needed if NCI already uses the standard production topology from Section 7a. Only bypass PgBouncer temporarily for diagnostics or migrations.
 
 If the app was running on the DO host, stop it there first:
 ```bash
@@ -872,16 +904,13 @@ sudo apt install -y fonts-noto --install-recommends \
 Then install TinyTeX (installs to `~/.TinyTeX` by default, no relocation needed):
 
 ```bash
-sudo -u promptgrimoire bash -c \
-  'cd /opt/promptgrimoire && /home/promptgrimoire/.local/bin/uv run python scripts/setup_latex.py'
+grimoire-run python scripts/setup_latex.py
 ```
 
 Rebuild the LuaTeX font cache so fontspec can find system fonts (especially TeX Gyre Termes):
 
 ```bash
-cd /opt/promptgrimoire
-sudo -u promptgrimoire env PATH="/home/promptgrimoire/.TinyTeX/bin/x86_64-linux:$PATH" \
-  luaotfload-tool --update --force
+grimoire-run luaotfload-tool --update --force
 ```
 
 Verify:

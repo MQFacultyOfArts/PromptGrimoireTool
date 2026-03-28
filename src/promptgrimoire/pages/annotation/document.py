@@ -285,6 +285,8 @@ def _inject_highlight_scripts(state: PageState) -> None:
         t"    if (typeof initToolbarObserver === 'function') {{"
         t"      initToolbarObserver();"
         t"    }}"
+        t"    setupCardPositioning("
+        t"      {state.doc_container_id}, {state.ann_container_id}, 8);"
         t"  }}"
         t"  if (typeof walkTextNodes === 'function') {{ init(); return; }}"
         t"  var loaded = 0;"
@@ -421,8 +423,7 @@ async def _render_document_with_highlights(
     if state.can_annotate:
         _setup_selection_handlers(state)
 
-    # Set up scroll-synced card positioning and hover interaction
-    # (loaded from static/annotation-card-sync.js)
-    doc_id = state.doc_container_id
-    ann_id = state.ann_container_id
-    ui.run_javascript(f"setupCardPositioning('{doc_id}', '{ann_id}', 8)")
+    # Card positioning is set up inside init_js (see _inject_highlight_scripts)
+    # to guarantee annotation-card-sync.js is loaded before the call.
+    # Do NOT add a standalone ui.run_javascript("setupCardPositioning(...)") here —
+    # it races with the async script fetch in deferred-load contexts.

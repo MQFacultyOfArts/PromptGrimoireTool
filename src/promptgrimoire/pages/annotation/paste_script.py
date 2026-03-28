@@ -39,7 +39,7 @@ def _build_paste_intercept_script(
     <script>
         window.{paste_var} = null;
         window.{platform_var} = null;
-        document.addEventListener('DOMContentLoaded', function() {{
+        (function() {{
             const sel = '[id="c{editor_id}"] .q-editor__content';
             const tryAttach = () => {{
                 const editorEl = document.querySelector(sel);
@@ -801,7 +801,14 @@ def _build_paste_intercept_script(
                     editorEl.replaceChildren(p);
                 }});
             }};
-            tryAttach();
-        }});
+            // readyState guard: works both during initial page load
+            // (readyState='loading') and in deferred background tasks
+            // (readyState='complete') where DOMContentLoaded has already fired.
+            if (document.readyState === 'loading') {{
+                document.addEventListener('DOMContentLoaded', tryAttach);
+            }} else {{
+                tryAttach();
+            }}
+        }})();
     </script>
     """

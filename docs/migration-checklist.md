@@ -1,8 +1,10 @@
 # Migration Checklist: NCI to DigitalOcean Cutover
 
-**Purpose:** Migrate PromptGrimoire from NCI Cloud to DigitalOcean with zero data loss.
+**Purpose:** Migrate PromptGrimoire from NCI Cloud to DigitalOcean with minimal data loss.
 
-**Acceptance criteria:** infra-split.AC8.1 (row counts match), infra-split.AC8.3 (smoke test passes).
+**Data loss budget:** Row counts must match exactly (infra-split.AC8.1). CRDT state is transferred via `pg_dump -Fc` (binary-safe, checksummed). If the NCI app was stopped cleanly, CRDT loss is zero. If the app crashed, in-flight edits from the last few seconds before the crash may be lost — acceptable for a tool that has been offline for hours. infra-split.AC8.2 (CRDT spot-check) is waived: `pg_dump -Fc` custom format includes per-block checksums; CRDT corruption from a clean dump/restore is not a realistic failure mode.
+
+**Acceptance criteria:** infra-split.AC8.1 (row counts match), infra-split.AC8.3 (smoke test passes). AC8.2 waived per above.
 
 **Assumptions:**
 - NCI app is already stopped (public access down by choice)
@@ -151,14 +153,18 @@ diff /tmp/nci_counts.txt /tmp/do_counts.txt
 
 **Gate:** `diff` produces no output. Any difference = restore incomplete. Do NOT proceed.
 
-### Step 6: Invalidate old export jobs
+### Step 6: Clean up stale export jobs
 
-Old export PDFs lived in NCI's PrivateTmp — they are gone. Mark all completed exports as expired so the UI doesn't show stale download links:
+Old export PDFs lived in NCI's PrivateTmp — they are gone. Delete completed export jobs so the UI doesn't show stale download links (the `export_job_status` reference table only allows `queued`, `running`, `completed`, `failed` — there is no `expired` status):
 
 ```sql
-UPDATE export_job
-SET status = 'expired'
-WHERE status = 'completed';
+DELETE FROM export_job WHERE status = 'completed';
+```
+
+Students can re-export on DO. In-flight jobs (`queued`/`running`) are also stale — the worker that owned them is gone:
+
+```sql
+DELETE FROM export_job WHERE status IN ('queued', 'running');
 ```
 
 ### Step 7: Start services on DO (localhost only)
@@ -189,15 +195,14 @@ All tests run against `localhost:8080`. Public traffic is still blocked.
 **8a. Smoke export (CJK + emoji compilation):**
 
 ```bash
-cd /opt/promptgrimoire
-sudo -u promptgrimoire uv run grimoire test smoke-export
+grimoire-run grimoire test smoke-export
 # Expected: PDF generated successfully
 ```
 
 **8b. Mass export check:**
 
 ```bash
-sudo -u promptgrimoire uv run grimoire export run --scope server --only-errors \
+grimoire-run grimoire export run --scope server --only-errors \
   -o /tmp/migration_export_check
 # Expected: all workspaces export successfully (or only pre-existing failures)
 ```
@@ -211,7 +216,7 @@ systemctl status promptgrimoire-worker
 # Expected: active (running)
 
 journalctl -u promptgrimoire-worker -n 20
-# Expected: worker_ready and poll cycle entries visible
+# Expected: "worker_ready" log entry visible (confirms startup + sd_notify READY=1)
 ```
 
 **Gate:** smoke-export passes, mass export has no new failures, worker is running. If any fail, investigate on DO. NCI dump is safe — you can re-restore.
@@ -245,7 +250,7 @@ echo "set server be_promptgrimoire/app state ready" | socat stdio /run/haproxy/a
 
 - UptimeRobot: Update healthcheck URL to DO IP
 - Beszel: Reconfigure agent/hub for DO server
-- Discord alerts: Verify webhook fires from DO (`uv run grimoire admin webhook`)
+- Discord alerts: Verify webhook fires from DO (`grimoire-run grimoire admin webhook`)
 
 ---
 

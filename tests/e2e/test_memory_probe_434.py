@@ -24,6 +24,7 @@ Run with: uv run grimoire e2e perf -k test_memory_probe
 from __future__ import annotations
 
 import json
+import os
 import time
 import urllib.request
 from pathlib import Path
@@ -45,6 +46,11 @@ CYCLES = 5
 # Number of concurrent browser clients per cycle
 N_CLIENTS = 10
 
+# System load threshold: perf tests skip if 1-minute load average exceeds
+# 2x the number of CPUs. High load contaminates RSS measurements by
+# delaying cleanup handlers and inflating the natural-vs-forced gap.
+_MAX_LOAD_FACTOR = 2.0
+
 pytestmark = [
     pytest.mark.e2e,
     pytest.mark.perf,
@@ -53,6 +59,25 @@ pytestmark = [
         reason="DEV__TEST_DATABASE_URL not configured",
     ),
 ]
+
+
+def _check_system_load() -> None:
+    """Skip perf tests if system load is too high for valid measurements."""
+    load_1min = os.getloadavg()[0]
+    cpus = os.cpu_count() or 1
+    threshold = cpus * _MAX_LOAD_FACTOR
+    if load_1min > threshold:
+        pytest.skip(
+            f"System load too high for perf tests: {load_1min:.1f} "
+            f"(threshold: {threshold:.0f} = {cpus} CPUs x {_MAX_LOAD_FACTOR}). "
+            f"RSS measurements would be contaminated by cleanup handler delays."
+        )
+
+
+@pytest.fixture(autouse=True)
+def _load_gate() -> None:
+    """Auto-applied fixture: skip all tests in this module if load is high."""
+    _check_system_load()
 
 
 def _test_db_conninfo() -> str:

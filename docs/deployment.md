@@ -606,14 +606,26 @@ The `standby.signal` file is removed automatically on promotion. The standby bec
 
 **4. Update application connection:**
 
-- Update PgBouncer config to point at NCI's PostgreSQL
-- Or update `DATABASE__URL` in `.env` to NCI's address
-- Restart app: `systemctl restart promptgrimoire promptgrimoire-worker`
+Production uses `DATABASE__URL` with a direct Unix socket (`host=/var/run/postgresql`), not PgBouncer. After promoting NCI:
 
-**5. Update DNS** (if needed):
+```bash
+# On NCI, edit .env to point at local PostgreSQL (now the primary)
+# DATABASE__URL should use the local Unix socket:
+#   DATABASE__URL=postgresql+asyncpg://promptgrimoire@/promptgrimoire?host=/var/run/postgresql
 
-- Point `grimoire.drbbs.org` A record to NCI IP
-- Or update HAProxy backend to NCI
+# Restart the app on NCI
+sudo systemctl restart promptgrimoire promptgrimoire-worker
+```
+
+If the app was running on the DO host, stop it there first:
+```bash
+# On DO (if accessible)
+sudo systemctl stop promptgrimoire promptgrimoire-worker
+```
+
+**5. Update DNS:**
+
+Point `grimoire.drbbs.org` A record to NCI's public IP. The old DO IP should stop serving traffic once the app is stopped there.
 
 **6. Verify:**
 

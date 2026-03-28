@@ -13,10 +13,12 @@
 #   5. Application-level pre-restart (flush CRDT, navigate clients to /restarting)
 #   6. HAProxy drain (stop new connections, let in-flight finish)
 #   7. Wait for application-level connections to drain
-#   8. HAProxy maintenance mode (serves friendly 503 with jittered reload)
-#   9. systemctl restart
-#  10. Wait for /healthz
-#  11. HAProxy back to ready
+#   8. Stop worker gracefully (overlaps with drain wait)
+#   9. HAProxy maintenance mode (serves friendly 503 with jittered reload)
+#  10. systemctl restart promptgrimoire
+#  11. Wait for /healthz
+#  12. Start worker (after app is healthy)
+#  13. HAProxy back to ready
 set -euo pipefail
 
 SOCK=/run/haproxy/admin.sock
@@ -149,15 +151,23 @@ if [[ "$initial_count" -gt 0 ]] && [[ -n "$PRE_RESTART_TOKEN" ]]; then
     fi
 fi
 
-# 8. Maintenance mode (serves friendly 503 page)
+# 8. Stop worker gracefully (overlaps with drain wait)
+HAS_WORKER=false
+if systemctl list-unit-files promptgrimoire-worker.service | grep -q promptgrimoire-worker; then
+    HAS_WORKER=true
+    step "Stopping export worker (graceful drain)"
+    systemctl stop promptgrimoire-worker || true
+fi
+
+# 9. Maintenance mode (serves friendly 503 page)
 step "HAProxy → maintenance mode"
 echo "set server be_promptgrimoire/app state maint" | socat stdio "$SOCK"
 
-# 9. Restart
+# 10. Restart
 step "Restarting promptgrimoire"
 systemctl restart promptgrimoire
 
-# 10. Wait for healthy
+# 11. Wait for healthy
 step "Waiting for /healthz (max ${MAX_WAIT}s)"
 elapsed=0
 until curl -sf "$HEALTHZ" > /dev/null 2>&1; do
@@ -171,7 +181,16 @@ until curl -sf "$HEALTHZ" > /dev/null 2>&1; do
     fi
 done
 
-# 11. Back to ready
+# 12. Start worker (app is healthy, worker can connect to DB)
+if [[ "$HAS_WORKER" == "true" ]]; then
+    step "Starting export worker"
+    systemctl start promptgrimoire-worker
+    if ! systemctl is-active --quiet promptgrimoire-worker; then
+        echo "WARNING: promptgrimoire-worker failed to start" >&2
+    fi
+fi
+
+# 13. Back to ready
 step "HAProxy → ready"
 echo "set server be_promptgrimoire/app state ready" | socat stdio "$SOCK"
 haproxy_touched=false

@@ -255,7 +255,8 @@ class TestInitDbReadsPoolConfig:
                 await init_db()
 
                 mock_logger.info.assert_any_call(
-                    "pool_configured",
+                    "db_pool_mode",
+                    mode="QueuePool",
                     pool_size=42,
                     max_overflow=7,
                 )

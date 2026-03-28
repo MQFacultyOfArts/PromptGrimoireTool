@@ -221,6 +221,7 @@ src/promptgrimoire/
 │   ├── roleplay.py      # AI roleplay / client interview
 │   └── roleplay_export.py  # Session-to-HTML conversion (functional core)
 ├── export/              # PDF/LaTeX export (see docs/export.md)
+│   └── worker_main.py   # Standalone export worker entry point (python -m promptgrimoire.export.worker_main)
 ├── auth/                # Stytch integration + workspace access check + ban system
 │   ├── client_registry.py  # NiceGUI client tracking for real-time ban disconnect
 ├── db/                  # Database (see docs/database.md)
@@ -243,7 +244,9 @@ src/promptgrimoire/
 ├── word_count_enforcement.py  # Export-time violation check (pure functions, no UI)
 ├── deadline_worker.py   # Background polling worker for expired wargame deadlines
 ├── search_worker.py     # Background FTS extraction worker (polls search_dirty)
+├── logging_config.py    # Shared logging setup (extracted from __init__.py for standalone worker)
 ├── logging_discord.py   # Discord webhook alerting processor (ERROR/CRITICAL -> Discord embed)
+├── sd_notify.py         # Minimal systemd sd_notify (READY/WATCHDOG/STOPPING via NOTIFY_SOCKET)
 └── static/              # JS/CSS assets
 
 scripts/
@@ -257,10 +260,13 @@ scripts/
     └── parsers/         # Per-format parsers (journal, jsonl, haproxy, pglog, beszel, github)
 
 deploy/
-├── restart.sh           # Zero-downtime deploy script
-├── collect-telemetry.sh # Incident telemetry collection
-├── 503.http             # HAProxy maintenance page
-└── tests/               # BATS shell script tests
+├── restart.sh                    # Zero-downtime deploy script (manages app + worker lifecycle)
+├── promptgrimoire-worker.service # Standalone export worker systemd unit (Type=notify, watchdog)
+├── check-replication-lag.sh      # PG streaming replication lag monitoring
+├── check-export-queue.sh         # Export queue depth / stale job monitoring
+├── collect-telemetry.sh          # Incident telemetry collection
+├── 503.http                      # HAProxy maintenance page
+└── tests/                        # BATS shell script tests
 
 tests/
 ├── js/                  # Vitest JS unit tests (annotation static JS)
@@ -287,6 +293,8 @@ Detailed subsystem docs live in `docs/`. Key references:
 | [worktrees.md](docs/worktrees.md) | Git worktree setup, Serena memory management |
 | [logging.md](docs/logging.md) | Structured logging, log format, jq queries, Discord alerting |
 | [ARCHITECTURE.md](docs/ARCHITECTURE.md) | Data flow diagrams, integration patterns |
+| [deployment.md](docs/deployment.md) | Worker isolation, systemd units, replication, monitoring scripts |
+| [migration-checklist.md](docs/migration-checklist.md) | NCI-to-DigitalOcean migration runbook |
 | [postmortems/incident-analysis-playbook.md](docs/postmortems/incident-analysis-playbook.md) | Incident analysis: telemetry collection, dataset building, `incident_db.py` CLI reference |
 
 ### Documentation Caching
@@ -341,6 +349,26 @@ See [docs/deployment.md](docs/deployment.md) for full operations guide and [docs
 Structured JSON logging via structlog. Full details in [docs/logging.md](docs/logging.md).
 
 **Key rules:** `logger = structlog.get_logger()` at module level. Every `except` block must call `logger.exception()` or `logger.warning()` — no silent swallowing. No `print()` calls in `src/promptgrimoire/` except `cli/` (guard test enforces this). Do not call `logging.getLogger(__name__).setLevel()` — structlog level filtering is global; guard test (`test_setlevel_guard.py`) enforces this.
+
+**Logging setup:** `logging_config.setup_logging()` is the single entry point for structured logging configuration. Extracted from `__init__.py` so both the NiceGUI app and standalone export worker can initialise logging without importing NiceGUI.
+
+## Export Worker Architecture
+
+The export worker (PDF compilation) can run in two modes controlled by `FEATURES__WORKER_IN_PROCESS` (default: `true`):
+
+- **In-process** (`true`): Export worker runs as an `asyncio.Task` inside the NiceGUI app process. Simpler, single-process deployment.
+- **Standalone** (`false`): Export worker runs as a separate systemd service (`promptgrimoire-worker.service`). Uses `python -m promptgrimoire.export.worker_main`. Isolates CPU-heavy LaTeX compilation from the web process. Uses `NullPool` (`DATABASE__USE_NULL_POOL=true`) since only one connection is needed.
+
+**Standalone worker contracts:**
+- `sd_notify.py` sends `READY=1`, `WATCHDOG=1` (each poll cycle), `STOPPING=1` to systemd
+- `WatchdogSec=300` in the service file; worker must heartbeat within 5 minutes
+- `SIGTERM` triggers graceful shutdown: cancels in-flight job, closes DB, exits 0
+- `deploy/restart.sh` stops worker before app restart, starts it after `/healthz` passes (steps 8 and 12)
+
+**Config additions:**
+- `EXPORT__MAX_CONCURRENT_COMPILATIONS` (int, default 2): Semaphore limit for parallel LaTeX compilations
+- `FEATURES__WORKER_IN_PROCESS` (bool, default true): In-process vs standalone worker mode
+- `DATABASE__USE_NULL_POOL` (bool, default false): Use NullPool instead of QueuePool (for standalone worker)
 
 ## Conventions
 

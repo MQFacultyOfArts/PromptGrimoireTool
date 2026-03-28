@@ -1,7 +1,8 @@
 # Deployment Guide — PromptGrimoire
 
 *Last updated: 2026-03-28*
-*Target: NCI Cloud VM — Ubuntu 24.04 LTS, 4 vCPU / 8GB RAM, 60GB boot volume, grimoire.drbbs.org*
+*Target: DigitalOcean — Ubuntu 24.04 LTS, 16 vCPU / 32 GB RAM, 400 GB SSD, SYD1, grimoire.drbbs.org*
+*Previous: NCI Cloud VM — 4 vCPU / 8 GB RAM, 60 GB Cinder volume*
 
 ## Architecture Overview
 
@@ -227,7 +228,16 @@ ioping -c 20 /
 rm -f /tmp/seqwrite.0.0 /tmp/randmix.*.0
 ```
 
-NCI Cinder (likely Ceph-backed): expect ~100–200 MB/s sequential, ~5k–10k random IOPS, ~0.5–2ms latency. Record these numbers — they feed into PostgreSQL tuning in Step 7.
+Record these numbers — they feed into PostgreSQL tuning in Step 7.
+
+| Metric | NCI Cinder (4 vCPU / 8 GB) | DO SSD (16 vCPU / 32 GB) |
+|--------|---------------------------|--------------------------|
+| Sequential write | ~100–200 MB/s | not benchmarked |
+| Random 4K IOPS | ~5k–10k | ~19.5k |
+| Read latency (4K) | ~0.5–2 ms | ~354 µs |
+| Write latency (4K) | — | ~10 µs |
+
+*DO benchmarks recorded 2026-03-28 during migration.*
 
 > **Ref:** [fio documentation](https://fio.readthedocs.io/en/latest/)
 
@@ -258,14 +268,21 @@ These settings are reload-settable — `pg_reload_conf()` activates them immedia
 
 ### Performance tuning
 
-The default PostgreSQL configuration is tuned for compatibility, not performance. These settings are critical for an SSD-backed OLTP workload serving 500+ concurrent users.
+The default PostgreSQL configuration is tuned for compatibility, not performance. These settings are critical for an SSD-backed OLTP workload serving 500+ concurrent users. Values below are for the **DO deployment (16 vCPU / 32 GB RAM)**; NCI values (4 vCPU / 8 GB) are shown for reference.
 
 ```bash
 sudo -u postgres psql <<'SQL'
--- Memory: entire DB fits in shared_buffers; tell planner about OS cache
-ALTER SYSTEM SET shared_buffers = '2GB';
-ALTER SYSTEM SET effective_cache_size = '6GB';
-ALTER SYSTEM SET work_mem = '16MB';
+-- Memory: 25% of RAM for shared_buffers, 50% for effective_cache_size
+ALTER SYSTEM SET shared_buffers = '8GB';
+ALTER SYSTEM SET effective_cache_size = '16GB';
+ALTER SYSTEM SET work_mem = '12MB';
+ALTER SYSTEM SET maintenance_work_mem = '2GB';
+
+-- Large shared_buffers benefit from huge pages (reduces TLB misses)
+ALTER SYSTEM SET huge_pages = 'try';
+
+-- JIT compilation adds overhead for short OLTP queries
+ALTER SYSTEM SET jit = 'off';
 
 -- SSD: random reads are nearly as fast as sequential
 ALTER SYSTEM SET random_page_cost = 1.1;
@@ -285,7 +302,7 @@ ALTER SYSTEM SET log_min_duration_statement = 1000;
 SQL
 ```
 
-Restart PostgreSQL to apply (`shared_buffers` and `max_connections` require restart):
+Restart PostgreSQL to apply (`shared_buffers`, `max_connections`, `huge_pages` require restart):
 
 ```bash
 sudo systemctl restart postgresql
@@ -297,18 +314,21 @@ Verify non-default settings:
 sudo -u postgres psql -c "SELECT name, setting, source FROM pg_settings WHERE source = 'override' ORDER BY name;"
 ```
 
-| Setting | Default | Tuned | Why |
-|---------|---------|-------|-----|
-| `shared_buffers` | 128 MB | 2 GB | Entire DB fits in RAM; default wastes 7.8 GB |
-| `effective_cache_size` | 4 GB | 6 GB | Tells planner to prefer index scans (shared_buffers + OS cache) |
-| `work_mem` | 4 MB | 16 MB | Safe with PgBouncer limiting real connections to ~80 |
-| `random_page_cost` | 4.0 | 1.1 | Default assumes spinning disk; SSD random ≈ sequential |
-| `effective_io_concurrency` | 1 | 200 | SSD can service many parallel reads |
-| `checkpoint_completion_target` | 0.5 | 0.9 | Spreads checkpoint I/O over 90% of interval, less spike |
-| `max_wal_size` | 1 GB | 2 GB | Reduces checkpoint frequency |
-| `max_connections` | 100 | 120 | 80 from PgBouncer + worker + vacuum + backup + psql |
-| `statement_timeout` | 0 | 30s | Kills runaway queries; override per-session for long jobs |
-| `log_min_duration_statement` | -1 | 1000ms | Logs slow queries for diagnosis |
+| Setting | Default | NCI (8 GB) | DO (32 GB) | Why |
+|---------|---------|------------|------------|-----|
+| `shared_buffers` | 128 MB | 2 GB | 8 GB | 25% of RAM; entire DB fits in cache |
+| `effective_cache_size` | 4 GB | 6 GB | 16 GB | 50% of RAM; tells planner to prefer index scans |
+| `work_mem` | 4 MB | 16 MB | 12 MB | Per-operation memory; lower is safer under high concurrency (work_mem × ops can blow out RAM) |
+| `maintenance_work_mem` | 64 MB | — | 2 GB | ~6% of RAM; faster VACUUM and index rebuilds |
+| `huge_pages` | `try` | — | `try` | Reduces TLB misses with large shared_buffers |
+| `jit` | `on` | — | `off` | JIT overhead hurts short OLTP queries more than it helps |
+| `random_page_cost` | 4.0 | 1.1 | 1.1 | Default assumes spinning disk; SSD random ≈ sequential |
+| `effective_io_concurrency` | 1 | 200 | 200 | SSD can service many parallel reads |
+| `checkpoint_completion_target` | 0.5 | 0.9 | 0.9 | Spreads checkpoint I/O over 90% of interval, less spike |
+| `max_wal_size` | 1 GB | 2 GB | 2 GB | Reduces checkpoint frequency |
+| `max_connections` | 100 | 120 | 120 | 80 from PgBouncer + worker + vacuum + backup + psql |
+| `statement_timeout` | 0 | 30s | 30s | Kills runaway queries; override per-session for long jobs |
+| `log_min_duration_statement` | -1 | 1000ms | 1000ms | Logs slow queries for diagnosis |
 
 > **Ref:** [PostgreSQL 16 resource consumption](https://www.postgresql.org/docs/16/runtime-config-resource.html), [PostgreSQL 16 WAL configuration](https://www.postgresql.org/docs/16/wal-configuration.html), [PostgreSQL wiki: tuning](https://wiki.postgresql.org/wiki/Tuning_Your_PostgreSQL_Server), [pgtune](https://pgtune.leopard.in.ua/)
 
@@ -460,6 +480,192 @@ RELOAD;
 - `sv_active = default_pool_size` sustained → pool saturated, check for slow queries
 
 > **Ref:** [PgBouncer usage (SHOW commands)](https://www.pgbouncer.org/usage.html)
+
+### NullPool for application connections
+
+SQLAlchemy's default connection pool creates a **second pool** on top of PgBouncer — the double-pooling pathology. Connections sit idle in SQLAlchemy's pool while PgBouncer counts them as active server connections, wasting PostgreSQL backend slots and causing pool exhaustion under load.
+
+The fix is `NullPool`: SQLAlchemy opens a new connection for each request and closes it immediately after use, letting PgBouncer handle all pooling. Set in production `.env`:
+
+```bash
+DATABASE__USE_NULL_POOL=true
+```
+
+This is only needed when PgBouncer is in the path. In development (direct PostgreSQL), the default SQLAlchemy pool is fine.
+
+> **Ref:** [SQLAlchemy NullPool](https://docs.sqlalchemy.org/en/20/core/pooling.html#using-a-pool-instance-directly), [PgBouncer FAQ: application-side pooling](https://www.pgbouncer.org/faq.html)
+
+## 7b. Streaming Replication
+
+PostgreSQL streaming replication sends WAL (write-ahead log) records from a primary server to a standby in near-real-time, maintaining a hot standby that can be promoted if the primary fails.
+
+### Primary-side configuration (DO)
+
+**postgresql.conf on DO primary:**
+
+```ini
+# Streaming replication (§ 7b)
+wal_level = replica                    # Required for streaming replication (NOT default)
+max_wal_senders = 5                    # 1 standby + headroom for reconnection + pg_basebackup
+wal_keep_size = 256MB                  # Retain WAL segments as fallback
+max_replication_slots = 2              # 1 active + 1 spare
+```
+
+After changing `wal_level`, restart PostgreSQL (`sudo systemctl restart postgresql@16-main`). The other parameters only require a reload.
+
+**Replication user:**
+
+```sql
+CREATE USER replicator WITH REPLICATION ENCRYPTED PASSWORD '<strong_password>';
+```
+
+Store the password securely — it will be needed in the standby's `primary_conninfo`.
+
+**pg_hba.conf entry:**
+
+```
+# Streaming replication from NCI standby (§ 7b)
+hostssl  replication  replicator  <NCI_PUBLIC_IP>/32  scram-sha-256
+```
+
+Reload after editing: `sudo -u postgres psql -c 'SELECT pg_reload_conf();'`
+
+**Replication slot with bounded WAL retention:**
+
+```sql
+SELECT pg_create_physical_replication_slot('nci_standby');
+-- Prevent unbounded WAL accumulation if standby goes offline
+ALTER SYSTEM SET max_slot_wal_keep_size = '1GB';
+SELECT pg_reload_conf();
+```
+
+The `max_slot_wal_keep_size` limit ensures that if the standby is offline for an extended period, WAL files do not fill the primary's disk. If the slot falls behind this limit, the standby must be re-bootstrapped with `pg_basebackup`.
+
+> **Ref:** [PostgreSQL 16 WAL Configuration](https://www.postgresql.org/docs/16/runtime-config-replication.html), [Replication Slots](https://www.postgresql.org/docs/16/warm-standby.html#STREAMING-REPLICATION-SLOTS)
+
+### Standby configuration and bootstrap (NCI)
+
+**Initial bootstrap (run on NCI standby):**
+
+```bash
+# Stop PostgreSQL on standby
+sudo systemctl stop postgresql@16-main
+
+# Clear existing data directory
+sudo -u postgres rm -rf /var/lib/postgresql/16/main/*
+
+# Take base backup from primary (-R creates standby.signal and connection config)
+# Use a dedicated PostgreSQL hostname covered by the server certificate
+# (for example `db-primary.grimoire.drbbs.org`), not a raw IP, because
+# sslmode=verify-full checks the certificate name against the host value.
+sudo -u postgres pg_basebackup \
+  -h <DO_PRIMARY_HOSTNAME> \
+  -U replicator \
+  -D /var/lib/postgresql/16/main \
+  -Fp -Xs -P -R \
+  -S nci_standby
+
+# Verify standby.signal was created
+ls -la /var/lib/postgresql/16/main/standby.signal
+
+# Start PostgreSQL (will begin streaming)
+sudo systemctl start postgresql@16-main
+```
+
+The `-R` flag tells `pg_basebackup` to create `standby.signal` and write connection settings to `postgresql.auto.conf`. The `-S nci_standby` flag binds the standby to the replication slot created on the primary, ensuring WAL retention even if the standby disconnects temporarily.
+
+`sslmode=verify-full` requires hostname validation. Do not use the DO public IP here unless the PostgreSQL server certificate includes that IP in its Subject Alternative Name. The recommended setup is a dedicated DNS name such as `db-primary.grimoire.drbbs.org` that resolves to the DO primary and is covered by the certificate. If you cannot provision a hostname-backed certificate yet, explicitly downgrade to `sslmode=verify-ca` and document that deviation.
+
+**Standby postgresql.conf (auto-created by `-R`, verify these exist in `postgresql.auto.conf`):**
+
+```ini
+primary_conninfo = 'host=<DO_PRIMARY_HOSTNAME> port=5432 user=replicator password=<password> application_name=nci_standby sslmode=verify-full sslrootcert=/etc/ssl/certs/ca-certificates.crt'
+primary_slot_name = 'nci_standby'
+recovery_target_timeline = 'latest'
+```
+
+**Verification query (run on primary):**
+
+```sql
+SELECT pid, usename, application_name, state, sync_state,
+       write_lag, flush_lag, replay_lag
+FROM pg_stat_replication;
+```
+
+Expected: `state = 'streaming'`, `application_name = 'nci_standby'`.
+
+Note: `pg_stat_replication` does not have a `slot_name` column in PostgreSQL 16. The standby is identified by `application_name`, which is set via `primary_conninfo` (defaults to `walreceiver` unless overridden). To include the standby's application name, add `application_name=nci_standby` to `primary_conninfo`.
+
+If the standby has been offline long enough that WAL was reclaimed (beyond `max_slot_wal_keep_size`), the replication slot becomes invalidated. In that case, drop and recreate the slot on the primary, then re-run the full `pg_basebackup` bootstrap above.
+
+### Manual failover procedure
+
+Automated failover is explicitly out of scope — over-engineering for a megs-sized DB with nightly backups. This is a manual procedure for when the DO primary is lost or being decommissioned.
+
+**1. Verify standby is caught up:**
+
+```sql
+-- On primary (if still accessible)
+SELECT pg_current_wal_lsn();
+
+-- On standby
+SELECT pg_last_wal_replay_lsn();
+```
+
+Both should match (or be very close). If the primary is down, skip this step — the standby will replay whatever WAL it has received.
+
+**2. Stop the primary** (or it's already down):
+
+```bash
+sudo systemctl stop postgresql@16-main
+```
+
+**3. Promote the standby:**
+
+```sql
+-- On NCI standby
+SELECT pg_promote();
+```
+
+Or via command line: `sudo -u postgres pg_ctl promote -D /var/lib/postgresql/16/main`
+
+The `standby.signal` file is removed automatically on promotion. The standby becomes a read-write primary.
+
+**4. Keep the application topology unchanged (PgBouncer stays in path):**
+
+Production normally connects through the local PgBouncer socket:
+
+```bash
+# DATABASE__URL should continue to use the local PgBouncer socket:
+#   DATABASE__URL=postgresql+asyncpg://promptgrimoire@/promptgrimoire?host=/run/pgbouncer&port=6432
+
+# PgBouncer on NCI should point at the local PostgreSQL socket:
+#   promptgrimoire = host=/var/run/postgresql port=5432 dbname=promptgrimoire
+
+# If PgBouncer was stopped on NCI, start or restart it first
+sudo systemctl restart pgbouncer
+
+# Then restart the app and worker
+sudo systemctl restart promptgrimoire promptgrimoire-worker
+```
+
+No `DATABASE__URL` change is needed if NCI already uses the standard production topology from Section 7a. Only bypass PgBouncer temporarily for diagnostics or migrations.
+
+If the app was running on the DO host, stop it there first:
+```bash
+# On DO (if accessible)
+sudo systemctl stop promptgrimoire promptgrimoire-worker
+```
+
+**5. Update DNS:**
+
+Point `grimoire.drbbs.org` A record to NCI's public IP. The old DO IP should stop serving traffic once the app is stopped there.
+
+**6. Verify:**
+
+```bash
+curl https://grimoire.drbbs.org/healthz
+```
 
 ## 8. Application Setup
 
@@ -698,16 +904,13 @@ sudo apt install -y fonts-noto --install-recommends \
 Then install TinyTeX (installs to `~/.TinyTeX` by default, no relocation needed):
 
 ```bash
-sudo -u promptgrimoire bash -c \
-  'cd /opt/promptgrimoire && /home/promptgrimoire/.local/bin/uv run python scripts/setup_latex.py'
+grimoire-run python scripts/setup_latex.py
 ```
 
 Rebuild the LuaTeX font cache so fontspec can find system fonts (especially TeX Gyre Termes):
 
 ```bash
-cd /opt/promptgrimoire
-sudo -u promptgrimoire env PATH="/home/promptgrimoire/.TinyTeX/bin/x86_64-linux:$PATH" \
-  luaotfload-tool --update --force
+grimoire-run luaotfload-tool --update --force
 ```
 
 Verify:
@@ -824,6 +1027,79 @@ sudo journalctl -u promptgrimoire -f
 ```
 
 > **Ref:** [systemd.service(5)](https://www.freedesktop.org/software/systemd/man/systemd.service.html), [systemd.exec(5) sandboxing](https://www.freedesktop.org/software/systemd/man/systemd.exec.html#Sandboxing)
+
+> **See also:** § 10a for the export worker service, which runs PDF exports in an isolated process with independent resource controls.
+
+## 10a. Export Worker Service
+
+The export worker runs PDF/LaTeX exports as a **separate systemd service**, isolated from the main application. This provides:
+
+- **OOM isolation** — a runaway export cannot crash the app; the kernel kills the worker first
+- **Independent restart** — the worker can be restarted without affecting user sessions
+- **Resource controls** — best-effort CPU/IO scheduling prevents exports from starving the UI
+
+### Installation
+
+```bash
+sudo cp deploy/promptgrimoire-worker.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable promptgrimoire-worker
+sudo systemctl start promptgrimoire-worker
+```
+
+### Resource controls
+
+The worker unit file applies best-effort scheduling so exports never compete with the interactive app:
+
+| Directive | Value | Effect |
+|-----------|-------|--------|
+| `Nice` | `19` | Lowest CPU scheduling priority |
+| `IOSchedulingClass` | `idle` | I/O only when no other process needs disk |
+| `CPUWeight` | `10` | 10% CPU weight vs default 100 (systemd cgroups v2) |
+| `MemoryMax` | `3G` | Hard memory cap; OOM-killed if exceeded |
+| `MemoryHigh` | `2560M` | Soft limit; kernel reclaims aggressively above this |
+| `OOMScoreAdjust` | `500` | Positive score = killed before lower-scored processes |
+
+### Kernel OOM kill order
+
+When the system is under memory pressure, the kernel kills processes in order of their OOM score. The systemd units are configured so expendable services die first:
+
+| Service | `OOMScoreAdjust` | Kill order |
+|---------|-------------------|------------|
+| Export worker | `500` | 1st (expendable) |
+| App (`promptgrimoire`) | `0` (default) | 2nd |
+| PgBouncer | `-500` (recommended) | 3rd |
+| PostgreSQL | `-1000` | Last (protect data) |
+
+### Watchdog
+
+The worker sends `sd_notify` heartbeats to systemd. If no heartbeat arrives within `WatchdogSec=300` (5 minutes), systemd considers the worker hung and restarts it automatically. This catches deadlocks and infinite loops without manual intervention.
+
+The worker cancels the in-flight export job on SIGTERM and shuts down. `TimeoutStopSec=30` gives headroom for asyncio cleanup and database connection teardown. In-flight exports are marked as failed and can be retried by the user.
+
+### Logs
+
+```bash
+# Follow worker logs
+sudo journalctl -u promptgrimoire-worker -f
+
+# Recent worker logs (last hour)
+sudo journalctl -u promptgrimoire-worker --since "1 hour ago"
+
+# Worker restarts (watchdog or crash)
+sudo journalctl -u promptgrimoire-worker | grep -E "Started|Stopped|watchdog"
+```
+
+### Feature flag
+
+In production, the main app must **not** run the export worker in-process. Set in `.env`:
+
+```bash
+FEATURES__WORKER_IN_PROCESS=false
+EXPORT__MAX_CONCURRENT_COMPILATIONS=1
+```
+
+`FEATURES__WORKER_IN_PROCESS=false` tells the app not to spawn the worker in-process (the separate systemd service handles it). `EXPORT__MAX_CONCURRENT_COMPILATIONS=1` limits concurrent LaTeX compilations — the standalone worker's `MemoryMax=3G` only supports one concurrent lualatex process (each uses 200-500 MB).
 
 ## 11. HAProxy
 

@@ -163,10 +163,11 @@ async def init_db() -> None:
     if _state.engine is not None:
         return
 
-    use_null_pool = _is_test_environment()
+    settings = get_settings()
+    use_null_pool = _is_test_environment() or settings.database.use_null_pool
 
     pool_kwargs: dict[str, object] = {
-        "echo": get_settings().dev.database_echo,
+        "echo": settings.dev.database_echo,
         "connect_args": {
             "timeout": 10,
             "command_timeout": 30,
@@ -175,9 +176,10 @@ async def init_db() -> None:
 
     if use_null_pool:
         pool_kwargs["poolclass"] = NullPool
-        logger.info("Using NullPool (test environment detected)")
+        reason = "test" if _is_test_environment() else "config"
+        logger.info("db_pool_mode", mode="NullPool", reason=reason)
     else:
-        db_config = get_settings().database
+        db_config = settings.database
         pool_kwargs |= {
             "pool_size": db_config.pool_size,
             "max_overflow": db_config.max_overflow,
@@ -185,7 +187,8 @@ async def init_db() -> None:
             "pool_recycle": db_config.pool_recycle,
         }
         logger.info(
-            "pool_configured",
+            "db_pool_mode",
+            mode="QueuePool",
             pool_size=db_config.pool_size,
             max_overflow=db_config.max_overflow,
         )

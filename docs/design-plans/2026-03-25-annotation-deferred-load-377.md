@@ -78,7 +78,7 @@ _load_workspace_content(workspace_id, client)
 ├── Session 1: _resolve_full_context(workspace_id, user_id)
 │   ├── SELECT workspace with crdt_state         # 1 query (was 5)
 │   ├── SELECT acl_entry for (workspace, user)    # 1 query
-│   ├── SELECT activity JOIN week JOIN course     # 1 JOIN query (was 3× sequential)
+│   ├── SELECT activity, week, course              # sequential (consolidates 3× redundant walks)
 │   │   WHERE activity.id = workspace.activity_id
 │   ├── SELECT course_enrollment for (course, user) # 1 query (permission)
 │   ├── SELECT privileged user IDs                # 1 query (staff + admins)
@@ -124,7 +124,7 @@ async def resolve_annotation_context(
     """
 ```
 
-Returns a dataclass/NamedTuple with all resolved data. The hierarchy walk uses a JOIN that handles both placement paths:
+Returns a dataclass/NamedTuple with all resolved data. The design envisioned a single JOIN for the hierarchy walk (shown below for reference), but the implementation uses sequential queries within a single function to consolidate redundant fetches:
 
 ```sql
 -- Activity-placed: workspace.activity_id → activity → week → course
@@ -221,7 +221,7 @@ Addresses #391 (structlog context missing from logs) and #359 (Discord alerting 
 
 ### Phase 1: Unified Context Resolver
 
-Create `resolve_annotation_context()` in `db/workspaces.py`. Single session, JOINed hierarchy query, returns `AnnotationContext` dataclass with workspace, permission, placement context, privileged IDs, tags, and tag groups. Add `accept_workspace` parameter to CRDT registry's `get_or_create_for_workspace()` to accept pre-fetched workspace. Add optional `tags`/`tag_groups` kwargs to `_ensure_crdt_tag_consistency()` so callers with pre-fetched data skip the internal fetch (existing callers without these kwargs are unaffected). Write unit tests against the new function. Does not change page behavior yet — existing callers continue to work.
+Create `resolve_annotation_context()` in `db/workspaces.py`. Consolidates all annotation page data resolution into a single function (sequential queries, not JOINed — the JOIN optimisation was designed but not implemented). Returns `AnnotationContext` dataclass with workspace, permission, placement context, privileged IDs, tags, and tag groups. Add `accept_workspace` parameter to CRDT registry's `get_or_create_for_workspace()` to accept pre-fetched workspace. Add optional `tags`/`tag_groups` kwargs to `_ensure_crdt_tag_consistency()` so callers with pre-fetched data skip the internal fetch (existing callers without these kwargs are unaffected). Write unit tests against the new function. Does not change page behavior yet — existing callers continue to work.
 
 **Files:** `db/workspaces.py`, `db/acl.py`, `crdt/annotation_doc.py`, `db/tags.py`, `tests/unit/`
 
@@ -263,7 +263,7 @@ Run `grimoire e2e perf` before/after. Compare responseEnd timing. Verify no "Res
 
 - **annotation-deferred-load-377.AC2.1:** `resolve_annotation_context()` executes in a single DB session
 - **annotation-deferred-load-377.AC2.2:** Workspace row is fetched exactly once per page load (verified by query count instrumentation or mock)
-- **annotation-deferred-load-377.AC2.3:** Activity → Week → Course hierarchy is resolved via JOIN, not sequential selects
+- **annotation-deferred-load-377.AC2.3:** Activity → Week → Course hierarchy is resolved within the unified function (sequential queries consolidated from 3× redundant walks; JOIN optimisation deferred)
 - **annotation-deferred-load-377.AC2.4:** Function returns correct results for all workspace states: activity-placed, course-placed, standalone (no parent), template
 - **annotation-deferred-load-377.AC2.5:** CRDT registry accepts pre-fetched workspace on cold-cache path (no redundant fetch for crdt_state on first load; warm-cache path already skips the fetch)
 

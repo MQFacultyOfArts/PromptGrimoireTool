@@ -475,6 +475,54 @@ This is only needed when PgBouncer is in the path. In development (direct Postgr
 
 > **Ref:** [SQLAlchemy NullPool](https://docs.sqlalchemy.org/en/20/core/pooling.html#using-a-pool-instance-directly), [PgBouncer FAQ: application-side pooling](https://www.pgbouncer.org/faq.html)
 
+## 7b. Streaming Replication
+
+PostgreSQL streaming replication sends WAL (write-ahead log) records from a primary server to a standby in near-real-time, maintaining a hot standby that can be promoted if the primary fails.
+
+### Primary-side configuration (DO)
+
+**postgresql.conf on DO primary:**
+
+```ini
+# Streaming replication (§ 7b)
+wal_level = replica                    # Required for streaming replication (NOT default)
+max_wal_senders = 5                    # 1 standby + headroom for reconnection + pg_basebackup
+wal_keep_size = 256MB                  # Retain WAL segments as fallback
+max_replication_slots = 2              # 1 active + 1 spare
+```
+
+After changing `wal_level`, restart PostgreSQL (`sudo systemctl restart postgresql@16-main`). The other parameters only require a reload.
+
+**Replication user:**
+
+```sql
+CREATE USER replicator WITH REPLICATION ENCRYPTED PASSWORD '<strong_password>';
+```
+
+Store the password securely — it will be needed in the standby's `primary_conninfo`.
+
+**pg_hba.conf entry:**
+
+```
+# Streaming replication from NCI standby (§ 7b)
+hostssl  replication  replicator  <NCI_PUBLIC_IP>/32  scram-sha-256
+```
+
+Reload after editing: `sudo -u postgres psql -c 'SELECT pg_reload_conf();'`
+
+**Replication slot with bounded WAL retention:**
+
+```sql
+SELECT pg_create_physical_replication_slot('nci_standby');
+-- Prevent unbounded WAL accumulation if standby goes offline
+ALTER SYSTEM SET max_slot_wal_keep_size = '1GB';
+SELECT pg_reload_conf();
+```
+
+The `max_slot_wal_keep_size` limit ensures that if the standby is offline for an extended period, WAL files do not fill the primary's disk. If the slot falls behind this limit, the standby must be re-bootstrapped with `pg_basebackup`.
+
+> **Ref:** [PostgreSQL 16 WAL Configuration](https://www.postgresql.org/docs/16/runtime-config-replication.html), [Replication Slots](https://www.postgresql.org/docs/16/warm-standby.html#STREAMING-REPLICATION-SLOTS)
+
 ## 8. Application Setup
 
 ```bash

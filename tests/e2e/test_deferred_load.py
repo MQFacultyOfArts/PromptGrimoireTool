@@ -29,10 +29,13 @@ if TYPE_CHECKING:
     from playwright.sync_api import Browser, Page
 
 
-pytestmark_db = pytest.mark.skipif(
-    not get_settings().dev.test_database_url,
-    reason="DEV__TEST_DATABASE_URL not configured",
-)
+pytestmark = [
+    pytest.mark.e2e,
+    pytest.mark.skipif(
+        not get_settings().dev.test_database_url,
+        reason="DEV__TEST_DATABASE_URL not configured",
+    ),
+]
 
 
 @pytest.fixture
@@ -55,7 +58,6 @@ def workspace_page(browser: Browser, app_server: str) -> Generator[tuple[Page, s
     context.close()
 
 
-@pytest.mark.e2e
 class TestDeferredPageLoad:
     """Verify skeleton-first loading pattern."""
 
@@ -79,6 +81,12 @@ class TestDeferredPageLoad:
 
         # Spinner should be gone (container cleared and replaced with content)
         expect(spinner).not_to_be_visible(timeout=5000)
+
+        # Verify usable annotation UI actually loaded — not just
+        # spinner disappearing.  doc-container holds the rendered
+        # document; tag toolbar holds the tag buttons.
+        doc = page.locator('[data-testid="doc-container"]')
+        expect(doc).to_be_visible(timeout=5000)
 
     def test_invalid_workspace_shows_not_found(
         self, browser: Browser, app_server: str

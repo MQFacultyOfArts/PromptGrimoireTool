@@ -99,6 +99,15 @@ async def nicegui_user() -> AsyncGenerator[User]:
     commands and runs in its own UI lane.
     """
     async with user_simulation(main_file=_NICEGUI_TEST_APP) as u:
+        # Gate: verify routes are registered before yielding to tests.
+        # user_simulation runs the app script synchronously, but NiceGUI
+        # may defer route registration. A 404 here means the fixture is
+        # broken, not the test.
+        resp = await u.http_client.get("/login", follow_redirects=True)
+        assert resp.status_code == 200, (
+            f"NiceGUI routes not registered after user_simulation: "
+            f"/login returned {resp.status_code}"
+        )
         yield u
 
 

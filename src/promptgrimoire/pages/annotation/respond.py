@@ -348,6 +348,42 @@ def _build_reference_column(
     return reference_container, search_input
 
 
+def _update_markdown_mirror(
+    crdt_doc: AnnotationDocument,
+    md: str | None,
+    workspace_key: str,
+    client_id: str,
+) -> None:
+    """Write markdown from event payload to CRDT response_draft_markdown.
+
+    Missing field (old client without markdown in payload) preserves
+    the existing mirror — blanking it would cause data loss for PDF
+    export and pre-restart flush that read from this field.
+    """
+    if md is None:
+        logger.debug(
+            "RESPOND_YJS_NO_MARKDOWN ws=%s client=%s (old client?)",
+            workspace_key,
+            client_id[:8],
+        )
+        return
+    text_field = crdt_doc.response_draft_markdown
+    current = str(text_field)
+    if current != md:
+        with crdt_doc.doc.transaction():
+            current_len = len(text_field)
+            if current_len > 0:
+                del text_field[:current_len]
+            if md:
+                text_field += md
+        logger.debug(
+            "RESPOND_MD_SYNC ws=%s client=%s len=%d",
+            workspace_key,
+            client_id[:8],
+            len(md),
+        )
+
+
 def _setup_yjs_event_handler(
     crdt_doc: AnnotationDocument,
     workspace_key: str,
@@ -386,23 +422,9 @@ def _setup_yjs_event_handler(
             client_id[:8],
             len(raw),
         )
-        # Write markdown from event payload to CRDT Text field (no JS round-trip)
-        md: str = e.args.get("markdown", "")  # type: ignore[union-attr]  # NiceGUI GenericEventArguments.args is untyped
-        text_field = crdt_doc.response_draft_markdown
-        current = str(text_field)
-        if current != md:
-            with crdt_doc.doc.transaction():
-                current_len = len(text_field)
-                if current_len > 0:
-                    del text_field[:current_len]
-                if md:
-                    text_field += md
-            logger.debug(
-                "RESPOND_MD_SYNC ws=%s client=%s len=%d",
-                workspace_key,
-                client_id[:8],
-                len(md),
-            )
+        # Write markdown from event payload to CRDT mirror (no JS round-trip).
+        md: str | None = e.args.get("markdown")  # type: ignore[union-attr]  # NiceGUI GenericEventArguments.args is untyped
+        _update_markdown_mirror(crdt_doc, md, workspace_key, client_id)
         # Update word count badge if limits configured
         if state.word_count_badge is not None:
             markdown = str(crdt_doc.response_draft_markdown)
@@ -443,7 +465,10 @@ def _on_markdown_flush(
         workspace_id: Workspace UUID (str or UUID).
         client_id: Client identifier for logging.
     """
-    md: str = e.args.get("markdown", "")  # type: ignore[union-attr]  # NiceGUI GenericEventArguments.args is untyped
+    md: str | None = e.args.get("markdown")  # type: ignore[union-attr]  # NiceGUI GenericEventArguments.args is untyped
+    if md is None:
+        logger.debug("RESPOND_FLUSH_NO_MARKDOWN client=%s", client_id[:8])
+        return
     text_field = crdt_doc.response_draft_markdown
     current = str(text_field)
     if current != md:

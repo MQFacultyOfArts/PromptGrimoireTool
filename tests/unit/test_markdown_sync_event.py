@@ -118,9 +118,20 @@ class TestOnYjsUpdateMardownSync:
         assert str(crdt_doc.response_draft_markdown) == ""
 
     @pytest.mark.asyncio
-    async def test_markdown_missing_from_event_defaults_empty(self) -> None:
-        """When event args omit markdown key, defaults to empty string."""
+    async def test_markdown_missing_from_event_preserves_existing(self) -> None:
+        """When event args omit markdown key, existing mirror is preserved.
+
+        Old clients (pre-#454) send Yjs updates without the markdown
+        field.  Blanking the mirror would cause data loss for PDF
+        export and pre-restart flush.
+        """
         crdt_doc = _make_crdt_doc()
+
+        # Pre-populate with existing content
+        text_field = crdt_doc.response_draft_markdown
+        with crdt_doc.doc.transaction():
+            text_field += "existing response"
+
         b64_update = _make_yjs_update()
         handler, _, _ = _capture_on_yjs_handler(crdt_doc)
 
@@ -129,8 +140,8 @@ class TestOnYjsUpdateMardownSync:
         with patch("promptgrimoire.pages.annotation.respond.get_persistence_manager"):
             await handler(event)
 
-        # No crash, field should be empty
-        assert str(crdt_doc.response_draft_markdown) == ""
+        # Existing content preserved — NOT blanked
+        assert str(crdt_doc.response_draft_markdown) == "existing response"
 
     @pytest.mark.asyncio
     async def test_markdown_write_precedes_word_count_read(self) -> None:

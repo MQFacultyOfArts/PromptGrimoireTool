@@ -111,6 +111,7 @@ class FeaturesConfig(BaseModel):
     enable_roleplay: bool = True
     roleplay_require_privileged: bool = True
     enable_file_upload: bool = True
+    enable_search_worker: bool = True
     worker_in_process: bool = True
 
 

@@ -19,7 +19,6 @@ from promptgrimoire.crdt.persistence import get_persistence_manager
 from promptgrimoire.db.workspace_documents import get_document, list_document_headers
 from promptgrimoire.pages.annotation import (
     PageState,
-    _workspace_presence,
     _workspace_registry,
 )
 from promptgrimoire.pages.annotation.broadcast import _broadcast_yjs_update
@@ -166,25 +165,32 @@ _SCROLL_SAVE_JS = (
 )
 
 
-async def _rebuild_organise_with_scroll(
+def _rebuild_organise_with_scroll(
     render_fn: Callable[[], None],
 ) -> None:
     """Rebuild the organise tab preserving horizontal/vertical scroll.
 
-    Captures scroll position via awaited JS, re-renders, then restores
-    via requestAnimationFrame to ensure the DOM has settled.
+    Saves scroll position to a window global via fire-and-forget JS,
+    re-renders, then restores via requestAnimationFrame. NiceGUI's
+    outbox FIFO guarantees save executes before the DOM clear.
     """
-    scroll = await ui.run_javascript(_SCROLL_SAVE_JS)
+    ui.run_javascript(
+        "(function() {"
+        "  var el = document.querySelector("
+        "'[data-testid=\"organise-columns\"]');"
+        "  window._organiseSavedScroll = el"
+        "    ? {x: el.scrollLeft, y: el.scrollTop} : null;"
+        "})()"
+    )
     render_fn()
-    if scroll:
-        x, y = scroll.get("x", 0), scroll.get("y", 0)
-        ui.run_javascript(
-            "requestAnimationFrame(function() {"
-            "  var el = document.querySelector("
-            "'[data-testid=\"organise-columns\"]');"
-            f"  if (el) {{ el.scrollLeft = {x}; el.scrollTop = {y}; }}"
-            "});"
-        )
+    ui.run_javascript(
+        "requestAnimationFrame(function() {"
+        "  var s = window._organiseSavedScroll;"
+        "  var el = document.querySelector('[data-testid=\"organise-columns\"]');"
+        "  if (s && el) { el.scrollLeft = s.x; el.scrollTop = s.y; }"
+        "  delete window._organiseSavedScroll;"
+        "});"
+    )
 
 
 def _setup_organise_drag(state: PageState) -> None:
@@ -288,12 +294,8 @@ async def _initialise_respond_tab(state: PageState, workspace_id: UUID) -> None:
         on_locate=_on_respond_locate,
         state=state,
     )
-    state.has_milkdown_editor = True
-    # Mark this client as having a Milkdown editor for Yjs relay
-    ws_key = str(workspace_id)
-    clients = _workspace_presence.get(ws_key, {})
-    if state.client_id in clients:
-        clients[state.client_id].has_milkdown_editor = True
+    # has_milkdown_editor is now set by the editor_ready event handler
+    # in respond.py, not here. See _handle_editor_ready().
 
 
 async def _sync_respond_on_leave(state: PageState) -> None:

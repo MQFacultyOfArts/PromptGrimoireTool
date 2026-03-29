@@ -459,6 +459,113 @@ def _seed_editor_from_markdown(md: str) -> None:
     ui.context.client.run_javascript(f"window._setMilkdownMarkdown({json.dumps(md)})")
 
 
+def _build_editor_init_js(
+    editor_id: str,
+    fragment_name: str,
+    crdt_doc: AnnotationDocument,
+    workspace_key: str,
+    client_id: str,
+) -> str:
+    """Build the bundled editor init JS block (fire-and-forget).
+
+    Computes full-state CRDT sync and seed markdown Python-side, then
+    creates a self-executing async IIFE that initialises the Milkdown
+    editor, applies the sync, seeds markdown if needed, and emits
+    ``editor_ready`` on success or failure.
+    """
+    full_state = crdt_doc.get_full_state()
+    b64_state = ""
+    if len(full_state) > 2:
+        b64_state = base64.b64encode(full_state).decode("ascii")
+        logger.debug(
+            "RESPOND_FULL_STATE_SYNC ws=%s to_client=%s bytes=%d",
+            workspace_key,
+            client_id[:8],
+            len(full_state),
+        )
+
+    initial_md = crdt_doc.get_response_draft_markdown()
+    seed_md = ""
+    if initial_md and not str(crdt_doc.response_draft):
+        logger.debug(
+            "RESPOND_SEED ws=%s md_len=%d",
+            workspace_key,
+            len(initial_md),
+        )
+        seed_md = initial_md
+
+    b64_js = f"window._applyRemoteUpdate('{b64_state}');" if b64_state else ""
+    seed_js = f"window._setMilkdownMarkdown({json.dumps(seed_md)});" if seed_md else ""
+    return f"""
+        (async function() {{
+            try {{
+                const root = document.getElementById('{editor_id}');
+                if (!root || !window._createMilkdownEditor) {{
+                    console.error(
+                        '[respond-tab] bundle not loaded'
+                        + ' or #{editor_id} missing'
+                    );
+                    emitEvent('editor_ready', {{
+                        status: 'error',
+                        error: 'bundle not loaded or root missing'
+                    }});
+                    return;
+                }}
+                await window._createMilkdownEditor(
+                    root, '', function(b64Update) {{
+                        emitEvent('respond_yjs_update',
+                                  {{update: b64Update}});
+                    }}, '{fragment_name}'
+                );
+                {b64_js}
+                {seed_js}
+                emitEvent('editor_ready', {{status: 'ok'}});
+            }} catch (e) {{
+                console.error('[respond-tab] init failed', e);
+                emitEvent('editor_ready', {{
+                    status: 'error', error: e.message
+                }});
+            }}
+        }})();
+        """
+
+
+def _handle_editor_ready(
+    e: object,
+    state: PageState,
+    workspace_key: str,
+    client_id: str,
+) -> None:
+    """Handle the ``editor_ready`` event emitted by the bundled init JS.
+
+    Sets ``has_milkdown_editor`` on both ``PageState`` and the
+    ``_RemotePresence`` entry so Yjs relay includes this client.
+    On failure, logs the error and leaves the flag unset.
+    """
+    from promptgrimoire.pages.annotation import (  # noqa: PLC0415
+        _workspace_presence,
+    )
+
+    args = e.args  # type: ignore[union-attr]  # NiceGUI GenericEventArguments
+    if args.get("status") == "ok":
+        state.has_milkdown_editor = True
+        clients = _workspace_presence.get(workspace_key, {})
+        if client_id in clients:
+            clients[client_id].has_milkdown_editor = True
+        logger.debug(
+            "EDITOR_READY ws=%s client=%s",
+            workspace_key,
+            client_id[:8],
+        )
+    else:
+        logger.error(
+            "editor_init_failed",
+            workspace_key=workspace_key,
+            client_id=client_id[:8],
+            error=args.get("error", "unknown"),
+        )
+
+
 async def render_respond_tab(
     panel: ui.element,
     tags: list[TagInfo],
@@ -582,46 +689,29 @@ async def render_respond_tab(
     # Wait for WebSocket, then initialize the editor
     await ui.context.client.connected()
 
-    # Initialize Milkdown editor with response_draft fragment binding.
-    # The await is critical: createEditor is async (it does await crepe.create()
-    # internally). Without awaiting, __milkdownCrepe is not yet set when
-    # subsequent calls like _setMilkdownMarkdown fire, causing them to no-op.
-    await ui.run_javascript(
-        f"""
-        const root = document.getElementById('{editor_id}');
-        if (root && window._createMilkdownEditor) {{
-            await window._createMilkdownEditor(root, '', function(b64Update) {{
-                emitEvent('respond_yjs_update', {{update: b64Update}});
-            }}, '{_FRAGMENT_NAME}');
-            'editor-init-done';
-        }} else {{
-            console.error(
-                '[respond-tab] bundle not loaded or #{editor_id} missing'
-            );
-            'editor-init-failed';
-        }}
-        """,
-        timeout=5.0,
+    # Fire-and-forget: bundle editor init + CRDT sync + markdown seed
+    # into a single JS block. emitEvent('editor_ready') signals Python.
+    ui.run_javascript(
+        _build_editor_init_js(
+            editor_id,
+            _FRAGMENT_NAME,
+            crdt_doc,
+            workspace_key,
+            client_id,
+        )
     )
 
-    # Full-state sync for late joiners (AC4.3)
-    full_state = crdt_doc.get_full_state()
-    if len(full_state) > 2:
-        # >2 bytes means the doc has real content (empty doc is 2 bytes)
-        b64_state = base64.b64encode(full_state).decode("ascii")
-        ui.context.client.run_javascript(f"window._applyRemoteUpdate('{b64_state}')")
-        logger.debug(
-            "RESPOND_FULL_STATE_SYNC ws=%s to_client=%s bytes=%d",
+    # Readiness gating: has_milkdown_editor is set only after the
+    # browser emits editor_ready, not when render_respond_tab returns.
+    ui.on(
+        "editor_ready",
+        lambda e: _handle_editor_ready(
+            e,
+            state,
             workspace_key,
-            client_id[:8],
-            len(full_state),
-        )
-
-    # Seed editor from cloned markdown when XmlFragment is empty (fresh clone)
-    initial_md = crdt_doc.get_response_draft_markdown()
-    if initial_md and not str(crdt_doc.response_draft):
-        logger.debug("RESPOND_SEED ws=%s md_len=%d", workspace_key, len(initial_md))
-        _seed_editor_from_markdown(initial_md)
+            client_id,
+        ),
+    )
 
     def refresh_references() -> None:
         """Re-render the reference panel with current CRDT state.

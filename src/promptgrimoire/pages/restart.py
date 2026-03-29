@@ -17,8 +17,6 @@ from starlette.responses import JSONResponse
 from promptgrimoire.config import get_settings
 
 if TYPE_CHECKING:
-    from typing import Any
-
     from starlette.requests import Request
 
     from promptgrimoire.crdt import AnnotationDocumentRegistry
@@ -58,22 +56,6 @@ def _get_annotation_state() -> tuple[dict, AnnotationDocumentRegistry | None]:
     if mod is None:
         return {}, None
     return mod._workspace_presence, mod._workspace_registry
-
-
-def _replace_crdt_text(text_field: Any, new_value: str, doc: Any) -> None:
-    """Atomically replace a CRDT Text field's content.
-
-    Mirrors the write pattern in ``pages/annotation/respond.py:382-391``.
-    """
-    current = str(text_field)
-    if current == new_value:
-        return
-    with doc.transaction():
-        current_len = len(text_field)
-        if current_len > 0:
-            del text_field[:current_len]
-        if new_value:
-            text_field += new_value
 
 
 async def _flush_milkdown_to_crdt() -> None:

@@ -172,6 +172,15 @@ class TestFlushStructural:
             "replaced by fire-and-forget pattern in _flush_milkdown_to_crdt"
         )
 
+    def test_replace_crdt_text_removed(self) -> None:
+        """_replace_crdt_text should no longer exist in restart.py."""
+        import promptgrimoire.pages.restart as restart_mod
+
+        assert not hasattr(restart_mod, "_replace_crdt_text"), (
+            "_replace_crdt_text should be removed — "
+            "flush now uses client-side event handler in respond.py"
+        )
+
 
 class TestOnMarkdownFlush:
     """AC3.5: _on_markdown_flush writes to CRDT and marks dirty."""
@@ -270,24 +279,6 @@ class TestFlushInitialMarkdown:
 
         # Verify the value persists without any Yjs events
         assert str(crdt_doc.response_draft_markdown) == initial
-
-        # The replace pattern used by _replace_crdt_text should work
-        from promptgrimoire.pages.restart import _replace_crdt_text
-
-        _replace_crdt_text(
-            crdt_doc.response_draft_markdown,
-            initial,  # same value — should be a no-op
-            crdt_doc.doc,
-        )
-        assert str(crdt_doc.response_draft_markdown) == initial
-
-        # Replace with new value also works
-        _replace_crdt_text(
-            crdt_doc.response_draft_markdown,
-            "updated content",
-            crdt_doc.doc,
-        )
-        assert str(crdt_doc.response_draft_markdown) == "updated content"
 
 
 class TestFlushRespondMarkdownNowJS:

@@ -491,11 +491,6 @@ def _on_markdown_flush(
     )
 
 
-def _seed_editor_from_markdown(md: str) -> None:
-    """Seed the Milkdown editor with cloned markdown content."""
-    ui.context.client.run_javascript(f"window._setMilkdownMarkdown({json.dumps(md)})")
-
-
 def _build_editor_init_js(
     editor_id: str,
     fragment_name: str,

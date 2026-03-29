@@ -32,33 +32,33 @@ class TestImportNotification:
         assert ntype == "info"
 
     def test_tags_only(self) -> None:
-        result = ImportResult(created_tags=_fake_items(3))  # type: ignore[arg-type]
+        result = ImportResult(created_tags=_fake_items(3))
         msg, ntype = _import_notification(result)
         assert msg == "Imported 3 tags"
         assert ntype == "positive"
 
     def test_single_tag_no_plural(self) -> None:
-        result = ImportResult(created_tags=_fake_items(1))  # type: ignore[arg-type]
+        result = ImportResult(created_tags=_fake_items(1))
         msg, _ = _import_notification(result)
         assert msg == "Imported 1 tag"
 
     def test_groups_only(self) -> None:
-        result = ImportResult(created_groups=_fake_items(2))  # type: ignore[arg-type]
+        result = ImportResult(created_groups=_fake_items(2))
         msg, ntype = _import_notification(result)
         assert msg == "Imported 2 groups"
         assert ntype == "positive"
 
     def test_tags_and_groups(self) -> None:
         result = ImportResult(
-            created_tags=_fake_items(2),  # type: ignore[arg-type]
-            created_groups=_fake_items(1),  # type: ignore[arg-type]
+            created_tags=_fake_items(2),
+            created_groups=_fake_items(1),
         )
         msg, _ = _import_notification(result)
         assert msg == "Imported 2 tags, 1 group"
 
     def test_with_skipped_tags(self) -> None:
         result = ImportResult(
-            created_tags=_fake_items(1),  # type: ignore[arg-type]
+            created_tags=_fake_items(1),
             skipped_tags=3,
         )
         msg, _ = _import_notification(result)
@@ -66,8 +66,8 @@ class TestImportNotification:
 
     def test_with_skipped_groups(self) -> None:
         result = ImportResult(
-            created_tags=_fake_items(2),  # type: ignore[arg-type]
-            created_groups=_fake_items(1),  # type: ignore[arg-type]
+            created_tags=_fake_items(2),
+            created_groups=_fake_items(1),
             skipped_groups=1,
         )
         msg, _ = _import_notification(result)
@@ -75,9 +75,9 @@ class TestImportNotification:
 
     def test_with_all_skipped(self) -> None:
         result = ImportResult(
-            created_tags=_fake_items(1),  # type: ignore[arg-type]
+            created_tags=_fake_items(1),
             skipped_tags=2,
-            created_groups=_fake_items(1),  # type: ignore[arg-type]
+            created_groups=_fake_items(1),
             skipped_groups=1,
         )
         msg, _ = _import_notification(result)
@@ -97,7 +97,7 @@ class TestImportNotification:
         expected_fragment: str,
     ) -> None:
         result = ImportResult(
-            created_tags=_fake_items(1),  # type: ignore[arg-type]
+            created_tags=_fake_items(1),
             skipped_tags=skipped_tags,
         )
         msg, _ = _import_notification(result)

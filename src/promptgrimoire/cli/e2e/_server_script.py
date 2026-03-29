@@ -149,8 +149,8 @@ if os.environ.get("E2E_SKIP_LATEXMK", "1") == "1":
     import promptgrimoire.export.pdf as _pdf_mod
     import promptgrimoire.export.pdf_export as _pdf_export_mod
 
-    _pdf_mod.compile_latex = _compile_latex_noop  # type: ignore[assignment]  # ty: ignore[invalid-assignment]  # intentional monkey-patch
-    _pdf_export_mod.compile_latex = _compile_latex_noop  # type: ignore[assignment]  # ty: ignore[invalid-assignment]  # intentional monkey-patch
+    _pdf_mod.compile_latex = _compile_latex_noop  # type: ignore[assignment]  # intentional monkey-patch
+    _pdf_export_mod.compile_latex = _compile_latex_noop  # type: ignore[assignment]  # intentional monkey-patch
 # --- End monkey-patch ---
 
 from nicegui import app, ui
@@ -454,7 +454,7 @@ def _timed_delete(self):
     )
 
 
-_Client.delete = _timed_delete  # type: ignore[assignment]  # ty: ignore[invalid-assignment]  # intentional monkey-patch
+_Client.delete = _timed_delete  # type: ignore[assignment]  # intentional monkey-patch
 
 ui.run(
     port=port,

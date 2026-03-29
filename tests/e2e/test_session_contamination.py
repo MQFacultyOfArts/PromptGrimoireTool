@@ -59,22 +59,21 @@ N_ROUNDS = 3
 
 
 def _test_db_conninfo() -> str:
-    """Build psycopg conninfo for the test database."""
-    from urllib.parse import urlparse
+    """Build psycopg conninfo from settings (DATABASE__URL or DEV__TEST_DATABASE_URL).
 
-    url = get_settings().dev.test_database_url
+    The E2E parallel runner sets DATABASE__URL per-worker; pydantic-settings
+    picks it up automatically.
+    """
+    from psycopg.conninfo import make_conninfo
+
+    settings = get_settings()
+    url = settings.database.url or settings.dev.test_database_url
     if not url:
-        msg = "DEV__TEST_DATABASE_URL not configured"
+        msg = "Neither DATABASE__URL nor DEV__TEST_DATABASE_URL configured"
         raise RuntimeError(msg)
-    parsed = urlparse(url)
-    user = parsed.username or "brian"
-    dbname = parsed.path.lstrip("/")
-    host = parsed.hostname or "/var/run/postgresql"
-    if "host=" in (parsed.query or ""):
-        for param in parsed.query.split("&"):
-            if param.startswith("host="):
-                host = param.split("=", 1)[1]
-    return f"user={user} dbname={dbname} host={host}"
+    # SQLAlchemy-style URLs use +asyncpg; psycopg needs plain postgresql://
+    url = url.replace("postgresql+asyncpg://", "postgresql://")
+    return make_conninfo(url)
 
 
 def _grant_acl(conninfo: str, email: str, workspace_id: str) -> None:

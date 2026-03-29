@@ -17,7 +17,7 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-_SRC_DIR = Path("src/promptgrimoire")
+_SRC_DIR = Path(__file__).parents[2] / "src" / "promptgrimoire"
 
 # Spike/demo pages excluded from scanning.  Add the filename stem here
 # (not the full path) with a comment explaining why.
@@ -78,16 +78,22 @@ def test_no_await_run_javascript_in_production() -> None:
        why it's acceptable (spike/demo only).
     """
     all_violations: list[str] = []
+    scanned = 0
 
     for py_file in sorted(_SRC_DIR.rglob("*.py")):
         if py_file.stem in _ALLOWLIST:
             continue
 
+        scanned += 1
         source = py_file.read_text()
         violations = _find_await_run_javascript(source, filename=str(py_file))
 
         for filepath, lineno, expr in violations:
             all_violations.append(f"  {filepath}:{lineno} — {expr}")
+
+    assert scanned > 50, (
+        f"Only scanned {scanned} files — _SRC_DIR may be misconfigured: {_SRC_DIR}"
+    )
 
     if all_violations:
         count = len(all_violations)

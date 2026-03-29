@@ -37,10 +37,7 @@ def _find_await_run_javascript(
     Returns a list of ``(filename, lineno, expression)`` tuples for each
     violation found.
     """
-    try:
-        tree = ast.parse(source, filename=filename)
-    except SyntaxError:
-        return []
+    tree = ast.parse(source, filename=filename)
 
     violations: list[tuple[str, int, str]] = []
 

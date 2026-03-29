@@ -106,6 +106,14 @@ uv run vulture src/promptgrimoire/ --min-confidence 80
 
 Remove all confirmed dead code. Do NOT remove code that is still referenced.
 
+**Retention notes (from vulture + manual review):**
+- `_rebuild_organise_with_scroll` — **retained**, live code. Called at `tab_bar.py:275` (assigned to `state.refresh_organise_with_scroll`) and invoked at `tab_bar.py:346`. Phase 1 replaced `_SCROLL_SAVE_JS` but not this function.
+- `_sync_markdown_to_crdt` — removed in Phase 2
+- `_flush_single_client` — removed in Phase 2
+- `_SCROLL_SAVE_JS` — removed in this phase
+- `sync_respond_markdown` on `PageState` — removed in Phase 2
+- `vulture --min-confidence 80` reports no dead code
+
 **Verification:**
 Run: `uv run grimoire test all`
 Run: `uv run vulture src/promptgrimoire/ --min-confidence 80`

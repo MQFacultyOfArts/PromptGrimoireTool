@@ -54,16 +54,18 @@ See [docs/testing.md](docs/testing.md) for full testing guidelines including E2E
 
 ### Test Lane Model
 
-The test suite is organised into 8 lanes: 1 JS lane, 1 BATS lane for shell scripts, and 6 pytest lanes. `uv run grimoire test all` runs BATS + JS + unit tests (fast). `uv run grimoire e2e all` runs all 8 lanes sequentially: js, bats, unit, integration, playwright, nicegui, smoke, blns+extra. `uv run grimoire e2e slow` is a superset of `e2e all` that additionally runs Playwright with latexmk enabled and compiled-PDF validation.
+The test suite is organised into 8 lanes: 1 JS lane, 1 BATS lane for shell scripts, and 6 pytest lanes. `uv run grimoire test all` runs BATS + JS + unit tests (fast). `uv run grimoire e2e all` runs all 8 lanes sequentially: js, bats, unit, integration, playwright, nicegui, smoke, blns+extra. `uv run grimoire e2e slow` is a superset of `e2e all` that additionally runs Playwright with latexmk enabled, compiled-PDF validation, and `noci`-marked tests included. A nightly GitHub Actions workflow (`nightly-e2e-slow.yml`) runs `e2e slow`.
 
 - **JS** (`tests/js/`, vitest + happy-dom) -- JavaScript unit tests
 - **BATS** (`deploy/tests/`, serial) -- shell script unit tests via bats-core (system dependency: `sudo apt install bats`)
 - **Unit** (`tests/unit/`, xdist) -- excludes `e2e`, `nicegui_ui`, `latexmk_full`, `smoke` markers
 - **Integration** (`tests/integration/`, xdist) -- excludes `e2e`, `nicegui_ui`, `smoke`
-- **Playwright** (`tests/e2e/`, parallel per-file isolation with cloned databases)
+- **Playwright** (`tests/e2e/`, parallel per-file isolation with cloned databases) -- default lane excludes `noci` marker
 - **NiceGUI** (serial, `nicegui_ui` marker)
 - **Smoke** (serial, `smoke` marker -- external toolchain tests: pandoc, lualatex, tlmgr)
 - **BLNS+Extra** (serial, `blns` or `slow` markers)
+
+**`noci` marker:** Tests marked `@pytest.mark.noci` are excluded from the default CI Playwright lane (`e2e run`, `e2e all`) but included in `e2e slow` and the nightly workflow. Use for heavy browser scenarios that would slow down regular CI.
 
 Playwright's event loop contaminates xdist workers, so E2E tests must never run in the unit/integration lanes. See [docs/testing.md](docs/testing.md).
 

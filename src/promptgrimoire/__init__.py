@@ -166,9 +166,10 @@ def _register_db_lifecycle(app: object) -> None:
         invalidate_sessions_on_disk()
         await init_db()
         await verify_schema(get_engine())
-        _search_worker_task = asyncio.create_task(
-            start_search_worker(),
-        )
+        if get_settings().features.enable_search_worker:
+            _search_worker_task = asyncio.create_task(
+                start_search_worker(),
+            )
         _deadline_worker_task = asyncio.create_task(
             start_deadline_worker(),
         )

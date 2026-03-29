@@ -404,7 +404,7 @@ def test_run_serial_playwright_e2e_selects_only_playwright_path(
 
     assert exit_code == 0
     assert captured["default_args"][0] == "tests/e2e"
-    assert captured["default_args"][1:3] == ["-m", "e2e and not perf"]
+    assert captured["default_args"][1:3] == ["-m", "e2e and not perf and not noci"]
     assert "nicegui_ui" not in captured["default_args"]
     assert "Playwright" in captured["title"]
 
@@ -440,7 +440,7 @@ def test_run_playwright_changed_lane_selects_only_playwright_path(
 
     assert exit_code == 0
     assert captured["default_args"][0] == "tests/e2e"
-    assert captured["default_args"][1:3] == ["-m", "e2e and not perf"]
+    assert captured["default_args"][1:3] == ["-m", "e2e and not perf and not noci"]
     assert "nicegui_ui" not in captured["default_args"]
     assert "Playwright" in captured["title"]
 
@@ -476,9 +476,40 @@ def test_run_playwright_noretry_lane_selects_only_playwright_path(
 
     assert exit_code == 0
     assert captured["default_args"][0] == "tests/e2e"
-    assert captured["default_args"][1:3] == ["-m", "e2e and not perf"]
+    assert captured["default_args"][1:3] == ["-m", "e2e and not perf and not noci"]
     assert "nicegui_ui" not in captured["default_args"]
     assert "Playwright" in captured["title"]
+
+
+def test_artifact_dir_if_new_ignores_stale_path(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Summary helper must not report a stale artifact dir from an older run."""
+    from promptgrimoire.cli.e2e import _artifact_dir_if_new
+
+    old_dir = Path("output/test_output/e2e/playwright/old-run")
+    monkeypatch.setattr(
+        "promptgrimoire.cli.e2e._latest_artifact_dir",
+        lambda lane_name: old_dir if lane_name == "playwright" else None,
+    )
+
+    assert _artifact_dir_if_new("playwright", old_dir) is None
+
+
+def test_artifact_dir_if_new_returns_new_run_path(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Summary helper should report the artifact dir created by the current run."""
+    from promptgrimoire.cli.e2e import _artifact_dir_if_new
+
+    old_dir = Path("output/test_output/e2e/playwright/old-run")
+    new_dir = Path("output/test_output/e2e/playwright/new-run")
+    monkeypatch.setattr(
+        "promptgrimoire.cli.e2e._latest_artifact_dir",
+        lambda lane_name: new_dir if lane_name == "playwright" else None,
+    )
+
+    assert _artifact_dir_if_new("playwright", old_dir) == new_dir
 
 
 def test_run_all_lanes_runs_playwright_then_nicegui_even_on_failure(
@@ -584,11 +615,13 @@ def test_run_slow_lanes_runs_all_lanes_then_latexmk(
         use_pyspy: bool,
         reruns: bool,
         clear_cache: bool = False,
+        marker_expr: str,
     ) -> int:
         captured["playwright_args"] = extra_args
         captured["playwright_use_pyspy"] = use_pyspy
         captured["playwright_reruns"] = reruns
         captured["playwright_clear_cache"] = clear_cache
+        captured["playwright_marker_expr"] = marker_expr
         captured["e2e_skip_latexmk"] = os.environ["E2E_SKIP_LATEXMK"]
         return 0
 
@@ -624,6 +657,7 @@ def test_run_slow_lanes_runs_all_lanes_then_latexmk(
     assert captured["playwright_use_pyspy"] is False
     assert captured["playwright_reruns"] is True
     assert captured["playwright_clear_cache"] is True
+    assert captured["playwright_marker_expr"] == "e2e and not perf"
     assert captured["e2e_skip_latexmk"] == "0"
     assert captured["latex_default_args"] == ["-m", "latexmk_full", "-v", "--tb=short"]
     assert captured["latex_extra_args"] == ["-k", "combined_filter"]

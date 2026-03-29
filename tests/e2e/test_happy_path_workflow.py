@@ -35,6 +35,8 @@ if TYPE_CHECKING:
     from playwright.sync_api import Browser, Page
     from pytest_subtests import SubTests
 
+pytestmark = [pytest.mark.noci]
+
 
 def _extract_course_id(page: Page) -> str:
     match = re.search(r"/courses/([0-9a-f-]+)", page.url)

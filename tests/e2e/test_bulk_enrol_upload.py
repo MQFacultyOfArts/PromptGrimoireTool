@@ -29,6 +29,8 @@ if TYPE_CHECKING:
 
     from playwright.sync_api import Browser, Page
 
+pytestmark = [pytest.mark.noci]
+
 
 # ---------------------------------------------------------------------------
 # Direct-DB course creation helpers (sync, for E2E fixtures)

@@ -46,6 +46,8 @@ if TYPE_CHECKING:
     from playwright.sync_api import Browser, Page
     from pytest_subtests import SubTests
 
+pytestmark = [pytest.mark.noci]
+
 
 def _create_workspace_no_tags(user_email: str) -> str:
     """Create a workspace with content but no seeded tags.

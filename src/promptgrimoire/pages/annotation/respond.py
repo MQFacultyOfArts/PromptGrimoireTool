@@ -348,52 +348,6 @@ def _build_reference_column(
     return reference_container, search_input
 
 
-async def _sync_markdown_to_crdt(
-    crdt_doc: AnnotationDocument,
-    workspace_key: str,
-    client_id: str,
-) -> None:
-    """Extract markdown from Milkdown and write to the CRDT Text field.
-
-    Called after Yjs updates and on tab-leave to keep the server-side
-    ``response_draft_markdown`` Text field in sync with the editor content.
-    This enables PDF export from clients that never visited Tab 3 (AC6.3).
-
-    Args:
-        crdt_doc: The CRDT annotation document.
-        workspace_key: Workspace identifier for logging.
-        client_id: Client identifier for logging.
-    """
-    try:
-        md: str = await ui.run_javascript("window._getMilkdownMarkdown()", timeout=3.0)
-        if md is None:
-            md = ""
-    except (TimeoutError, OSError) as exc:
-        logger.debug(
-            "RESPOND_MD_SYNC_SKIP ws=%s (JS call failed: %s)",
-            workspace_key,
-            type(exc).__name__,
-        )
-        return
-
-    # Replace the entire Text field content atomically
-    text_field = crdt_doc.response_draft_markdown
-    current = str(text_field)
-    if current != md:
-        with crdt_doc.doc.transaction():
-            current_len = len(text_field)
-            if current_len > 0:
-                del text_field[:current_len]
-            if md:
-                text_field += md
-        logger.debug(
-            "RESPOND_MD_SYNC ws=%s client=%s len=%d",
-            workspace_key,
-            client_id[:8],
-            len(md),
-        )
-
-
 def _setup_yjs_event_handler(
     crdt_doc: AnnotationDocument,
     workspace_key: str,
@@ -653,7 +607,7 @@ async def render_respond_tab(
     on_locate: Callable[..., Any] | None = None,
     *,
     state: PageState,
-) -> tuple[Callable[[], None], Callable[[], Any]]:
+) -> Callable[[], None]:
     """Populate the Respond tab panel with Milkdown editor and reference panel.
 
     Clears the placeholder content from the panel, then creates a two-column
@@ -679,10 +633,7 @@ async def render_respond_tab(
             passed through to the Yjs event handler for live badge updates.
 
     Returns:
-        A tuple of (refresh_references, sync_markdown):
-        - refresh_references: Callable that refreshes the reference panel.
-        - sync_markdown: Async callable that syncs editor markdown to the
-          CRDT Text field for server-side access (PDF export fallback).
+        refresh_references: Callable that refreshes the reference panel.
     """
     panel.clear()
     editor_id = "milkdown-respond-editor"
@@ -832,8 +783,4 @@ async def render_respond_tab(
             "}, 50);"
         )
 
-    async def sync_markdown() -> None:
-        """Sync the Milkdown editor markdown to the CRDT Text field."""
-        await _sync_markdown_to_crdt(crdt_doc, workspace_key, client_id)
-
-    return refresh_references, sync_markdown
+    return refresh_references

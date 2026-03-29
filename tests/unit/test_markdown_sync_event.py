@@ -3,8 +3,7 @@
 Verifies:
 - AC3.1: on_yjs_update reads markdown from event args and writes to
   response_draft_markdown via atomic CRDT replace; no run_javascript call.
-- AC3.2: on_yjs_update does NOT call _sync_markdown_to_crdt or any
-  run_javascript variant.
+- AC3.2: on_yjs_update does NOT call run_javascript (no JS round-trip).
 
 The handler under test is the inner ``on_yjs_update`` closure registered
 by ``_setup_yjs_event_handler``. We extract it by mocking ``ui.on`` and
@@ -172,7 +171,7 @@ class TestOnYjsUpdateMardownSync:
 
 
 class TestOnYjsUpdateNoRunJavascript:
-    """AC3.2: on_yjs_update does NOT call run_javascript or _sync_markdown_to_crdt."""
+    """AC3.2: on_yjs_update does NOT call run_javascript (no JS round-trip)."""
 
     @pytest.mark.asyncio
     async def test_no_run_javascript_in_handler(self) -> None:
@@ -189,21 +188,3 @@ class TestOnYjsUpdateNoRunJavascript:
         ):
             await handler(event)
             ui_in_handler.run_javascript.assert_not_called()
-
-    @pytest.mark.asyncio
-    async def test_no_sync_markdown_to_crdt_call(self) -> None:
-        """The handler must not call _sync_markdown_to_crdt."""
-        crdt_doc = _make_crdt_doc()
-        b64_update = _make_yjs_update()
-        handler, _, _ = _capture_on_yjs_handler(crdt_doc)
-
-        event = SimpleNamespace(args={"update": b64_update, "markdown": "test"})
-
-        with (
-            patch("promptgrimoire.pages.annotation.respond.get_persistence_manager"),
-            patch(
-                "promptgrimoire.pages.annotation.respond._sync_markdown_to_crdt",
-            ) as mock_sync,
-        ):
-            await handler(event)
-            mock_sync.assert_not_called()

@@ -282,10 +282,7 @@ async def _initialise_respond_tab(state: PageState, workspace_id: UUID) -> None:
     ) -> None:
         await _warp_to_highlight(state, start_char, end_char, document_id)
 
-    (
-        state.refresh_respond_references,
-        state.sync_respond_markdown,
-    ) = await render_respond_tab(
+    state.refresh_respond_references = await render_respond_tab(
         panel=state.respond_panel,
         tags=tags,
         crdt_doc=state.crdt_doc,
@@ -298,22 +295,6 @@ async def _initialise_respond_tab(state: PageState, workspace_id: UUID) -> None:
     )
     # has_milkdown_editor is now set by the editor_ready event handler
     # in respond.py, not here. See _handle_editor_ready().
-
-
-async def _sync_respond_on_leave(state: PageState) -> None:
-    """Sync Milkdown markdown to CRDT when leaving the Respond tab.
-
-    Failure is logged but does not propagate -- blocking tab switches
-    would break the Annotate tab refresh.
-    """
-    if state.sync_respond_markdown:
-        try:
-            await state.sync_respond_markdown()
-        except Exception:
-            logger.debug(
-                "RESPOND_MD_SYNC failed on tab leave, continuing",
-                exc_info=True,
-            )
 
 
 def _refresh_source_tab(state: PageState) -> None:
@@ -572,9 +553,6 @@ def _make_tab_change_handler(
         if state.footer is not None:
             is_source = _is_source_tab(tab_name) or tab_name == "Source"
             state.footer.set_visibility(is_source)
-
-        if prev_tab == "Respond":
-            await _sync_respond_on_leave(state)
 
         if tab_name == "Organise" and state.organise_panel and state.crdt_doc:
             _handle_organise_tab(state)

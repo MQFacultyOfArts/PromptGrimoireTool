@@ -872,12 +872,24 @@ class TestSnapshotHighlight:
         """Identical highlight data produces equal snapshots."""
         from promptgrimoire.pages.annotation.cards import _snapshot_highlight
 
-        hl = {
+        hl_one = {
             "id": "h1",
             "tag": "t",
             "comments": [{"text": "c", "created_at": "2026-01-01"}],
         }
-        assert _snapshot_highlight(hl) == _snapshot_highlight(hl)
+        hl_two = {
+            "id": "h1",
+            "tag": "t",
+            "comments": [{"text": "c", "created_at": "2026-01-01"}],
+        }
+        expected = {
+            "tag": "t",
+            "para_ref": "",
+            "comment_count": 1,
+            "comment_texts": ("c",),
+        }
+        assert _snapshot_highlight(hl_one) == expected
+        assert _snapshot_highlight(hl_two) == expected
 
     def test_snapshot_captures_para_ref(self) -> None:
         """Snapshot includes the para_ref value."""

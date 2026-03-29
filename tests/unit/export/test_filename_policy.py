@@ -223,11 +223,15 @@ class TestBuildPdfExportStem:
         stem = build_pdf_export_stem(ctx)
         assert len(f"{stem}.pdf") <= 100
         parts = stem.split("_")
-        # course_last_first_..._date  (activity and workspace fully trimmed)
-        assert parts[0] == "LAWS5000"
-        assert parts[1] == "Henderson"
-        # First name must have been reduced to single initial
-        assert parts[2] == long_first[0], f"got '{parts[2]}', want initial"
+        assert parts == [
+            "LAWS5000",
+            "Henderson",
+            long_first[0],
+            "20260309",
+        ], (
+            "Once the first name is reduced to an initial, the workspace and "
+            "activity segments must already be fully exhausted"
+        )
 
     # --- AC3.6: pathological overflow preserved ---
 
@@ -248,6 +252,11 @@ class TestBuildPdfExportStem:
         assert "20260309" in stem
         # This WILL exceed 100 chars — that's the expected behaviour
         assert len(f"{stem}.pdf") > 100
+        assert stem.split("_") == ["LAWS5000", long_last, "B", "20260309"], (
+            "Pathological overflow is allowed only after the activity and "
+            "workspace segments are gone and the first name has been "
+            "reduced to a single character"
+        )
 
     # --- AC3.7: non-pathological cases fit in 100 ---
 

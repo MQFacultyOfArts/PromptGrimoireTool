@@ -101,17 +101,18 @@ def _render_add_content_form(
         platform_hint_val: str | None = args[1] if len(args) > 1 else None
         editor_val: str = str(args[2]) if len(args) > 2 and args[2] else ""
 
-        await handle_add_document_submission(
+        success = await handle_add_document_submission(
             workspace_id=workspace_id,
             paste_html=paste_html,
             platform_hint=platform_hint_val,
             editor_content=editor_val,
             on_document_added=on_document_added,
         )
-        # Clear paste buffer after submission (fire-and-forget)
-        ui.run_javascript(f"window.{paste_var} = null")
-        # Clear editor content
-        content_input.value = ""
+        if success:
+            # Clear paste buffer after successful submission (fire-and-forget)
+            ui.run_javascript(f"window.{paste_var} = null")
+            # Clear editor content
+            content_input.value = ""
 
     add_btn.on("click", _on_add_document, js_handler=js_capture)
 

@@ -12,7 +12,7 @@ from __future__ import annotations
 import ast
 import inspect
 import textwrap
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
 import pytest
@@ -76,7 +76,7 @@ class TestEditorContentFallback:
             handle_add_document_submission,
         )
 
-        callback = AsyncMock()
+        callback = MagicMock()
         workspace_id = uuid4()
 
         with (
@@ -122,7 +122,7 @@ class TestEditorContentFallback:
             handle_add_document_submission,
         )
 
-        callback = AsyncMock()
+        callback = MagicMock()
         workspace_id = uuid4()
 
         with (
@@ -167,7 +167,7 @@ class TestEditorContentFallback:
             handle_add_document_submission,
         )
 
-        callback = AsyncMock()
+        callback = MagicMock()
         workspace_id = uuid4()
 
         with (
@@ -213,7 +213,7 @@ class TestEditorContentFallback:
             handle_add_document_submission,
         )
 
-        callback = AsyncMock()
+        callback = MagicMock()
         workspace_id = uuid4()
 
         with (
@@ -236,3 +236,91 @@ class TestEditorContentFallback:
             assert "warning" in str(mock_ui.notify.call_args)
             mock_add_doc.assert_not_called()
             callback.assert_not_called()
+
+
+class TestReturnValue:
+    """handle_add_document_submission returns bool so callers know
+    whether to clear the editor.  Data loss otherwise."""
+
+    @pytest.mark.asyncio
+    async def test_returns_false_on_empty_content(self) -> None:
+        from promptgrimoire.pages.annotation.paste_handler import (
+            handle_add_document_submission,
+        )
+
+        with patch("promptgrimoire.pages.annotation.paste_handler.ui"):
+            result = await handle_add_document_submission(
+                workspace_id=uuid4(),
+                paste_html=None,
+                platform_hint=None,
+                editor_content="",
+                on_document_added=MagicMock(),
+            )
+
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_returns_true_on_success(self) -> None:
+        from promptgrimoire.pages.annotation.paste_handler import (
+            handle_add_document_submission,
+        )
+
+        with (
+            patch(
+                "promptgrimoire.pages.annotation.paste_handler.show_content_type_dialog",
+                new_callable=AsyncMock,
+                return_value=("plain_text", False),
+            ),
+            patch(
+                "promptgrimoire.pages.annotation.paste_handler.process_input",
+                new_callable=AsyncMock,
+                return_value="<p>ok</p>",
+            ),
+            patch(
+                "promptgrimoire.pages.annotation.paste_handler.add_document",
+                new_callable=AsyncMock,
+            ),
+            patch(
+                "promptgrimoire.pages.annotation.paste_handler.build_paragraph_map_for_json",
+                return_value={},
+            ),
+            patch("promptgrimoire.pages.annotation.paste_handler.ui"),
+        ):
+            result = await handle_add_document_submission(
+                workspace_id=uuid4(),
+                paste_html=None,
+                platform_hint=None,
+                editor_content="some content",
+                on_document_added=MagicMock(),
+            )
+
+        assert result is True
+
+    @pytest.mark.asyncio
+    async def test_returns_false_on_exception(self) -> None:
+        from promptgrimoire.pages.annotation.paste_handler import (
+            handle_add_document_submission,
+        )
+
+        with (
+            patch(
+                "promptgrimoire.pages.annotation.paste_handler.show_content_type_dialog",
+                new_callable=AsyncMock,
+                return_value=("plain_text", False),
+            ),
+            patch(
+                "promptgrimoire.pages.annotation.paste_handler.process_input",
+                new_callable=AsyncMock,
+                side_effect=RuntimeError("boom"),
+            ),
+            patch("promptgrimoire.pages.annotation.paste_handler.ui"),
+        ):
+            result = await handle_add_document_submission(
+                workspace_id=uuid4(),
+                paste_html=None,
+                platform_hint=None,
+                editor_content="some content",
+                on_document_added=MagicMock(),
+            )
+
+        assert result is False

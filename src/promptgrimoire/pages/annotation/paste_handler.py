@@ -38,11 +38,16 @@ async def handle_add_document_submission(
     platform_hint: str | None,
     editor_content: str,
     on_document_added: Callable[[], object],
-) -> None:
+) -> bool:
     """Process the editor contents and persist a new source document.
 
     All values arrive via the event payload — no ``ui.run_javascript``
     calls are made in this function.
+
+    Returns:
+        ``True`` if the document was added successfully, ``False``
+        on empty content, user cancellation, or error.  Callers
+        should only clear the editor on ``True``.
 
     Args:
         workspace_id: Target workspace.
@@ -55,7 +60,7 @@ async def handle_add_document_submission(
 
     if not content or not content.strip():
         ui.notify("Please enter or paste some content", type="warning")
-        return
+        return False
 
     # Skip dialog if HTML was captured from paste - we know it's HTML.
     # For direct paste, auto-detect paragraph numbering mode.
@@ -69,7 +74,7 @@ async def handle_add_document_submission(
             source_numbering_detected=detect_source_numbering(content),
         )
         if dialog_result is None:
-            return  # User cancelled
+            return False  # User cancelled
         confirmed_type, auto_number_from_dialog = dialog_result
         auto_number_override = auto_number_from_dialog
 
@@ -99,6 +104,8 @@ async def handle_add_document_submission(
         )
         ui.notify("Document added successfully", type="positive")
         on_document_added()
+        return True
     except Exception as exc:
         logger.exception("Failed to add document")
         ui.notify(f"Failed to add document: {exc}", type="negative")
+        return False

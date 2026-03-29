@@ -432,8 +432,23 @@ def _setup_yjs_event_handler(
             client_id[:8],
             len(raw),
         )
-        # Sync markdown mirror to CRDT Text field for server-side access
-        await _sync_markdown_to_crdt(crdt_doc, workspace_key, client_id)
+        # Write markdown from event payload to CRDT Text field (no JS round-trip)
+        md: str = e.args.get("markdown", "")  # type: ignore[union-attr]  # NiceGUI GenericEventArguments.args is untyped
+        text_field = crdt_doc.response_draft_markdown
+        current = str(text_field)
+        if current != md:
+            with crdt_doc.doc.transaction():
+                current_len = len(text_field)
+                if current_len > 0:
+                    del text_field[:current_len]
+                if md:
+                    text_field += md
+            logger.debug(
+                "RESPOND_MD_SYNC ws=%s client=%s len=%d",
+                workspace_key,
+                client_id[:8],
+                len(md),
+            )
         # Update word count badge if limits configured
         if state.word_count_badge is not None:
             markdown = str(crdt_doc.response_draft_markdown)
@@ -514,7 +529,8 @@ def _build_editor_init_js(
                 await window._createMilkdownEditor(
                     root, '', function(b64Update) {{
                         emitEvent('respond_yjs_update',
-                                  {{update: b64Update}});
+                                  {{update: b64Update,
+                                   markdown: window._getMilkdownMarkdown()}});
                     }}, '{fragment_name}'
                 );
                 {b64_js}

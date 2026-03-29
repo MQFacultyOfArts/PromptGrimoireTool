@@ -17,6 +17,7 @@ SERVICE="promptgrimoire"
 
 prev_lag=0
 strike_count=0
+cooldown_until=0  # epoch seconds — suppress strikes until this time
 
 echo "lag-watchdog: instant restart >${CRITICAL}ms, escalating restart >${WARN}ms x2"
 echo "---"
@@ -51,6 +52,16 @@ journalctl -u "$SERVICE" -f --output cat | while IFS= read -r line; do
     [ -z "$lag" ] && continue
 
     users=$(echo "$line" | jq -r '.clients_connected // 0' 2>/dev/null) || true
+    now=$(date +%s)
+
+    # Cooldown: suppress strikes for 2 minutes after a restart
+    if [ "$now" -lt "$cooldown_until" ]; then
+        if [ "$lag" -gt "$WARN" ]; then
+            echo "  ❄ cooldown (lag=${lag}ms, $(( cooldown_until - now ))s remaining)"
+        fi
+        prev_lag="$lag"
+        continue
+    fi
 
     # Rule 1: over 1000ms — just kill it
     if [ "$lag" -gt "$CRITICAL" ]; then
@@ -64,6 +75,7 @@ journalctl -u "$SERVICE" -f --output cat | while IFS= read -r line; do
         systemctl restart "$SERVICE"
         strike_count=0
         prev_lag=0
+        cooldown_until=$(( $(date +%s) + 120 ))
         continue
     fi
 
@@ -83,6 +95,7 @@ journalctl -u "$SERVICE" -f --output cat | while IFS= read -r line; do
             systemctl restart "$SERVICE"
             strike_count=0
             prev_lag=0
+            cooldown_until=$(( $(date +%s) + 120 ))
             continue
         fi
     else

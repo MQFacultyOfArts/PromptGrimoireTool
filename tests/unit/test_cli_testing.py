@@ -44,6 +44,16 @@ def _capture_run_pytest(monkeypatch: pytest.MonkeyPatch) -> dict[str, object]:
 
     monkeypatch.setattr(testing, "_run_pytest", _fake_run_pytest)
     monkeypatch.setattr(testing, "_run_bats", lambda: 0)
+    captured["js_calls"] = 0
+
+    def _fake_run_js(*, verbose: bool = False) -> int:
+        js_calls = captured["js_calls"]
+        assert isinstance(js_calls, int)
+        captured["js_calls"] = js_calls + 1
+        captured["js_verbose"] = verbose
+        return 0
+
+    monkeypatch.setattr(testing, "_run_js", _fake_run_js)
     return captured
 
 
@@ -449,6 +459,18 @@ class TestTestCommandHelp:
 # ---------------------------------------------------------------------------
 class TestTestingCommands:
     """CLI test commands pass the expected lane exclusion arguments."""
+
+    def test_test_all_uses_stubbed_js_lane(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """`test all` invokes the JS lane exactly once in non-verbose mode."""
+        captured = _capture_run_pytest(monkeypatch)
+
+        result = runner.invoke(app, ["test", "all"])
+
+        assert result.exit_code == 0, result.output
+        assert captured.get("js_calls") == 1
+        assert captured.get("js_verbose") is False
 
     def test_test_all_excludes_e2e_and_nicegui_ui(
         self, monkeypatch: pytest.MonkeyPatch

@@ -5,6 +5,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
+PLAYWRIGHT_DEFAULT_MARKER_EXPR = "e2e and not perf and not noci"
+PLAYWRIGHT_SLOW_MARKER_EXPR = "e2e and not perf"
+
 
 @dataclass(frozen=True)
 class LaneSpec:
@@ -44,7 +47,7 @@ class LaneResult:
 PLAYWRIGHT_LANE = LaneSpec(
     name="playwright",
     test_paths=(Path("tests/e2e"),),
-    marker_expr="e2e and not perf",
+    marker_expr=PLAYWRIGHT_DEFAULT_MARKER_EXPR,
     needs_server=True,
     artifact_subdir="playwright",
 )

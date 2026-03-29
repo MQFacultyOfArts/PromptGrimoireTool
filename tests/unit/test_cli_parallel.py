@@ -22,7 +22,7 @@ def test_lane_specs_define_playwright_and_nicegui_contracts() -> None:
     )
 
     assert PLAYWRIGHT_LANE.name == "playwright"
-    assert PLAYWRIGHT_LANE.marker_expr == "e2e and not perf"
+    assert PLAYWRIGHT_LANE.marker_expr == "e2e and not perf and not noci"
     assert PLAYWRIGHT_LANE.needs_server is True
     assert PLAYWRIGHT_LANE.artifact_subdir == "playwright"
 

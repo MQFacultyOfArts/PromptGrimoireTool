@@ -1,0 +1,114 @@
+name: Nightly E2E Slow
+
+on:
+  schedule:
+    - cron: "0 17 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: nightly-e2e-slow
+  cancel-in-progress: false
+
+jobs:
+  e2e-slow:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_DB: promptgrimoire_test
+          POSTGRES_PASSWORD: postgres
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+    env:
+      DEV__TEST_DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/promptgrimoire_test
+      OSFONTDIR: /usr/share/fonts:/usr/share/texmf/fonts
+    steps:
+      - uses: actions/checkout@v6.0.2
+
+      - name: Cache apt packages
+        uses: actions/cache@v4
+        with:
+          path: ~/apt-cache
+          key: apt-nightly-e2e-slow-${{ runner.os }}-${{ hashFiles('.github/workflows/ci.yml', '.github/workflows/nightly-e2e-slow.yml') }}
+
+      - name: Install system dependencies
+        run: |
+          if [ -d ~/apt-cache ]; then
+            sudo cp -r ~/apt-cache/*.deb /var/cache/apt/archives/ 2>/dev/null || true
+          fi
+          sudo apt-get update -y
+          sudo apt-get install -y \
+            bats \
+            mecab libmecab-dev \
+            pandoc \
+            poppler-utils \
+            fontconfig \
+            fonts-noto --install-recommends \
+            fonts-texgyre \
+            fonts-sil-gentiumplus fonts-sil-charis fonts-sil-doulos \
+            fonts-sil-scheherazade fonts-sil-ezra fonts-sil-annapurna \
+            fonts-sil-abyssinica fonts-sil-padauk fonts-sil-mondulkiri \
+            fonts-sil-galatia fonts-sil-sophia-nubian fonts-sil-nuosusil \
+            fonts-sil-taiheritagepro
+          mkdir -p ~/apt-cache
+          cp /var/cache/apt/archives/*.deb ~/apt-cache/ 2>/dev/null || true
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7.3.1
+        with:
+          version: "latest"
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - name: Set up Python
+        run: uv python install 3.14
+
+      - name: Install dependencies
+        run: uv sync --locked --all-groups
+
+      - name: Install JS test dependencies
+        run: npm ci
+
+      - name: Cache TinyTeX
+        uses: actions/cache@v4
+        with:
+          path: ~/.TinyTeX
+          key: tinytex-nightly-e2e-slow-${{ runner.os }}-${{ hashFiles('scripts/setup_latex.py') }}
+
+      - name: Install TinyTeX and LaTeX packages
+        run: |
+          echo "$HOME/.TinyTeX/bin/x86_64-linux" >> "$GITHUB_PATH"
+          export PATH="$HOME/.TinyTeX/bin/x86_64-linux:$PATH"
+          uv run python scripts/setup_latex.py
+          luaotfload-tool --update --force
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-nightly-${{ runner.os }}-${{ hashFiles('uv.lock') }}
+
+      - name: Install Playwright browsers
+        run: uv run playwright install --with-deps chromium
+
+      - name: Run slow nightly test suite
+        run: uv run grimoire e2e slow
+
+      - name: Upload nightly slow artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightly-e2e-slow-artifacts
+          path: |
+            output/test_output/e2e/**
+            test-*.log
+          if-no-files-found: ignore
+          retention-days: 7

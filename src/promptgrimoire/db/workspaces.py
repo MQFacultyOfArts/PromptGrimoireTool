@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING, Any, Literal
 from uuid import UUID
 
 import structlog
-from sqlalchemy import func, text
+from sqlalchemy import exists, func, text
 from sqlmodel import select
 
 from promptgrimoire.db.engine import get_session
@@ -380,17 +380,24 @@ async def resolve_annotation_context(
     Returns None if workspace does not exist.
     """
     async with get_session() as session:
-        # 1. Workspace fetch
-        workspace = await session.get(Workspace, workspace_id)
-        if workspace is None:
+        # 1. Workspace + template flag in a single query
+        template_exists = exists(
+            select(Activity.id).where(
+                Activity.template_workspace_id == workspace_id  # type: ignore[arg-type]  -- Column == returns ColumnElement
+            )
+        )
+        ws_result = await session.exec(
+            select(Workspace, template_exists.label("is_template")).where(  # type: ignore[arg-type]  -- label returns ColumnElement
+                Workspace.id == workspace_id  # type: ignore[arg-type]  -- Column == returns ColumnElement
+            )
+        )
+        ws_row = ws_result.first()
+        if ws_row is None:
             return None
 
-        # 2. Hierarchy resolution — reuse existing private helpers
-        template_result = await session.exec(
-            select(Activity).where(Activity.template_workspace_id == workspace_id)
-        )
-        is_template = template_result.first() is not None
+        workspace, is_template = ws_row
 
+        # 2. Hierarchy resolution — reuse existing private helpers
         if workspace.activity_id is not None:
             placement = await _resolve_activity_placement(
                 session, workspace.activity_id
@@ -500,15 +507,23 @@ async def get_placement_context(workspace_id: UUID) -> PlacementContext:
     """
     loose = PlacementContext(placement_type="loose")
     async with get_session() as session:
-        workspace = await session.get(Workspace, workspace_id)
-        if workspace is None:
+        # Fetch workspace and template flag in a single query using an
+        # EXISTS subquery, avoiding a separate round-trip for the check.
+        template_exists = exists(
+            select(Activity.id).where(
+                Activity.template_workspace_id == workspace_id  # type: ignore[arg-type]  -- Column == returns ColumnElement
+            )
+        )
+        result = await session.exec(
+            select(Workspace, template_exists.label("is_template")).where(  # type: ignore[arg-type]  -- label returns ColumnElement
+                Workspace.id == workspace_id  # type: ignore[arg-type]  -- Column == returns ColumnElement
+            )
+        )
+        row = result.first()
+        if row is None:
             return loose
 
-        # Check if this workspace is a template for any Activity
-        template_result = await session.exec(
-            select(Activity).where(Activity.template_workspace_id == workspace_id)
-        )
-        is_template = template_result.first() is not None
+        workspace, is_template = row
 
         if workspace.activity_id is not None:
             ctx = await _resolve_activity_placement(session, workspace.activity_id)
@@ -536,20 +551,21 @@ async def _resolve_activity_placement(
     session: AsyncSession,
     activity_id: UUID,
 ) -> PlacementContext:
-    """Walk Activity -> Week -> Course chain. Falls back to loose on orphan.
+    """Walk Activity -> Week -> Course chain in a single JOIN query.
 
-    TODO: Replace 3 sequential session.get() calls with a single JOIN query
-    if this becomes a performance concern (currently once per page load).
+    Falls back to loose placement if any link in the chain is missing.
     """
-    activity = await session.get(Activity, activity_id)
-    if activity is None:
+    result = await session.exec(
+        select(Activity, Week, Course)
+        .join(Week, Activity.week_id == Week.id)  # type: ignore[arg-type]  -- Column == returns ColumnElement
+        .join(Course, Week.course_id == Course.id)  # type: ignore[arg-type]  -- Column == returns ColumnElement
+        .where(Activity.id == activity_id)  # type: ignore[arg-type]  -- Column == returns ColumnElement
+    )
+    row = result.first()
+    if row is None:
         return PlacementContext(placement_type="loose")
-    week = await session.get(Week, activity.week_id)
-    if week is None:
-        return PlacementContext(placement_type="loose")
-    course = await session.get(Course, week.course_id)
-    if course is None:
-        return PlacementContext(placement_type="loose")
+
+    activity, week, course = row
 
     return PlacementContext(
         placement_type="activity",

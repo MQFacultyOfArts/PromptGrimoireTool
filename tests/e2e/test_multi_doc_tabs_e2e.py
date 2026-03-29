@@ -38,6 +38,7 @@ pytestmark = [
         reason="DEV__TEST_DATABASE_URL not configured",
     ),
     pytest.mark.e2e,
+    pytest.mark.noci,
 ]
 
 

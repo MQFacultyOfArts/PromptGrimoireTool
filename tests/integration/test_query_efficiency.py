@@ -117,70 +117,16 @@ class TestDocumentHeadersEfficiency:
         )
 
 
-class TestKnownQueryRegressions:
-    """Document known query inefficiencies as xfail guards.
+class TestPlacementQueryEfficiency:
+    """Verify placement context query efficiency after JOIN optimisation."""
 
-    Each test asserts the DESIRED (lower) query count.  The xfail
-    documents that the current implementation exceeds this target.
-    ``strict=True`` ensures that if the code is optimised and the
-    test starts passing, CI forces removal of the xfail marker.
-    """
-
-    @pytest.mark.xfail(
-        reason=(
-            "#377 Phase 1: get_workspace() called redundantly"
-            " during page load — should share a single fetch"
-        ),
-        strict=True,
-    )
-    @pytest.mark.asyncio
-    async def test_workspace_fetch_count(self) -> None:
-        """Workspace fetched multiple times across page-load components."""
-        from promptgrimoire.db.engine import _state
-        from promptgrimoire.db.workspace_documents import (
-            add_document,
-            list_document_headers,
-        )
-        from promptgrimoire.db.workspaces import (
-            create_workspace,
-            get_workspace,
-        )
-
-        workspace = await create_workspace()
-        for i in range(3):
-            await add_document(
-                workspace_id=workspace.id,
-                type="source",
-                content=f"<p>Content {i}</p>",
-                source_type="html",
-                title=f"Doc {i}",
-            )
-
-        assert _state.engine is not None, "Engine not initialised"
-        sync_engine = _state.engine.sync_engine
-
-        # Models redundant get_workspace() calls across page-load components
-        with count_queries(sync_engine) as counter:
-            await get_workspace(workspace.id)
-            await get_workspace(workspace.id)
-            await list_document_headers(workspace.id)
-
-        # Desired: 2 queries (1 workspace + 1 headers).
-        # Current: 3 (workspace fetched twice).
-        assert len(counter) <= 2, (
-            f"Page-load workspace+headers should need ≤2 queries, got {len(counter)}"
-        )
-
-    @pytest.mark.xfail(
-        reason=(
-            "#377 Phase 1: placement context uses sequential"
-            " session.get() calls instead of a single JOIN"
-        ),
-        strict=True,
-    )
     @pytest.mark.asyncio
     async def test_placement_context_query_count(self) -> None:
-        """Placement context for activity workspace: ≤2 queries."""
+        """Placement context for activity workspace: ≤2 queries.
+
+        get_placement_context() fetches workspace + template EXISTS in one
+        query, then resolves Activity -> Week -> Course via a single JOIN.
+        """
         from uuid import uuid4
 
         from promptgrimoire.db.activities import create_activity
@@ -224,9 +170,66 @@ class TestKnownQueryRegressions:
         with count_queries(sync_engine) as counter:
             await get_placement_context(ws.id)
 
-        # Desired: ≤2 queries (JOIN for hierarchy + template).
-        # Current: 5 (workspace + template check + activity
-        #   + week + course as sequential gets).
+        # workspace + template EXISTS (1) + Activity-Week-Course JOIN (1) = 2
         assert len(counter) <= 2, (
             f"get_placement_context() should need ≤2 queries, got {len(counter)}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_annotation_context_query_count(self) -> None:
+        """resolve_annotation_context() stays within query budget.
+
+        Verifies the full page-load query path: workspace+template (1),
+        placement JOIN (1), ACL (1), enrollment (1), staff roles (1),
+        staff enrollment (1), admin users (1), tags (1), tag groups (1).
+        """
+        from uuid import uuid4
+
+        from promptgrimoire.db.activities import create_activity
+        from promptgrimoire.db.courses import create_course
+        from promptgrimoire.db.engine import _state
+        from promptgrimoire.db.users import create_user
+        from promptgrimoire.db.weeks import create_week
+        from promptgrimoire.db.workspaces import (
+            clone_workspace_from_activity,
+            resolve_annotation_context,
+        )
+
+        code = f"C{uuid4().hex[:6].upper()}"
+        course = await create_course(
+            code=code,
+            name="Annotation Context Efficiency",
+            semester="2026-S1",
+        )
+        week = await create_week(
+            course_id=course.id,
+            week_number=1,
+            title="W1",
+        )
+        activity = await create_activity(
+            week_id=week.id,
+            title="A1",
+        )
+        tag = uuid4().hex[:8]
+        user = await create_user(
+            email=f"ctx-{tag}@test.local",
+            display_name=f"Context Tester {tag}",
+        )
+        ws, _id_map = await clone_workspace_from_activity(
+            activity.id,
+            user.id,
+        )
+
+        assert _state.engine is not None
+        sync_engine = _state.engine.sync_engine
+
+        with count_queries(sync_engine) as counter:
+            ctx = await resolve_annotation_context(ws.id, user.id)
+
+        assert ctx is not None
+        # Budget: 9 queries for full activity-placed, non-admin path.
+        # Before optimisation this was 11 (3 sequential gets + separate
+        # template check). Regression guard: alert if queries creep up.
+        assert len(counter) <= 9, (
+            f"resolve_annotation_context() should need ≤9 queries, got {len(counter)}"
         )

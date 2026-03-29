@@ -12,12 +12,13 @@
 set -euo pipefail
 
 WARN="${LAG_WARN:-50}"       # ms — same as ⚠ display threshold
+CRITICAL="${LAG_CRITICAL:-1000}"  # ms — instant restart, no strikes
 SERVICE="promptgrimoire"
 
 prev_lag=0
 strike_count=0
 
-echo "lag-watchdog: restart when ⚠ (>${WARN}ms) AND increasing, 2 in a row"
+echo "lag-watchdog: instant restart >${CRITICAL}ms, escalating restart >${WARN}ms x2"
 echo "---"
 
 journalctl -u "$SERVICE" -f --output cat | while IFS= read -r line; do
@@ -51,21 +52,38 @@ journalctl -u "$SERVICE" -f --output cat | while IFS= read -r line; do
 
     users=$(echo "$line" | jq -r '.clients_connected // 0' 2>/dev/null) || true
 
+    # Rule 1: over 1000ms — just kill it
+    if [ "$lag" -gt "$CRITICAL" ]; then
+        echo ""
+        echo "=========================================="
+        echo "  🔴 WATCHDOG RESTART — CRITICAL"
+        echo "  lag=${lag}ms (>${CRITICAL}ms), users=${users}"
+        echo "  $(date '+%H:%M:%S') — restarting ${SERVICE}"
+        echo "=========================================="
+        echo ""
+        systemctl restart "$SERVICE"
+        strike_count=0
+        prev_lag=0
+        continue
+    fi
+
+    # Rule 2: escalating above warn threshold — 2 consecutive increasing readings
     if [ "$lag" -gt "$WARN" ] && [ "$lag" -gt "$prev_lag" ] && [ "$prev_lag" -gt "$WARN" ]; then
-        # Both readings above warn AND increasing — escalating, not recovering
         strike_count=$((strike_count + 1))
         echo "  ⚡ STRIKE ${strike_count}/2 (${prev_lag}ms → ${lag}ms, users=${users})"
 
         if [ "$strike_count" -ge 2 ]; then
             echo ""
             echo "=========================================="
-            echo "  🔴 WATCHDOG RESTART"
-            echo "  Sustained escalating lag: ${prev_lag}ms → ${lag}ms"
+            echo "  🔴 WATCHDOG RESTART — ESCALATING"
+            echo "  ${prev_lag}ms → ${lag}ms, users=${users}"
             echo "  $(date '+%H:%M:%S') — restarting ${SERVICE}"
             echo "=========================================="
             echo ""
             systemctl restart "$SERVICE"
             strike_count=0
+            prev_lag=0
+            continue
         fi
     else
         if [ "$strike_count" -gt 0 ]; then

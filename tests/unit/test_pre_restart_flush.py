@@ -219,6 +219,39 @@ class TestOnMarkdownFlush:
         assert "word_count_badge" not in source
         assert "set_text" not in source
 
+    @pytest.mark.anyio
+    async def test_on_markdown_flush_skips_dirty_mark_when_unchanged(self) -> None:
+        """When markdown matches current CRDT content, mark_dirty_workspace
+        should NOT be called — avoids a wasted DB write on restart."""
+        from promptgrimoire.pages.annotation.respond import _on_markdown_flush
+
+        crdt_doc = AnnotationDocument(doc_id="test-doc")
+        workspace_id = UUID("00000000-0000-0000-0000-000000000001")
+
+        # Seed CRDT with content
+        text_field = crdt_doc.response_draft_markdown
+        with crdt_doc.doc.transaction():
+            text_field += "existing content"
+
+        mock_pm = MagicMock()
+
+        event = MagicMock()
+        event.args = {"markdown": "existing content"}  # same as CRDT
+
+        with patch(
+            "promptgrimoire.pages.annotation.respond.get_persistence_manager",
+            return_value=mock_pm,
+        ):
+            _on_markdown_flush(
+                event,
+                crdt_doc=crdt_doc,
+                workspace_id=workspace_id,
+                client_id="test-client-id",
+            )
+
+        # CRDT unchanged, so no dirty mark
+        mock_pm.mark_dirty_workspace.assert_not_called()
+
 
 class TestFlushInitialMarkdown:
     """AC3.7: When no Yjs events fired, flush reads initial DB value."""

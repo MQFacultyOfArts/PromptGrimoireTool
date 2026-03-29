@@ -453,12 +453,12 @@ def _on_markdown_flush(
                 del text_field[:current_len]
             if md:
                 text_field += md
-    pm = get_persistence_manager()
-    pm.mark_dirty_workspace(
-        workspace_id,
-        crdt_doc.doc_id,
-        last_editor=client_id,
-    )
+        pm = get_persistence_manager()
+        pm.mark_dirty_workspace(
+            workspace_id,
+            crdt_doc.doc_id,
+            last_editor=client_id,
+        )
     logger.debug(
         "RESPOND_FLUSH_CAPTURE client=%s len=%d",
         client_id[:8],
@@ -540,6 +540,7 @@ def _build_editor_init_js(
                 }});
             }}
         }})();
+        // Defined outside the IIFE — available immediately, safe when editor failed
         window._flushRespondMarkdownNow = function() {{
             var md = window._getMilkdownMarkdown();
             emitEvent('respond_markdown_flush', {{markdown: md}});

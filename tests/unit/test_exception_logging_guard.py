@@ -19,6 +19,10 @@ EXCLUDED_FILES = {
     # webhook failures must never disrupt application logging, and using
     # structlog inside a structlog processor would cause infinite recursion.
     "logging_discord.py",
+    # logging_config.py runs before structlog is configured — logging calls
+    # inside the setup module would fail or recurse.  _get_git_commit()
+    # intentionally returns "unknown" without logging on failure.
+    "logging_config.py",
 }
 
 LOG_METHODS = frozenset({"exception", "error", "warning", "debug"})

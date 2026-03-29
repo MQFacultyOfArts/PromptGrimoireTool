@@ -244,6 +244,8 @@ _ALLOWED_OS_ENVIRON = {
     _SRC_DIR / "cli" / "e2e" / "_server_script.py",
     # Test-harness guard: suppresses Discord alerts during test runs
     _SRC_DIR / "logging_discord.py",
+    # systemd NOTIFY_SOCKET — runtime socket path, not app config
+    _SRC_DIR / "sd_notify.py",
 }
 
 _TESTS_DIR = PROJECT_ROOT / "tests"

@@ -27,6 +27,8 @@ from promptgrimoire.db.export_jobs import (
 from promptgrimoire.export.pdf_export import export_annotation_pdf
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from promptgrimoire.db.models import ExportJob
 
 logger = structlog.get_logger()
@@ -95,15 +97,23 @@ async def _run_cleanup() -> None:
 async def start_export_worker(
     poll_interval: float = 5.0,
     cleanup_interval: int = 60,
+    on_poll_cycle: Callable[[], None] | None = None,
 ) -> None:
     """Start the background export polling worker.
 
     Claims queued jobs and processes them in a loop. Runs cleanup
     every ``cleanup_interval`` iterations.
 
-    Args:
-        poll_interval: Sleep duration between polling cycles (seconds).
-        cleanup_interval: Run cleanup every N iterations.
+    Parameters
+    ----------
+    poll_interval : float
+        Sleep duration between polling cycles (seconds).
+    cleanup_interval : int
+        Run cleanup every N iterations.
+    on_poll_cycle : Callable[[], None] | None
+        Optional callback invoked at the end of each poll iteration,
+        before sleeping. Used by the standalone worker to send
+        systemd watchdog heartbeats.
     """
     # Fail any jobs orphaned by a previous server shutdown.
     orphaned = await fail_orphaned_jobs()
@@ -134,5 +144,11 @@ async def start_export_worker(
             raise
         except Exception:
             logger.exception("export_worker_iteration_failed")
+
+        if on_poll_cycle is not None:
+            try:
+                on_poll_cycle()
+            except Exception:
+                logger.warning("on_poll_cycle_failed", exc_info=True)
 
         await asyncio.sleep(poll_interval)

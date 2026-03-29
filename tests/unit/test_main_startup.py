@@ -41,7 +41,7 @@ def _mock_main_deps():
     - promptgrimoire.get_git_commit: returns deterministic value
     """
     with (
-        patch("promptgrimoire._setup_logging"),
+        patch("promptgrimoire.logging_config.setup_logging"),
         patch("nicegui.ui.run"),
         patch("nicegui.app.app.App.add_static_files"),
         patch("promptgrimoire.pages", create=True),

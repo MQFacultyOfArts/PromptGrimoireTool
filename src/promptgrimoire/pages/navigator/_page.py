@@ -70,23 +70,27 @@ async def _build_navigator_ui(
             scroll_container,
             ui.column().classes("mx-auto q-pa-lg navigator-content-column"),
         ):
-            search_input = (
-                ui.input(placeholder="Search titles and content...")
-                .classes("w-full mb-4 navigator-search-input")
-                .props('outlined dense clearable data-testid="navigator-search-input"')
-            )
+            if get_settings().features.enable_search_worker:
+                search_input = (
+                    ui.input(placeholder="Search titles and content...")
+                    .classes("w-full mb-4 navigator-search-input")
+                    .props(
+                        'outlined dense clearable data-testid="navigator-search-input"'
+                    )
+                )
 
             no_results_container = ui.column().classes("w-full")
             sections_container = ui.column().classes("w-full")
             page_state["sections_container"] = sections_container
 
-            on_search_change = setup_search(
-                page_state=page_state,
-                sections_container=sections_container,
-                no_results_container=no_results_container,
-                search_input=search_input,
-            )
-            search_input.on("update:model-value", on_search_change)
+            if get_settings().features.enable_search_worker:
+                on_search_change = setup_search(
+                    page_state=page_state,
+                    sections_container=sections_container,
+                    no_results_container=no_results_container,
+                    search_input=search_input,
+                )
+                search_input.on("update:model-value", on_search_change)
 
             if not rows:
                 ui.label("No workspaces yet.").classes("text-gray-500 mt-4")

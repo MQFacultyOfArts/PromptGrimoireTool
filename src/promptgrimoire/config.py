@@ -63,6 +63,7 @@ class DatabaseConfig(BaseModel):
     """
 
     url: str | None = None
+    use_null_pool: bool = False
     pool_size: int = 80
     max_overflow: int = 15
     pool_pre_ping: bool = True
@@ -110,6 +111,14 @@ class FeaturesConfig(BaseModel):
     enable_roleplay: bool = True
     roleplay_require_privileged: bool = True
     enable_file_upload: bool = True
+    enable_search_worker: bool = True
+    worker_in_process: bool = True
+
+
+class ExportConfig(BaseModel):
+    """Export pipeline configuration."""
+
+    max_concurrent_compilations: int = 2
 
 
 class I18nConfig(BaseModel):
@@ -299,6 +308,7 @@ class Settings(BaseSettings):
     app: AppConfig = AppConfig()
     alerting: AlertingConfig = AlertingConfig()
     admin: AdminConfig = AdminConfig()
+    export: ExportConfig = ExportConfig()
     features: FeaturesConfig = FeaturesConfig()
     dev: DevConfig = DevConfig()
     i18n: I18nConfig = I18nConfig()

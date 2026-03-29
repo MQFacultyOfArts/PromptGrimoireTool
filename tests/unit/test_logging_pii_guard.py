@@ -18,7 +18,7 @@ from pathlib import Path
 import structlog
 
 SRC_FILE = (
-    Path(__file__).parent.parent.parent / "src" / "promptgrimoire" / "__init__.py"
+    Path(__file__).parent.parent.parent / "src" / "promptgrimoire" / "logging_config.py"
 )
 
 

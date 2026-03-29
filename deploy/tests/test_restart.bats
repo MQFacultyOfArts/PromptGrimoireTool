@@ -83,3 +83,39 @@ _extract_drain_timeout() {
     result=$(_extract_drain_timeout)
     [ "$result" -eq 10 ]
 }
+
+# ---------------------------------------------------------------------------
+# Worker service lifecycle
+# ---------------------------------------------------------------------------
+
+@test "restart.sh references promptgrimoire-worker service" {
+    grep -q 'promptgrimoire-worker' "$SCRIPT"
+}
+
+@test "restart.sh guards worker operations with list-unit-files check" {
+    grep -q 'list-unit-files.*promptgrimoire-worker' "$SCRIPT"
+}
+
+@test "restart.sh stops worker before app restart" {
+    # Worker stop must appear before 'systemctl restart promptgrimoire'
+    # Use '^systemctl' to avoid matching comments in the header
+    stop_line=$(grep -n 'systemctl stop promptgrimoire-worker' "$SCRIPT" | head -1 | cut -d: -f1)
+    restart_line=$(grep -n '^systemctl restart promptgrimoire' "$SCRIPT" | head -1 | cut -d: -f1)
+    [ -n "$stop_line" ]
+    [ -n "$restart_line" ]
+    [ "$stop_line" -lt "$restart_line" ]
+}
+
+@test "restart.sh starts worker after healthz wait" {
+    # Worker start must appear after the healthz wait loop
+    # The healthz loop uses 'curl.*HEALTHZ' (variable reference)
+    healthz_line=$(grep -n 'curl.*HEALTHZ' "$SCRIPT" | tail -1 | cut -d: -f1)
+    start_line=$(grep -n 'systemctl start promptgrimoire-worker' "$SCRIPT" | head -1 | cut -d: -f1)
+    [ -n "$healthz_line" ]
+    [ -n "$start_line" ]
+    [ "$start_line" -gt "$healthz_line" ]
+}
+
+@test "restart.sh verifies worker is active after start" {
+    grep -q 'systemctl is-active.*promptgrimoire-worker' "$SCRIPT"
+}

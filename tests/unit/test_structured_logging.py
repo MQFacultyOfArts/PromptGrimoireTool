@@ -61,17 +61,17 @@ def _call_setup_logging(
     tmp_path: Path,
     branch: str | None = None,
 ) -> Path:
-    """Call _setup_logging with patched settings pointing to tmp_path.
+    """Call setup_logging with patched settings pointing to tmp_path.
 
     Returns the log directory path.
     """
-    from promptgrimoire import _setup_logging
     from promptgrimoire.config import (
         AppConfig,
         DevConfig,
         Settings,
         _branch_db_suffix,
     )
+    from promptgrimoire.logging_config import setup_logging
 
     settings = Settings(
         _env_file=None,  # type: ignore[call-arg]  # pydantic-settings private init arg not in __init__ signature
@@ -80,19 +80,19 @@ def _call_setup_logging(
     )
     with (
         patch(
-            "promptgrimoire._get_settings_for_logging",
+            "promptgrimoire.logging_config._get_settings_for_logging",
             return_value=settings,
         ),
         patch(
-            "promptgrimoire._get_current_branch_for_logging",
+            "promptgrimoire.logging_config._get_current_branch_for_logging",
             return_value=branch,
         ),
         patch(
-            "promptgrimoire._branch_db_suffix_for_logging",
+            "promptgrimoire.logging_config._branch_db_suffix_for_logging",
             side_effect=_branch_db_suffix,
         ),
     ):
-        _setup_logging()
+        setup_logging()
     return tmp_path
 
 

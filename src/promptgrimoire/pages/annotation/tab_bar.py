@@ -157,14 +157,6 @@ def _apply_sort_reorder_or_move(
         # destroy elements mid-event (RuntimeError in NiceGUI's slot system).
 
 
-_SCROLL_SAVE_JS = (
-    "(function() {"
-    "  var el = document.querySelector('[data-testid=\"organise-columns\"]');"
-    "  return el ? {x: el.scrollLeft, y: el.scrollTop} : null;"
-    "})()"
-)
-
-
 def _rebuild_organise_with_scroll(
     render_fn: Callable[[], None],
 ) -> None:

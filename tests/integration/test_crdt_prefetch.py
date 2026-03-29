@@ -57,7 +57,7 @@ class TestRegistryPreFetchedWorkspace:
         registry = AnnotationDocumentRegistry()
         doc = await registry.get_or_create_for_workspace(
             workspace_id,
-            workspace=workspace,  # ty: ignore[unknown-argument]  # ty can't resolve keyword-only param through SQLModel
+            workspace=workspace,
         )
 
         highlights = doc.get_all_highlights()
@@ -150,8 +150,8 @@ class TestTagConsistencyPreFetched:
         await _ensure_crdt_tag_consistency(
             doc,
             workspace_id,
-            tags=db_tags,  # ty: ignore[unknown-argument]  # ty can't resolve keyword-only params through SQLModel types
-            tag_groups=db_groups,  # ty: ignore[unknown-argument]
+            tags=db_tags,
+            tag_groups=db_groups,
         )
 
         crdt_tags = doc.list_tags()

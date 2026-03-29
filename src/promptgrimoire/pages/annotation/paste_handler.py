@@ -27,8 +27,6 @@ if TYPE_CHECKING:
     from collections.abc import Callable
     from uuid import UUID
 
-    from nicegui.elements.editor import Editor
-
     from promptgrimoire.input_pipeline.html_input import ContentType
 
 logger = structlog.get_logger()
@@ -36,19 +34,33 @@ logger = structlog.get_logger()
 
 async def handle_add_document_submission(
     workspace_id: UUID,
-    content_input: Editor,
-    paste_var: str,
-    platform_var: str,
+    paste_html: str | None,
+    platform_hint: str | None,
+    editor_content: str,
     on_document_added: Callable[[], object],
-) -> None:
-    """Process the editor contents and persist a new source document."""
-    stored = await ui.run_javascript(f"window.{paste_var}")
-    platform_hint = await ui.run_javascript(f"window.{platform_var}")
-    content, from_paste = (stored, True) if stored else (content_input.value, False)
+) -> bool:
+    """Process the editor contents and persist a new source document.
+
+    All values arrive via the event payload — no ``ui.run_javascript``
+    calls are made in this function.
+
+    Returns:
+        ``True`` if the document was added successfully, ``False``
+        on empty content, user cancellation, or error.  Callers
+        should only clear the editor on ``True``.
+
+    Args:
+        workspace_id: Target workspace.
+        paste_html: HTML captured from a paste event, or *None*.
+        platform_hint: Browser platform string, or *None*.
+        editor_content: Current QEditor DOM value (fallback).
+        on_document_added: Callback after successful persistence.
+    """
+    content, from_paste = (paste_html, True) if paste_html else (editor_content, False)
 
     if not content or not content.strip():
         ui.notify("Please enter or paste some content", type="warning")
-        return
+        return False
 
     # Skip dialog if HTML was captured from paste - we know it's HTML.
     # For direct paste, auto-detect paragraph numbering mode.
@@ -62,7 +74,7 @@ async def handle_add_document_submission(
             source_numbering_detected=detect_source_numbering(content),
         )
         if dialog_result is None:
-            return  # User cancelled
+            return False  # User cancelled
         confirmed_type, auto_number_from_dialog = dialog_result
         auto_number_override = auto_number_from_dialog
 
@@ -90,9 +102,10 @@ async def handle_add_document_submission(
             auto_number_paragraphs=auto_number,
             paragraph_map=para_map,
         )
-        content_input.value = ""
         ui.notify("Document added successfully", type="positive")
         on_document_added()
+        return True
     except Exception as exc:
         logger.exception("Failed to add document")
         ui.notify(f"Failed to add document: {exc}", type="negative")
+        return False

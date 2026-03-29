@@ -233,7 +233,7 @@ async def _navigate_clients_to_restarting() -> None:
         if not client.has_socket_connection:
             continue
         try:
-            await client.run_javascript(
+            client.run_javascript(
                 'window.location.href = "/restarting?manual=1&return="'
                 " + encodeURIComponent("
                 "location.pathname + location.search + location.hash)",

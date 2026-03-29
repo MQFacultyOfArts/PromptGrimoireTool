@@ -372,7 +372,7 @@ def _try_beszel_fetch(
         return
 
     try:
-        metrics = _fetch_beszel(hub, start_utc, end_utc)  # type: ignore[misc]
+        metrics = _fetch_beszel(hub, start_utc, end_utc)
     except Exception as exc:
         conn.close()
         print(f"  Beszel fetch failed: {exc}")

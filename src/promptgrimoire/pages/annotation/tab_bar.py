@@ -19,7 +19,6 @@ from promptgrimoire.crdt.persistence import get_persistence_manager
 from promptgrimoire.db.workspace_documents import get_document, list_document_headers
 from promptgrimoire.pages.annotation import (
     PageState,
-    _workspace_presence,
     _workspace_registry,
 )
 from promptgrimoire.pages.annotation.broadcast import _broadcast_yjs_update
@@ -158,33 +157,54 @@ def _apply_sort_reorder_or_move(
         # destroy elements mid-event (RuntimeError in NiceGUI's slot system).
 
 
-_SCROLL_SAVE_JS = (
+_ORGANISE_SCROLL_LISTENER_JS = (
     "(function() {"
     "  var el = document.querySelector('[data-testid=\"organise-columns\"]');"
-    "  return el ? {x: el.scrollLeft, y: el.scrollTop} : null;"
+    "  if (el) {"
+    "    el.addEventListener('scroll', function() {"
+    "      window._organiseSavedScroll ="
+    "        {x: el.scrollLeft, y: el.scrollTop};"
+    "    });"
+    "  }"
     "})()"
 )
 
+_ORGANISE_SCROLL_SNAPSHOT_JS = (
+    "window._organiseSavedScrollSnapshot = window._organiseSavedScroll"
+    "  ? {x: window._organiseSavedScroll.x, y: window._organiseSavedScroll.y}"
+    "  : null;"
+)
 
-async def _rebuild_organise_with_scroll(
+_ORGANISE_SCROLL_RESTORE_JS = (
+    "requestAnimationFrame(function() {"
+    "  var s = window._organiseSavedScrollSnapshot;"
+    "  var el = document.querySelector("
+    "'[data-testid=\"organise-columns\"]');"
+    "  if (s && el) {"
+    "    el.scrollLeft = s.x; el.scrollTop = s.y;"
+    "  }"
+    "});"
+)
+
+
+def _rebuild_organise_with_scroll(
     render_fn: Callable[[], None],
 ) -> None:
     """Rebuild the organise tab preserving horizontal/vertical scroll.
 
-    Captures scroll position via awaited JS, re-renders, then restores
-    via requestAnimationFrame to ensure the DOM has settled.
+    Scroll position is continuously tracked by a JS scroll event
+    listener on the organise-columns element.  On rebuild:
+    1. Snapshot the saved scroll (before panel.clear removes the old
+       element — removal triggers a scroll event that zeroes the live
+       value, so we need an immutable copy).
+    2. Re-render (destroys old element, creates new one).
+    3. Re-attach scroll listener to the new element.
+    4. Restore scroll from the snapshot via requestAnimationFrame.
     """
-    scroll = await ui.run_javascript(_SCROLL_SAVE_JS)
+    ui.run_javascript(_ORGANISE_SCROLL_SNAPSHOT_JS)
     render_fn()
-    if scroll:
-        x, y = scroll.get("x", 0), scroll.get("y", 0)
-        ui.run_javascript(
-            "requestAnimationFrame(function() {"
-            "  var el = document.querySelector("
-            "'[data-testid=\"organise-columns\"]');"
-            f"  if (el) {{ el.scrollLeft = {x}; el.scrollTop = {y}; }}"
-            "});"
-        )
+    ui.run_javascript(_ORGANISE_SCROLL_LISTENER_JS)
+    ui.run_javascript(_ORGANISE_SCROLL_RESTORE_JS)
 
 
 def _setup_organise_drag(state: PageState) -> None:
@@ -224,8 +244,10 @@ def _setup_organise_drag(state: PageState) -> None:
         if state.broadcast_update:
             await state.broadcast_update()
 
-        # Cross-column card label/colour updates on next full rebuild
-        # (tab switch or broadcast). The CRDT is already correct.
+        # Local Organise view is NOT re-rendered here — SortableJS
+        # already moved the DOM element.  A full rebuild would fix
+        # column counts/badges but currently resets scroll position
+        # (see issue tracking diff-based organise updates).
 
     async def _on_locate(
         start_char: int, end_char: int, document_id: str | None = None
@@ -274,10 +296,7 @@ async def _initialise_respond_tab(state: PageState, workspace_id: UUID) -> None:
     ) -> None:
         await _warp_to_highlight(state, start_char, end_char, document_id)
 
-    (
-        state.refresh_respond_references,
-        state.sync_respond_markdown,
-    ) = await render_respond_tab(
+    state.refresh_respond_references = await render_respond_tab(
         panel=state.respond_panel,
         tags=tags,
         crdt_doc=state.crdt_doc,
@@ -288,28 +307,8 @@ async def _initialise_respond_tab(state: PageState, workspace_id: UUID) -> None:
         on_locate=_on_respond_locate,
         state=state,
     )
-    state.has_milkdown_editor = True
-    # Mark this client as having a Milkdown editor for Yjs relay
-    ws_key = str(workspace_id)
-    clients = _workspace_presence.get(ws_key, {})
-    if state.client_id in clients:
-        clients[state.client_id].has_milkdown_editor = True
-
-
-async def _sync_respond_on_leave(state: PageState) -> None:
-    """Sync Milkdown markdown to CRDT when leaving the Respond tab.
-
-    Failure is logged but does not propagate -- blocking tab switches
-    would break the Annotate tab refresh.
-    """
-    if state.sync_respond_markdown:
-        try:
-            await state.sync_respond_markdown()
-        except Exception:
-            logger.debug(
-                "RESPOND_MD_SYNC failed on tab leave, continuing",
-                exc_info=True,
-            )
+    # has_milkdown_editor is now set by the editor_ready event handler
+    # in respond.py, not here. See _handle_editor_ready().
 
 
 def _refresh_source_tab(state: PageState) -> None:
@@ -335,11 +334,16 @@ def _refresh_source_tab(state: PageState) -> None:
 
 
 def _handle_organise_tab(state: PageState) -> None:
-    """Handle switching to the Organise tab (re-render)."""
+    """Handle switching to the Organise tab (re-render, restore scroll).
+
+    Scroll position is continuously tracked by a JS scroll listener
+    on the organise-columns element.  Re-render, re-attach listener
+    (element was rebuilt), then restore saved position.
+    """
     assert state.initialised_tabs is not None
     state.initialised_tabs.add("Organise")
-    if state.refresh_organise:
-        state.refresh_organise()
+    if state.refresh_organise_with_scroll:
+        state.refresh_organise_with_scroll()
 
 
 async def _handle_respond_tab(state: PageState, workspace_id: UUID) -> None:
@@ -568,9 +572,6 @@ def _make_tab_change_handler(
         if state.footer is not None:
             is_source = _is_source_tab(tab_name) or tab_name == "Source"
             state.footer.set_visibility(is_source)
-
-        if prev_tab == "Respond":
-            await _sync_respond_on_leave(state)
 
         if tab_name == "Organise" and state.organise_panel and state.crdt_doc:
             _handle_organise_tab(state)

@@ -206,31 +206,16 @@ async def _show_word_count_block(violation: WordCountViolation) -> None:
     await result.wait()
 
 
-async def _extract_response_markdown(state: PageState) -> str:
-    """Extract response draft markdown from the editor or CRDT fallback.
+def _extract_response_markdown(state: PageState) -> str:
+    """Extract response draft markdown from the CRDT mirror.
 
-    Primary path: JS extraction from the running Milkdown editor (most accurate).
-    Fallback: CRDT Text field synced by whichever client last edited Tab 3.
+    The response_draft_markdown field is kept current by the
+    respond_yjs_update event handler (which includes markdown in
+    every event payload). No JS round-trip needed.
     """
-    response_markdown = ""
-    if state.has_milkdown_editor:
-        try:
-            response_markdown = await ui.run_javascript(
-                "window._getMilkdownMarkdown()", timeout=3.0
-            )
-            if not response_markdown:
-                response_markdown = ""
-        except (TimeoutError, OSError) as exc:
-            logger.debug(
-                "PDF export: JS markdown extraction failed (%s), using CRDT fallback",
-                type(exc).__name__,
-            )
-            response_markdown = ""
-
-    if not response_markdown and state.crdt_doc is not None:
-        response_markdown = state.crdt_doc.get_response_draft_markdown()
-
-    return response_markdown
+    if state.crdt_doc is not None:
+        return state.crdt_doc.get_response_draft_markdown()
+    return ""
 
 
 async def _check_word_count_enforcement(
@@ -430,7 +415,7 @@ async def _handle_pdf_export(state: PageState, workspace_id: UUID) -> bool:
     # This single extraction is shared by both enforcement and the export
     # pipeline, eliminating any divergence between stale CRDT and live editor
     # content (AC5/AC6 enforcement fires on the same text that goes into the PDF).
-    response_markdown = await _extract_response_markdown(state)
+    response_markdown = _extract_response_markdown(state)
 
     # --- Word count enforcement (AC5, AC6) ---
     should_proceed, export_word_count = await _check_word_count_enforcement(

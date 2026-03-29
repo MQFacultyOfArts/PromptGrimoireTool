@@ -25,6 +25,8 @@ if TYPE_CHECKING:
     from collections.abc import Callable
     from uuid import UUID
 
+    from nicegui.events import GenericEventArguments
+
 
 def _render_add_content_form(
     workspace_id: UUID,
@@ -68,19 +70,51 @@ def _render_add_content_form(
     js_body = raw_script.replace("<script>", "").replace("</script>", "").strip()
     ui.run_javascript(js_body)
 
-    async def handle_add_document() -> None:
-        """Process input and add document to workspace."""
-        await handle_add_document_submission(
+    # Wire submit button with JS that captures all three values at click
+    # time and emits them as event args, avoiding the stale-value race
+    # from python-socketio concurrent task dispatch.
+    add_btn = (
+        ui.button("Add Document")
+        .props('data-testid="add-document-btn"')
+        .classes("bg-green-500 text-white mt-2")
+    )
+
+    # JS handler: read paste buffer, platform hint, and editor DOM value
+    # at click time, emit as a 3-element array.
+    editor_hid = content_input.html_id
+    js_capture = (
+        f"() => {{"
+        f"const paste = window.{paste_var} || null;"
+        f"const platform = window.{platform_var} || null;"
+        f"const edEl = document.getElementById('{editor_hid}');"
+        f"const editor = edEl"
+        f"  ? (edEl.querySelector('.q-editor__content')"
+        f"     || edEl).innerHTML || ''"
+        f"  : '';"
+        f"emit([paste, platform, editor]);"
+        f"}}"
+    )
+
+    async def _on_add_document(e: GenericEventArguments) -> None:
+        args = e.args if isinstance(e.args, list) else [None, None, ""]
+        paste_html: str | None = args[0] if len(args) > 0 else None
+        platform_hint_val: str | None = args[1] if len(args) > 1 else None
+        editor_val: str = str(args[2]) if len(args) > 2 and args[2] else ""
+
+        success = await handle_add_document_submission(
             workspace_id=workspace_id,
-            content_input=content_input,
-            paste_var=paste_var,
-            platform_var=platform_var,
+            paste_html=paste_html,
+            platform_hint=platform_hint_val,
+            editor_content=editor_val,
             on_document_added=on_document_added,
         )
+        if success:
+            # Clear paste buffer after successful submission (fire-and-forget)
+            ui.run_javascript(f"window.{paste_var} = null")
+            # Clear editor content
+            content_input.value = ""
 
-    ui.button("Add Document", on_click=handle_add_document).props(
-        'data-testid="add-document-btn"'
-    ).classes("bg-green-500 text-white mt-2")
+    add_btn.on("click", _on_add_document, js_handler=js_capture)
 
     # File upload for HTML, RTF, DOCX, PDF, TXT, Markdown files
     if get_settings().features.enable_file_upload:

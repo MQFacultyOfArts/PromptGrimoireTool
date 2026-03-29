@@ -29,31 +29,31 @@ from promptgrimoire.pages.annotation.highlights import (
 logger = structlog.get_logger()
 
 
-async def _handle_selection(state: PageState, e: Any) -> None:
+def _handle_selection(state: PageState, e: Any) -> None:
     """Handle selection event from JavaScript."""
     state.selection_start = e.args.get("start_char")
     state.selection_end = e.args.get("end_char")
     if state.highlight_menu:
         state.highlight_menu.set_visibility(True)
     if state.broadcast_selection:
-        await state.broadcast_selection(state.selection_start, state.selection_end)
+        state.broadcast_selection(state.selection_start, state.selection_end)
 
 
-async def _handle_selection_cleared(state: PageState, _e: Any) -> None:
+def _handle_selection_cleared(state: PageState, _e: Any) -> None:
     """Handle selection cleared event."""
     state.selection_start = None
     state.selection_end = None
     if state.highlight_menu:
         state.highlight_menu.set_visibility(False)
     if state.broadcast_selection:
-        await state.broadcast_selection(None, None)
+        state.broadcast_selection(None, None)
 
 
-async def _handle_cursor_move(state: PageState, e: Any) -> None:
+def _handle_cursor_move(state: PageState, e: Any) -> None:
     """Handle cursor position change from JavaScript."""
     char_index = e.args.get("char")
     if state.broadcast_cursor:
-        await state.broadcast_cursor(char_index)
+        state.broadcast_cursor(char_index)
 
 
 async def _handle_keydown(state: PageState, e: Any) -> None:

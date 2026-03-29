@@ -44,8 +44,7 @@ def _clean_presence():
 class TestBroadcastIterationSafety:
     """Verify that broadcast functions don't crash on concurrent dict mutation."""
 
-    @pytest.mark.asyncio
-    async def test_broadcast_js_to_others_survives_concurrent_delete(self) -> None:
+    def test_broadcast_js_to_others_survives_concurrent_delete(self) -> None:
         """_broadcast_js_to_others must not raise RuntimeError when a client
         disconnects (is removed from the dict) during iteration."""
         from promptgrimoire.pages.annotation.broadcast import _broadcast_js_to_others
@@ -55,14 +54,14 @@ class TestBroadcastIterationSafety:
         # Client A: its run_javascript will remove client B from the dict
         client_a = MagicMock()
 
-        async def remove_b_on_call(*_args, **_kwargs):
+        def remove_b_on_call(*_args, **_kwargs):
             _workspace_presence[ws_key].pop("client-b", None)
 
-        client_a.run_javascript = AsyncMock(side_effect=remove_b_on_call)
+        client_a.run_javascript = MagicMock(side_effect=remove_b_on_call)
 
         # Client B: normal mock
         client_b = MagicMock()
-        client_b.run_javascript = AsyncMock()
+        client_b.run_javascript = MagicMock()
 
         _workspace_presence[ws_key] = {
             "client-a": _make_presence(client=client_a),
@@ -70,7 +69,7 @@ class TestBroadcastIterationSafety:
         }
 
         # Must not raise RuntimeError — list() snapshot protects iteration
-        await _broadcast_js_to_others(ws_key, "sender", "console.log('test')")
+        _broadcast_js_to_others(ws_key, "sender", "console.log('test')")
 
     @pytest.mark.asyncio
     async def test_notify_other_clients_survives_concurrent_delete(self) -> None:

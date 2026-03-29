@@ -81,8 +81,9 @@ All interactable UI elements must have `data-testid` attributes. E2E tests must 
 
 ### E2E Race-Condition Patterns
 
-Five patterns prevent NiceGUI-specific race conditions:
+Six patterns prevent NiceGUI-specific race conditions:
 
+- **Fire-and-forget JS** (`run_javascript` without `await`): All `run_javascript()` calls in production code MUST be fire-and-forget (no `await`). `await run_javascript()` blocks the asyncio event loop for a full browser round-trip, serialising all clients. An AST guard test (`test_run_javascript_guard.py`) enforces this structurally -- it will fail if any production file contains `await ...run_javascript(...)`. Spike/demo pages can be added to the guard's allowlist. Data that was previously fetched via JS round-trips (e.g. Milkdown editor markdown) is now included in event payloads instead.
 - **Value-capture** (`ui_helpers.on_submit_with_value`): Reads the input DOM value client-side at click time, preventing `python-socketio` async task reordering from delivering stale values. All submit buttons bound to text inputs must use this helper.
 - **Rebuild epoch** (`cards_epoch` on `PageState`): After `container.clear()` rebuilds, the server increments a monotonic counter broadcast to `window.__annotationCardsEpoch`. Tests capture the old epoch, trigger the action, then `wait_for_function` until the epoch advances before reacquiring locators.
 - **Lightweight peer-left callback** (`_RemotePresence.on_peer_left`): CLIENT_DELETE events (peer disconnection) must NOT trigger a full `refresh_annotations()` rebuild. They change zero CRDT state, but a full rebuild races with in-flight user interactions (fill + click), destroying input values and button handlers mid-action. `_RemotePresence` carries a separate `on_peer_left` callback that only updates the user count display.
@@ -340,7 +341,7 @@ Sessions are invalidated on **every** restart path. This is a critical invariant
 
 **Key implementation details:**
 - `_invalidate_all_sessions()` in `diagnostics.py` uses `dict.pop()` (not `PersistentDict.pop()`) to bypass the lazy `on_change` → `backup()` hook, then sync-writes each file via `filepath.write_text()`.
-- `pre_restart_handler` in `pages/restart.py` parallelizes client disconnect via `asyncio.gather` with a 5s global timeout. Does NOT navigate to `/restarting` — HAProxy's 503 page (`deploy/503.http`) handles the UX for manual deploys.
+- `pre_restart_handler` in `pages/restart.py` flushes Milkdown editor content via fire-and-forget `run_javascript("window._flushRespondMarkdownNow()")` to all editor clients, then waits a 1-second bounded drain for `respond_markdown_flush` events. Navigates all clients to `/restarting` via fire-and-forget `run_javascript`. No per-client `await` -- the entire flush+navigate sequence is non-blocking.
 - HAProxy reads `errorfile` content at config load time. Editing 503.http requires `systemctl reload haproxy` to take effect.
 - `reconnect_timeout=15.0` in `ui.run()` — balances UX vs memory (each disconnected client holds its full UI tree in memory for this duration).
 

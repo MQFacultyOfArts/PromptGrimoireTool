@@ -138,6 +138,7 @@ library references during development.
 - [WIP Handoff: #377 Workspace Performance — Epoch Analysis](postmortems/2026-03-24-377-wip-handoff.md)
 - [Clobber Scan Prompt — for Codex/Gemini](postmortems/2026-03-24-clobber-scan-prompt.md)
 - [Incident: PgBouncer Double-Pooling SIGABRT and LaTeX Export Failures](postmortems/2026-03-25-pgbouncer-crash-and-export-failures.md)
+- [Post-Mortem: 2026-03-29 Search Worker Cascade Failure](postmortems/2026-03-29-search-worker-cascade.md)
 - [PromptGrimoire Incident Analysis Playbook](postmortems/incident-analysis-playbook.md)
 
 ## prds

@@ -11,7 +11,7 @@
 
 set -euo pipefail
 
-WARN="${LAG_WARN:-50}"       # ms — same as ⚠ display threshold
+WARN="${LAG_WARN:-100}"      # ms — escalation strike threshold
 CRITICAL="${LAG_CRITICAL:-1000}"  # ms — instant restart, no strikes
 SERVICE="promptgrimoire"
 

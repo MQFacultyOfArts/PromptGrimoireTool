@@ -166,14 +166,32 @@ def student_course_page(
 
 
 def _upload_xlsx(page: Page, xlsx_bytes: bytes) -> None:
-    """Upload XLSX bytes via the enrol-upload widget."""
+    """Upload XLSX bytes via the enrol-upload widget.
+
+    Two race conditions must be avoided:
+
+    1. Quasar's ``<input type="file">`` may not be in the DOM yet — wait
+       for ``state="attached"``.
+    2. NiceGUI's ``upload.js`` computes the upload URL in a ``setTimeout``
+       after Vue's ``mounted()`` hook.  If ``set_input_files`` triggers
+       Quasar's auto-upload before the URL is resolved, the POST goes
+       nowhere.  ``expect_response`` catches this: if no POST arrives
+       within the timeout the test fails fast instead of hanging 15 s
+       waiting for a notification that will never appear.
+    """
     with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as f:
         f.write(xlsx_bytes)
         fixture_path = Path(f.name)
 
     upload_widget = page.get_by_test_id("enrol-upload")
     file_input = upload_widget.locator('input[type="file"]')
-    file_input.set_input_files(str(fixture_path))
+    file_input.wait_for(state="attached", timeout=10000)
+
+    with page.expect_response(
+        lambda r: r.request.method == "POST" and "/_nicegui" in r.url,
+        timeout=10000,
+    ):
+        file_input.set_input_files(str(fixture_path))
 
     fixture_path.unlink()
 

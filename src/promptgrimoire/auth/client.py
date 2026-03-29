@@ -175,7 +175,7 @@ class StytchB2BClient:
                 session_duration_minutes=60 * 24 * 7,  # 1 week
             )
 
-            # SSO always creates a session, but check for type safety
+            # SSO is expected to create a session, but check for type safety
             if response.member_session is None:
                 return AuthResult(success=False, error="no_session")
 

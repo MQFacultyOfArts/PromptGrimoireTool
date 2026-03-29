@@ -48,21 +48,25 @@ def deregister(user_id: UUID, client: Client) -> None:
         del _registry[user_id]
 
 
-async def disconnect_user(user_id: UUID) -> int:
-    """Redirect all of a user's connected clients to /banned.
+def disconnect_user(user_id: UUID) -> int:
+    """Redirect all of a user's connected clients to /banned (fire-and-forget).
 
-    Returns count of clients successfully redirected.
+    Returns count of clients that were successfully sent a redirect.
     Tolerates stale/disconnected clients -- logs warning and continues.
     """
     clients = _registry.pop(user_id, set())
     redirected = 0
     for client in clients:
         try:
-            await client.run_javascript(
+            client.run_javascript(
                 'window.location.href = "/banned"',
                 timeout=2.0,
             )
             redirected += 1
         except Exception:
-            logger.warning("ban_redirect_failed", client_id=client.id, exc_info=True)
+            logger.warning(
+                "ban_redirect_failed",
+                client_id=client.id,
+                exc_info=True,
+            )
     return redirected

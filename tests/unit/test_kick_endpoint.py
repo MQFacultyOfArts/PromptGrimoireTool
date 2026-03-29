@@ -97,7 +97,7 @@ class TestValidKick:
         transport = httpx.ASGITransport(app=app)
 
         mock_is_banned = AsyncMock(return_value=True)
-        mock_disconnect = AsyncMock(return_value=3)
+        mock_disconnect = MagicMock(return_value=3)
 
         async with httpx.AsyncClient(
             transport=transport, base_url="http://testserver"
@@ -127,7 +127,7 @@ class TestValidKick:
         assert data["kicked"] == 3
         assert data["was_banned"] is True
         mock_is_banned.assert_awaited_once_with(user_id)
-        mock_disconnect.assert_awaited_once_with(user_id)
+        mock_disconnect.assert_called_once_with(user_id)
 
     @pytest.mark.anyio
     async def test_valid_token_not_banned_skips_kick(self) -> None:
@@ -137,7 +137,7 @@ class TestValidKick:
         transport = httpx.ASGITransport(app=app)
 
         mock_is_banned = AsyncMock(return_value=False)
-        mock_disconnect = AsyncMock(return_value=0)
+        mock_disconnect = MagicMock(return_value=0)
 
         async with httpx.AsyncClient(
             transport=transport, base_url="http://testserver"
@@ -167,7 +167,7 @@ class TestValidKick:
         assert data["kicked"] == 0
         assert data["was_banned"] is False
         mock_is_banned.assert_awaited_once_with(user_id)
-        mock_disconnect.assert_not_awaited()
+        mock_disconnect.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
@@ -224,7 +224,7 @@ class TestUnconfiguredSecret:
         app = _make_app()
         transport = httpx.ASGITransport(app=app)
 
-        mock_disconnect = AsyncMock()
+        mock_disconnect = MagicMock()
 
         async with httpx.AsyncClient(
             transport=transport, base_url="http://testserver"
@@ -248,4 +248,4 @@ class TestUnconfiguredSecret:
         assert resp.status_code == 503
         assert resp.json()["error"] == "ADMIN_API_SECRET not configured"
         # Must not attempt to validate auth or disconnect
-        mock_disconnect.assert_not_awaited()
+        mock_disconnect.assert_not_called()

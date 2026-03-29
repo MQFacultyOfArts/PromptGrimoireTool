@@ -157,7 +157,7 @@ async def pre_restart_handler(request: Request) -> JSONResponse:
         if not client.has_socket_connection:
             continue
         try:
-            await client.run_javascript(
+            client.run_javascript(
                 'window.location.href = "/restarting?return="'
                 " + encodeURIComponent("
                 "location.pathname + location.search + location.hash)",

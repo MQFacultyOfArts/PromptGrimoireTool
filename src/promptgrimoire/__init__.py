@@ -110,7 +110,7 @@ async def kick_user_handler(request: Request) -> JSONResponse:
     from promptgrimoire.db.users import is_user_banned
 
     if await is_user_banned(user_id):
-        kicked = await disconnect_user(user_id)
+        kicked = disconnect_user(user_id)
         return JSONResponse({"kicked": kicked, "was_banned": True})
 
     return JSONResponse({"kicked": 0, "was_banned": False})

@@ -81,15 +81,33 @@ class TestPreRestartFlush:
         mock_client.id = "test-client-1"
 
         async def tracking_run_js(code: str, timeout: float = 5.0) -> object:  # noqa: ARG001
+            # _flush_single_client still awaits run_javascript for extraction
             if "getMilkdownMarkdown" in code:
                 call_order.append("extract_milkdown")
                 return "# Draft markdown"
+            # Navigation is fire-and-forget (not awaited) — track it anyway
             if "restarting" in code:
                 call_order.append("navigate")
                 return None
             return None
 
-        mock_client.run_javascript = AsyncMock(side_effect=tracking_run_js)
+        # Use a real function that returns a coroutine when awaited (flush)
+        # and tracks when called synchronously (navigate).
+        original_side_effect = tracking_run_js
+
+        def sync_or_async_run_js(
+            code: str,
+            timeout: float = 5.0,
+        ) -> object:
+
+            # For navigation (fire-and-forget, not awaited), track directly
+            if "restarting" in code:
+                call_order.append("navigate")
+                return None
+            # For extraction (awaited), return a coroutine
+            return original_side_effect(code, timeout)
+
+        mock_client.run_javascript = MagicMock(side_effect=sync_or_async_run_js)
 
         # Mock presence
         mock_presence = MagicMock()
@@ -280,12 +298,11 @@ class TestPreRestartSessionInvalidation:
         mock_client.has_socket_connection = True
         mock_client.id = "nav-test"
 
-        async def tracking_run_js(code: str, timeout: float = 5.0) -> object:  # noqa: ARG001
+        def tracking_run_js(code: str, timeout: float = 5.0) -> None:  # noqa: ARG001
             if "restarting" in code:
                 call_order.append("navigate")
-            return None
 
-        mock_client.run_javascript = AsyncMock(side_effect=tracking_run_js)
+        mock_client.run_javascript = MagicMock(side_effect=tracking_run_js)
 
         mock_client_class = MagicMock()
         mock_client_class.instances = {"c1": mock_client}

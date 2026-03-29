@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import MagicMock
 from uuid import uuid4
 
 import pytest
@@ -19,7 +19,7 @@ def _make_client() -> MagicMock:
     """Create a mock NiceGUI Client with required interface."""
     client = MagicMock()
     client.id = str(uuid4())
-    client.run_javascript = AsyncMock()
+    client.run_javascript = MagicMock()
     client.on_delete = MagicMock()
     return client
 
@@ -93,61 +93,58 @@ class TestDeregister:
 
 
 class TestDisconnectUser:
-    @pytest.mark.anyio
-    async def test_disconnect_calls_run_javascript(self) -> None:
+    def test_disconnect_calls_run_javascript(self) -> None:
         user_id = uuid4()
         c1 = _make_client()
         c2 = _make_client()
         _registry[user_id] = {c1, c2}
 
-        await disconnect_user(user_id)
+        disconnect_user(user_id)
 
-        c1.run_javascript.assert_awaited_once_with(
+        c1.run_javascript.assert_called_once_with(
             'window.location.href = "/banned"', timeout=2.0
         )
-        c2.run_javascript.assert_awaited_once_with(
+        c2.run_javascript.assert_called_once_with(
             'window.location.href = "/banned"', timeout=2.0
         )
 
-    @pytest.mark.anyio
-    async def test_disconnect_returns_count(self) -> None:
+    def test_disconnect_returns_count(self) -> None:
         user_id = uuid4()
         c1 = _make_client()
         c2 = _make_client()
         _registry[user_id] = {c1, c2}
 
-        count = await disconnect_user(user_id)
+        count = disconnect_user(user_id)
 
         assert count == 2
 
-    @pytest.mark.anyio
-    async def test_disconnect_removes_user_from_registry(self) -> None:
+    def test_disconnect_removes_user_from_registry(self) -> None:
         user_id = uuid4()
         _registry[user_id] = {_make_client()}
 
-        await disconnect_user(user_id)
+        disconnect_user(user_id)
 
         assert user_id not in _registry
 
-    @pytest.mark.anyio
-    async def test_disconnect_unknown_user_returns_zero(self) -> None:
-        count = await disconnect_user(uuid4())
+    def test_disconnect_unknown_user_returns_zero(self) -> None:
+        count = disconnect_user(uuid4())
 
         assert count == 0
 
-    @pytest.mark.anyio
-    async def test_disconnect_tolerates_stale_client(self) -> None:
+    def test_disconnect_tolerates_stale_client(self) -> None:
+        """Stale client raises but is logged; only successes counted."""
         user_id = uuid4()
         good1 = _make_client()
         stale = _make_client()
         good2 = _make_client()
-        stale.run_javascript = AsyncMock(side_effect=RuntimeError("disconnected"))
+        stale.run_javascript = MagicMock(side_effect=RuntimeError("disconnected"))
         _registry[user_id] = {good1, stale, good2}
 
-        count = await disconnect_user(user_id)
+        count = disconnect_user(user_id)
 
+        # Only the two successful sends are counted
         assert count == 2
-        # All three got called
-        good1.run_javascript.assert_awaited_once()
-        stale.run_javascript.assert_awaited_once()
-        good2.run_javascript.assert_awaited_once()
+        # All three were attempted
+        good1.run_javascript.assert_called_once()
+        stale.run_javascript.assert_called_once()
+        good2.run_javascript.assert_called_once()

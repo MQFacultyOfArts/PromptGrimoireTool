@@ -42,3 +42,23 @@ class TestScrollSaveFireAndForget:
         _rebuild_organise_with_scroll(render_fn)
 
         assert call_order == ["js", "render", "js"]
+
+    @patch("promptgrimoire.pages.annotation.tab_bar.ui")
+    def test_restore_does_not_delete_scroll_slot(self, mock_ui: MagicMock) -> None:
+        """Restore JS must not delete window._organiseSavedScroll.
+
+        If two rebuilds overlap (rAF from rebuild 1 fires after rebuild 2
+        saves), deleting the slot in the first restore destroys rebuild 2's
+        saved value. The slot is harmless to leave — the next save always
+        overwrites it.
+        """
+        captured_js: list[str] = []
+        mock_ui.run_javascript.side_effect = lambda js, **_kw: captured_js.append(js)
+        render_fn = MagicMock()
+        _rebuild_organise_with_scroll(render_fn)
+
+        restore_js = captured_js[1]  # second call is the restore
+        assert "delete" not in restore_js, (
+            "Restore must not delete window._organiseSavedScroll — "
+            "overlapping rebuilds would lose the second save"
+        )

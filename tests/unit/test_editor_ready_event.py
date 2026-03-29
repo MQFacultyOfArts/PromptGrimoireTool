@@ -89,6 +89,67 @@ class TestEditorReadyOk:
 
         assert presence.has_milkdown_editor is True
 
+    def test_sends_catchup_full_state_on_ready(self) -> None:
+        """After editor_ready, a fresh full-state sync is sent to
+        converge any Yjs updates missed during the init window."""
+        state = PageState(workspace_id=_TEST_UUID)
+        state.client_id = "client-1"
+
+        mock_crdt = MagicMock()
+        mock_crdt.get_full_state.return_value = b"\x01\x02\x03"
+        state.crdt_doc = mock_crdt
+
+        ws_key = str(_TEST_UUID)
+        mock_client = MagicMock()
+        presence = _RemotePresence(
+            name="test",
+            color="#ff0000",
+            nicegui_client=mock_client,
+            callback=None,
+        )
+        _workspace_presence[ws_key] = {"client-1": presence}
+
+        _handle_editor_ready(
+            _make_event({"status": "ok"}),
+            state,
+            ws_key,
+            "client-1",
+        )
+
+        # Catch-up full-state sync must have been sent
+        mock_client.run_javascript.assert_called_once()
+        call_js = mock_client.run_javascript.call_args[0][0]
+        assert "_applyRemoteUpdate" in call_js
+
+    def test_skips_catchup_when_crdt_empty(self) -> None:
+        """No catch-up sync for empty CRDT docs (2 bytes = empty)."""
+        state = PageState(workspace_id=_TEST_UUID)
+        state.client_id = "client-1"
+
+        mock_crdt = MagicMock()
+        mock_crdt.get_full_state.return_value = b"\x01\x00"
+        state.crdt_doc = mock_crdt
+
+        ws_key = str(_TEST_UUID)
+        mock_client = MagicMock()
+        presence = _RemotePresence(
+            name="test",
+            color="#ff0000",
+            nicegui_client=mock_client,
+            callback=None,
+        )
+        _workspace_presence[ws_key] = {"client-1": presence}
+
+        _handle_editor_ready(
+            _make_event({"status": "ok"}),
+            state,
+            ws_key,
+            "client-1",
+        )
+
+        # No catch-up needed — doc is empty
+        mock_client.run_javascript.assert_not_called()
+
 
 class TestEditorReadyError:
     """AC2.5: error status logs and does NOT set has_milkdown_editor."""

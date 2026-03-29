@@ -186,9 +186,11 @@ def _rebuild_organise_with_scroll(
     ui.run_javascript(
         "requestAnimationFrame(function() {"
         "  var s = window._organiseSavedScroll;"
-        "  var el = document.querySelector('[data-testid=\"organise-columns\"]');"
-        "  if (s && el) { el.scrollLeft = s.x; el.scrollTop = s.y; }"
-        "  delete window._organiseSavedScroll;"
+        "  var el = document.querySelector("
+        "'[data-testid=\"organise-columns\"]');"
+        "  if (s && el) {"
+        "    el.scrollLeft = s.x; el.scrollTop = s.y;"
+        "  }"
         "});"
     )
 

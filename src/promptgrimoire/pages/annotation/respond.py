@@ -552,6 +552,19 @@ def _handle_editor_ready(
         clients = _workspace_presence.get(workspace_key, {})
         if client_id in clients:
             clients[client_id].has_milkdown_editor = True
+        # Catch-up: any Yjs updates that arrived between the initial
+        # full-state snapshot (computed at JS send time) and now were
+        # skipped by _broadcast_yjs_update because has_milkdown_editor
+        # was False. Send a fresh full-state to converge.
+        if state.crdt_doc is not None:
+            full_state = state.crdt_doc.get_full_state()
+            if len(full_state) > 2:
+                b64_state = base64.b64encode(full_state).decode("ascii")
+                presence = clients.get(client_id)
+                if presence and presence.nicegui_client:
+                    presence.nicegui_client.run_javascript(
+                        f"window._applyRemoteUpdate('{b64_state}')"
+                    )
         logger.debug(
             "EDITOR_READY ws=%s client=%s",
             workspace_key,

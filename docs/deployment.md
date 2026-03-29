@@ -1169,18 +1169,23 @@ frontend fe_https
 
 backend be_promptgrimoire
     server app 127.0.0.1:8080 check
+    errorfile 502 /etc/haproxy/errors/503.http
     errorfile 503 /etc/haproxy/errors/503.http
+    errorfile 504 /etc/haproxy/errors/503.http
 
     # Forward original client info
     http-request set-header X-Forwarded-Proto https
     http-request set-header X-Real-IP %[src]
 ```
 
-The `errorfile` serves a branded "PromptGrimoire is restarting" page (with auto-refresh) when the backend is in maintenance mode. The source file lives in `deploy/503.http`; copy it to the server:
+The `errorfile` directives serve a branded maintenance page whenever the backend is unavailable. All three error codes use the same file — 502 (connection refused), 503 (MAINT drain), 504 (gateway timeout / brownout). The source lives in `deploy/503.http`; copy it to the server and reload HAProxy:
 
 ```bash
 sudo cp deploy/503.http /etc/haproxy/errors/503.http
+sudo systemctl reload haproxy
 ```
+
+> **Important:** HAProxy reads errorfile content at config load time. Editing the file without `systemctl reload haproxy` has no effect.
 
 **Key configuration points:**
 

@@ -128,7 +128,7 @@ def _detect_from_string(content: str) -> ContentType:
     lower = stripped.lower()
     if lower.startswith("<!doctype"):
         # NOTE: DOCTYPE path skips fake-HTML guard -- observed PDF pastes
-        # never include DOCTYPE.
+        # have not included DOCTYPE so far.
         return "html"
     if lower.startswith("<html"):
         # Guard: HTML-wrapped plain text (e.g. PDF paste) -> reclassify.

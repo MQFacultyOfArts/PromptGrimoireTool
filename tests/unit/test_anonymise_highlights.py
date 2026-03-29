@@ -5,6 +5,8 @@ Verifies workspace-sharing-97.AC4.7: PDF export respects anonymity flag.
 
 from __future__ import annotations
 
+from promptgrimoire.auth.anonymise import anonymise_display_name
+
 
 class TestAnonymiseHighlightsForExport:
     """anonymise_highlights transforms author fields for export."""
@@ -31,10 +33,15 @@ class TestAnonymiseHighlightsForExport:
             privileged_user_ids=frozenset(),
         )
 
-        assert len(result) == 1
-        assert result[0]["author"] != "Alice Smith"
-        # Should be a deterministic anonymised label
-        assert result[0]["author"] == result[0]["author"]  # stable
+        assert result == [
+            {
+                "id": "h1",
+                "author": anonymise_display_name("user-alice"),
+                "user_id": "user-alice",
+                "tag": "important",
+                "comments": [],
+            },
+        ]
 
     def test_preserves_own_highlights(self) -> None:
         """Viewer's own highlights keep real author name."""
@@ -141,12 +148,21 @@ class TestAnonymiseHighlightsForExport:
             privileged_user_ids=frozenset(),
         )
 
-        # Carol's name is anonymised
+        assert result[0]["author"] == anonymise_display_name("user-alice")
         comments = result[0]["comments"]
         assert isinstance(comments, list)
-        assert comments[0]["author"] != "Carol Davis"  # type: ignore[index]
-        # Bob's own comment keeps real name
-        assert comments[1]["author"] == "Bob Jones"  # type: ignore[index]
+        assert comments == [
+            {
+                "author": anonymise_display_name("user-carol"),
+                "user_id": "user-carol",
+                "text": "Good point",
+            },
+            {
+                "author": "Bob Jones",
+                "user_id": "user-bob",
+                "text": "I agree",
+            },
+        ]
 
     def test_privileged_author_shows_real_name_in_export(self) -> None:
         """Instructor highlight shows real name to student in PDF export.
@@ -186,7 +202,13 @@ class TestAnonymiseHighlightsForExport:
         assert result[0]["author"] == "Prof. Smith"
         comments = result[0]["comments"]
         assert isinstance(comments, list)
-        assert comments[0]["author"] == "Prof. Smith"  # type: ignore[index]
+        assert comments == [
+            {
+                "author": "Prof. Smith",
+                "user_id": "user-instructor",
+                "text": "Good work",
+            },
+        ]
 
     def test_mixed_privileged_and_student_highlights(self) -> None:
         """Instructor highlight real, student highlight anonymised — same export.
@@ -222,8 +244,7 @@ class TestAnonymiseHighlightsForExport:
 
         # Instructor real name preserved
         assert result[0]["author"] == "Prof. Smith"
-        # Student name anonymised
-        assert result[1]["author"] != "Alice Student"
+        assert result[1]["author"] == anonymise_display_name("user-alice")
 
     def test_does_not_mutate_original(self) -> None:
         """Returns new dicts, does not mutate the input highlights."""
@@ -251,5 +272,12 @@ class TestAnonymiseHighlightsForExport:
 
         original: dict[str, object] = highlights[0]
         assert original["author"] == "Alice Smith"
-        original_comments: list[dict[str, object]] = highlights[0]["comments"]  # type: ignore[assignment]
-        assert original_comments[0]["author"] == "Carol Davis"
+        original_comments = original["comments"]
+        assert isinstance(original_comments, list)
+        assert original_comments == [
+            {
+                "author": "Carol Davis",
+                "user_id": "user-carol",
+                "text": "hi",
+            },
+        ]

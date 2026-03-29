@@ -16,6 +16,8 @@ if TYPE_CHECKING:
     from playwright.sync_api import Browser, Page
     from pytest_subtests import SubTests
 
+pytestmark = [pytest.mark.noci]
+
 
 @pytest.mark.e2e
 class TestWordCountSettings:

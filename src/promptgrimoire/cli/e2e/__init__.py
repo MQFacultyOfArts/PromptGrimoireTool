@@ -19,7 +19,12 @@ from promptgrimoire.cli._shared import (
     _prepend_pytest_flags,
     console,
 )
-from promptgrimoire.cli.e2e._lanes import PLAYWRIGHT_LANE, LaneResult
+from promptgrimoire.cli.e2e._lanes import (
+    PLAYWRIGHT_DEFAULT_MARKER_EXPR,
+    PLAYWRIGHT_LANE,
+    PLAYWRIGHT_SLOW_MARKER_EXPR,
+    LaneResult,
+)
 from promptgrimoire.cli.e2e._retry import _retry_e2e_tests_in_isolation
 from promptgrimoire.cli.e2e._server import (
     _check_ptrace_scope,
@@ -44,6 +49,12 @@ def _latest_artifact_dir(lane_name: str) -> Path | None:
         return None
     runs = sorted(lane_root.iterdir(), reverse=True)
     return runs[0] if runs else None
+
+
+def _artifact_dir_if_new(lane_name: str, previous: Path | None) -> Path | None:
+    """Return the latest artifact dir only when it changed during this run."""
+    latest = _latest_artifact_dir(lane_name)
+    return latest if latest is not None and latest != previous else None
 
 
 def _has_test_path(args: list[str]) -> bool:
@@ -212,6 +223,7 @@ def _run_all_lane_steps(user_args: list[str]) -> list[LaneResult]:
 
     # --- Lane 3: Playwright (unchanged) ---
     console.print("[blue]Running Playwright lane (parallel)...[/]")
+    previous_playwright_artifact = _latest_artifact_dir("playwright")
     playwright_exit = run_playwright_lane(
         user_args,
         parallel=True,
@@ -222,18 +234,21 @@ def _run_all_lane_steps(user_args: list[str]) -> list[LaneResult]:
         LaneResult(
             "playwright",
             playwright_exit,
-            artifact_dir=_latest_artifact_dir("playwright"),
+            artifact_dir=_artifact_dir_if_new(
+                "playwright", previous_playwright_artifact
+            ),
         )
     )
 
     # --- Lane 4: NiceGUI (unchanged) ---
     console.print("[blue]Running NiceGUI lane...[/]")
+    previous_nicegui_artifact = _latest_artifact_dir("nicegui")
     nicegui_exit = run_nicegui_lane(user_args)
     lane_results.append(
         LaneResult(
             "nicegui",
             nicegui_exit,
-            artifact_dir=_latest_artifact_dir("nicegui"),
+            artifact_dir=_artifact_dir_if_new("nicegui", previous_nicegui_artifact),
         )
     )
 
@@ -305,10 +320,10 @@ def run_slow_lanes(user_args: list[str]) -> int:
 
     Superset of ``e2e all``: runs every lane that ``_run_all_lane_steps``
     does, then appends Playwright with latexmk enabled and the compiled-PDF
-    validation suite.  The Playwright E2E tests run twice — once inside
-    the standard lanes (with ``GRIMOIRE_TEST_SKIP_LATEXMK=1``) and once
-    here with latexmk enabled — which exercises slightly different code
-    paths.  One unified summary grid is printed at the end.
+    validation suite. The standard Playwright lane excludes ``noci`` tests;
+    this slow rerun widens back to ``e2e and not perf`` with latexmk enabled
+    so nightly runs still exercise those heavier browser scenarios. One
+    unified summary grid is printed at the end.
     """
     from promptgrimoire.config import get_current_branch
 
@@ -327,12 +342,14 @@ def run_slow_lanes(user_args: list[str]) -> int:
     os.environ["E2E_SKIP_LATEXMK"] = "0"
     try:
         console.print("[blue]Running Playwright slow lane (latexmk enabled)...[/]")
+        previous_playwright_artifact = _latest_artifact_dir("playwright")
         pw_latexmk_exit = _normalise_optional_lane_exit(
             _run_serial_playwright_e2e(
                 user_args,
                 use_pyspy=False,
                 reruns=True,
                 clear_cache=True,
+                marker_expr=PLAYWRIGHT_SLOW_MARKER_EXPR,
             ),
             user_args,
         )
@@ -345,7 +362,9 @@ def run_slow_lanes(user_args: list[str]) -> int:
         LaneResult(
             "playwright-latexmk",
             pw_latexmk_exit,
-            artifact_dir=_latest_artifact_dir("playwright"),
+            artifact_dir=_artifact_dir_if_new(
+                "playwright", previous_playwright_artifact
+            ),
         )
     )
 
@@ -479,6 +498,7 @@ def run_all_browsers(
 
     for browser_name in browsers:
         console.print(f"\n[blue]Running Playwright lane ({browser_name})...[/]")
+        previous_playwright_artifact = _latest_artifact_dir("playwright")
         exit_code = run_playwright_lane(
             user_args,
             parallel=True,
@@ -490,7 +510,9 @@ def run_all_browsers(
             LaneResult(
                 f"playwright-{browser_name}",
                 exit_code,
-                artifact_dir=_latest_artifact_dir("playwright"),
+                artifact_dir=_artifact_dir_if_new(
+                    "playwright", previous_playwright_artifact
+                ),
             )
         )
         if fail_fast and exit_code != 0:
@@ -738,7 +760,7 @@ def run_playwright_noretry_lane(user_args: list[str]) -> int:
 
     default_args = [
         "-m",
-        "e2e and not perf",
+        PLAYWRIGHT_DEFAULT_MARKER_EXPR,
         "-x",
         "-v",
         "--tb=short",
@@ -794,7 +816,7 @@ def run_playwright_changed_lane(user_args: list[str]) -> int:
 
     default_args = [
         "-m",
-        "e2e and not perf",
+        PLAYWRIGHT_DEFAULT_MARKER_EXPR,
         "--ff",
         "--depper",
         "--tb=long",
@@ -900,6 +922,7 @@ def _run_serial_playwright_e2e(
     reruns: bool,
     clear_cache: bool = False,
     browser: str | None = None,
+    marker_expr: str = PLAYWRIGHT_DEFAULT_MARKER_EXPR,
 ) -> int:
     """Run Playwright tests in single-server serial mode."""
     from promptgrimoire.config import get_settings
@@ -928,7 +951,7 @@ def _run_serial_playwright_e2e(
 
     default_args = [
         "-m",
-        "e2e and not perf",
+        marker_expr,
         "--ff",
         "-v",
         "--tb=short",

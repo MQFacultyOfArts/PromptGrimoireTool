@@ -129,6 +129,7 @@ library references during development.
 - [Investigation: 2026-03-16 Gateway Failures](postmortems/2026-03-16-investigation.md)
 - [New Errors Observed 2026-03-16 ~15:00 AEDT](postmortems/2026-03-16-new-errors.md)
 - [Proposed Incident Analysis Tools](postmortems/2026-03-16-proposed-analysis-tools.md)
+- [3-Day Operational Review: 2026-03-15 to 2026-03-18](postmortems/2026-03-18-3day-review-reference.md)
 - [Investigation: Firefox E2E CI Failures](postmortems/2026-03-18-firefox-e2e-failures.md)
 - [Investigation: #377 Page Load Latency](postmortems/2026-03-18-page-load-latency-377.md)
 - [Causal Analysis: NiceGUI Slot Deletion Race (#369)](postmortems/2026-03-20-slot-deletion-investigation-369.md)
@@ -137,6 +138,7 @@ library references during development.
 - [WIP Handoff: #377 Workspace Performance — Epoch Analysis](postmortems/2026-03-24-377-wip-handoff.md)
 - [Clobber Scan Prompt — for Codex/Gemini](postmortems/2026-03-24-clobber-scan-prompt.md)
 - [Incident: PgBouncer Double-Pooling SIGABRT and LaTeX Export Failures](postmortems/2026-03-25-pgbouncer-crash-and-export-failures.md)
+- [Post-Mortem: 2026-03-29 Search Worker Cascade Failure](postmortems/2026-03-29-search-worker-cascade.md)
 - [PromptGrimoire Incident Analysis Playbook](postmortems/incident-analysis-playbook.md)
 
 ## prds

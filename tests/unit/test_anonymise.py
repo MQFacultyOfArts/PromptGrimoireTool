@@ -63,9 +63,7 @@ class TestAnonymiseAuthor:
             viewer_is_privileged=False,
             author_is_privileged=False,
         )
-        assert result != "Alice Smith"
-        parts = result.split(" ")
-        assert len(parts) == 2, f"Expected 'Adjective Animal', got '{result}'"
+        assert result == anonymise_display_name("user-123")
 
     def test_privileged_author_always_shows_real_name(self) -> None:
         """Privileged authors (instructors) are never anonymised.
@@ -138,13 +136,11 @@ class TestAnonymiseAuthorAPIContract:
             viewer_is_privileged=False,
             author_is_privileged=False,
         )
-        assert result != "Alice Smith"
-        # Should be an adjective-animal label
-        parts = result.split(" ")
-        assert len(parts) == 2, f"Expected 'Adjective Animal', got '{result}'"
+        assert result == anonymise_display_name("user-123")
 
     def test_deterministic_same_user_id(self) -> None:
         """AC4.6: Same user_id always produces the same label."""
+        expected = anonymise_display_name("user-123")
         result1 = anonymise_author(
             author="Alice Smith",
             user_id="user-123",
@@ -161,7 +157,8 @@ class TestAnonymiseAuthorAPIContract:
             viewer_is_privileged=False,
             author_is_privileged=False,
         )
-        assert result1 == result2
+        assert result1 == expected
+        assert result2 == expected
 
     def test_different_user_ids_produce_different_labels(self) -> None:
         """AC4.6: Different user_ids produce different labels."""
@@ -205,9 +202,7 @@ class TestAnonymiseAuthorAPIContract:
             viewer_is_privileged=False,
             author_is_privileged=False,
         )
-        assert result != "Alice Smith"
-        parts = result.split(" ")
-        assert len(parts) == 2
+        assert result == anonymise_display_name("user-123")
 
     def test_both_user_ids_none_not_treated_as_own(self) -> None:
         """When both user_id and viewing_user_id are None, do not treat as 'own'."""
@@ -237,8 +232,24 @@ class TestAnonymiseDisplayName:
         assert len(parts) == 2
 
     def test_deterministic(self) -> None:
-        """Same user_id always produces the same label."""
-        assert anonymise_display_name("user-xyz") == anonymise_display_name("user-xyz")
+        """Same user_id maps to the same label regardless of source author text."""
+        expected = anonymise_display_name("user-xyz")
+        assert expected == anonymise_author(
+            author="Alice Smith",
+            user_id="user-xyz",
+            viewing_user_id="viewer-other",
+            anonymous_sharing=True,
+            viewer_is_privileged=False,
+            author_is_privileged=False,
+        )
+        assert expected == anonymise_author(
+            author="Bob Jones",
+            user_id="user-xyz",
+            viewing_user_id="viewer-other",
+            anonymous_sharing=True,
+            viewer_is_privileged=False,
+            author_is_privileged=False,
+        )
 
     def test_different_ids_different_labels(self) -> None:
         """Different user_ids produce different labels."""

@@ -88,14 +88,17 @@ def _truncate_for_budget(
     workspace: str,
     date_part: str,
 ) -> tuple[str, str, str]:
-    """Return trimmed (first, activity, workspace) to fit budget.
+    """Return trimmed (first, activity, workspace) under the filename budget.
 
     Truncation order:
     1. workspace (right-truncated)
     2. activity (right-truncated)
     3. first name (reduced to 1-char initial)
 
-    course, last, and date_part are never truncated.
+    course, last, and date_part are never truncated. If the assembled stem
+    still exceeds the budget after workspace and activity are exhausted and
+    the first name is reduced to a single character, AC3.6 allows that
+    pathological overflow to stand.
     """
     budget = _MAX_FILENAME_LENGTH - len(_PDF_SUFFIX)
 
@@ -124,6 +127,11 @@ def _truncate_for_budget(
     if len(first) > 1:
         first = first[0]
 
+    if _current_len(first, activity, workspace) <= budget:
+        return (first, activity, workspace)
+
+    # AC3.6: overflow is legal only after every trimmable segment has already
+    # been exhausted and the first-name segment is down to one character.
     return (first, activity, workspace)
 
 

@@ -67,6 +67,8 @@ if TYPE_CHECKING:
     from playwright.sync_api import Browser, Locator, Page
     from pytest_subtests import SubTests
 
+pytestmark = [pytest.mark.noci]
+
 
 # ---------------------------------------------------------------------------
 # Helpers

@@ -157,34 +157,54 @@ def _apply_sort_reorder_or_move(
         # destroy elements mid-event (RuntimeError in NiceGUI's slot system).
 
 
+_ORGANISE_SCROLL_LISTENER_JS = (
+    "(function() {"
+    "  var el = document.querySelector('[data-testid=\"organise-columns\"]');"
+    "  if (el) {"
+    "    el.addEventListener('scroll', function() {"
+    "      window._organiseSavedScroll ="
+    "        {x: el.scrollLeft, y: el.scrollTop};"
+    "    });"
+    "  }"
+    "})()"
+)
+
+_ORGANISE_SCROLL_SNAPSHOT_JS = (
+    "window._organiseSavedScrollSnapshot = window._organiseSavedScroll"
+    "  ? {x: window._organiseSavedScroll.x, y: window._organiseSavedScroll.y}"
+    "  : null;"
+)
+
+_ORGANISE_SCROLL_RESTORE_JS = (
+    "requestAnimationFrame(function() {"
+    "  var s = window._organiseSavedScrollSnapshot;"
+    "  var el = document.querySelector("
+    "'[data-testid=\"organise-columns\"]');"
+    "  if (s && el) {"
+    "    el.scrollLeft = s.x; el.scrollTop = s.y;"
+    "  }"
+    "});"
+)
+
+
 def _rebuild_organise_with_scroll(
     render_fn: Callable[[], None],
 ) -> None:
     """Rebuild the organise tab preserving horizontal/vertical scroll.
 
-    Saves scroll position to a window global via fire-and-forget JS,
-    re-renders, then restores via requestAnimationFrame. NiceGUI's
-    outbox FIFO guarantees save executes before the DOM clear.
+    Scroll position is continuously tracked by a JS scroll event
+    listener on the organise-columns element.  On rebuild:
+    1. Snapshot the saved scroll (before panel.clear removes the old
+       element — removal triggers a scroll event that zeroes the live
+       value, so we need an immutable copy).
+    2. Re-render (destroys old element, creates new one).
+    3. Re-attach scroll listener to the new element.
+    4. Restore scroll from the snapshot via requestAnimationFrame.
     """
-    ui.run_javascript(
-        "(function() {"
-        "  var el = document.querySelector("
-        "'[data-testid=\"organise-columns\"]');"
-        "  window._organiseSavedScroll = el"
-        "    ? {x: el.scrollLeft, y: el.scrollTop} : null;"
-        "})()"
-    )
+    ui.run_javascript(_ORGANISE_SCROLL_SNAPSHOT_JS)
     render_fn()
-    ui.run_javascript(
-        "requestAnimationFrame(function() {"
-        "  var s = window._organiseSavedScroll;"
-        "  var el = document.querySelector("
-        "'[data-testid=\"organise-columns\"]');"
-        "  if (s && el) {"
-        "    el.scrollLeft = s.x; el.scrollTop = s.y;"
-        "  }"
-        "});"
-    )
+    ui.run_javascript(_ORGANISE_SCROLL_LISTENER_JS)
+    ui.run_javascript(_ORGANISE_SCROLL_RESTORE_JS)
 
 
 def _setup_organise_drag(state: PageState) -> None:
@@ -224,8 +244,10 @@ def _setup_organise_drag(state: PageState) -> None:
         if state.broadcast_update:
             await state.broadcast_update()
 
-        # Cross-column card label/colour updates on next full rebuild
-        # (tab switch or broadcast). The CRDT is already correct.
+        # Local Organise view is NOT re-rendered here — SortableJS
+        # already moved the DOM element.  A full rebuild would fix
+        # column counts/badges but currently resets scroll position
+        # (see issue tracking diff-based organise updates).
 
     async def _on_locate(
         start_char: int, end_char: int, document_id: str | None = None
@@ -312,11 +334,19 @@ def _refresh_source_tab(state: PageState) -> None:
 
 
 def _handle_organise_tab(state: PageState) -> None:
-    """Handle switching to the Organise tab (re-render)."""
+    """Handle switching to the Organise tab (re-render, restore scroll).
+
+    Scroll position is continuously tracked by a JS scroll listener
+    on the organise-columns element.  Re-render, re-attach listener
+    (element was rebuilt), then restore saved position.
+    """
     assert state.initialised_tabs is not None
     state.initialised_tabs.add("Organise")
     if state.refresh_organise:
+        ui.run_javascript(_ORGANISE_SCROLL_SNAPSHOT_JS)
         state.refresh_organise()
+        ui.run_javascript(_ORGANISE_SCROLL_LISTENER_JS)
+        ui.run_javascript(_ORGANISE_SCROLL_RESTORE_JS)
 
 
 async def _handle_respond_tab(state: PageState, workspace_id: UUID) -> None:

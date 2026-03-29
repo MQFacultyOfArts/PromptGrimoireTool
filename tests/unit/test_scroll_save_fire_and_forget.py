@@ -51,5 +51,5 @@ class TestScrollSaveFireAndForget:
         _rebuild_organise_with_scroll(render_fn)
 
         restore_js = captured_js[2]  # third call is the restore
-        assert "Snapshot" in restore_js
+        assert "_organiseSavedScrollSnapshot" in restore_js
         assert "delete" not in restore_js

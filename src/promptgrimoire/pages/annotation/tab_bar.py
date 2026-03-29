@@ -342,11 +342,8 @@ def _handle_organise_tab(state: PageState) -> None:
     """
     assert state.initialised_tabs is not None
     state.initialised_tabs.add("Organise")
-    if state.refresh_organise:
-        ui.run_javascript(_ORGANISE_SCROLL_SNAPSHOT_JS)
-        state.refresh_organise()
-        ui.run_javascript(_ORGANISE_SCROLL_LISTENER_JS)
-        ui.run_javascript(_ORGANISE_SCROLL_RESTORE_JS)
+    if state.refresh_organise_with_scroll:
+        state.refresh_organise_with_scroll()
 
 
 async def _handle_respond_tab(state: PageState, workspace_id: UUID) -> None:

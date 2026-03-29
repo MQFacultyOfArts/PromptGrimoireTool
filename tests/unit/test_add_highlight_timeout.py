@@ -1,20 +1,18 @@
-"""Tests for _add_highlight behaviour when ui.run_javascript times out.
+"""Tests for _add_highlight cleanup behaviour.
 
-H2a hypothesis: the `await ui.run_javascript("removeAllRanges")` at
-highlights.py:288 is fire-and-forget (void return, no ordering dependency).
-When the browser is busy, it times out at 1.0s. The TimeoutError skips
-selection cleanup (lines 290-294), leaving stale selection_start/selection_end
-and a visible ghost highlight_menu.
+Originally written for #377 when ``ui.run_javascript("removeAllRanges")``
+was awaited and could time out, leaving stale selection state and a
+ghost highlight menu.  The call is now fire-and-forget (#454), so
+TimeoutError can no longer occur, but the cleanup invariants remain:
 
-These tests verify:
-1. TimeoutError from removeAllRanges must NOT propagate
-2. Selection state must be cleaned up regardless of JS timeout
-3. Highlight menu must be hidden regardless of JS timeout
+1. No exception escapes ``_add_highlight``
+2. Selection state is always cleared
+3. Highlight menu is always hidden
+4. ``processing_highlight`` lock is always released
 """
 
 from __future__ import annotations
 
-import contextlib
 from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
@@ -32,7 +30,7 @@ def _make_state(
     """Build a minimal PageState for _add_highlight testing.
 
     Sets up the minimum fields needed for _add_highlight to reach
-    the ui.run_javascript("removeAllRanges") call at line 288.
+    the fire-and-forget ``ui.run_javascript("removeAllRanges")`` call.
     """
     state = PageState(workspace_id=uuid4())
     state.selection_start = selection_start
@@ -70,81 +68,52 @@ def _make_state(
     return state
 
 
-@pytest.mark.asyncio
-async def test_timeout_does_not_propagate() -> None:
-    """TimeoutError from removeAllRanges must not propagate to caller.
+# MagicMock (not AsyncMock) for ui.run_javascript — the call is
+# fire-and-forget, so AsyncMock would produce an unawaited coroutine
+# RuntimeWarning.
+_JS_PATCH = "promptgrimoire.pages.annotation.highlights.ui.run_javascript"
+_PUSH_PATCH = "promptgrimoire.pages.annotation.highlights._push_highlights_to_client"
+_LOOKUP_PATCH = "promptgrimoire.pages.annotation.highlights.lookup_para_ref"
+_PM_PATCH = "promptgrimoire.pages.annotation.highlights.get_persistence_manager"
 
-    Current code awaits ui.run_javascript("removeAllRanges") with 1.0s
-    timeout. When the browser is busy, this raises TimeoutError which
-    bubbles up to the NiceGUI event handler. After fix, the call should
-    be fire-and-forget and no exception should escape.
-    """
+
+@pytest.mark.asyncio
+async def test_no_exception_escapes() -> None:
+    """No exception escapes _add_highlight during normal operation."""
     state = _make_state()
 
     mock_pm = MagicMock()
     mock_pm.force_persist_workspace = AsyncMock()
 
     with (
-        patch(
-            "promptgrimoire.pages.annotation.highlights.get_persistence_manager",
-            return_value=mock_pm,
-        ),
-        patch(
-            "promptgrimoire.pages.annotation.highlights.ui.run_javascript",
-            new_callable=AsyncMock,
-            side_effect=TimeoutError("JavaScript did not respond within 1.0 s"),
-        ),
-        patch(
-            "promptgrimoire.pages.annotation.highlights._push_highlights_to_client",
-        ),
-        patch(
-            "promptgrimoire.pages.annotation.highlights.lookup_para_ref",
-            return_value="",
-        ),
+        patch(_PM_PATCH, return_value=mock_pm),
+        patch(_JS_PATCH),
+        patch(_PUSH_PATCH),
+        patch(_LOOKUP_PATCH, return_value=""),
     ):
         from promptgrimoire.pages.annotation.highlights import _add_highlight
 
-        # This must NOT raise TimeoutError
         await _add_highlight(state, "test-tag")
 
 
 @pytest.mark.asyncio
-async def test_selection_cleared_on_timeout() -> None:
-    """Selection state must be cleaned up even when removeAllRanges times out.
-
-    Current code: lines 290-294 are skipped when line 288 raises TimeoutError.
-    This leaves selection_start/selection_end set, causing ghost highlights.
-    """
+async def test_selection_cleared() -> None:
+    """Selection state is always cleared after _add_highlight completes."""
     state = _make_state(selection_start=10, selection_end=50)
 
     mock_pm = MagicMock()
     mock_pm.force_persist_workspace = AsyncMock()
 
     with (
-        patch(
-            "promptgrimoire.pages.annotation.highlights.get_persistence_manager",
-            return_value=mock_pm,
-        ),
-        patch(
-            "promptgrimoire.pages.annotation.highlights.ui.run_javascript",
-            new_callable=AsyncMock,
-            side_effect=TimeoutError("JavaScript did not respond within 1.0 s"),
-        ),
-        patch(
-            "promptgrimoire.pages.annotation.highlights._push_highlights_to_client",
-        ),
-        patch(
-            "promptgrimoire.pages.annotation.highlights.lookup_para_ref",
-            return_value="",
-        ),
+        patch(_PM_PATCH, return_value=mock_pm),
+        patch(_JS_PATCH),
+        patch(_PUSH_PATCH),
+        patch(_LOOKUP_PATCH, return_value=""),
     ):
         from promptgrimoire.pages.annotation.highlights import _add_highlight
 
-        # Suppress the expected TimeoutError — testing state cleanup, not propagation
-        with contextlib.suppress(TimeoutError):
-            await _add_highlight(state, "test-tag")
+        await _add_highlight(state, "test-tag")
 
-    # Selection state MUST be cleared
     assert state.selection_start is None, (
         f"selection_start should be None, got {state.selection_start}"
     )
@@ -154,78 +123,43 @@ async def test_selection_cleared_on_timeout() -> None:
 
 
 @pytest.mark.asyncio
-async def test_highlight_menu_hidden_on_timeout() -> None:
-    """Highlight menu must be hidden even when removeAllRanges times out.
-
-    Current code: highlight_menu.set_visibility(False) at line 294 is
-    skipped when line 288 raises TimeoutError, leaving a ghost menu.
-    """
+async def test_highlight_menu_hidden() -> None:
+    """Highlight menu is always hidden after _add_highlight completes."""
     state = _make_state()
 
     mock_pm = MagicMock()
     mock_pm.force_persist_workspace = AsyncMock()
 
     with (
-        patch(
-            "promptgrimoire.pages.annotation.highlights.get_persistence_manager",
-            return_value=mock_pm,
-        ),
-        patch(
-            "promptgrimoire.pages.annotation.highlights.ui.run_javascript",
-            new_callable=AsyncMock,
-            side_effect=TimeoutError("JavaScript did not respond within 1.0 s"),
-        ),
-        patch(
-            "promptgrimoire.pages.annotation.highlights._push_highlights_to_client",
-        ),
-        patch(
-            "promptgrimoire.pages.annotation.highlights.lookup_para_ref",
-            return_value="",
-        ),
+        patch(_PM_PATCH, return_value=mock_pm),
+        patch(_JS_PATCH),
+        patch(_PUSH_PATCH),
+        patch(_LOOKUP_PATCH, return_value=""),
     ):
         from promptgrimoire.pages.annotation.highlights import _add_highlight
 
-        with contextlib.suppress(TimeoutError):
-            await _add_highlight(state, "test-tag")
+        await _add_highlight(state, "test-tag")
 
-    # Highlight menu MUST have been hidden
     mock_menu = cast("MagicMock", state.highlight_menu)
     mock_menu.set_visibility.assert_called_with(False)
 
 
 @pytest.mark.asyncio
-async def test_processing_highlight_released_on_timeout() -> None:
-    """processing_highlight must be False after timeout (existing behaviour).
-
-    This tests the existing finally block — should pass on current code.
-    Included as a safety net to ensure the fix doesn't break this.
-    """
+async def test_processing_highlight_released() -> None:
+    """processing_highlight lock is always released after _add_highlight."""
     state = _make_state()
 
     mock_pm = MagicMock()
     mock_pm.force_persist_workspace = AsyncMock()
 
     with (
-        patch(
-            "promptgrimoire.pages.annotation.highlights.get_persistence_manager",
-            return_value=mock_pm,
-        ),
-        patch(
-            "promptgrimoire.pages.annotation.highlights.ui.run_javascript",
-            new_callable=AsyncMock,
-            side_effect=TimeoutError("JavaScript did not respond within 1.0 s"),
-        ),
-        patch(
-            "promptgrimoire.pages.annotation.highlights._push_highlights_to_client",
-        ),
-        patch(
-            "promptgrimoire.pages.annotation.highlights.lookup_para_ref",
-            return_value="",
-        ),
+        patch(_PM_PATCH, return_value=mock_pm),
+        patch(_JS_PATCH),
+        patch(_PUSH_PATCH),
+        patch(_LOOKUP_PATCH, return_value=""),
     ):
         from promptgrimoire.pages.annotation.highlights import _add_highlight
 
-        with contextlib.suppress(TimeoutError):
-            await _add_highlight(state, "test-tag")
+        await _add_highlight(state, "test-tag")
 
     assert state.processing_highlight is False

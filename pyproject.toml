@@ -258,6 +258,7 @@ log_file = "test-debug.log"
 log_file_level = "WARNING"
 filterwarnings = [
     # SQLModel session.execute() warning handled in tests/conftest.py
+    "ignore:Test version of Stytch not intended for production use:UserWarning",
 ]
 
 [tool.ty.rules]

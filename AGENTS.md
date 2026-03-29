@@ -21,6 +21,7 @@ PromptGrimoire is a collaborative "classroom grimoire" for prompt iteration, ann
 - **Smoke Marker**: The `smoke` marker is auto-applied by `requires_latex`, `requires_full_latexmk`, and `requires_pandoc` decorators. Smoke tests are excluded from the unit lane and run in their own lane.
 - **E2E Locators**: All interactable UI elements must have `data-testid` attributes. E2E tests must use `page.get_by_test_id()`. Never locate by visible text, placeholder, or Quasar CSS classes.
 - **NiceGUI Slot Safety**: (1) Execute side-effects (`ui.notify`, etc.) BEFORE container rebuilds that may destroy dialog canary elements and invalidate slot contexts. (2) Guard `element.delete()` with `element.is_deleted` check -- concurrent rebuilds can GC elements first. See `docs/postmortems/2026-03-20-slot-deletion-investigation-369.md`.
+- **No `await run_javascript()`**: All `run_javascript()` calls in production code must be fire-and-forget (no `await`). Awaiting blocks the asyncio event loop for a full browser round-trip. Data previously fetched via JS round-trips must be included in event payloads instead. AST guard test (`test_run_javascript_guard.py`) enforces this structurally.
 
 ### 3. Philosophical Testing Standard (The "Thing Itself")
 - **No YOLO Synchronization**: Do not use arbitrary sleeps or wait for vague UI epiphenomena.

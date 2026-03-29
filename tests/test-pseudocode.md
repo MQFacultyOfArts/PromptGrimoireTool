@@ -7861,3 +7861,216 @@ It catches any divergence that would cause highlights to render at wrong positio
 6. Assert PDF size > 5000 bytes
 
 **Verifies:** Full CJK + emoji PDF compilation through the E2E pipeline, exercising luaotfload color-emoji cache path
+
+## Fire-and-Forget JS Guard (#454)
+
+### AST guard: no await run_javascript in production
+**File:** tests/unit/test_run_javascript_guard.py::test_no_await_run_javascript_in_production
+1. Walk all .py files under src/promptgrimoire/ (excluding allowlisted spike pages)
+2. Parse each file's AST, find Await nodes wrapping a Call to run_javascript
+3. Collect violations with file path and line number
+4. Assert zero violations
+5. Assert scanned > 50 files (sanity check against misconfigured path)
+
+**Verifies:** No production code blocks the asyncio event loop with `await run_javascript()`
+
+### Allowlist contains only spike/demo pages
+**File:** tests/unit/test_run_javascript_guard.py::test_allowlist_exact_set
+1. Assert the _ALLOWLIST set equals {milkdown_spike, text_selection, highlight_api_demo}
+
+**Verifies:** Allowlist is deliberate, not accidentally permissive
+
+### Synthetic violation is detected
+**File:** tests/unit/test_run_javascript_guard.py::test_synthetic_violation_detected
+1. Feed a synthetic snippet containing `await ui.run_javascript(...)` to the scanner
+2. Assert exactly one violation returned with correct line number
+
+**Verifies:** The scanner actually catches the pattern it claims to guard against
+
+## Broadcast Fire-and-Forget (#454)
+
+### Cursor broadcast is synchronous
+**File:** tests/unit/test_broadcast_fire_and_forget.py::TestCursorBroadcast
+1. Create two-client workspace presence (sender + receiver)
+2. Call _broadcast_cursor_update with a char_index
+3. Assert receiver's run_javascript was called (fire-and-forget)
+4. Verify _broadcast_cursor_update is not a coroutine function
+5. Verify run_javascript is called without await (not wrapped in Await AST node)
+
+**Verifies:** Cursor updates don't block the event loop per peer
+
+### Selection broadcast is synchronous
+**File:** tests/unit/test_broadcast_fire_and_forget.py::TestSelectionBroadcast
+1. Same two-client setup as cursor tests
+2. Call _broadcast_selection_update with start/end range
+3. Assert fire-and-forget JS delivery to receiver
+
+**Verifies:** Selection broadcasts are non-blocking
+
+### Client delete removes cursors fire-and-forget
+**File:** tests/unit/test_broadcast_fire_and_forget.py::TestClientDeleteRemoval
+1. Create two-client presence, delete one
+2. Assert remaining client receives removal JS via fire-and-forget run_javascript
+
+**Verifies:** Cursor cleanup on disconnect doesn't block
+
+### Broken client doesn't block others
+**File:** tests/unit/test_broadcast_fire_and_forget.py::TestBrokenClientIsolation
+1. Create three-client presence, make one client's run_javascript raise
+2. Broadcast cursor to all
+3. Assert the third (healthy) client still receives the broadcast
+
+**Verifies:** Error isolation in broadcast loop (one broken client can't DOS others)
+
+## Editor Init Fire-and-Forget (#454)
+
+### Editor init JS is a single bundled block
+**File:** tests/unit/test_editor_init_fire_and_forget.py::TestBuildEditorInitJs
+1. Call _build_editor_init_js with mock CRDT doc (with/without state, markdown, seed)
+2. Assert returned JS contains _createMilkdownEditor, emitEvent('editor_ready')
+3. When full_state exists, assert _applyRemoteUpdate is in the same block
+4. When seed markdown exists, assert _setMilkdownMarkdown is included
+5. Assert _flushRespondMarkdownNow function is defined in the block
+
+**Verifies:** All editor setup happens in one fire-and-forget JS execution, not multiple round-trips
+
+## Editor Ready Event (#454)
+
+### editor_ready {status:'ok'} sets has_milkdown_editor
+**File:** tests/unit/test_editor_ready_event.py::TestEditorReadyOk
+1. Create PageState + _RemotePresence entry with has_milkdown_editor=False
+2. Call _handle_editor_ready with {status: 'ok'} event
+3. Assert state.has_milkdown_editor is True
+4. Assert presence entry's has_milkdown_editor is True
+
+**Verifies:** Readiness gating works -- Yjs relay only starts after editor confirms init
+
+### editor_ready {status:'error'} does NOT set flag
+**File:** tests/unit/test_editor_ready_event.py::TestEditorReadyError
+1. Call _handle_editor_ready with {status: 'error', error: 'timeout'}
+2. Assert state.has_milkdown_editor remains False
+
+**Verifies:** Failed init doesn't activate Yjs relay (would cause JS errors)
+
+### Yjs relay skips clients without editor ready
+**File:** tests/unit/test_editor_ready_event.py::TestBroadcastYjsSkipsUnready
+1. Create client with has_milkdown_editor=False
+2. Call _broadcast_yjs_update
+3. Assert client's run_javascript was NOT called
+
+**Verifies:** Late joiners don't receive Yjs updates before their editor is ready
+
+## Markdown Sync Event (#454)
+
+### Yjs update handler writes markdown from event payload
+**File:** tests/unit/test_markdown_sync_event.py::TestMarkdownSyncViaEvent
+1. Set up _setup_yjs_event_handler with mock CRDT doc
+2. Capture the on_yjs_update callback via ui.on mock
+3. Fire event with {update: b64, markdown: '# Hello'}
+4. Assert response_draft_markdown CRDT field contains '# Hello'
+5. Assert NO run_javascript call was made
+
+**Verifies:** Markdown syncs via event payload, not JS round-trip
+
+### Missing markdown field preserves existing CRDT value
+**File:** tests/unit/test_markdown_sync_event.py::TestMissingMarkdownPreservation
+1. Pre-populate response_draft_markdown with existing content
+2. Fire respond_yjs_update with no markdown key in args
+3. Assert existing CRDT value is unchanged
+
+**Verifies:** Old clients without markdown in payload don't blank the mirror
+
+## Paste Handler Event Payload (#454)
+
+### No run_javascript in paste handler
+**File:** tests/unit/test_paste_handler_event_payload.py::TestNoBrowserCalls
+1. Parse handle_add_document_submission source AST
+2. Assert no ast.Attribute nodes with attr='run_javascript'
+
+**Verifies:** Paste handler receives all data via parameters, not JS calls
+
+### Event payload carries paste_html and platform_hint
+**File:** tests/unit/test_paste_handler_event_payload.py::TestEventPayloadIntegration
+1. Call handle_add_document_submission with paste_html="<p>hi</p>" and platform_hint="Win32"
+2. Mock process_input and add_document
+3. Assert process_input called with the paste content and platform_hint
+4. Assert function returns True on success
+
+**Verifies:** All submission data flows through function parameters
+
+## PDF Export Markdown (#454)
+
+### _extract_response_markdown is synchronous
+**File:** tests/unit/test_pdf_export_markdown.py::TestExtractResponseMarkdownAC33
+1. Assert _extract_response_markdown is not a coroutine function
+2. With crdt_doc=None, returns empty string
+3. With mock crdt_doc, returns get_response_draft_markdown() result
+
+**Verifies:** PDF export reads markdown from CRDT mirror, not via JS round-trip
+
+## Pre-Restart Flush (#454)
+
+### Flush sends fire-and-forget to all editor clients
+**File:** tests/unit/test_pre_restart_flush.py::TestFlushMilkdownFireAndForget
+1. Create workspace presence with 2 clients (one with Milkdown, one without)
+2. Call _flush_milkdown_to_crdt
+3. Assert run_javascript("window._flushRespondMarkdownNow()") called on Milkdown client only
+4. Assert asyncio.sleep(1.0) called for drain deadline
+5. Assert non-Milkdown client NOT called
+
+**Verifies:** Pre-restart flush is bounded and non-blocking
+
+### _on_markdown_flush writes to CRDT and marks dirty
+**File:** tests/unit/test_pre_restart_flush.py::TestOnMarkdownFlush
+1. Create AnnotationDocument, call _on_markdown_flush with markdown text
+2. Assert response_draft_markdown contains the text
+3. Assert mark_dirty_workspace called with correct workspace_id
+4. On second call with same text, assert no CRDT write (idempotent)
+
+**Verifies:** Flush handler persists markdown without broadcasting or updating badges
+
+### Flush structural check: no per-client await
+**File:** tests/unit/test_pre_restart_flush.py::TestFlushStructuralCheck
+1. Parse _flush_milkdown_to_crdt source AST
+2. Assert zero Await nodes wrapping run_javascript calls
+3. Assert exactly one asyncio.sleep call
+
+**Verifies:** Flush uses fire-and-forget pattern structurally (AST level)
+
+## Admin Navigation Fire-and-Forget (#454)
+
+### Pre-restart navigation is fire-and-forget
+**File:** tests/unit/test_admin_navigation_fire_and_forget.py::TestPreRestartFireAndForget
+1. Parse pre_restart_handler source AST
+2. Find all run_javascript calls, assert none are inside Await nodes
+
+**Verifies:** Pre-restart client redirect doesn't block per client
+
+### Ban disconnect is fire-and-forget
+**File:** tests/unit/test_admin_navigation_fire_and_forget.py::TestBanDisconnectFireAndForget
+1. Parse disconnect_user source, assert no await run_javascript in AST
+2. Call disconnect_user with mock clients
+3. Assert run_javascript called on each client (fire-and-forget)
+
+**Verifies:** Banning a user doesn't serially await each client redirect
+
+## Scroll Save Fire-and-Forget (#454)
+
+### Organise scroll rebuild is synchronous
+**File:** tests/unit/test_scroll_save_fire_and_forget.py::TestScrollSaveFireAndForget
+1. Assert _rebuild_organise_with_scroll is not a coroutine function
+2. Call it with mock render_fn, assert three run_javascript calls:
+   snapshot, re-attach listener, restore
+
+**Verifies:** Organise tab scroll preservation uses fire-and-forget JS
+
+## Respond Yjs Payload (JS Unit)
+
+### Event payload includes both update and markdown fields
+**File:** tests/js/respond-yjs-payload.test.js
+1. Read respond.py source file as text
+2. Assert emitEvent('respond_yjs_update') call contains `update: b64Update`
+3. Assert same call contains `markdown: window._getMilkdownMarkdown()`
+4. Extract the payload object, verify both fields in same emitEvent call
+
+**Verifies:** JS-side event emission always includes markdown alongside Yjs binary update

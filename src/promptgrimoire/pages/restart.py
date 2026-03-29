@@ -10,7 +10,6 @@ from __future__ import annotations
 import hmac
 import sys
 from typing import TYPE_CHECKING
-from uuid import UUID
 
 import structlog
 from starlette.responses import JSONResponse
@@ -77,54 +76,47 @@ def _replace_crdt_text(text_field: Any, new_value: str, doc: Any) -> None:
             text_field += new_value
 
 
-async def _flush_single_client(
-    workspace_id: str,
-    client_id: str,
-    presence: Any,
-    workspace_registry: AnnotationDocumentRegistry,
-) -> None:
-    """Flush one client's Milkdown editor content into the CRDT document."""
-    if not presence.has_milkdown_editor:
-        return
-    if not presence.nicegui_client or presence.nicegui_client._deleted:
-        return
-    try:
-        md = await presence.nicegui_client.run_javascript(
-            "window._getMilkdownMarkdown()", timeout=3.0
-        )
-        if md is None:
-            md = ""
-        crdt_doc = await workspace_registry.get_or_create_for_workspace(
-            UUID(workspace_id)
-        )
-        _replace_crdt_text(crdt_doc.response_draft_markdown, md, crdt_doc.doc)
-    except Exception:
-        logger.warning(
-            "pre_restart_flush_failed",
-            workspace_id=workspace_id,
-            client_id=client_id,
-            exc_info=True,
-        )
-
-
 async def _flush_milkdown_to_crdt() -> None:
-    """Extract Milkdown editor content and write it into CRDT documents.
+    """Fire-and-forget flush of Milkdown editor content into CRDT documents.
 
-    Iterates all connected clients with active Milkdown editors, pulls
-    the current markdown via ``window._getMilkdownMarkdown()``, and
-    writes it into the workspace's CRDT ``response_draft_markdown``
-    field.  Tolerates stale/disconnected clients by catching all
-    exceptions per-client.
+    Sends ``window._flushRespondMarkdownNow()`` to every connected client
+    with an active Milkdown editor (fire-and-forget — no per-client await).
+    Then waits a bounded 1-second drain deadline for the resulting
+    ``respond_markdown_flush`` events to arrive and be processed by each
+    client's handler in ``respond.py``.
+
+    This replaces the old per-client ``await run_javascript`` loop that
+    blocked the event loop serially for every editor client.
     """
+    import asyncio  # noqa: PLC0415
+
     workspace_presence, workspace_registry = _get_annotation_state()
     if workspace_registry is None:
         return
 
-    for workspace_id, clients in list(workspace_presence.items()):
-        for client_id, presence in list(clients.items()):
-            await _flush_single_client(
-                workspace_id, client_id, presence, workspace_registry
-            )
+    flushed = 0
+    for _workspace_id, clients in list(workspace_presence.items()):
+        for _client_id, presence in list(clients.items()):
+            if not presence.has_milkdown_editor:
+                continue
+            if not presence.nicegui_client or presence.nicegui_client._deleted:
+                continue
+            try:
+                presence.nicegui_client.run_javascript(
+                    "window._flushRespondMarkdownNow()"
+                )
+                flushed += 1
+            except Exception:
+                logger.warning(
+                    "pre_restart_flush_fire_failed",
+                    client_id=_client_id,
+                    exc_info=True,
+                )
+
+    if flushed:
+        # Bounded drain deadline — events arrive within milliseconds
+        await asyncio.sleep(1.0)
+        logger.debug("pre_restart_flush_drain", flushed_clients=flushed)
 
 
 async def pre_restart_handler(request: Request) -> JSONResponse:

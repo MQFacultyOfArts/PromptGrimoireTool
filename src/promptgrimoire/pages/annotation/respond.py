@@ -469,6 +469,49 @@ def _setup_yjs_event_handler(
     ui.on("respond_yjs_update", on_yjs_update)
 
 
+def _on_markdown_flush(
+    e: object,
+    *,
+    crdt_doc: AnnotationDocument,
+    workspace_id: UUID,
+    client_id: str,
+) -> None:
+    """Handle ``respond_markdown_flush`` event from pre-restart drain.
+
+    Writes the browser's current markdown into the CRDT
+    ``response_draft_markdown`` Text field and marks the workspace dirty
+    for persistence.  Does NOT relay to peers or update word-count badges
+    — this is shutdown capture only.
+
+    Args:
+        e: NiceGUI GenericEventArguments with ``args["markdown"]``.
+        crdt_doc: The CRDT annotation document.
+        workspace_id: Workspace UUID (str or UUID).
+        client_id: Client identifier for logging.
+    """
+    md: str = e.args.get("markdown", "")  # type: ignore[union-attr]  # NiceGUI GenericEventArguments.args is untyped
+    text_field = crdt_doc.response_draft_markdown
+    current = str(text_field)
+    if current != md:
+        with crdt_doc.doc.transaction():
+            current_len = len(text_field)
+            if current_len > 0:
+                del text_field[:current_len]
+            if md:
+                text_field += md
+    pm = get_persistence_manager()
+    pm.mark_dirty_workspace(
+        workspace_id,
+        crdt_doc.doc_id,
+        last_editor=client_id,
+    )
+    logger.debug(
+        "RESPOND_FLUSH_CAPTURE client=%s len=%d",
+        client_id[:8],
+        len(md),
+    )
+
+
 def _seed_editor_from_markdown(md: str) -> None:
     """Seed the Milkdown editor with cloned markdown content."""
     ui.context.client.run_javascript(f"window._setMilkdownMarkdown({json.dumps(md)})")
@@ -543,6 +586,10 @@ def _build_editor_init_js(
                 }});
             }}
         }})();
+        window._flushRespondMarkdownNow = function() {{
+            var md = window._getMilkdownMarkdown();
+            emitEvent('respond_markdown_flush', {{markdown: md}});
+        }};
         """
 
 
@@ -739,6 +786,18 @@ async def render_respond_tab(
             state,
             workspace_key,
             client_id,
+        ),
+    )
+
+    # Pre-restart drain: browser fires respond_markdown_flush with current
+    # editor content so the server can persist it before shutdown.
+    ui.on(
+        "respond_markdown_flush",
+        lambda e: _on_markdown_flush(
+            e,
+            crdt_doc=crdt_doc,
+            workspace_id=workspace_id,
+            client_id=client_id,
         ),
     )
 

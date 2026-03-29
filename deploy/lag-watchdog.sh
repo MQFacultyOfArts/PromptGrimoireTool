@@ -17,9 +17,9 @@ SERVICE="promptgrimoire"
 
 prev_lag=0
 strike_count=0
-cooldown_until=0  # epoch seconds — suppress strikes until this time
+cooldown_until=$(( $(date +%s) + 120 ))  # suppress strikes for 2min on startup too
 
-echo "lag-watchdog: instant restart >${CRITICAL}ms, escalating restart >${WARN}ms x2"
+echo "lag-watchdog: kill >${CRITICAL}ms | escalate >${WARN}ms x2 | 2min cooldown active"
 echo "---"
 
 journalctl -u "$SERVICE" -f --output cat | while IFS= read -r line; do

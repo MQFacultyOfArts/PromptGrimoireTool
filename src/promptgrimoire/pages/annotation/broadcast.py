@@ -93,10 +93,10 @@ def _update_user_count(state: PageState) -> None:
     state.user_count_badge.set_text(label)
 
 
-async def _broadcast_js_to_others(
+def _broadcast_js_to_others(
     workspace_key: str, exclude_client_id: str, js: str
 ) -> None:
-    """Send a JS snippet to every other client in the workspace.
+    """Send a JS snippet to every other client in the workspace (fire-and-forget).
 
     Skips clients without a ``nicegui_client`` reference and suppresses
     individual send failures so one broken connection cannot block others.
@@ -105,7 +105,7 @@ async def _broadcast_js_to_others(
         if cid == exclude_client_id or presence.nicegui_client is None:
             continue
         with contextlib.suppress(Exception):
-            await presence.nicegui_client.run_javascript(js, timeout=2.0)
+            presence.nicegui_client.run_javascript(js, timeout=2.0)
 
 
 def _notify_other_clients(workspace_key: str, exclude_client_id: str) -> None:
@@ -133,19 +133,19 @@ def _rebuild_tag_state_from_crdt(state: PageState) -> None:
     state.tag_info_list = workspace_tags_from_crdt(state.crdt_doc)
 
 
-async def _broadcast_cursor_update(
+def _broadcast_cursor_update(
     workspace_key: str,
     client_id: str,
     state: PageState,
     char_index: int | None,
 ) -> None:
-    """Broadcast cursor position to all other clients in the workspace."""
+    """Broadcast cursor position to all other clients (fire-and-forget)."""
     clients = _workspace_presence.get(workspace_key, {})
     if client_id in clients:
         clients[client_id].cursor_char = char_index
     if char_index is None:
         js = _render_js(t"removeRemoteCursor({client_id})")
-        await _broadcast_js_to_others(workspace_key, client_id, js)
+        _broadcast_js_to_others(workspace_key, client_id, js)
         return
     color = state.user_color
     ctnr_id = state.doc_container_id
@@ -170,27 +170,27 @@ async def _broadcast_cursor_update(
             t"    {name}, {color})"
         )
         with contextlib.suppress(Exception):
-            await presence.nicegui_client.run_javascript(
+            presence.nicegui_client.run_javascript(
                 js,
                 timeout=2.0,
             )
 
 
-async def _broadcast_selection_update(
+def _broadcast_selection_update(
     workspace_key: str,
     client_id: str,
     state: PageState,
     start: int | None,
     end: int | None,
 ) -> None:
-    """Broadcast text selection to all other clients in the workspace."""
+    """Broadcast text selection to all other clients (fire-and-forget)."""
     clients = _workspace_presence.get(workspace_key, {})
     if client_id in clients:
         clients[client_id].selection_start = start
         clients[client_id].selection_end = end
     if start is None or end is None:
         js = _render_js(t"removeRemoteSelection({client_id})")
-        await _broadcast_js_to_others(workspace_key, client_id, js)
+        _broadcast_js_to_others(workspace_key, client_id, js)
         return
     color = state.user_color
     for cid, presence in list(clients.items()):
@@ -213,7 +213,7 @@ async def _broadcast_selection_update(
             t"    {name}, {color}, {ctnr})"
         )
         with contextlib.suppress(Exception):
-            await presence.nicegui_client.run_javascript(
+            presence.nicegui_client.run_javascript(
                 js,
                 timeout=2.0,
             )
@@ -306,7 +306,7 @@ async def _handle_client_delete(
                 and not presence.nicegui_client._deleted
             ):
                 with contextlib.suppress(Exception):
-                    await presence.nicegui_client.run_javascript(
+                    presence.nicegui_client.run_javascript(
                         removal_js,
                         timeout=2.0,
                     )
@@ -351,7 +351,7 @@ async def _handle_remote_update(state: PageState) -> None:
         state.refresh_annotations(trigger="crdt_broadcast")
     if state.active_tab == "Organise":
         if state.refresh_organise_with_scroll:
-            await state.refresh_organise_with_scroll()
+            state.refresh_organise_with_scroll()
         elif state.refresh_organise:
             state.refresh_organise()
     if state.active_tab == "Respond" and state.refresh_respond_references:
@@ -381,8 +381,8 @@ def _setup_client_sync(
 
     state.broadcast_update = broadcast_update
 
-    async def broadcast_cursor(char_index: int | None) -> None:
-        await _broadcast_cursor_update(
+    def broadcast_cursor(char_index: int | None) -> None:
+        _broadcast_cursor_update(
             workspace_key,
             client_id,
             state,
@@ -391,8 +391,8 @@ def _setup_client_sync(
 
     state.broadcast_cursor = broadcast_cursor
 
-    async def broadcast_selection(start: int | None, end: int | None) -> None:
-        await _broadcast_selection_update(
+    def broadcast_selection(start: int | None, end: int | None) -> None:
+        _broadcast_selection_update(
             workspace_key,
             client_id,
             state,
@@ -516,14 +516,20 @@ async def revoke_and_redirect(workspace_id: UUID, user_id: UUID) -> int:
     for client_id in clients_to_remove:
         presence = _workspace_presence[workspace_key].get(client_id)
         if presence and presence.nicegui_client is not None:
-            with contextlib.suppress(Exception):
-                await presence.nicegui_client.run_javascript(
+            try:
+                presence.nicegui_client.run_javascript(
                     'Quasar.Notify.create({type: "negative", '
                     'message: "Your access has been revoked"}); '
                     'window.location.href = "/courses";',
                     timeout=2.0,
                 )
                 notified += 1
+            except Exception:
+                logger.warning(
+                    "revoke_redirect_failed",
+                    client_id=client_id,
+                    exc_info=True,
+                )
 
         # Remove from registry
         _workspace_presence[workspace_key].pop(client_id, None)

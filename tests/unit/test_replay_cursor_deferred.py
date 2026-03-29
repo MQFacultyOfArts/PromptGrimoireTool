@@ -21,7 +21,7 @@ Traceability:
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -185,18 +185,17 @@ class TestLiveBroadcastScriptGuard:
     Live broadcasts during this window must not crash silently.
     """
 
-    @pytest.mark.asyncio
-    async def test_cursor_broadcast_guards_typeof(self) -> None:
+    def test_cursor_broadcast_guards_typeof(self) -> None:
         """_broadcast_cursor_update JS must check typeof before
         calling renderRemoteCursor."""
         ws_key = "test-ws"
         receiver = MagicMock()
         captured_js: list[str] = []
 
-        async def capture(js: str, **_kw: object) -> None:
+        def capture(js: str, **_kw: object) -> None:
             captured_js.append(js)
 
-        receiver.run_javascript = AsyncMock(side_effect=capture)
+        receiver.run_javascript = MagicMock(side_effect=capture)
 
         _workspace_presence[ws_key] = {
             "sender": _make_presence(),
@@ -214,7 +213,7 @@ class TestLiveBroadcastScriptGuard:
         state.user_color = "#e91e63"
         state.user_id = "user-a-id"
 
-        await _broadcast_cursor_update(ws_key, "sender", state, char_index=15)
+        _broadcast_cursor_update(ws_key, "sender", state, char_index=15)
 
         assert len(captured_js) == 1
         js = captured_js[0]
@@ -224,18 +223,17 @@ class TestLiveBroadcastScriptGuard:
             "loading scripts"
         )
 
-    @pytest.mark.asyncio
-    async def test_selection_broadcast_guards_typeof(self) -> None:
+    def test_selection_broadcast_guards_typeof(self) -> None:
         """_broadcast_selection_update JS must check typeof before
         calling renderRemoteSelection."""
         ws_key = "test-ws"
         receiver = MagicMock()
         captured_js: list[str] = []
 
-        async def capture(js: str, **_kw: object) -> None:
+        def capture(js: str, **_kw: object) -> None:
             captured_js.append(js)
 
-        receiver.run_javascript = AsyncMock(side_effect=capture)
+        receiver.run_javascript = MagicMock(side_effect=capture)
 
         _workspace_presence[ws_key] = {
             "sender": _make_presence(),
@@ -253,7 +251,7 @@ class TestLiveBroadcastScriptGuard:
         state.user_color = "#e91e63"
         state.user_id = "user-a-id"
 
-        await _broadcast_selection_update(ws_key, "sender", state, start=5, end=20)
+        _broadcast_selection_update(ws_key, "sender", state, start=5, end=20)
 
         assert len(captured_js) == 1
         js = captured_js[0]

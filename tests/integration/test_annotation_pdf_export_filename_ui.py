@@ -12,10 +12,9 @@ Feature borders tested:
 Mocks (environment, not seam):
 - ``_server_local_export_date``: controls the date segment of the filename
 - ``_start_export_polling``: prevents background timer (no worker in test)
-- ``_extract_response_markdown``: NiceGUI test harness has no JS runtime,
-  so ``ui.run_javascript`` for Milkdown extraction would timeout or fail
-  non-deterministically. Returns empty string (response text is irrelevant
-  to filename policy).
+- ``_extract_response_markdown``: Now reads from the CRDT mirror (no JS
+  round-trip), but the test harness has no CRDT state. Returns empty string
+  (response text is irrelevant to filename policy).
 
 NiceGUI dispatches async click handlers as background tasks via
 ``handle_event`` → ``background_tasks.create()``. So after firing the
@@ -225,15 +224,15 @@ def _apply_export_mocks(monkeypatch: pytest.MonkeyPatch) -> None:
 
     monkeypatch.setattr(pdf_mod, "_server_local_export_date", lambda: FIXED_DATE)
     monkeypatch.setattr(pdf_mod, "_start_export_polling", lambda *_a, **_kw: None)
-    # NiceGUI test harness has no JS runtime — ui.run_javascript would
-    # timeout non-deterministically. Response text feeds notes_latex
-    # (pdf_export.py:499), not the filename under test, so this mock
-    # is inert for the filename assertion.
+    # _extract_response_markdown now reads from the CRDT mirror (sync),
+    # but the test harness has no CRDT state. Response text feeds
+    # notes_latex (pdf_export.py:499), not the filename under test,
+    # so this mock is inert for the filename assertion.
 
-    async def _no_js_markdown(_state: object) -> str:
+    def _no_crdt_markdown(_state: object) -> str:
         return ""
 
-    monkeypatch.setattr(pdf_mod, "_extract_response_markdown", _no_js_markdown)
+    monkeypatch.setattr(pdf_mod, "_extract_response_markdown", _no_crdt_markdown)
 
 
 async def _click_export_and_wait_for_job(

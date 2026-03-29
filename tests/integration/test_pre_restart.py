@@ -69,7 +69,13 @@ class TestPreRestartFlush:
 
     @pytest.mark.asyncio
     async def test_flushes_milkdown_persists_and_navigates(self) -> None:
-        """AC2.1+AC2.2+AC2.4: extract -> persist -> navigate ordering."""
+        """Fire-and-forget flush -> persist -> navigate -> invalidate ordering.
+
+        After #454 Phase 2 Task 3, _flush_milkdown_to_crdt sends
+        _flushRespondMarkdownNow fire-and-forget (no per-client await),
+        then sleeps 1.0s for the drain deadline. The test verifies the
+        overall ordering: flush JS sent, persist, navigate, invalidate.
+        """
         from promptgrimoire.pages.restart import pre_restart_handler
 
         call_order: list[str] = []
@@ -80,56 +86,23 @@ class TestPreRestartFlush:
         mock_client._deleted = False
         mock_client.id = "test-client-1"
 
-        async def tracking_run_js(code: str, timeout: float = 5.0) -> object:  # noqa: ARG001
-            # _flush_single_client still awaits run_javascript for extraction
-            if "getMilkdownMarkdown" in code:
-                call_order.append("extract_milkdown")
-                return "# Draft markdown"
-            # Navigation is fire-and-forget (not awaited) — track it anyway
+        def tracking_run_js(code: str, timeout: float = 5.0) -> None:  # noqa: ARG001
+            # Fire-and-forget _flushRespondMarkdownNow
+            if "_flushRespondMarkdownNow" in code:
+                call_order.append("flush_fire")
+                return None
+            # Navigation is also fire-and-forget
             if "restarting" in code:
                 call_order.append("navigate")
                 return None
             return None
 
-        # Use a real function that returns a coroutine when awaited (flush)
-        # and tracks when called synchronously (navigate).
-        original_side_effect = tracking_run_js
-
-        def sync_or_async_run_js(
-            code: str,
-            timeout: float = 5.0,
-        ) -> object:
-
-            # For navigation (fire-and-forget, not awaited), track directly
-            if "restarting" in code:
-                call_order.append("navigate")
-                return None
-            # For extraction (awaited), return a coroutine
-            return original_side_effect(code, timeout)
-
-        mock_client.run_javascript = MagicMock(side_effect=sync_or_async_run_js)
+        mock_client.run_javascript = MagicMock(side_effect=tracking_run_js)
 
         # Mock presence
         mock_presence = MagicMock()
         mock_presence.has_milkdown_editor = True
         mock_presence.nicegui_client = mock_client
-
-        # Mock CRDT doc
-        mock_text_field = MagicMock()
-        mock_text_field.__str__ = lambda _self: ""
-        mock_text_field.__len__ = lambda _self: 0
-        mock_text_field.__iadd__ = lambda _self, _other: _self
-        mock_crdt_doc = MagicMock()
-        mock_crdt_doc.response_draft_markdown = mock_text_field
-        mock_crdt_doc.doc.transaction.return_value.__enter__ = MagicMock()
-        mock_crdt_doc.doc.transaction.return_value.__exit__ = MagicMock(
-            return_value=False
-        )
-
-        mock_registry = AsyncMock()
-        mock_registry.get_or_create_for_workspace = AsyncMock(
-            return_value=mock_crdt_doc
-        )
 
         mock_persist_mgr = MagicMock()
 
@@ -159,7 +132,7 @@ class TestPreRestartFlush:
             patch("nicegui.Client", mock_client_class),
             patch(
                 "promptgrimoire.pages.restart._get_annotation_state",
-                return_value=(presence_dict, mock_registry),
+                return_value=(presence_dict, MagicMock()),
             ),
             patch(
                 "promptgrimoire.crdt.persistence.get_persistence_manager",
@@ -174,14 +147,14 @@ class TestPreRestartFlush:
 
         assert resp.status_code == 200
 
-        # AC2.4: extraction before persist
-        assert call_order.index("extract_milkdown") < call_order.index("persist")
+        # Fire-and-forget flush before persist
+        assert call_order.index("flush_fire") < call_order.index("persist")
         # Navigate before invalidate — clients still rendering will crash
         # on `assert auth_user is not None` if sessions vanish mid-load.
         assert call_order.index("navigate") < call_order.index("invalidate")
         # All four steps happened
         assert set(call_order) == {
-            "extract_milkdown",
+            "flush_fire",
             "persist",
             "navigate",
             "invalidate",

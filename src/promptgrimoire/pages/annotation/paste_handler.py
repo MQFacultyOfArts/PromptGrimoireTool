@@ -27,8 +27,6 @@ if TYPE_CHECKING:
     from collections.abc import Callable
     from uuid import UUID
 
-    from nicegui.elements.editor import Editor
-
     from promptgrimoire.input_pipeline.html_input import ContentType
 
 logger = structlog.get_logger()
@@ -36,15 +34,24 @@ logger = structlog.get_logger()
 
 async def handle_add_document_submission(
     workspace_id: UUID,
-    content_input: Editor,
-    paste_var: str,
-    platform_var: str,
+    paste_html: str | None,
+    platform_hint: str | None,
+    editor_content: str,
     on_document_added: Callable[[], object],
 ) -> None:
-    """Process the editor contents and persist a new source document."""
-    stored = await ui.run_javascript(f"window.{paste_var}")
-    platform_hint = await ui.run_javascript(f"window.{platform_var}")
-    content, from_paste = (stored, True) if stored else (content_input.value, False)
+    """Process the editor contents and persist a new source document.
+
+    All values arrive via the event payload — no ``ui.run_javascript``
+    calls are made in this function.
+
+    Args:
+        workspace_id: Target workspace.
+        paste_html: HTML captured from a paste event, or *None*.
+        platform_hint: Browser platform string, or *None*.
+        editor_content: Current QEditor DOM value (fallback).
+        on_document_added: Callback after successful persistence.
+    """
+    content, from_paste = (paste_html, True) if paste_html else (editor_content, False)
 
     if not content or not content.strip():
         ui.notify("Please enter or paste some content", type="warning")
@@ -90,7 +97,6 @@ async def handle_add_document_submission(
             auto_number_paragraphs=auto_number,
             paragraph_map=para_map,
         )
-        content_input.value = ""
         ui.notify("Document added successfully", type="positive")
         on_document_added()
     except Exception as exc:

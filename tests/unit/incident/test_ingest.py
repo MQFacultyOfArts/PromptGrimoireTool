@@ -119,6 +119,7 @@ class TestFormatToTable:
         ("filename", "expected"),
         [
             ("journal.json", "journal"),
+            ("worker-journal.json", "journal"),
             ("structlog.jsonl", "jsonl"),
             ("haproxy.log", "haproxy"),
             ("postgresql.log", "pglog"),

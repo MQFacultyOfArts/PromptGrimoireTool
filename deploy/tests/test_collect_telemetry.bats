@@ -223,3 +223,41 @@ EOF
     [ "$(manifest_query '[.files[] | select(.filename == "postgresql.log")] | length')" -eq 1 ]
     [ "$(manifest_query '[.files[] | select(.filename == "postgresql.json")] | length')" -eq 1 ]
 }
+
+@test "worker journal is collected when worker service has entries" {
+    : >"$JSONL_FILE"
+    : >"$HAPROXY_FILE"
+    : >"$PG_DIR/postgresql-16-main.log"
+
+    run_collect
+    [ "$status" -eq 0 ]
+    extract_tarball
+
+    [ -f "$EXTRACT_DIR/worker-journal.json" ]
+    [ -s "$EXTRACT_DIR/worker-journal.json" ]
+    [ "$(manifest_query '[.files[] | select(.filename == "worker-journal.json")] | length')" -eq 1 ]
+}
+
+@test "worker journal is omitted when worker service has no entries" {
+    : >"$JSONL_FILE"
+    : >"$HAPROXY_FILE"
+    : >"$PG_DIR/postgresql-16-main.log"
+
+    # Override journalctl to produce empty output for the worker unit
+    cat >"$BIN_DIR/journalctl" <<'FAKE_EOF'
+#!/usr/bin/env bash
+# Only produce output for the main unit, not the worker
+if [[ "$*" == *"promptgrimoire-worker"* ]]; then
+    exit 0
+fi
+printf '%s\n' '{"__REALTIME_TIMESTAMP":"1773637200000000","MESSAGE":"journal event"}'
+FAKE_EOF
+    chmod +x "$BIN_DIR/journalctl"
+
+    run_collect
+    [ "$status" -eq 0 ]
+    extract_tarball
+
+    [ ! -f "$EXTRACT_DIR/worker-journal.json" ]
+    [ "$(manifest_query '[.files[] | select(.filename == "worker-journal.json")] | length')" -eq 0 ]
+}

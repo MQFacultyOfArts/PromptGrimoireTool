@@ -24,6 +24,7 @@ PG_COLLECTOR_DIR="${PG_COLLECTOR_DIR:-}"
 # NOTE: PG_COLLECTOR_DIR auto-detection (sudo -u postgres psql) is deferred
 # to after argument parsing so that --help / usage paths don't require sudo.
 UNIT_NAME="${UNIT_NAME:-promptgrimoire.service}"
+WORKER_UNIT_NAME="${WORKER_UNIT_NAME:-promptgrimoire-worker.service}"
 DB_NAME="${DB_NAME:-promptgrimoire}"
 DB_USER="${DB_USER:-promptgrimoire}"
 
@@ -131,6 +132,25 @@ if ! journalctl --unit="$UNIT_NAME" --output=json \
 fi
 # --since/--until use local time by default, matching our local input.
 # Empty window → empty file (AC1.5).
+
+# -------------------------------------------------------------------
+# 1b. Export worker systemd journal as JSON (standalone export worker)
+# -------------------------------------------------------------------
+step "Exporting worker journal (JSON)..."
+WORKER_JOURNAL_FILE="$WORKDIR/worker-journal.json"
+WORKER_JOURNAL_METHOD="journalctl --since/--until"
+if ! journalctl --unit="$WORKER_UNIT_NAME" --output=json \
+    --since="$START" --until="$END" \
+    > "$WORKER_JOURNAL_FILE" 2>"$WORKDIR/worker-journal.stderr"; then
+    warn "worker journalctl failed (see worker-journal.stderr in tarball)"
+    WORKER_JOURNAL_METHOD="journalctl (failed)"
+    touch "$WORKER_JOURNAL_FILE"
+fi
+# Remove if empty (worker may not be running as standalone service).
+if [[ ! -s "$WORKER_JOURNAL_FILE" ]]; then
+    rm -f "$WORKER_JOURNAL_FILE"
+    step "  (no worker journal entries — worker may be in-process)"
+fi
 
 # -------------------------------------------------------------------
 # 2. Filter application JSONL log by timestamp window
@@ -457,7 +477,8 @@ for f in "$WORKDIR"/*; do
     fi
     # Determine source path and method for each file.
     case "$fname" in
-        journal.json)     FILES_JSON+=$(file_entry "$f" "journalctl" "$JOURNAL_METHOD") ;;
+        journal.json)         FILES_JSON+=$(file_entry "$f" "journalctl" "$JOURNAL_METHOD") ;;
+        worker-journal.json)  FILES_JSON+=$(file_entry "$f" "journalctl ($WORKER_UNIT_NAME)" "$WORKER_JOURNAL_METHOD") ;;
         structlog.jsonl)  FILES_JSON+=$(file_entry "$f" "${JSONL_SOURCES:-$JSONL_LOG}" "$JSONL_METHOD") ;;
         haproxy.log)      FILES_JSON+=$(file_entry "$f" "${HAPROXY_SOURCES:-$HAPROXY_LOG}" "$HAPROXY_METHOD") ;;
         postgresql*)      FILES_JSON+=$(file_entry "$f" "${PG_SOURCE:-unknown}" "$PG_METHOD") ;;

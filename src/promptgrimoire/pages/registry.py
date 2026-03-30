@@ -178,10 +178,11 @@ def page_route(
                 logger.debug("storage_unavailable", route=route)
             except AssertionError:
                 # Session identity mismatch — session_id not in _users.
-                # Log with full context for correlation with middleware log.
-                # exc_info=True ensures DiscordAlertProcessor fires and
-                # includes the exception type in the dedup key.
-                logger.error(
+                # Known race: request arrives before storage middleware
+                # initialises the session. Not an application error —
+                # the page handler treats the user as unauthenticated.
+                # Downgraded from error to warning to avoid Discord pings.
+                logger.warning(
                     "session_storage_assertion_failed",
                     route=route,
                     ctx_session_id=_ctx_session_id,

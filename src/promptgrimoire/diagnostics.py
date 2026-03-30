@@ -280,6 +280,11 @@ async def graceful_memory_shutdown(*, rss_mb: int, threshold_mb: int) -> None:
     )
     await _flush_milkdown_to_crdt()
     await _persist_dirty_workspaces()
+    # Clear admission queue before navigating clients to /restarting
+    from promptgrimoire.admission import get_admission_state  # noqa: PLC0415
+
+    with contextlib.suppress(RuntimeError):
+        get_admission_state().clear()
     # Navigate BEFORE invalidating — clients still rendering pages will
     # hit `assert auth_user is not None` if sessions vanish mid-load.
     await _navigate_clients_to_restarting()

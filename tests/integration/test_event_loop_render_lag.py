@@ -105,16 +105,19 @@ class TestCardBuildTime:
 
         # --- Extract card_diff_add event ---
         diff_events = [e for e in cap if e.get("event") == "card_diff_add"]
-        assert len(diff_events) >= 1, (
-            f"Expected at least 1 card_diff_add event, got {len(diff_events)}. "
+        # Exactly one diff-add cycle expected; a second would indicate a rebuild race
+        assert len(diff_events) == 1, (
+            f"Expected exactly 1 card_diff_add event, got {len(diff_events)}. "
             f"Captured events: {[e.get('event') for e in cap]}"
         )
 
-        # Use the first (and typically only) card_diff_add event
         diff_event = diff_events[0]
         elapsed_ms: float = diff_event["elapsed_ms"]
         added_count: int = diff_event["added_count"]
-        per_card_ms = elapsed_ms / added_count if added_count > 0 else 0.0
+        assert added_count > 0, (
+            "added_count is 0 — workspace may have rehydrated without highlights"
+        )
+        per_card_ms = elapsed_ms / added_count
 
         # --- Lag sampler diagnostic (informational only) ---
         peak_lag = max(lag_samples) if lag_samples else 0.0

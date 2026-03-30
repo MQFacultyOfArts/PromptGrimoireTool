@@ -415,6 +415,20 @@ async def _healthz(_request):
 
 app.routes.insert(0, Route("/healthz", _healthz, methods=["GET", "HEAD"]))
 
+# Queue page and status API (raw Starlette, zero NiceGUI overhead)
+from promptgrimoire.queue_handlers import queue_page_handler, queue_status_handler
+
+app.routes.insert(
+    0, Route("/api/queue/status", queue_status_handler, methods=["GET"])
+)
+app.routes.insert(0, Route("/queue", queue_page_handler, methods=["GET"]))
+
+# Initialise admission gate so /queue and /api/queue/status work
+from promptgrimoire.admission import init_admission
+from promptgrimoire.config import get_settings
+
+init_admission(get_settings().admission)
+
 # Session identity page — exercises the full @ui.page path for #438 testing.
 @ui.page("/test/session-identity")
 async def _session_identity_page():

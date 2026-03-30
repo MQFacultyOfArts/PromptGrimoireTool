@@ -360,7 +360,7 @@ Structured JSON logging via structlog. Full details in [docs/logging.md](docs/lo
 The export worker (PDF compilation) can run in two modes controlled by `FEATURES__WORKER_IN_PROCESS` (default: `true`):
 
 - **In-process** (`true`): Export worker runs as an `asyncio.Task` inside the NiceGUI app process. Simpler, single-process deployment.
-- **Standalone** (`false`): Export worker runs as a separate systemd service (`promptgrimoire-worker.service`). Uses `python -m promptgrimoire.export.worker_main`. Isolates CPU-heavy LaTeX compilation from the web process. Uses `NullPool` (`DATABASE__USE_NULL_POOL=true`) since only one connection is needed.
+- **Standalone** (`false`): Export worker runs as a separate systemd service (`promptgrimoire-worker.service`). Uses `python -m promptgrimoire.export.worker_main`. Isolates CPU-heavy LaTeX compilation from the web process. Shares the app's pool configuration (QueuePool behind PgBouncer).
 
 **Standalone worker contracts:**
 - `sd_notify.py` sends `READY=1`, `WATCHDOG=1` (each poll cycle), `STOPPING=1` to systemd
@@ -371,7 +371,7 @@ The export worker (PDF compilation) can run in two modes controlled by `FEATURES
 **Config additions:**
 - `EXPORT__MAX_CONCURRENT_COMPILATIONS` (int, default 2): Semaphore limit for parallel LaTeX compilations
 - `FEATURES__WORKER_IN_PROCESS` (bool, default true): In-process vs standalone worker mode
-- `DATABASE__USE_NULL_POOL` (bool, default false): Use NullPool instead of QueuePool (for standalone worker)
+- `DATABASE__USE_NULL_POOL` (bool, default false): Use NullPool instead of QueuePool (for environments without PgBouncer)
 
 ## Conventions
 

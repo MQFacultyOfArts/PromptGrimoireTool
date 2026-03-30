@@ -100,7 +100,57 @@ jobs:
         run: uv run playwright install --with-deps chromium
 
       - name: Run slow nightly test suite
+        id: run-tests
         run: uv run grimoire e2e slow
+
+      - name: Write job summary
+        if: always()
+        run: |
+          echo "## Nightly E2E Slow Results" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Lane | Status | Log |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|------|--------|-----|" >> "$GITHUB_STEP_SUMMARY"
+
+          # Scan each log file for pass/fail status
+          overall_ok=true
+          for log in test-unit.log test-integration.log test-smoke.log test-blns-extra.log; do
+            if [ ! -f "$log" ]; then
+              continue
+            fi
+            lane="${log#test-}"
+            lane="${lane%.log}"
+            if grep -q "^FAILED " "$log" || grep -q "^=.*failed" "$log"; then
+              echo "| $lane | :x: FAIL | \`$log\` |" >> "$GITHUB_STEP_SUMMARY"
+              overall_ok=false
+            else
+              echo "| $lane | :white_check_mark: PASS | \`$log\` |" >> "$GITHUB_STEP_SUMMARY"
+            fi
+          done
+
+          # JS and BATS don't produce log files — check exit code from step
+          if [ "${{ steps.run-tests.outcome }}" = "failure" ] && [ "$overall_ok" = "true" ]; then
+            echo "| js/bats/playwright | :x: FAIL | (no log file — check step output) |" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+
+          # Extract FAILURES sections from each failed log for copy-paste debugging
+          for log in test-unit.log test-integration.log test-smoke.log test-blns-extra.log; do
+            if [ ! -f "$log" ]; then
+              continue
+            fi
+            if grep -q "^FAILED \|^=.*failed" "$log"; then
+              lane="${log#test-}"
+              lane="${lane%.log}"
+              echo "### Failures: $lane" >> "$GITHUB_STEP_SUMMARY"
+              echo "" >> "$GITHUB_STEP_SUMMARY"
+              echo '```' >> "$GITHUB_STEP_SUMMARY"
+              # Print from "= FAILURES =" through "= short test summary ="
+              sed -n '/^=\+ FAILURES =\+$/,/^=\+ short test summary/p' "$log" >> "$GITHUB_STEP_SUMMARY"
+              echo '```' >> "$GITHUB_STEP_SUMMARY"
+              echo "" >> "$GITHUB_STEP_SUMMARY"
+            fi
+          done
 
       - name: Upload nightly slow artifacts
         if: failure()

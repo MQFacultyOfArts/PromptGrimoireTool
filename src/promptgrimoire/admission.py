@@ -37,6 +37,19 @@ class AdmissionState:
     _tickets: dict[UUID, float] = field(default_factory=dict)
 
     # ------------------------------------------------------------------
+    # Public read-only accessors
+    # ------------------------------------------------------------------
+    @property
+    def queue_depth(self) -> int:
+        """Number of users currently waiting in the admission queue."""
+        return len(self._queue)
+
+    @property
+    def ticket_count(self) -> int:
+        """Number of outstanding (not yet consumed) entry tickets."""
+        return len(self._tickets)
+
+    # ------------------------------------------------------------------
     # AIMD cap adjustment
     # ------------------------------------------------------------------
     def update_cap(

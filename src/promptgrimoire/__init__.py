@@ -191,8 +191,9 @@ def _register_db_lifecycle(app: object) -> None:
             ),
         )
 
-        # Initialise admission gate before the diagnostic loop's first
-        # iteration (safe — the loop does an initial sleep before measuring).
+        # Safe: asyncio.create_task() schedules the coroutine but does not
+        # execute it. The task first runs when startup() awaits or returns,
+        # by which point init_admission() has already completed.
         from promptgrimoire.admission import init_admission
 
         init_admission(_settings.admission)

@@ -309,8 +309,8 @@ def _enrich_snapshot_with_admission(
 
     snapshot["admission_cap"] = admission.cap
     snapshot["admission_admitted"] = admitted_count
-    snapshot["admission_queue_depth"] = len(admission._queue)
-    snapshot["admission_tickets"] = len(admission._tickets)
+    snapshot["admission_queue_depth"] = admission.queue_depth
+    snapshot["admission_tickets"] = admission.ticket_count
 
 
 async def start_diagnostic_logger(

@@ -164,7 +164,7 @@ class TestQueue:
         t1 = state.enqueue(user)
         t2 = state.enqueue(user)
         assert t1 == t2
-        assert len(state._queue) == 1
+        assert state.queue_depth == 1
 
     def test_ac2_6_try_enter_consumes_ticket(self) -> None:
         """AC2.6: Admitted user's entry ticket is consumed by try_enter."""

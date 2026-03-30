@@ -190,6 +190,13 @@ def _register_db_lifecycle(app: object) -> None:
                 memory_restart_threshold_mb=_app_config.memory_restart_threshold_mb,
             ),
         )
+
+        # Initialise admission gate before the diagnostic loop's first
+        # iteration (safe — the loop does an initial sleep before measuring).
+        from promptgrimoire.admission import init_admission
+
+        init_admission(_settings.admission)
+
         log.info("database_connected")
 
     @app.on_shutdown

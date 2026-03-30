@@ -631,14 +631,7 @@ def _compute_card_diff(
     # Callers' guard clauses guarantee annotation_cards is not None
     cards = state.annotation_cards
     if cards is None:
-        return _CardDiff(
-            crdt_map=crdt_map,
-            sorted_hl_ids=[],
-            removed_ids=set(),
-            added_in_order=[],
-            common_ids=set(),
-            highlight_count=len(highlights),
-        )
+        raise ValueError("_compute_card_diff called with annotation_cards=None")
     registry_ids = set(cards.keys())
 
     removed_ids = registry_ids - crdt_ids
@@ -695,15 +688,17 @@ def _diff_add_one_card(state: PageState, diff: _CardDiff, add_id: str) -> None:
     )
 
 
-def _diff_update_changed_cards(state: PageState, diff: _CardDiff) -> None:
+def _diff_update_changed_cards(state: PageState, diff: _CardDiff) -> bool:
     """Replace cards whose highlight data changed.
 
     Callers guarantee both container and cards are not None.
+    Returns True if any card was replaced.
     """
     container = state.annotations_container
     cards = state.annotation_cards
     if container is None or cards is None:
-        return
+        return False
+    changed = False
     with container:
         for hl_id in diff.common_ids:
             hl = diff.crdt_map[hl_id]
@@ -721,7 +716,8 @@ def _diff_update_changed_cards(state: PageState, diff: _CardDiff) -> None:
                     target_container=container,
                     target_index=position,
                 )
-                diff.changed = True
+                changed = True
+    return changed
 
 
 def _diff_finish(
@@ -792,7 +788,7 @@ def _diff_annotation_cards(state: PageState) -> None:
             trigger="diff",
         )
 
-    _diff_update_changed_cards(state, diff)
+    diff.changed |= _diff_update_changed_cards(state, diff)
     _diff_finish(state, diff, _t_diff)
 
 

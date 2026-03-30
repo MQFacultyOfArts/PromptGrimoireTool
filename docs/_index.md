@@ -58,6 +58,7 @@ library references during development.
 - [Investigation: Unbounded Memory Growth (#434)](investigations/2026-03-27-memory-leak-434.md)
 - [Causal Analysis: Deferred Load E2E Test Failures (#377)](investigations/2026-03-28-deferred-load-e2e-failures.md)
 - [Investigation: Cross-User Session Contamination (#438)](investigations/2026-03-28-session-contamination-438.md)
+- [Causal Analysis: Event Loop Blocking Under Load](investigations/2026-03-30-event-loop-blocking.md)
 
 ## lark
 
@@ -129,7 +130,6 @@ library references during development.
 - [Investigation: 2026-03-16 Gateway Failures](postmortems/2026-03-16-investigation.md)
 - [New Errors Observed 2026-03-16 ~15:00 AEDT](postmortems/2026-03-16-new-errors.md)
 - [Proposed Incident Analysis Tools](postmortems/2026-03-16-proposed-analysis-tools.md)
-- [3-Day Operational Review: 2026-03-15 to 2026-03-18](postmortems/2026-03-18-3day-review-reference.md)
 - [Investigation: Firefox E2E CI Failures](postmortems/2026-03-18-firefox-e2e-failures.md)
 - [Investigation: #377 Page Load Latency](postmortems/2026-03-18-page-load-latency-377.md)
 - [Causal Analysis: NiceGUI Slot Deletion Race (#369)](postmortems/2026-03-20-slot-deletion-investigation-369.md)

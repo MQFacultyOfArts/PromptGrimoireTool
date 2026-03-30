@@ -17,6 +17,7 @@ from uuid import UUID, uuid4
 import pytest
 
 from promptgrimoire.config import get_settings
+from tests.integration.nicegui_helpers import _fire_event_listeners
 
 if TYPE_CHECKING:
     from nicegui.element import Element
@@ -144,7 +145,6 @@ class TestLazyDetailSection:
 
         from promptgrimoire.crdt.annotation_doc import AnnotationDocument
         from promptgrimoire.pages.annotation.cards import _refresh_annotation_cards
-        from tests.integration.nicegui_helpers import _fire_event_listeners
 
         await nicegui_user.open("/")
 

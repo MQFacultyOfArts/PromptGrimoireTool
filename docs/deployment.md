@@ -403,7 +403,7 @@ pool_mode = transaction
 
 ; Client-facing limits (app + worker + admin)
 max_client_conn = 500
-default_pool_size = 80
+default_pool_size = 40
 reserve_pool_size = 10
 reserve_pool_timeout = 3
 
@@ -476,24 +476,32 @@ RELOAD;
 ```
 
 **Key health indicators:**
-- `cl_waiting > 0` sustained → increase `default_pool_size`
+- `cl_waiting > 0` sustained → increase `default_pool_size` (currently 40)
 - `sv_active = default_pool_size` sustained → pool saturated, check for slow queries
 
 > **Ref:** [PgBouncer usage (SHOW commands)](https://www.pgbouncer.org/usage.html)
 
-### NullPool for application connections
+### Connection pooling behind PgBouncer
 
-SQLAlchemy's default connection pool creates a **second pool** on top of PgBouncer — the double-pooling pathology. Connections sit idle in SQLAlchemy's pool while PgBouncer counts them as active server connections, wasting PostgreSQL backend slots and causing pool exhaustion under load.
-
-The fix is `NullPool`: SQLAlchemy opens a new connection for each request and closes it immediately after use, letting PgBouncer handle all pooling. Set in production `.env`:
+Production uses **QueuePool** (SQLAlchemy's default) behind PgBouncer in transaction mode. The pool is deliberately undersized relative to PgBouncer's `default_pool_size` to avoid the double-pooling bottleneck where SQLAlchemy queues while PgBouncer has spare capacity.
 
 ```bash
-DATABASE__USE_NULL_POOL=true
+DATABASE__USE_NULL_POOL=false
+DATABASE__POOL_SIZE=20
+DATABASE__MAX_OVERFLOW=10
+DATABASE__POOL_PRE_PING=false
+DATABASE__POOL_RECYCLE=1800
 ```
 
-This is only needed when PgBouncer is in the path. In development (direct PostgreSQL), the default SQLAlchemy pool is fine.
+- **`POOL_PRE_PING=false`**: Disabled because `pool_pre_ping=True` + PgBouncer transaction mode can cause `unnamed prepared statement` errors when PgBouncer reassigns the server connection between ping and query (SQLAlchemy #10226). PgBouncer handles connection health.
+- **`POOL_RECYCLE=1800`**: Shorter than PgBouncer's `server_lifetime` (3600s) to prevent stale connection errors.
+- **`POOL_SIZE=20` + `MAX_OVERFLOW=10`**: At most 30 concurrent connections through PgBouncer. `default_pool_size=40` provides headroom.
 
-> **Ref:** [SQLAlchemy NullPool](https://docs.sqlalchemy.org/en/20/core/pooling.html#using-a-pool-instance-directly), [PgBouncer FAQ: application-side pooling](https://www.pgbouncer.org/faq.html)
+**History:** Production initially used `NullPool` (every query creates/destroys a connection) to avoid double-pooling. Telemetry from 2026-03-30 showed NullPool caused ~8,400 PgBouncer connection cycles/hour, 629 connection close errors/34h, and 60 login timeouts/49h. QueuePool(20) deployed 2026-03-30 to reduce connection churn. See `docs/design-plans/2026-03-30-db-pool-configuration.md` for the full analysis.
+
+In development (direct PostgreSQL, no PgBouncer), the default pool settings are fine — no `.env` override needed.
+
+> **Ref:** [SQLAlchemy pooling](https://docs.sqlalchemy.org/en/20/core/pooling.html), [PgBouncer FAQ](https://www.pgbouncer.org/faq.html), [SQLAlchemy #10226](https://github.com/sqlalchemy/sqlalchemy/issues/10226)
 
 ## 7b. Streaming Replication
 
@@ -734,8 +742,12 @@ Edit `/opt/promptgrimoire/.env`:
 # PgBouncer handles connection pooling and prepared statement caching.
 # To bypass PgBouncer (e.g., for migrations), use host=/var/run/postgresql (no port).
 DATABASE__URL=postgresql+asyncpg://promptgrimoire@/promptgrimoire?host=/run/pgbouncer&port=6432
-# Pool defaults (DATABASE__POOL_SIZE=80, etc.) match PgBouncer's default_pool_size.
-# See .env.example to override.
+# QueuePool behind PgBouncer (see § 7a "Connection pooling behind PgBouncer")
+DATABASE__USE_NULL_POOL=false
+DATABASE__POOL_SIZE=20
+DATABASE__MAX_OVERFLOW=10
+DATABASE__POOL_PRE_PING=false
+DATABASE__POOL_RECYCLE=1800
 
 # Stytch — use LIVE keys, not test keys
 STYTCH__PROJECT_ID=project-live-...

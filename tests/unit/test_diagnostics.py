@@ -66,6 +66,8 @@ class TestCollectSnapshot:
             "peak_rss_bytes",
             "clients_total",
             "clients_connected",
+            "clients_authenticated",
+            "users_authenticated",
             "asyncio_tasks_total",
             "app_ws_registry",
             "app_ws_presence_workspaces",

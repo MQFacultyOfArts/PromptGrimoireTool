@@ -21,7 +21,16 @@ from rich.table import Table
 from sqlmodel import select
 
 from promptgrimoire.db.engine import get_session
-from promptgrimoire.db.models import Activity, Week, Workspace, WorkspaceDocument
+from promptgrimoire.db.models import (
+    ACLEntry,
+    Activity,
+    Course,
+    CourseEnrollment,
+    User,
+    Week,
+    Workspace,
+    WorkspaceDocument,
+)
 from promptgrimoire.db.tags import list_tags_for_workspace
 from promptgrimoire.db.workspace_documents import list_documents
 from promptgrimoire.db.workspaces import get_workspace, get_workspace_export_metadata
@@ -488,8 +497,121 @@ def _print_results_table(
     )
 
 
-async def _run_batch_export(
+async def _resolve_workspace_unit_mapping(
     workspace_ids: list[UUID],
+) -> dict[UUID, tuple[str, list[str]]]:
+    """Map workspace IDs to (owner_email, [unit_names]).
+
+    Uses ACL owner entries for the owner, and course_enrollment for
+    unit membership. Multi-enrolled users appear under every unit.
+    Users with no enrollment get ["_unenrolled"].
+    """
+    mapping: dict[UUID, tuple[str, list[str]]] = {}
+    async with get_session() as session:
+        # workspace -> owner email
+        owner_rows = await session.exec(
+            select(
+                ACLEntry.workspace_id,
+                User.email,
+                User.id,
+            )
+            .join(User, User.id == ACLEntry.user_id)  # type: ignore[arg-type]
+            .where(
+                ACLEntry.workspace_id.in_(workspace_ids),  # type: ignore[union-attr]
+                ACLEntry.permission == "owner",
+            )
+        )
+        ws_owner: dict[UUID, tuple[str, UUID]] = {}
+        for ws_id, email, user_id in owner_rows:
+            ws_owner[ws_id] = (email, user_id)
+
+        # user -> enrolled unit names
+        user_ids = {uid for _, uid in ws_owner.values()}
+        if user_ids:
+            enroll_rows = await session.exec(
+                select(CourseEnrollment.user_id, Course.name)
+                .join(Course, Course.id == CourseEnrollment.course_id)  # type: ignore[arg-type]
+                .where(CourseEnrollment.user_id.in_(user_ids))  # type: ignore[union-attr]
+            )
+            user_units: dict[UUID, list[str]] = {}
+            for uid, unit_name in enroll_rows:
+                user_units.setdefault(uid, []).append(unit_name)
+        else:
+            user_units = {}
+
+        for ws_id in workspace_ids:
+            if ws_id in ws_owner:
+                email, uid = ws_owner[ws_id]
+                units = user_units.get(uid, ["_unenrolled"])
+                mapping[ws_id] = (email, units)
+            else:
+                mapping[ws_id] = ("_unknown_owner", ["_unenrolled"])
+
+    return mapping
+
+
+def _sanitise_dirname(name: str) -> str:
+    """Make a string safe for use as a directory name."""
+    return re.sub(r'[<>:"/\\|?*]', "_", name).strip(". ")
+
+
+def _reorganise_by_unit(
+    output_dir: Path,
+    results: list[tuple[str, str, str | None]],
+    ws_mapping: dict[UUID, tuple[str, list[str]]],
+    workspace_ids: list[UUID],
+) -> None:
+    """Move exported files from flat output_dir into unit/email/ subdirs."""
+    # Build short_id -> workspace_id lookup
+    short_to_full: dict[str, UUID] = {str(ws_id)[:8]: ws_id for ws_id in workspace_ids}
+
+    moved = 0
+    for short_id, stem, error in results:
+        if error is not None:
+            continue
+        ws_id = short_to_full.get(short_id)
+        if ws_id is None or ws_id not in ws_mapping:
+            continue
+
+        email, units = ws_mapping[ws_id]
+        safe_email = _sanitise_dirname(email)
+
+        # Find all files matching this stem
+        files = list(output_dir.glob(f"{stem}.*"))
+        if not files:
+            continue
+
+        for unit_name in units:
+            safe_unit = _sanitise_dirname(unit_name)
+            dest_dir = output_dir / safe_unit / safe_email
+            dest_dir.mkdir(parents=True, exist_ok=True)
+            for f in files:
+                shutil.copy2(f, dest_dir / f.name)
+
+        # Remove the flat copies
+        for f in files:
+            f.unlink()
+        moved += 1
+
+    console.print(
+        f"\n[bold]Reorganised:[/] {moved} workspaces into unit/email/ folders"
+    )
+
+
+async def _resolve_ids(ids_or_scope: list[UUID] | str) -> list[UUID] | None:
+    """Resolve workspace IDs, handling scope strings inside the event loop."""
+    if isinstance(ids_or_scope, list):
+        return ids_or_scope
+    workspace_ids = await _resolve_scope_workspace_ids(ids_or_scope)
+    if not workspace_ids:
+        console.print("[yellow]No exportable workspaces found for scope.[/]")
+        return None
+    console.print(f"[bold]{len(workspace_ids)}[/] exportable workspaces resolved.")
+    return workspace_ids
+
+
+async def _run_batch_export(
+    workspace_ids_or_scope: list[UUID] | str,
     output_dir: Path,
     *,
     with_log: bool,
@@ -497,8 +619,19 @@ async def _run_batch_export(
     dry_run: bool,
     tex_only: bool,
     only_errors: bool,
+    by_unit: bool = False,
 ) -> None:
-    """Export multiple workspaces sequentially."""
+    """Export multiple workspaces sequentially.
+
+    Accepts either pre-parsed UUIDs or a scope string. Scope resolution
+    happens inside this coroutine so that only one event loop is used
+    (avoids orphaning asyncpg connections from a prior asyncio.run).
+    """
+    resolved = await _resolve_ids(workspace_ids_or_scope)
+    if resolved is None:
+        return
+    workspace_ids = resolved
+
     if dry_run:
         _print_dry_run(workspace_ids)
         return
@@ -539,6 +672,11 @@ async def _run_batch_export(
     if only_errors:
         _purge_successes(output_dir, results)
 
+    if by_unit:
+        console.print("\n[bold]Resolving unit/user mapping...[/]")
+        ws_mapping = await _resolve_workspace_unit_mapping(workspace_ids)
+        _reorganise_by_unit(output_dir, results, ws_mapping, workspace_ids)
+
     _print_results_table(
         results,
         only_errors=only_errors,
@@ -552,11 +690,16 @@ async def _run_batch_export(
 # ---------------------------------------------------------------------------
 
 
-def _parse_workspace_ids(
+def _validate_workspace_args(
     workspace_ids: list[str] | None,
     scope: str | None,
-) -> list[UUID]:
-    """Validate and resolve workspace IDs from arguments or --scope."""
+) -> list[UUID] | str:
+    """Validate CLI arguments and return parsed UUIDs or scope string.
+
+    Returns a list of UUIDs if explicit IDs were given, or the scope
+    string for deferred async resolution (avoiding a second asyncio.run
+    that would orphan asyncpg connections).
+    """
     if not workspace_ids and not scope:
         console.print(
             "[red]Error:[/] Provide workspace UUIDs or --scope. See --help for usage."
@@ -580,12 +723,7 @@ def _parse_workspace_ids(
                 raise typer.Exit(1) from None
         return parsed
 
-    # scope path
-    resolved = asyncio.run(_resolve_scope_workspace_ids(scope))  # type: ignore[arg-type]
-    if not resolved:
-        console.print("[yellow]No exportable workspaces found for scope.[/]")
-        raise typer.Exit(0)
-    return resolved
+    return scope  # type: ignore[return-value]  -- guarded by early exits above
 
 
 def _build_artifacts_label(
@@ -647,6 +785,13 @@ def run(
             help="Compile all, purge successes, keep only failures with .tex/.log",
         ),
     ] = False,
+    by_unit: Annotated[
+        bool,
+        typer.Option(
+            "--by-unit",
+            help="Organise output into unit/email/ subdirectories via enrollment",
+        ),
+    ] = False,
 ) -> None:
     """Export workspaces to PDF.
 
@@ -658,9 +803,10 @@ def run(
         grimoire export run --scope server --with-log --with-tex
         grimoire export run --scope server --only-errors
         grimoire export run --scope server --tex-only
+        grimoire export run --scope server --by-unit
         grimoire export run --scope activity:abc123 --dry-run
     """
-    parsed_ids = _parse_workspace_ids(workspace_ids, scope)
+    ids_or_scope = _validate_workspace_args(workspace_ids, scope)
 
     artifacts = _build_artifacts_label(
         tex_only=tex_only,
@@ -668,10 +814,14 @@ def run(
         with_tex=with_tex,
         with_log=with_log,
     )
+    layout = " (by unit/email)" if by_unit else ""
+    count = (
+        len(ids_or_scope) if isinstance(ids_or_scope, list) else f"scope:{ids_or_scope}"
+    )
     console.print(
         Panel(
-            f"[bold]Workspaces:[/] {len(parsed_ids)}\n"
-            f"[bold]Output:[/] {output}\n"
+            f"[bold]Workspaces:[/] {count}\n"
+            f"[bold]Output:[/] {output}{layout}\n"
             f"[bold]Artifacts:[/] {artifacts}",
             title="PDF Batch Export",
             border_style="blue",
@@ -680,12 +830,13 @@ def run(
 
     asyncio.run(
         _run_batch_export(
-            parsed_ids,
+            ids_or_scope,
             output,
             with_log=with_log,
             with_tex=with_tex,
             dry_run=dry_run,
             tex_only=tex_only,
             only_errors=only_errors,
+            by_unit=by_unit,
         )
     )

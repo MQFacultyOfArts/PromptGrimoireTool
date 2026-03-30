@@ -12,6 +12,7 @@ import functools
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Literal
 from urllib.parse import urlencode
+from uuid import UUID as _UUID
 
 import structlog
 from nicegui import app, ui
@@ -82,8 +83,6 @@ def _is_page_visible(
 
 async def _check_ban(user_id: str, route: str) -> bool:
     """Return True (and redirect) if the user is banned."""
-    from uuid import UUID as _UUID  # noqa: PLC0415
-
     from promptgrimoire.db.users import (  # noqa: PLC0415 -- inline to avoid circular import (registry -> db)
         is_user_banned,
     )
@@ -109,8 +108,6 @@ async def _check_admission_gate(
     4. Under cap → pass through
     5. Otherwise → enqueue and redirect to /queue
     """
-    from uuid import UUID as _UUID  # noqa: PLC0415
-
     uid = _UUID(user_id)
 
     # 1. Already connected — navigating within an admitted session
@@ -153,8 +150,6 @@ async def _check_admission_gate(
 
 def _register_client(user_id: str) -> None:
     """Register the current NiceGUI client for real-time ban kick."""
-    from uuid import UUID as _UUID  # noqa: PLC0415
-
     client_registry.register(_UUID(user_id), ui.context.client)
 
 

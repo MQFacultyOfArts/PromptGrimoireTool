@@ -399,9 +399,7 @@ def _build_compact_header(
             para_ref=para_ref,
             comment_count=comment_count,
         )
-        ui.html(html_content, sanitize=False).classes("flex items-center gap-1").style(
-            "flex: 1; min-width: 0;"
-        )
+        ui.html(html_content, sanitize=False).style("flex: 1; min-width: 0;")
 
         # Expand/collapse chevron
         chevron = (

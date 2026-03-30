@@ -19,10 +19,7 @@ class TestRenderCompactHeaderHtml:
             para_ref="",
             comment_count=0,
         )
-        assert (
-            "background-color:#FF0000;" in result
-            or "background-color: #FF0000;" in result.replace(" ", "")
-        )
+        assert "background-color:#FF0000;" in result
         assert "border-radius:50%;" in result.replace(" ", "")
 
     def test_tag_display_html_escaped(self) -> None:
@@ -132,3 +129,7 @@ class TestRenderCompactHeaderHtml:
             comment_count=0,
         )
         assert "<script>" not in result
+        # Verify the double-quote from the color value is escaped —
+        # this is the actual CSS injection vector. html.escape(quote=True)
+        # turns `"` into `&quot;`, preventing attribute boundary breakout.
+        assert "&quot;" in result

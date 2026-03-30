@@ -491,6 +491,10 @@ class TestWargameMessageTable:
 
         week = await _make_week("message-unique")
         activity = await _make_wargame_activity(week.id)
+        # Single session: PG checks unique constraints within a transaction,
+        # no commit required.  The previous two-session pattern was racy under
+        # xdist — the second session's flush could execute before the first
+        # session's commit was visible.
         async with get_session() as session:
             team = WargameTeam(activity_id=activity.id, codename="Delta")
             session.add(team)
@@ -523,16 +527,22 @@ class TestWargameMessageTable:
             )
             await session.flush()
 
-        with pytest.raises(IntegrityError, match="uq_wargame_message_team_sequence"):
-            async with get_session() as session:
-                duplicate = WargameMessage(
-                    team_id=team_id,
-                    sequence_no=2,
-                    role="assistant",
-                    content="duplicate",
-                )
-                session.add(duplicate)
-                await session.flush()
+            # Duplicate within the same transaction — savepoint (begin_nested)
+            # so the IntegrityError rolls back only the savepoint, not the
+            # outer session.
+            with pytest.raises(
+                IntegrityError, match="uq_wargame_message_team_sequence"
+            ):
+                async with session.begin_nested():
+                    session.add(
+                        WargameMessage(
+                            team_id=team_id,
+                            sequence_no=2,
+                            role="assistant",
+                            content="duplicate",
+                        )
+                    )
+                    await session.flush()
 
     @pytest.mark.asyncio
     async def test_updates_earlier_message_in_place_without_reordering(self) -> None:

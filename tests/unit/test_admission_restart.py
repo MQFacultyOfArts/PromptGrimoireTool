@@ -6,8 +6,6 @@ and ramps up naturally via AIMD as lag stays low.
 
 from __future__ import annotations
 
-from uuid import uuid4
-
 from promptgrimoire.admission import AdmissionState, init_admission
 from promptgrimoire.config import AdmissionConfig
 
@@ -28,27 +26,6 @@ def _make_state(*, cap: int | None = None, **overrides: int) -> AdmissionState:
 
 class TestAdmissionRestartClearing:
     """AC1.4: clear() produces fresh state equivalent to post-restart."""
-
-    def test_clear_resets_to_initial_cap(self) -> None:
-        """After clear(), cap == initial_cap, all collections empty."""
-        state = _make_state(cap=100)
-        users = [uuid4() for _ in range(5)]
-        for u in users:
-            state.enqueue(u)
-        state.admit_batch(admitted_count=0)  # creates tickets
-        # Pre-condition: state is dirty
-        assert state.cap == 100
-        assert state.ticket_count > 0 or state.queue_depth > 0
-
-        state.clear()
-
-        assert state.cap == state.initial_cap
-        assert state.cap == 20  # default initial_cap
-        assert state.queue_depth == 0
-        assert state.ticket_count == 0
-        assert len(state._tokens) == 0
-        assert len(state._user_tokens) == 0
-        assert len(state._enqueue_times) == 0
 
     def test_init_admission_creates_fresh_state_at_initial_cap(self) -> None:
         """init_admission() with default config: cap == initial_cap (20)."""

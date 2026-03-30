@@ -7,6 +7,7 @@ application process restarts.
 
 from __future__ import annotations
 
+import contextlib
 import hmac
 import sys
 from typing import TYPE_CHECKING
@@ -126,8 +127,6 @@ async def pre_restart_handler(request: Request) -> JSONResponse:
     await get_persistence_manager().persist_all_dirty_workspaces()
 
     # Clear admission queue
-    import contextlib  # noqa: PLC0415
-
     from promptgrimoire.admission import get_admission_state  # noqa: PLC0415
 
     with contextlib.suppress(RuntimeError):

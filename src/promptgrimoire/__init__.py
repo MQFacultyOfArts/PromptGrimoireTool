@@ -302,6 +302,22 @@ def main() -> None:
     # Admin kick endpoint for banning users in real time
     app.routes.insert(0, Route("/api/admin/kick", kick_user_handler, methods=["POST"]))
 
+    # Queue page and status API (raw Starlette, zero NiceGUI overhead)
+    from promptgrimoire.queue_handlers import (
+        queue_page_handler,
+        queue_status_handler,
+    )
+
+    app.routes.insert(
+        0,
+        Route(
+            "/api/queue/status",
+            queue_status_handler,
+            methods=["GET"],
+        ),
+    )
+    app.routes.insert(0, Route("/queue", queue_page_handler, methods=["GET"]))
+
     # Pre-restart flush and connection-count endpoints for zero-downtime deploy
     from promptgrimoire.pages.restart import (
         connection_count_handler,

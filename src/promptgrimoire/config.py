@@ -128,6 +128,17 @@ class ExportConfig(BaseModel):
     max_concurrent_compilations: int = 2
 
 
+class AdmissionConfig(BaseModel):
+    """Dynamic admission gate configuration (AIMD algorithm)."""
+
+    initial_cap: int = 20
+    batch_size: int = 20
+    lag_increase_ms: int = 10
+    lag_decrease_ms: int = 50
+    queue_timeout_seconds: int = 1800
+    ticket_validity_seconds: int = 600
+
+
 class I18nConfig(BaseModel):
     """Internationalisation labels."""
 
@@ -321,6 +332,7 @@ class Settings(BaseSettings):
     i18n: I18nConfig = I18nConfig()
     browserstack: BrowserstackConfig = BrowserstackConfig()
     help: HelpConfig = HelpConfig()
+    admission: AdmissionConfig = AdmissionConfig()
 
     @model_validator(mode="after")
     def _apply_branch_db_suffix(self) -> Settings:

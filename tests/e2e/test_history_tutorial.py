@@ -101,10 +101,16 @@ class TestHistoryTutorial:
             ).to_be_visible(timeout=5000)
 
         with subtests.test(msg="comment_syncs_to_student_b"):
-            # Student B should see the comment
-            expect(page2.locator(ANNOTATION_CARD).first).to_contain_text(
-                comment_uuid, timeout=10000
-            )
+            # Wait for comment count badge to appear (sync indicator),
+            # then expand the card to reveal the lazy-built detail section.
+            expect(
+                page2.locator(ANNOTATION_CARD).first.get_by_test_id("comment-count")
+            ).to_be_visible(timeout=10000)
+            expand_card(page2, 0)
+            # Student B should see the comment in the detail section
+            expect(
+                page2.get_by_test_id("comment").filter(has_text=comment_uuid)
+            ).to_be_visible(timeout=5000)
 
         with subtests.test(msg="student_a_changes_tag"):
             # Change first card's tag from Jurisdiction to Procedural History

@@ -200,6 +200,9 @@ class TestAnnotationCanvas:
         first_card = page.locator("[data-testid='annotation-card']").first
         expect(first_card).to_be_visible(timeout=10000)
 
+        # Expand the card to reveal the detail section (lazy-built)
+        expand_card(page, 0)
+
         # Verify the tag-select is visible (Jurisdiction applied)
         tag_select = first_card.get_by_test_id("tag-select")
         expect(tag_select).to_contain_text("Jurisdiction", timeout=5000)

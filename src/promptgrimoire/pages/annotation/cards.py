@@ -10,6 +10,7 @@ tag select, text preview, and comments.
 
 from __future__ import annotations
 
+import html as _html  # stdlib — for html.escape in raw HTML rendering
 import time
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
@@ -312,6 +313,56 @@ def _make_tag_change_handler(
                 await state.broadcast_update()
 
     return on_tag_change
+
+
+def _render_compact_header_html(
+    *,
+    tag_display: str,
+    color: str,
+    initials: str,
+    para_ref: str,
+    comment_count: int,
+) -> str:
+    """Render the static parts of the compact header as raw HTML.
+
+    Returns an HTML fragment for use with ``ui.html(sanitize=False)``.
+    All interpolated string values are escaped via ``html.escape()``
+    (defense-in-depth — values originate from authenticated UI but
+    we never trust interpolated content in raw HTML).
+
+    Elements rendered: colour dot, tag name, author initials,
+    para ref (conditional), comment count badge (conditional), spacer.
+    """
+    esc = _html.escape
+    parts: list[str] = [
+        # Container open
+        '<div style="display:flex;align-items:center;gap:0.25rem;">',
+        # Colour dot
+        f'<div style="width:8px;height:8px;border-radius:50%;'
+        f'background-color:{esc(color)};flex-shrink:0;"></div>',
+        # Tag label
+        f'<span class="text-xs font-bold" style="color:{esc(color)};'
+        f"max-width:100px;overflow:hidden;text-overflow:ellipsis;"
+        f'white-space:nowrap;">{esc(tag_display)}</span>',
+        # Author initials
+        f'<span class="text-xs text-gray-500">{esc(initials)}</span>',
+    ]
+    # Para ref (conditional)
+    if para_ref:
+        parts.append(
+            f'<span class="text-xs font-mono text-gray-400">{esc(para_ref)}</span>'
+        )
+    # Comment count badge (conditional)
+    if comment_count > 0:
+        parts.append(
+            f'<span class="text-xs bg-blue-100 text-blue-700 rounded-full px-1"'
+            f' data-testid="comment-count">{comment_count}</span>'
+        )
+    # Spacer
+    parts.append('<div style="flex-grow:1;"></div>')
+    # Container close
+    parts.append("</div>")
+    return "".join(parts)
 
 
 def _build_compact_header(

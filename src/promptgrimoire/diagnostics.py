@@ -93,6 +93,15 @@ def collect_snapshot() -> dict[str, Any]:
     ws_presence_workspaces = len(workspace_presence)
     ws_presence_clients = sum(len(v) for v in workspace_presence.values())
 
+    from promptgrimoire.auth.client_registry import (  # noqa: PLC0415
+        _registry as auth_registry,
+    )
+
+    # Count authenticated users (distinct user_ids with non-deleted clients;
+    # deregistration is on Client.on_delete, not on socket disconnect)
+    authed_users = sum(1 for clients in auth_registry.values() if clients)
+    authed_clients = sum(len(clients) for clients in auth_registry.values())
+
     return {
         # Memory
         "current_rss_bytes": memory["current_rss_bytes"],
@@ -102,6 +111,8 @@ def collect_snapshot() -> dict[str, Any]:
         "clients_connected": sum(
             1 for c in Client.instances.values() if c.has_socket_connection
         ),
+        "clients_authenticated": authed_clients,
+        "users_authenticated": authed_users,
         # Asyncio tasks
         "asyncio_tasks_total": len(asyncio.all_tasks()),
         # PromptGrimoire application state

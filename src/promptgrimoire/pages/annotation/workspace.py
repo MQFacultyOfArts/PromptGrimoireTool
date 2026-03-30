@@ -9,6 +9,7 @@ Tab creation, change handling, and organise drag setup live in
 from __future__ import annotations
 
 import json
+import time
 from typing import TYPE_CHECKING, Any, cast
 from urllib.parse import urlencode
 from uuid import UUID
@@ -255,6 +256,34 @@ async def _resolve_db_context(
     return None if client._deleted else (context, documents)
 
 
+def _log_page_load_profile(
+    workspace_id: UUID,
+    t_total: float,
+    t_db: float,
+    t_ui: float,
+    t_setup: float,
+    t_header: float,
+    t_panels: float,
+    t_done: float,
+) -> None:
+    """Log per-phase timing breakdown for a page load."""
+
+    def _ms(a: float, b: float) -> float:
+        return round((b - a) * 1000, 1)
+
+    logger.info(
+        "page_load_profile",
+        workspace_id=str(workspace_id),
+        db_resolve_ms=_ms(t_total, t_db),
+        ui_setup_ms=_ms(t_ui, t_setup),
+        header_ms=_ms(t_setup, t_header),
+        tab_panels_ms=_ms(t_header, t_panels),
+        finish_ms=_ms(t_panels, t_done),
+        total_ui_ms=_ms(t_ui, t_done),
+        total_ms=_ms(t_total, t_done),
+    )
+
+
 async def _load_workspace_content(
     workspace_id: UUID,
     client: Client,
@@ -271,9 +300,12 @@ async def _load_workspace_content(
     Called from ``annotation_page()`` via ``background_tasks.create()``.
     """
     try:
+        _t_total = time.monotonic()
+
         result = await _resolve_db_context(workspace_id, client, content_container)
         if result is None:
             return
+        _t_db = time.monotonic()
 
         context, documents = result
         auth_user = app.storage.user.get("auth_user")
@@ -302,6 +334,7 @@ async def _load_workspace_content(
         )
 
         with client:
+            _t_ui = time.monotonic()
             content_container.clear()
 
             on_add_tag, on_manage_tags = _create_tag_callbacks(
@@ -309,6 +342,7 @@ async def _load_workspace_content(
             )
 
             _setup_client_sync(workspace_id, client, state)
+            _t_setup = time.monotonic()
             can_manage_sharing = state.is_owner or state.viewer_is_privileged
 
             await render_workspace_header(
@@ -322,6 +356,7 @@ async def _load_workspace_content(
                 document=documents[0] if documents else None,
                 placement_context=ctx,
             )
+            _t_header = time.monotonic()
 
             # Update page title now we have the workspace name
             # (skeleton used generic "Annotation Workspace").
@@ -355,6 +390,7 @@ async def _load_workspace_content(
                 can_create_tags=can_create_tags,
                 footer=footer,
             )
+            _t_panels = time.monotonic()
 
             _replay_existing_cursors(str(workspace_id), state.client_id, state)
 
@@ -366,6 +402,18 @@ async def _load_workspace_content(
             ui.run_javascript("window.__loadComplete = true")
             ui.element("div").props(
                 'data-testid="annotation-ready" style="display:none"'
+            )
+
+            _t_done = time.monotonic()
+            _log_page_load_profile(
+                workspace_id,
+                _t_total,
+                _t_db,
+                _t_ui,
+                _t_setup,
+                _t_header,
+                _t_panels,
+                _t_done,
             )
 
     except Exception:

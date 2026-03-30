@@ -750,13 +750,16 @@ async def _build_tab_panels(
         state.tab_panels = panels
 
         # Load CRDT (shared by all paths)
+        _t_crdt = time.monotonic()
         await _load_crdt_for_workspace(state, workspace_id)
+        _t_crdt_done = time.monotonic()
 
         if documents:
             # Fetch the full first document (with content) once for
             # rendering.  Passed to _build_first_source_panel to avoid
             # a redundant round-trip inside the @ui.refreshable closure.
             first_doc = await get_document(documents[0].id)
+            _t_doc_fetch = time.monotonic()
 
             # First document: eager render
             with ui.tab_panel(str(documents[0].id)) as first_panel:
@@ -775,6 +778,15 @@ async def _build_tab_panels(
                 first_doc_tab.rendered = True
                 first_doc_tab.cards_container = state.annotations_container
                 _save_source_tab_state(state, first_doc_tab)
+            _t_render_done = time.monotonic()
+            _ms = lambda a, b: round((b - a) * 1000, 1)  # noqa: E731
+            logger.info(
+                "tab_panels_profile",
+                crdt_load_ms=_ms(_t_crdt, _t_crdt_done),
+                doc_fetch_ms=_ms(_t_crdt_done, _t_doc_fetch),
+                first_panel_render_ms=_ms(_t_doc_fetch, _t_render_done),
+                workspace_id=str(workspace_id),
+            )
 
             # Additional documents: deferred (empty panels)
             for doc in documents[1:]:

@@ -313,6 +313,7 @@ async def _render_document_with_highlights(
     footer: Any | None = None,
 ) -> None:
     """Render a document with highlight support."""
+    _t_render = time.monotonic()
     _init_document_state(state, doc, crdt_doc)
 
     # Static ::highlight() CSS for all tags -- actual highlight ranges are
@@ -417,11 +418,28 @@ async def _render_document_with_highlights(
     state.refresh_annotations = refresh_annotations
 
     # Load existing annotations
+    _t_cards = time.monotonic()
     _refresh_annotation_cards(state, trigger="initial_load")
+    _t_cards_done = time.monotonic()
 
     # Set up selection detection (viewers get read-only view)
     if state.can_annotate:
         _setup_selection_handlers(state)
+
+    _t_render_done = time.monotonic()
+    _ms = round((_t_render_done - _t_render) * 1000, 1)
+    _pre_cards_ms = round((_t_cards - _t_render) * 1000, 1)
+    _cards_ms = round((_t_cards_done - _t_cards) * 1000, 1)
+    _post_cards_ms = round((_t_render_done - _t_cards_done) * 1000, 1)
+    logger.info(
+        "document_render_profile",
+        total_ms=_ms,
+        pre_cards_ms=_pre_cards_ms,
+        cards_ms=_cards_ms,
+        post_cards_ms=_post_cards_ms,
+        highlight_count=len(state.annotation_cards or {}),
+        document_id=str(state.document_id),
+    )
 
     # Card positioning is set up inside init_js (see _inject_highlight_scripts)
     # to guarantee annotation-card-sync.js is loaded before the call.

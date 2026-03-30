@@ -38,6 +38,8 @@ logs/
 
 # Claude Code local settings (machine-specific permissions)
 .claude/settings.local.json
+# Claude Code hook temp files (e2e runner, lock files, output logs)
+.claude/hooks/.e2e_*
 
 # Test output logs
 test-failures.log

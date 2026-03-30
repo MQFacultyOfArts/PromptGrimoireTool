@@ -136,7 +136,10 @@ def _get_session_user() -> dict | None:
         return app.storage.user.get("auth_user")
     except AssertionError:
         # Session identity mismatch on auth page path.
-        # Upgraded from debug to error with exc_info for Discord alerting.
+        # Known race: request arrives before storage middleware initialises
+        # the session. Not an application error — caller returns None and
+        # the user is treated as unauthenticated. Downgraded from error
+        # to warning to avoid Discord pings.
         _task = asyncio.current_task()
         _task_name = _task.get_name() if _task else "no-task"
         _ctx_session_id = "unknown"
@@ -144,7 +147,7 @@ def _get_session_user() -> dict | None:
             _req = request_contextvar.get()
             if _req is not None:
                 _ctx_session_id = _req.session.get("id", "missing")
-        logger.error(
+        logger.warning(
             "session_storage_assertion_failed",
             detail="NiceGUI user storage accessed before middleware initialised it",
             ctx_session_id=_ctx_session_id,

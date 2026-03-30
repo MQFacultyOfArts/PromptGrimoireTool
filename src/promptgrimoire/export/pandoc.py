@@ -72,6 +72,13 @@ def _fix_invalid_newlines(latex: str) -> str:
     # Remove \newline{} right before & (column separator)
     latex = re.sub(r"\\newline\{\}\s*&", " &", latex)
 
+    # Remove \newline{} right after & (leading newline in next cell) — Issue #462
+    latex = re.sub(r"&\s*\\newline\{\}", "& ", latex)
+
+    # Remove \newline{} at the very start of a row (first cell, no preceding &)
+    # Matches \newline{} that starts a line inside a longtable environment
+    latex = re.sub(r"(?:(?<=\n)|^)\\newline\{\}(?=\S)", "", latex)
+
     # Remove \newline{} right after \\ (row end)
     latex = re.sub(r"\\\\\s*\\newline\{\}", r"\\\\", latex)
 

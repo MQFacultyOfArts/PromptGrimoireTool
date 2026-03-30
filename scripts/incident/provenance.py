@@ -9,6 +9,7 @@ from pathlib import Path
 # Mapping from manifest filenames to source format strings used in the DB.
 _FILENAME_TO_FORMAT: dict[str, str] = {
     "journal.json": "journal",
+    "worker-journal.json": "journal",
     "structlog.jsonl": "jsonl",
     "haproxy.log": "haproxy",
     "postgresql.log": "pglog",

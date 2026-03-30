@@ -100,12 +100,15 @@ def _clean_stamps() -> None:
         stamp.unlink(missing_ok=True)
 
 
-def _launch_tests_background(project_dir: str) -> None:
+def _launch_tests_background(work_dir: str) -> None:
     """Launch e2e all in background, write stamp on completion."""
-    # Write a runner script that records pass/fail
+    # Write a runner script that records pass/fail.
+    # Use work_dir (cwd at invocation) not project_dir — when working
+    # in a git worktree, tests must run against the worktree branch,
+    # not the main checkout.
     runner = STAMP_DIR / ".e2e_runner.sh"
     runner.write_text(f"""#!/bin/bash
-cd "{project_dir}"
+cd "{work_dir}"
 uv run grimoire e2e all > "{STAMP_DIR}/.e2e_output.log" 2>&1
 rc=$?
 if [ $rc -eq 0 ]; then
@@ -128,7 +131,7 @@ rm -f "{runner}"
     )
 
 
-def _check_stamps(action: str, project_dir: str) -> int:
+def _check_stamps(action: str, work_dir: str) -> int:
     """Check stamp files and return exit code. 0 = allow, 2 = block."""
     # Check for recent pass stamp
     pass_age = _stamp_age(STAMP_PASS)
@@ -169,7 +172,7 @@ def _check_stamps(action: str, project_dir: str) -> int:
 
     # No recent stamp — launch tests in background
     _clean_stamps()
-    _launch_tests_background(project_dir)
+    _launch_tests_background(work_dir)
     watch_cmd = f"while [ -f {STAMP_RUNNING} ]; do sleep 10; done && echo 'Done!'"
     tail_cmd = f"tail -f {STAMP_DIR}/.e2e_output.log"
     msg = (
@@ -214,8 +217,10 @@ def main() -> int:
         action = "merge to main"
     else:
         action = "git push"
-    project_dir = os.environ.get("CLAUDE_PROJECT_DIR", ".")
-    return _check_stamps(action, project_dir)
+    # Use cwd, not CLAUDE_PROJECT_DIR — when working in a git worktree,
+    # tests must run against the worktree branch, not the main checkout.
+    work_dir = str(Path.cwd())
+    return _check_stamps(action, work_dir)
 
 
 if __name__ == "__main__":

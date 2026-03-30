@@ -347,7 +347,7 @@ Two scripts support pulling production workspace state into a local dev database
 
 ```bash
 # On prod (peer auth via Unix socket):
-sudo -u promptgrimoire uv run scripts/extract_workspace.py <workspace-uuid>
+grimoire-run scripts/extract_workspace.py <workspace-uuid>
 # Output: /tmp/workspace_<uuid>.json
 
 # Copy to local:

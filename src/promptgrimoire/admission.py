@@ -50,6 +50,18 @@ class AdmissionState:
         return len(self._tickets)
 
     # ------------------------------------------------------------------
+    # Lifecycle
+    # ------------------------------------------------------------------
+    def clear(self) -> None:
+        """Reset all admission state. Called before restart."""
+        self._queue.clear()
+        self._enqueue_times.clear()
+        self._tokens.clear()
+        self._user_tokens.clear()
+        self._tickets.clear()
+        self.cap = self.initial_cap
+
+    # ------------------------------------------------------------------
     # AIMD cap adjustment
     # ------------------------------------------------------------------
     def update_cap(
@@ -74,12 +86,31 @@ class AdmissionState:
 
         Idempotent: re-enqueuing the same user_id returns the
         existing token without changing queue position.
+
+        Priority: if a previously-admitted user returns after their
+        ticket expired (tab closed), they are placed at the front
+        of the queue -- they already waited once.
         """
+        priority = False
         if user_id in self._user_tokens:
-            return self._user_tokens[user_id]
+            # Check if existing token is still valid:
+            # - user is still waiting in the queue, OR
+            # - user has a non-expired ticket
+            if user_id in self._enqueue_times:
+                return self._user_tokens[user_id]
+            if user_id in self._tickets and self._tickets[user_id] >= time.monotonic():
+                return self._user_tokens[user_id]
+            # Stale -- expired ticket or orphaned mapping.
+            # Clean up expired ticket if present.
+            self._tickets.pop(user_id, None)
+            self._cleanup_token_maps(user_id)
+            priority = True
 
         token = uuid4().hex
-        self._queue.append(user_id)
+        if priority:
+            self._queue.appendleft(user_id)
+        else:
+            self._queue.append(user_id)
         self._enqueue_times[user_id] = time.monotonic()
         self._tokens[token] = user_id
         self._user_tokens[user_id] = token

@@ -320,3 +320,92 @@ class TestSingleton:
             assert s.batch_size == 5
         finally:
             mod._state = old
+
+
+# ===========================================================================
+# clear() method
+# ===========================================================================
+class TestClear:
+    """AdmissionState.clear() resets all mutable state."""
+
+    def test_clear_resets_all_state(self) -> None:
+        """After clear(), all collections empty and cap == initial_cap."""
+        state = _make_state(cap=100)
+        users = [uuid4() for _ in range(3)]
+        for u in users:
+            state.enqueue(u)
+        state.admit_batch(admitted_count=0)  # creates tickets
+        assert state.queue_depth > 0 or state.ticket_count > 0
+
+        state.clear()
+
+        assert state.cap == state.initial_cap
+        assert state.queue_depth == 0
+        assert state.ticket_count == 0
+        assert len(state._tokens) == 0
+        assert len(state._user_tokens) == 0
+        assert len(state._enqueue_times) == 0
+
+
+# ===========================================================================
+# Priority re-enqueue for returning users
+# ===========================================================================
+class TestPriorityReenqueue:
+    """Previously-admitted users who return after ticket expiry go to front."""
+
+    def test_enqueue_stale_user_gets_priority(self) -> None:
+        """User who waited, got admitted, ticket expired: re-enqueued at front.
+
+        The user's ticket has expired by timestamp but sweep_expired
+        hasn't run yet — the _user_tokens breadcrumb still exists,
+        allowing enqueue() to detect a returning user.
+        """
+        state = _make_state(cap=1, ticket_validity_seconds=600)
+        user_a = uuid4()
+        user_b = uuid4()
+
+        with patch("promptgrimoire.admission.time") as mock_time:
+            mock_time.monotonic.return_value = 1000.0
+            token_a = state.enqueue(user_a)
+            state.admit_batch(admitted_count=0)  # user_a gets ticket
+            # admit_batch consumed the ticket entry via try_enter? No —
+            # admit_batch grants a ticket. User never called try_enter.
+            # Now expire the ticket by time (but don't sweep).
+            mock_time.monotonic.return_value = 1000.0 + 601.0
+
+            # user_a is in _user_tokens but NOT in _enqueue_times
+            # (removed by admit_batch) and ticket is expired.
+            # enqueue() should detect the stale state.
+            assert user_a not in state._enqueue_times
+            assert user_a in state._user_tokens
+
+            # Enqueue user_b first (back of queue)
+            state.enqueue(user_b)
+            # Now user_a returns — should go to front
+            new_token_a = state.enqueue(user_a)
+
+        # New token, not the old one
+        assert new_token_a != token_a
+        # Old token is invalid
+        assert token_a not in state._tokens
+        # user_a is at position 1 (front)
+        assert list(state._queue) == [user_a, user_b]
+
+    def test_enqueue_valid_user_is_idempotent(self) -> None:
+        """User still in queue gets same token, same position."""
+        state = _make_state()
+        user = uuid4()
+        t1 = state.enqueue(user)
+        t2 = state.enqueue(user)
+        assert t1 == t2
+        assert state.queue_depth == 1
+
+    def test_enqueue_user_with_valid_ticket_is_idempotent(self) -> None:
+        """User with valid ticket gets same token back."""
+        state = _make_state(cap=1)
+        user = uuid4()
+        token = state.enqueue(user)
+        state.admit_batch(admitted_count=0)
+        # User has ticket — re-enqueue should return same token
+        token2 = state.enqueue(user)
+        assert token2 == token

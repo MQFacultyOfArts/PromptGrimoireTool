@@ -1,6 +1,6 @@
 # Configuration
 
-*Last updated: 2026-02-26*
+*Last updated: 2026-03-31*
 
 All configuration is managed through `src/promptgrimoire/config.py` using pydantic-settings. Environment variables use double-underscore nesting: `DATABASE__URL`, `LLM__API_KEY`, `STYTCH__PROJECT_ID`, etc.
 
@@ -20,6 +20,7 @@ All configuration is managed through `src/promptgrimoire/config.py` using pydant
 | `FEATURES__` | `FeaturesConfig` | `enable_roleplay`, `enable_file_upload` |
 | `DEV__` | `DevConfig` | `auth_mock`, `enable_demo_pages`, `database_echo`, `test_database_url`, `branch_db_suffix` |
 | `STYTCH__` | `StytchConfig` | `project_id`, `secret`, `public_token`, `default_org_id`, `sso_connection_id` |
+| `ADMISSION__` | `AdmissionConfig` | `initial_cap`, `batch_size`, `lag_increase_ms`, `lag_decrease_ms`, `queue_timeout_seconds`, `ticket_validity_seconds` |
 | `HELP__` | `HelpConfig` | `help_enabled`, `help_backend`, `algolia_app_id`, `algolia_search_api_key`, `algolia_index_name` |
 
 ## Environment Variables

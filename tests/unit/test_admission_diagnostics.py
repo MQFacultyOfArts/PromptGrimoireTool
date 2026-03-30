@@ -15,6 +15,7 @@ import pytest
 from structlog.testing import capture_logs
 
 from promptgrimoire.admission import AdmissionState
+from promptgrimoire.diagnostics import _enrich_snapshot_with_admission
 
 
 def _make_admission_state(
@@ -57,8 +58,6 @@ class TestDiagnosticCycleAdmissionFields:
     def test_snapshot_contains_admission_fields(self) -> None:
         """AC5.1: snapshot has admission_cap, admission_admitted,
         admission_queue_depth, admission_tickets after processing."""
-        from promptgrimoire.diagnostics import _enrich_snapshot_with_admission
-
         state = _make_admission_state(cap=200)
         snapshot = self._make_snapshot()
 
@@ -71,8 +70,6 @@ class TestDiagnosticCycleAdmissionFields:
 
     def test_snapshot_reflects_queue_depth(self) -> None:
         """AC5.1: admission_queue_depth reflects queued users."""
-        from promptgrimoire.diagnostics import _enrich_snapshot_with_admission
-
         state = _make_admission_state(cap=5)
         # Enqueue some users
         for _ in range(5):
@@ -87,8 +84,6 @@ class TestDiagnosticCycleAdmissionFields:
 
     def test_snapshot_reflects_ticket_count(self) -> None:
         """AC5.1: admission_tickets reflects outstanding tickets."""
-        from promptgrimoire.diagnostics import _enrich_snapshot_with_admission
-
         state = _make_admission_state(cap=200)
         # Enqueue users then admit them to create tickets
         for _ in range(3):
@@ -102,8 +97,6 @@ class TestDiagnosticCycleAdmissionFields:
 
     def test_update_cap_called_with_lag(self) -> None:
         """_enrich_snapshot_with_admission updates cap based on lag."""
-        from promptgrimoire.diagnostics import _enrich_snapshot_with_admission
-
         # High lag should halve the cap
         state = _make_admission_state(cap=200, lag_decrease_ms=200)
         snapshot = self._make_snapshot(lag_ms=300.0)
@@ -115,8 +108,6 @@ class TestDiagnosticCycleAdmissionFields:
 
     def test_admit_batch_runs_during_enrichment(self) -> None:
         """_enrich_snapshot_with_admission admits queued users."""
-        from promptgrimoire.diagnostics import _enrich_snapshot_with_admission
-
         state = _make_admission_state(cap=200)
         for _ in range(3):
             state.enqueue(uuid4())
@@ -130,8 +121,6 @@ class TestDiagnosticCycleAdmissionFields:
 
     def test_sweep_expired_runs_during_enrichment(self) -> None:
         """_enrich_snapshot_with_admission sweeps expired entries."""
-        from promptgrimoire.diagnostics import _enrich_snapshot_with_admission
-
         state = _make_admission_state(cap=200, queue_timeout_seconds=0)
         state.enqueue(uuid4())
         # queue_timeout_seconds=0 means the entry is expired immediately

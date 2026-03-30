@@ -333,13 +333,11 @@ async def start_diagnostic_logger(
             snapshot = collect_snapshot()
             snapshot["event_loop_lag_ms"] = await measure_event_loop_lag()
 
-            # Admission gate: AIMD cap adjustment + batch admission
-            _admission = get_admission_state()
-            _admitted_count = len(client_registry._registry)
+            admitted_count = len(client_registry._registry)
             _enrich_snapshot_with_admission(
                 snapshot,
-                _admission,
-                _admitted_count,
+                get_admission_state(),
+                admitted_count,
             )
 
             logger.info("memory_diagnostic", **snapshot)

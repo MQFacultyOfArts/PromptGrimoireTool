@@ -31,14 +31,6 @@ def auth_user(user_id_str: str) -> dict[str, object]:
     return {"user_id": user_id_str, "is_admin": False}
 
 
-@pytest.fixture
-def _mock_admission_state():
-    """Create a mock AdmissionState with sensible defaults."""
-    state = MagicMock()
-    state.cap = 100
-    return state
-
-
 class TestCheckAdmissionGate:
     """Test _check_admission_gate function in isolation."""
 
@@ -60,7 +52,7 @@ class TestCheckAdmissionGate:
             )
 
         assert result is False
-        mock_adm.try_enter.assert_not_called()
+        mock_adm.get_admission_state.assert_not_called()
         mock_ui.navigate.to.assert_not_called()
 
     @pytest.mark.anyio
@@ -165,7 +157,6 @@ class TestCheckAdmissionGate:
             # At cap: 5 registered users, cap=5
             mock_cr._registry = {uuid4(): {MagicMock()} for _ in range(5)}
             state = MagicMock(cap=5)
-            state._user_tokens = {}  # user not already in queue
             state.try_enter.return_value = False
             state.enqueue.return_value = fake_token
             mock_adm.get_admission_state.return_value = state
@@ -201,9 +192,9 @@ class TestCheckAdmissionGate:
         ):
             mock_cr._registry = {uuid4(): {MagicMock()} for _ in range(5)}
             state = MagicMock(cap=5)
-            # User already in queue — has existing token
-            state._user_tokens = {user_id: existing_token}
+            # User already in queue — enqueue() returns existing token (idempotent)
             state.try_enter.return_value = False
+            state.enqueue.return_value = existing_token
             mock_adm.get_admission_state.return_value = state
 
             result = await _check_admission_gate(
@@ -211,8 +202,8 @@ class TestCheckAdmissionGate:
             )
 
         assert result is True
-        # enqueue should NOT be called — existing token used
-        state.enqueue.assert_not_called()
+        # enqueue IS called — idempotency guarantees the existing token is returned
+        state.enqueue.assert_called_once_with(user_id)
         redirect_url = mock_ui.navigate.to.call_args[0][0]
         assert f"t={existing_token}" in redirect_url
 

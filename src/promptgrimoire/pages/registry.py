@@ -113,15 +113,15 @@ async def _check_admission_gate(
 
     uid = _UUID(user_id)
 
+    # 1. Already connected — navigating within an admitted session
+    if uid in client_registry._registry:
+        return False
+
     # Startup race: admission state may not be initialised yet
     try:
         state = admission.get_admission_state()
     except RuntimeError:
         logger.debug("admission_state_not_ready", route=request_path)
-        return False
-
-    # 1. Already connected — navigating within an admitted session
-    if uid in client_registry._registry:
         return False
 
     # 2. Valid entry ticket from queue admission
@@ -136,8 +136,8 @@ async def _check_admission_gate(
     if len(client_registry._registry) < state.cap:
         return False
 
-    # 5. At or over cap — enqueue and redirect
-    token = state._user_tokens[uid] if uid in state._user_tokens else state.enqueue(uid)
+    # 5. At or over cap — enqueue and redirect (enqueue is idempotent)
+    token = state.enqueue(uid)
 
     params = urlencode({"t": token, "return": request_path})
     redirect_url = f"/queue?{params}"

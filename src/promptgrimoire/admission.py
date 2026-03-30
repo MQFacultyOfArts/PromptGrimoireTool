@@ -106,27 +106,16 @@ class AdmissionState:
     def get_queue_status(self, token: str) -> dict[str, object]:
         """Return queue position / admission status for a token."""
         if token not in self._tokens:
-            return {
-                "position": 0,
-                "total": 0,
-                "admitted": False,
-                "expired": True,
-            }
+            return self._expired_status()
 
         user_id = self._tokens[token]
 
         # Admitted but not yet entered?
         if user_id in self._tickets:
             if self._tickets[user_id] < time.monotonic():
-                # Ticket expired
                 del self._tickets[user_id]
                 self._cleanup_token_maps(user_id)
-                return {
-                    "position": 0,
-                    "total": 0,
-                    "admitted": False,
-                    "expired": True,
-                }
+                return self._expired_status()
             return {
                 "position": 0,
                 "total": len(self._queue),
@@ -136,16 +125,8 @@ class AdmissionState:
 
         # Still in queue?
         if user_id in self._enqueue_times:
-            pos = -1
-            for i, uid in enumerate(self._queue):
-                if uid == user_id:
-                    pos = i + 1
-                    break
+            pos = self._find_queue_position(user_id)
             if pos == -1:
-                # Data-structure desync: _enqueue_times and _queue are out of
-                # sync. This should never happen in normal operation; log and
-                # treat as a stale/expired token so the caller gets a clean
-                # state rather than an ambiguous position=0.
                 structlog.get_logger().warning(
                     "admission_queue_desync",
                     user_id=str(user_id),
@@ -154,12 +135,7 @@ class AdmissionState:
                 )
                 self._enqueue_times.pop(user_id, None)
                 self._cleanup_token_maps(user_id)
-                return {
-                    "position": -1,
-                    "total": len(self._queue),
-                    "admitted": False,
-                    "expired": True,
-                }
+                return self._expired_status(position=-1, total=len(self._queue))
             return {
                 "position": pos,
                 "total": len(self._queue),
@@ -169,12 +145,7 @@ class AdmissionState:
 
         # Stale token
         self._cleanup_token_maps(user_id)
-        return {
-            "position": 0,
-            "total": 0,
-            "admitted": False,
-            "expired": True,
-        }
+        return self._expired_status()
 
     # ------------------------------------------------------------------
     # Expiry sweep
@@ -205,6 +176,23 @@ class AdmissionState:
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
+    @staticmethod
+    def _expired_status(*, position: int = 0, total: int = 0) -> dict[str, object]:
+        """Return a standard expired/stale status dict."""
+        return {
+            "position": position,
+            "total": total,
+            "admitted": False,
+            "expired": True,
+        }
+
+    def _find_queue_position(self, user_id: UUID) -> int:
+        """Return 1-based queue position, or -1 if not found."""
+        for i, uid in enumerate(self._queue):
+            if uid == user_id:
+                return i + 1
+        return -1
+
     def _cleanup_token_maps(self, user_id: UUID) -> None:
         """Remove a user from the token lookup maps."""
         token = self._user_tokens.pop(user_id, None)

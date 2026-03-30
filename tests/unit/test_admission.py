@@ -17,24 +17,21 @@ from promptgrimoire.config import AdmissionConfig
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-def _make_state(
-    *,
-    cap: int = 20,
-    initial_cap: int = 20,
-    batch_size: int = 20,
-    lag_increase_ms: int = 10,
-    lag_decrease_ms: int = 50,
-    queue_timeout_seconds: int = 1800,
-    ticket_validity_seconds: int = 600,
-) -> AdmissionState:
+def _make_state(*, cap: int | None = None, **overrides: int) -> AdmissionState:
+    """Build an AdmissionState from AdmissionConfig defaults with overrides.
+
+    ``cap`` defaults to the config's ``initial_cap`` (matching production
+    behaviour).  All other keyword arguments are forwarded to AdmissionConfig.
+    """
+    config = AdmissionConfig(**overrides)
     return AdmissionState(
-        cap=cap,
-        initial_cap=initial_cap,
-        batch_size=batch_size,
-        lag_increase_ms=lag_increase_ms,
-        lag_decrease_ms=lag_decrease_ms,
-        queue_timeout_seconds=queue_timeout_seconds,
-        ticket_validity_seconds=ticket_validity_seconds,
+        cap=cap if cap is not None else config.initial_cap,
+        initial_cap=config.initial_cap,
+        batch_size=config.batch_size,
+        lag_increase_ms=config.lag_increase_ms,
+        lag_decrease_ms=config.lag_decrease_ms,
+        queue_timeout_seconds=config.queue_timeout_seconds,
+        ticket_validity_seconds=config.ticket_validity_seconds,
     )
 
 

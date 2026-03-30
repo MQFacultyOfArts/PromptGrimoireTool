@@ -72,7 +72,7 @@ class TestInitDbPoolSelection:
         # Force settings reload
         monkeypatch.setattr(
             "promptgrimoire.db.engine.get_settings",
-            lambda: Settings(_env_file=None),  # type: ignore[call-arg]
+            lambda: Settings(_env_file=None),  # type: ignore[call-arg]  # ty: ignore[unknown-argument]
         )
 
         kwargs = await self._run_init_db_with_captured_kwargs(monkeypatch)
@@ -94,7 +94,7 @@ class TestInitDbPoolSelection:
 
         monkeypatch.setattr(
             "promptgrimoire.db.engine.get_settings",
-            lambda: Settings(_env_file=None),  # type: ignore[call-arg]
+            lambda: Settings(_env_file=None),  # type: ignore[call-arg]  # ty: ignore[unknown-argument]
         )
 
         kwargs = await self._run_init_db_with_captured_kwargs(monkeypatch)
@@ -108,12 +108,31 @@ class TestInitDbPoolSelection:
         """Test environment flag also triggers NullPool (existing behavior)."""
         monkeypatch.setenv("_PROMPTGRIMOIRE_USE_NULL_POOL", "1")
         monkeypatch.delenv("DATABASE__USE_NULL_POOL", raising=False)
+        monkeypatch.delenv("_PROMPTGRIMOIRE_WORKER_NULLPOOL", raising=False)
 
         from promptgrimoire.config import Settings
 
         monkeypatch.setattr(
             "promptgrimoire.db.engine.get_settings",
-            lambda: Settings(_env_file=None),  # type: ignore[call-arg]
+            lambda: Settings(_env_file=None),  # type: ignore[call-arg]  # ty: ignore[unknown-argument]
+        )
+
+        kwargs = await self._run_init_db_with_captured_kwargs(monkeypatch)
+        assert kwargs.get("poolclass") is NullPool
+
+    async def test_nullpool_when_worker_override(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Worker override env var triggers NullPool independently of config."""
+        monkeypatch.delenv("_PROMPTGRIMOIRE_USE_NULL_POOL", raising=False)
+        monkeypatch.delenv("DATABASE__USE_NULL_POOL", raising=False)
+        monkeypatch.setenv("_PROMPTGRIMOIRE_WORKER_NULLPOOL", "1")
+
+        from promptgrimoire.config import Settings
+
+        monkeypatch.setattr(
+            "promptgrimoire.db.engine.get_settings",
+            lambda: Settings(_env_file=None),  # type: ignore[call-arg]  # ty: ignore[unknown-argument]
         )
 
         kwargs = await self._run_init_db_with_captured_kwargs(monkeypatch)

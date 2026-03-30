@@ -164,7 +164,11 @@ async def init_db() -> None:
         return
 
     settings = get_settings()
-    use_null_pool = _is_test_environment() or settings.database.use_null_pool
+    use_null_pool = (
+        _is_test_environment()
+        or settings.database.use_null_pool
+        or os.environ.get("_PROMPTGRIMOIRE_WORKER_NULLPOOL") == "1"
+    )
 
     pool_kwargs: dict[str, object] = {
         "echo": settings.dev.database_echo,
@@ -176,7 +180,12 @@ async def init_db() -> None:
 
     if use_null_pool:
         pool_kwargs["poolclass"] = NullPool
-        reason = "test" if _is_test_environment() else "config"
+        if _is_test_environment():
+            reason = "test"
+        elif os.environ.get("_PROMPTGRIMOIRE_WORKER_NULLPOOL") == "1":
+            reason = "worker_override"
+        else:
+            reason = "config"
         logger.info("db_pool_mode", mode="NullPool", reason=reason)
     else:
         db_config = settings.database

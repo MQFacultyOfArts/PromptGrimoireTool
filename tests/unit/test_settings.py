@@ -7,6 +7,7 @@ The _env_file parameter is a pydantic-settings internal not visible to ty.
 from __future__ import annotations
 
 import inspect
+import logging
 import os
 from pathlib import Path
 from tempfile import gettempdir
@@ -273,10 +274,15 @@ class TestWorktreeEnvPaths:
 
     def test_get_settings_logs_env_files(
         self,
-        capsys: pytest.CaptureFixture[str],
+        caplog: pytest.LogCaptureFixture,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """AC7.4: get_settings() emits INFO log about .env loading."""
+        """AC7.4: get_settings() emits INFO log about .env loading.
+
+        structlog routes through stdlib LoggerFactory, so logs appear in
+        pytest's caplog (not capsys).  Reverted from capsys after e056c3b5
+        broke this on CI.
+        """
         import promptgrimoire.config as config_module
 
         # Patch Settings in the config module so get_settings() constructs
@@ -290,11 +296,11 @@ class TestWorktreeEnvPaths:
         monkeypatch.setattr(config_module.Settings, "__init__", _patched_init)
         get_settings.cache_clear()
         try:
-            get_settings()
-            captured = capsys.readouterr()
-            combined = captured.out + captured.err
-            assert "Settings" in combined or "settings_loaded" in combined, (
-                f"Expected INFO log about .env, got: {combined!r}"
+            with caplog.at_level(logging.INFO, logger="promptgrimoire.config"):
+                get_settings()
+            messages = [r.message for r in caplog.records]
+            assert any("Settings" in m and ".env" in m for m in messages), (
+                f"Expected INFO log about .env, got: {messages}"
             )
         finally:
             get_settings.cache_clear()

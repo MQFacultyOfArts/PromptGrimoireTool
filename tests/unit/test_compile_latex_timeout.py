@@ -86,28 +86,31 @@ async def test_timeout_kills_process_group(tmp_path: Path) -> None:
 async def test_semaphore_caps_concurrent_compilations(tmp_path: Path) -> None:
     """Only 2 LaTeX compilations may run concurrently; a 3rd must wait.
 
-    Uses per-task events for deterministic synchronisation — no timeouts,
-    no sleeps.  Each fake latexmk sets its own ``started`` event on entry
-    and blocks on a shared ``release`` event.  After yielding control to
-    the event loop, we check which tasks have started to verify the
-    semaphore is holding the 3rd back.
+    Load-invariant: no sleeps, no timeouts, no mid-flight observation.
+
+    Each fake latexmk increments a concurrent counter on entry, then
+    waits on a shared ``rendezvous`` event.  The second task to enter
+    sets the event, proving both tasks are inside simultaneously.
+    All tasks (including the 3rd, which enters after the first two
+    finish) proceed once the event is set.
+
+    If the semaphore is broken and allows 3 concurrent entries,
+    ``max_concurrent`` will be 3.  If it works, it will be exactly 2.
     """
-    started: list[asyncio.Event] = [asyncio.Event() for _ in range(3)]
-    release = asyncio.Event()
+    rendezvous = asyncio.Event()
     max_concurrent = 0
     concurrent_count = 0
-
-    # Map tex_path stem → index so each task gets its own started event
-    stem_to_idx: dict[str, int] = {}
+    entered_count = 0
 
     async def fake_run_latexmk(tex_path: Path, output_dir: Path) -> Path:
-        nonlocal concurrent_count, max_concurrent
-        idx = stem_to_idx[tex_path.parent.name]
+        nonlocal concurrent_count, max_concurrent, entered_count
         concurrent_count += 1
         max_concurrent = max(max_concurrent, concurrent_count)
-        started[idx].set()
+        entered_count += 1
+        if entered_count >= 2:
+            rendezvous.set()
         try:
-            await release.wait()
+            await rendezvous.wait()
         finally:
             concurrent_count -= 1
         pdf_path = output_dir / (tex_path.stem + ".pdf")
@@ -122,27 +125,12 @@ async def test_semaphore_caps_concurrent_compilations(tmp_path: Path) -> None:
         tex = d / "test.tex"
         tex.write_text(r"\documentclass{article}\begin{document}x\end{document}")
         tex_paths.append(tex)
-        stem_to_idx[d.name] = i
 
     with patch("promptgrimoire.export.pdf._run_latexmk", side_effect=fake_run_latexmk):
         tasks = [
             asyncio.create_task(compile_latex(tp, output_dir=tp.parent))
             for tp in tex_paths
         ]
-
-        # Yield control so all ready tasks can run.  After this, any task
-        # that CAN acquire the semaphore WILL have done so.
-        await asyncio.sleep(0)
-        await asyncio.sleep(0)  # second yield: semaphore acquire is a two-step await
-
-        started_count = sum(1 for e in started if e.is_set())
-        assert started_count == 2, (
-            f"Expected exactly 2 tasks started, got {started_count}. "
-            "Semaphore is not limiting concurrency."
-        )
-
-        # Release all and let them finish
-        release.set()
         await asyncio.gather(*tasks)
 
     assert max_concurrent == 2, (

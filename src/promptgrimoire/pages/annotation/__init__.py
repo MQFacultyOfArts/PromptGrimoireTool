@@ -248,6 +248,9 @@ class PageState:
     expanded_cards: set[str] = field(
         default_factory=set
     )  # highlight IDs currently expanded
+    detail_built_cards: set[str] = field(
+        default_factory=set
+    )  # highlight IDs with detail section built
     cards_epoch: int = 0  # Incremented on every container rebuild
     refresh_annotations: Any | None = None  # Callable to refresh cards
     broadcast_update: Any | None = None  # Callable to broadcast to other clients
@@ -348,6 +351,7 @@ class PageState:
         """
         self.annotation_cards = None
         self.card_snapshots = {}
+        self.detail_built_cards.clear()
         for doc_tab in self.document_tabs.values():
             doc_tab.annotation_cards = {}
             doc_tab.card_snapshots = {}

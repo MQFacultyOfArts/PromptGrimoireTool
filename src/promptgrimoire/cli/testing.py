@@ -455,6 +455,8 @@ _NICEGUI_UI_FILES: frozenset[str] = frozenset(
         "test_slot_deletion_race_369.py",
         "test_tag_management_crdt_sync.py",
         "test_memory_leak_probe.py",
+        "test_event_loop_render_lag.py",
+        "test_lazy_card_detail.py",
     }
 )
 

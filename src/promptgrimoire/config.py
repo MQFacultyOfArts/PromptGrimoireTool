@@ -8,16 +8,23 @@ Tests construct ``Settings(_env_file=None, ...)`` directly for isolation.
 from __future__ import annotations
 
 import hashlib
+import logging as _logging
 import re
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal, Self
 
-import structlog
 from pydantic import BaseModel, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-logger = structlog.get_logger()
+# Use stdlib logging for this module, NOT structlog.get_logger().
+# get_settings() is called by setup_logging() BEFORE structlog.configure()
+# runs.  structlog's cache_logger_on_first_use=True permanently caches the
+# BoundLogger on first .info() call — if that happens before configure(),
+# the logger is stuck on the default PrintLogger and never routes through
+# the structured JSON/console handlers.  stdlib logging has no such ordering
+# constraint; records reach whatever handlers are installed at call time.
+logger = _logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Path resolution for worktree-aware .env loading
 # ---------------------------------------------------------------------------
@@ -204,7 +211,7 @@ def _current_branch() -> str | None:
     try:
         head = head_path.read_text().strip()
     except OSError:
-        logger.warning("git_head_unreadable", operation="detect_branch")
+        logger.warning("git_head_unreadable: operation=detect_branch")
         return None
     if head.startswith("ref: refs/heads/"):
         return head.removeprefix("ref: refs/heads/")

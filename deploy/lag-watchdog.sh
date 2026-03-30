@@ -16,6 +16,7 @@ CRITICAL="${LAG_CRITICAL:-1000}"  # ms — instant restart, no strikes
 SERVICE="promptgrimoire"
 
 prev_lag=0
+prev_users=0
 strike_count=0
 cooldown_until=$(( $(date +%s) + 120 ))  # suppress strikes for 2min on startup too
 
@@ -60,6 +61,7 @@ journalctl -u "$SERVICE" -f --output cat | while IFS= read -r line; do
             echo "  ❄ cooldown (lag=${lag}ms, $(( cooldown_until - now ))s remaining)"
         fi
         prev_lag="$lag"
+        prev_users="$users"
         continue
     fi
 
@@ -75,11 +77,29 @@ journalctl -u "$SERVICE" -f --output cat | while IFS= read -r line; do
         systemctl restart "$SERVICE"
         strike_count=0
         prev_lag=0
+        prev_users=0
         cooldown_until=$(( $(date +%s) + 120 ))
         continue
     fi
 
-    # Rule 2: escalating above warn threshold — 2 consecutive increasing readings
+    # Rule 2: mass disconnect — users dropped >50% between readings (event loop blocking clients out)
+    if [ "$prev_users" -gt 50 ] && [ "$users" -gt 0 ] && [ "$users" -lt $(( prev_users / 2 )) ]; then
+        echo ""
+        echo "=========================================="
+        echo "  🔴 WATCHDOG RESTART — MASS DISCONNECT"
+        echo "  users ${prev_users} → ${users} (>50% drop)"
+        echo "  $(date '+%H:%M:%S') — restarting ${SERVICE}"
+        echo "=========================================="
+        echo ""
+        systemctl restart "$SERVICE"
+        strike_count=0
+        prev_lag=0
+        prev_users=0
+        cooldown_until=$(( $(date +%s) + 120 ))
+        continue
+    fi
+
+    # Rule 3: escalating above warn threshold — 2 consecutive increasing readings
     if [ "$lag" -gt "$WARN" ] && [ "$lag" -gt "$prev_lag" ] && [ "$prev_lag" -gt "$WARN" ]; then
         strike_count=$((strike_count + 1))
         echo "  ⚡ STRIKE ${strike_count}/2 (${prev_lag}ms → ${lag}ms, users=${users})"
@@ -95,6 +115,7 @@ journalctl -u "$SERVICE" -f --output cat | while IFS= read -r line; do
             systemctl restart "$SERVICE"
             strike_count=0
             prev_lag=0
+            prev_users=0
             cooldown_until=$(( $(date +%s) + 120 ))
             continue
         fi
@@ -105,4 +126,5 @@ journalctl -u "$SERVICE" -f --output cat | while IFS= read -r line; do
         strike_count=0
     fi
     prev_lag="$lag"
+    prev_users="$users"
 done

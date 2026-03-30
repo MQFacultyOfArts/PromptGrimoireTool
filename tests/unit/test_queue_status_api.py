@@ -23,7 +23,7 @@ def mock_state() -> MagicMock:
 
 
 @pytest.fixture
-def client(mock_state: MagicMock) -> Generator[TestClient]:
+def client() -> Generator[TestClient]:
     """Minimal Starlette app with just the queue status route."""
     from starlette.applications import Starlette
     from starlette.routing import Route
@@ -34,8 +34,7 @@ def client(mock_state: MagicMock) -> Generator[TestClient]:
         routes=[Route("/api/queue/status", queue_status_handler, methods=["GET"])]
     )
 
-    with patch("promptgrimoire.admission.get_admission_state", return_value=mock_state):
-        yield TestClient(app)
+    yield TestClient(app)
 
 
 class TestQueueStatusQueued:

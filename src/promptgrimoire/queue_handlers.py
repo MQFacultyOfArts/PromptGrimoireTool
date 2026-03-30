@@ -13,12 +13,6 @@ from starlette.responses import HTMLResponse, JSONResponse
 if TYPE_CHECKING:
     from starlette.requests import Request
 
-# Deferred import to avoid circular dependency at module load time.
-# admission.get_admission_state() requires init_admission() to have
-# been called during app startup; importing at call time is the
-# established pattern (see __init__.py healthz, kick_user_handler).
-_GET_ADMISSION_STATE = "promptgrimoire.admission"
-
 
 async def queue_status_handler(
     request: Request,

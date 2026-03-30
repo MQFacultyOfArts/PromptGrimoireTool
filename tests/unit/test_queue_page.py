@@ -76,6 +76,7 @@ class TestQueuePagePolling:
         resp = client.get("/queue?t=tok&return=/")
         assert "/api/queue/status?t=" in resp.text
         assert "setTimeout(poll" in resp.text
+        assert "setTimeout(poll, 5000)" in resp.text
 
 
 class TestQueuePageXSSPrevention:

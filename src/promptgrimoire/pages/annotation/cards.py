@@ -390,27 +390,18 @@ def _build_compact_header(
         .style("min-height: 20px; padding: 4px 8px;")
     )
     with header_row:
-        # Colour dot
-        ui.element("div").style(
-            f"width: 8px; height: 8px; border-radius: 50%; "
-            f"background-color: {color}; flex-shrink: 0;"
+        # Static display elements as a single HTML block (Task 5, #457).
+        # Replaces 6 NiceGUI element constructors with one ui.html() call.
+        html_content = _render_compact_header_html(
+            tag_display=tag_display,
+            color=color,
+            initials=initials,
+            para_ref=para_ref,
+            comment_count=comment_count,
         )
-        # Tag name (static label)
-        ui.label(tag_display).classes("text-xs font-bold truncate").style(
-            f"color: {color}; max-width: 100px;"
+        ui.html(html_content, sanitize=False).classes("flex items-center gap-1").style(
+            "flex: 1; min-width: 0;"
         )
-        # Author initials
-        ui.label(initials).classes("text-xs text-gray-500")
-        # Para ref
-        if para_ref:
-            ui.label(para_ref).classes("text-xs font-mono text-gray-400")
-        # Comment count badge
-        if comment_count > 0:
-            ui.label(str(comment_count)).classes(
-                "text-xs bg-blue-100 text-blue-700 rounded-full px-1"
-            ).props('data-testid="comment-count"')
-        # Spacer pushes buttons to the right
-        ui.element("div").style("flex-grow: 1;")
 
         # Expand/collapse chevron
         chevron = (

@@ -12,6 +12,8 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 from uuid import UUID, uuid4
 
+import structlog
+
 if TYPE_CHECKING:
     from promptgrimoire.config import AdmissionConfig
 
@@ -134,11 +136,30 @@ class AdmissionState:
 
         # Still in queue?
         if user_id in self._enqueue_times:
-            pos = 0
+            pos = -1
             for i, uid in enumerate(self._queue):
                 if uid == user_id:
                     pos = i + 1
                     break
+            if pos == -1:
+                # Data-structure desync: _enqueue_times and _queue are out of
+                # sync. This should never happen in normal operation; log and
+                # treat as a stale/expired token so the caller gets a clean
+                # state rather than an ambiguous position=0.
+                structlog.get_logger().warning(
+                    "admission_queue_desync",
+                    user_id=str(user_id),
+                    enqueue_times_size=len(self._enqueue_times),
+                    queue_size=len(self._queue),
+                )
+                self._enqueue_times.pop(user_id, None)
+                self._cleanup_token_maps(user_id)
+                return {
+                    "position": -1,
+                    "total": len(self._queue),
+                    "admitted": False,
+                    "expired": True,
+                }
             return {
                 "position": pos,
                 "total": len(self._queue),

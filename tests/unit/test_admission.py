@@ -17,21 +17,24 @@ from promptgrimoire.config import AdmissionConfig
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-def _make_state(**overrides: int) -> AdmissionState:
+def _make_state(
+    *,
+    cap: int = 20,
+    initial_cap: int = 20,
+    batch_size: int = 20,
+    lag_increase_ms: int = 10,
+    lag_decrease_ms: int = 50,
+    queue_timeout_seconds: int = 1800,
+    ticket_validity_seconds: int = 600,
+) -> AdmissionState:
     return AdmissionState(
-        cap=overrides.get("cap", 20),
-        initial_cap=overrides.get("initial_cap", 20),
-        batch_size=overrides.get("batch_size", 20),
-        lag_increase_ms=overrides.get("lag_increase_ms", 10),
-        lag_decrease_ms=overrides.get("lag_decrease_ms", 50),
-        queue_timeout_seconds=overrides.get(
-            "queue_timeout_seconds",
-            1800,
-        ),
-        ticket_validity_seconds=overrides.get(
-            "ticket_validity_seconds",
-            600,
-        ),
+        cap=cap,
+        initial_cap=initial_cap,
+        batch_size=batch_size,
+        lag_increase_ms=lag_increase_ms,
+        lag_decrease_ms=lag_decrease_ms,
+        queue_timeout_seconds=queue_timeout_seconds,
+        ticket_validity_seconds=ticket_validity_seconds,
     )
 
 
@@ -118,6 +121,29 @@ class TestQueue:
         admitted = state.admit_batch(admitted_count=0)
         assert len(admitted) == 5
         assert admitted == users
+
+    def test_admit_batch_with_admitted_count_partial(self) -> None:
+        """admit_batch with admitted_count=15, cap=20, 10 queued → 5 newly admitted."""
+        state = _make_state(cap=20)
+        users = [uuid4() for _ in range(10)]
+        for u in users:
+            state.enqueue(u)
+        admitted = state.admit_batch(admitted_count=15)
+        assert len(admitted) == 5
+        assert admitted == users[:5]
+        # Remaining 5 stay in queue
+        assert list(state._queue) == users[5:]
+
+    def test_admit_batch_with_admitted_count_full(self) -> None:
+        """admit_batch with admitted_count=20, cap=20, 5 queued → [] (at cap)."""
+        state = _make_state(cap=20)
+        users = [uuid4() for _ in range(5)]
+        for u in users:
+            state.enqueue(u)
+        admitted = state.admit_batch(admitted_count=20)
+        assert admitted == []
+        # All 5 still waiting
+        assert list(state._queue) == users
 
     def test_ac2_4_expired_queue_entries_swept(self) -> None:
         """AC2.4: Users in queue longer than queue_timeout_seconds are dropped."""
@@ -216,6 +242,25 @@ class TestQueueStatus:
         assert status["admitted"] is True
         assert status["position"] == 0
         assert status["expired"] is False
+
+    def test_queue_desync_returns_position_minus_one(self) -> None:
+        """State desync: user in _enqueue_times but not _queue.
+
+        Expect position=-1, expired=True.
+        """
+        state = _make_state()
+        user = uuid4()
+        token = state.enqueue(user)
+        # Artificially remove user from _queue while keeping _enqueue_times
+        state._queue.remove(user)
+        status = state.get_queue_status(token)
+        assert status["position"] == -1
+        assert status["expired"] is True
+        assert status["admitted"] is False
+        # Token maps cleaned up after desync detection
+        assert token not in state._tokens
+        assert user not in state._user_tokens
+        assert user not in state._enqueue_times
 
     def test_expired_ticket_in_status(self) -> None:
         state = _make_state(cap=1, ticket_validity_seconds=600)

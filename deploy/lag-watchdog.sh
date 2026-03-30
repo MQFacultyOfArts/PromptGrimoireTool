@@ -29,7 +29,8 @@ journalctl -u "$SERVICE" -f --output cat | while IFS= read -r line; do
             [
                 (.timestamp[:19] + "Z" | fromdateiso8601 + 39600 | strftime("%H:%M:%S")),
                 (.current_rss_bytes/1048576 | floor | tostring) + "MB",
-                (.clients_connected | tostring) + " users",
+                (.clients_connected | tostring) + " ws ("
+                    + (.users_authenticated // 0 | tostring) + " reg)",
                 (.asyncio_tasks_total | tostring) + " tasks",
                 (if .event_loop_lag_ms > 50 then "⚠ " else "" end)
                     + (.event_loop_lag_ms | floor | tostring) + "ms lag"

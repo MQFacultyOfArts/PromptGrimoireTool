@@ -22,6 +22,7 @@ from promptgrimoire.config import get_settings
 from tests.integration.conftest import _authenticate
 from tests.integration.nicegui_helpers import (
     _find_all_by_testid,
+    _find_html_testid_texts,
     _fire_event_listeners,
     _should_see_testid,
     wait_for,
@@ -355,10 +356,10 @@ class TestAnnotateCardRendering:
         await wait_for_annotation_load(nicegui_user)
         await _should_see_testid(nicegui_user, "annotation-card")
 
-        badges = _find_all_by_testid(nicegui_user, "comment-count")
+        # Comment count is inside ui.html() raw HTML (Phase 2, #457)
+        badge_texts = _find_html_testid_texts(nicegui_user, "comment-count")
         # HL1 has 1 comment => badge "1"
-        assert len(badges) >= 1, "Expected at least 1 comment count badge"
-        badge_texts = [b.text for b in badges if hasattr(b, "text")]
+        assert len(badge_texts) >= 1, "Expected at least 1 comment count badge"
         assert "1" in badge_texts, f"Expected badge '1', got {badge_texts}"
 
     @pytest.mark.asyncio
@@ -1004,9 +1005,8 @@ class TestDiffChangedHighlights:
         await wait_for_annotation_load(nicegui_user)
         await _should_see_testid(nicegui_user, "annotation-card")
 
-        # The badge on HL1 card should show "2"
-        badges = _find_all_by_testid(nicegui_user, "comment-count")
-        badge_texts = [b.text for b in badges if hasattr(b, "text")]
+        # The badge on HL1 card should show "2" (inside ui.html, Phase 2 #457)
+        badge_texts = _find_html_testid_texts(nicegui_user, "comment-count")
         assert "2" in badge_texts, (
             f"Expected badge '2' after adding comment, got {badge_texts}"
         )

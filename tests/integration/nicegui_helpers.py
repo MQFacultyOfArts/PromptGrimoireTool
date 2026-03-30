@@ -123,6 +123,33 @@ def _find_all_by_testid(user: User, testid: str) -> list[Element]:
     return results
 
 
+def _find_html_testid_texts(user: User, testid: str) -> list[str]:
+    """Extract text content for a ``data-testid`` embedded in ``ui.html()``.
+
+    ``_find_all_by_testid`` only finds NiceGUI elements with testid in
+    ``.props``.  When static content is rendered via ``ui.html()`` (e.g.
+    compact card headers), testids live inside the innerHTML string.
+    This helper searches ``ui.html`` elements' content for the testid
+    and returns the text between ``>`` and ``</`` for each match.
+    """
+    import re
+
+    pattern = re.compile(
+        rf'data-testid="{re.escape(testid)}"[^>]*>([^<]*)<',
+    )
+    texts: list[str] = []
+    with user:
+        for el in ElementFilter():
+            if not el.visible:
+                continue
+            html = el.props.get("innerHTML", "")
+            if not html:
+                continue
+            for m in pattern.finditer(html):
+                texts.append(m.group(1))
+    return texts
+
+
 def _find_value_element_by_testid(user: User, testid: str) -> ValueElement | None:
     """Return the first ``ValueElement`` whose ``data-testid`` matches *testid*.
 

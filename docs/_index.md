@@ -58,7 +58,6 @@ library references during development.
 - [Investigation: Unbounded Memory Growth (#434)](investigations/2026-03-27-memory-leak-434.md)
 - [Causal Analysis: Deferred Load E2E Test Failures (#377)](investigations/2026-03-28-deferred-load-e2e-failures.md)
 - [Investigation: Cross-User Session Contamination (#438)](investigations/2026-03-28-session-contamination-438.md)
-- [Causal Analysis: Event Loop Blocking Under Load](investigations/2026-03-30-event-loop-blocking.md)
 
 ## lark
 

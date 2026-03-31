@@ -151,7 +151,7 @@ Before modifying core systems, reference the detailed documentation in the `docs
 
 **DB API** (`db/users.py`): `set_banned(user_id, is_banned)`, `is_user_banned(user_id)` (lightweight boolean query), `get_banned_users()`.
 
-**Page-route ban guard** (`pages/registry.py`): The `page_route` decorator checks `is_user_banned()` on every page load for authenticated users, redirecting banned users to `/banned`. The `/banned` page uses `@ui.page` directly (not `page_route`) to avoid redirect loops.
+**Page-route guards** (`pages/registry.py`): The `page_route` decorator runs two guards for authenticated users: (1) ban check via `is_user_banned()`, redirecting to `/banned`; (2) admission gate via `_check_admission_gate()`, redirecting to `/queue` when at capacity. The `/banned` page uses `@ui.page` directly (not `page_route`) to avoid redirect loops.
 
 **Client registry** (`auth/client_registry.py`): Module-level `dict[UUID, set[Client]]` mapping users to connected NiceGUI clients. `page_route` registers clients on each page load; `disconnect_user()` redirects all of a user's clients to `/banned` via `run_javascript`. Auto-deregisters on `client.on_delete`.
 
@@ -162,6 +162,28 @@ Before modifying core systems, reference the detailed documentation in the `docs
 **CLI** (`cli/admin.py`): `admin ban <email>` (sets DB flag, updates Stytch metadata, revokes sessions, calls kick endpoint), `admin unban <email>` (reverses all), `admin ban --list` (tabular display of banned users).
 
 **Config** (`config.py`): `AdminConfig` sub-model with `admin_api_secret: SecretStr`. Env var: `ADMIN__ADMIN_API_SECRET`.
+
+### Admission Gate (Lag-Based)
+
+**Pure state module** (`admission.py`): AIMD-based dynamic admission gate. No NiceGUI imports. Module-level singleton initialised via `init_admission(config)` at app startup.
+
+**AIMD algorithm:** `update_cap(lag_ms, admitted_count)` halves cap when event-loop lag exceeds `lag_decrease_ms`, additively increases by `batch_size` when lag is below `lag_increase_ms` AND server is near capacity. Cap never drops below `initial_cap`.
+
+**FIFO queue:** `enqueue(user_id)` is idempotent (same user returns same token). Previously-admitted users returning after ticket expiry get priority (front of queue). `admit_batch(admitted_count)` pops users up to available capacity, granting time-limited entry tickets. Outstanding tickets are subtracted from available capacity to prevent over-admission bursts.
+
+**Entry tickets:** `try_enter(user_id)` consumes a one-use ticket. Tickets expire after `ticket_validity_seconds`. `sweep_expired()` cleans up stale queue entries and expired tickets.
+
+**Page-route gate** (`pages/registry.py`): `_check_admission_gate()` runs inside `page_route` before page handlers. Check order: (0) gate disabled, (1) already in client_registry, (2) valid entry ticket, (3) privileged user bypass, (4) under cap, (5) enqueue and redirect to `/queue`. Cap is a soft limit -- concurrent arrivals can exceed it by ~batch_size; AIMD self-corrects on next diagnostic cycle.
+
+**Queue page** (`queue_handlers.py`): Raw Starlette handlers (`/queue` and `/api/queue/status`) with zero NiceGUI client overhead. Vanilla JS polling every 5s. Open-redirect guard on return URL. XSS prevention via JSON-escaped token embedding.
+
+**Diagnostic integration** (`diagnostics.py`): `_enrich_snapshot_with_admission()` runs AIMD cap update, batch admission, and expiry sweep each diagnostic cycle. Adds `admission_cap`, `admission_admitted`, `admission_queue_depth`, `admission_tickets` to `memory_diagnostic` structlog events.
+
+**Restart invariant:** Both restart paths (`pre_restart_handler` and `graceful_memory_shutdown`) call `get_admission_state().clear()` before navigating clients. After restart, cap starts at `initial_cap` and ramps up naturally via AIMD.
+
+**Dev endpoints** (`dev_endpoints.py`): `POST /api/dev/admission` (set cap, enable/disable, clear state) and `POST /api/dev/block-loop` (block event loop to trigger AIMD). Gated behind `DEV__AUTH_MOCK=true` -- never available in production.
+
+**Config** (`config.py`): `AdmissionConfig` sub-model. Env vars: `ADMISSION__ENABLED` (bool, default true), `ADMISSION__INITIAL_CAP` (int, default 20), `ADMISSION__BATCH_SIZE` (int, default 20), `ADMISSION__LAG_INCREASE_MS` (int, default 10), `ADMISSION__LAG_DECREASE_MS` (int, default 50), `ADMISSION__QUEUE_TIMEOUT_SECONDS` (int, default 1800), `ADMISSION__TICKET_VALIDITY_SECONDS` (int, default 600).
 
 ### Incident Analysis Tooling
 

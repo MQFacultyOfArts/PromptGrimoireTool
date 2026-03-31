@@ -239,7 +239,12 @@ async def run_playwright_file(
                 env=pytest_env,
                 log_path=pytest_log_path,
             )
-            _collect_playwright_artifacts(worker_dir)
+            # Only collect bulky screenshot/trace artifacts for failed
+            # workers — passing workers don't need them and copying
+            # the shared screenshots dir into all 48 workers bloats
+            # CI artifacts from ~5MB to ~300MB.
+            if exit_code not in (0, 5):
+                _collect_playwright_artifacts(worker_dir)
             return _build_worker_result(
                 test_file=test_file,
                 exit_code=exit_code,

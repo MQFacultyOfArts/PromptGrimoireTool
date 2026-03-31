@@ -15,11 +15,11 @@ import inspect
 
 from promptgrimoire.pages.annotation.highlights import _warp_to_highlight
 from promptgrimoire.pages.annotation.organise import (
-    _build_highlight_card,
+    _build_highlight_card_html,
     render_organise_tab,
 )
 from promptgrimoire.pages.annotation.respond import (
-    _build_reference_card,
+    _build_reference_card_html,
     _build_reference_panel,
     render_respond_tab,
 )
@@ -59,9 +59,9 @@ class TestOrganiseLocateParameter:
         param = sig.parameters["on_locate"]
         assert param.default is None
 
-    def test_build_highlight_card_accepts_on_locate(self) -> None:
-        """_build_highlight_card has on_locate parameter."""
-        sig = inspect.signature(_build_highlight_card)
+    def test_build_highlight_card_html_accepts_on_locate(self) -> None:
+        """_build_highlight_card_html has on_locate parameter."""
+        sig = inspect.signature(_build_highlight_card_html)
         assert "on_locate" in sig.parameters
         param = sig.parameters["on_locate"]
         assert param.default is None
@@ -77,9 +77,9 @@ class TestRespondLocateParameter:
         param = sig.parameters["on_locate"]
         assert param.default is None
 
-    def test_build_reference_card_accepts_on_locate(self) -> None:
-        """_build_reference_card has on_locate parameter."""
-        sig = inspect.signature(_build_reference_card)
+    def test_build_reference_card_html_accepts_on_locate(self) -> None:
+        """_build_reference_card_html has on_locate parameter."""
+        sig = inspect.signature(_build_reference_card_html)
         assert "on_locate" in sig.parameters
         param = sig.parameters["on_locate"]
         assert param.default is None

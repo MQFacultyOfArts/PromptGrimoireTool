@@ -30,10 +30,7 @@ import structlog
 from nicegui import ui
 
 from promptgrimoire.crdt.persistence import get_persistence_manager
-from promptgrimoire.pages.annotation.card_shared import (
-    anonymise_display_author,
-    build_expandable_text,
-)
+from promptgrimoire.pages.annotation.card_shared import anonymise_display_author
 from promptgrimoire.pages.annotation.word_count_badge import format_word_count_badge
 from promptgrimoire.word_count import word_count
 
@@ -179,76 +176,6 @@ def _render_reference_card_html(
         )
 
     return "".join(parts)
-
-
-def _build_reference_card(
-    highlight: dict[str, Any],
-    tag_colour: str,
-    display_tag_name: str,
-    state: PageState,
-    on_locate: Callable[..., Any] | None = None,
-) -> None:
-    """Render a single read-only highlight reference card.
-
-    Args:
-        highlight: Highlight data dict from CRDT.
-        tag_colour: Hex colour for the left border.
-        display_tag_name: Human-readable tag name.
-        state: Page state for anonymisation context.
-        on_locate: Optional async callback(start_char, end_char) to warp to
-            the highlight in Tab 1.
-    """
-    raw_author = highlight.get("author", "Unknown")
-    hl_user_id = highlight.get("user_id")
-    start_char: int = int(highlight.get("start_char", 0))
-    end_char: int = int(highlight.get("end_char", 0))
-    full_text = highlight.get("text", "")
-    comments: list[dict[str, Any]] = highlight.get("comments", [])
-
-    display_author = anonymise_display_author(raw_author, hl_user_id, state)
-
-    with (
-        ui.card()
-        .classes("w-full mb-2")
-        .style(f"border-left: 4px solid {tag_colour};")
-        .props('data-testid="respond-reference-card"')
-    ):
-        with ui.row().classes("w-full items-center justify-between"):
-            ui.label(display_tag_name).classes("text-xs font-bold").style(
-                f"color: {tag_colour};"
-            )
-            if on_locate is not None:
-                hl_doc_id = highlight.get("document_id")
-
-                async def _do_locate(
-                    sc: int = start_char,
-                    ec: int = end_char,
-                    did: str | None = hl_doc_id,
-                ) -> None:
-                    await on_locate(sc, ec, did)
-
-                ui.button(icon="my_location", on_click=_do_locate).props(
-                    'flat dense size=xs data-testid="respond-locate-btn"'
-                ).tooltip("Locate in document")
-
-        ui.label(f"by {display_author}").classes("text-xs text-gray-500")
-        if full_text:
-            build_expandable_text(full_text)
-        for comment in comments:
-            raw_c_author = comment.get("author", "")
-            c_uid = comment.get("user_id")
-            comment_text = comment.get("text", "")
-            display_c_author = anonymise_display_author(raw_c_author, c_uid, state)
-            if comment_text:
-                with (
-                    ui.row()
-                    .classes("w-full items-start gap-1 mt-1 pl-2")
-                    .style("border-left: 2px solid #e0e0e0;")
-                ):
-                    ui.label(f"{display_c_author}:").classes(
-                        "text-xs text-gray-500 font-medium shrink-0"
-                    )
-                    ui.label(comment_text).classes("text-xs text-gray-700")
 
 
 def _build_reference_card_html(

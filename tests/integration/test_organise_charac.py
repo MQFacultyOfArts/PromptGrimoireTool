@@ -12,7 +12,7 @@ Traceability:
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 from uuid import UUID, uuid4
 
 import pytest
@@ -20,26 +20,13 @@ import pytest
 from promptgrimoire.config import get_settings
 from tests.integration.conftest import _authenticate
 from tests.integration.nicegui_helpers import (
+    _element_text_content,
     _find_all_by_testid,
     _find_by_testid,
     _should_see_testid,
     wait_for,
     wait_for_annotation_load,
 )
-
-
-def _element_text_content(el: Any) -> str:
-    """Extract all text from a NiceGUI element, including ui.html() innerHTML."""
-    import re
-
-    parts: list[str] = []
-    if hasattr(el, "text"):
-        parts.append(str(el.text))
-    inner = el.props.get("innerHTML", "")
-    if inner:
-        parts.append(re.sub(r"<[^>]+>", " ", inner))
-    return " ".join(parts)
-
 
 if TYPE_CHECKING:
     from nicegui.testing.user import User
@@ -313,28 +300,32 @@ class TestOrganiseTabRendering:
         assert len(cards) == 3, f"Expected 3 organise cards, got {len(cards)}"
 
     @pytest.mark.asyncio
-    async def test_expandable_text_truncated_at_80_chars(
+    async def test_long_text_rendered_with_css_overflow(
         self, nicegui_user: User
     ) -> None:
-        """Text >80 chars uses expandable text with expand chevron (AC11.1)."""
+        """Long text (>80 chars) rendered with CSS max-height overflow."""
         email = "student-org-trunc@test.example.edu.au"
         ws_id, _, _ = await _setup_workspace_with_highlights(email=email)
         await _open_organise_tab(nicegui_user, ws_id, email)
 
         cards = _find_all_by_testid(nicegui_user, "organise-card")
-        # Find the card with long text (120 B's) — CSS overflow handles truncation
-        found_truncated = False
+        found_long_text = False
+        found_max_height = False
         for card in cards:
             for desc in [card, *card.descendants()]:
                 content = _element_text_content(desc)
                 if "BBB" in content:
-                    found_truncated = True
+                    found_long_text = True
+                    inner = desc.props.get("innerHTML", "")
+                    if "max-height" in inner:
+                        found_max_height = True
                     break
-            if found_truncated:
+            if found_long_text:
                 break
-        assert found_truncated, (
+        assert found_long_text, (
             "Expected highlight text containing 'BBB' in organise card"
         )
+        assert found_max_height, "Expected max-height CSS for overflow on long text"
 
     @pytest.mark.asyncio
     async def test_short_text_not_truncated(self, nicegui_user: User) -> None:

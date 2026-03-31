@@ -29,7 +29,6 @@ from nicegui import ui
 from promptgrimoire.elements.sortable import Sortable
 from promptgrimoire.pages.annotation.card_shared import (
     anonymise_display_author,
-    build_expandable_text,
 )
 
 if TYPE_CHECKING:
@@ -183,87 +182,6 @@ def _build_highlight_card_html(
             ).tooltip("Locate in document").classes("sortable-ignore")
 
     return wrapper
-
-
-def _build_highlight_card(
-    highlight: dict[str, Any],
-    tag_colour: str,
-    display_tag_name: str,
-    state: PageState,
-    on_locate: Callable[..., Any] | None = None,
-) -> ui.card:
-    """Render a single highlight card inside a tag column.
-
-    The card's HTML id is set to ``hl-{highlight_id}`` so that SortableJS
-    event handlers can identify which highlight was dragged.
-
-    Args:
-        highlight: Highlight data dict from CRDT.
-        tag_colour: Hex colour for the left border.
-        display_tag_name: Human-readable tag name.
-        state: Page state for anonymisation context.
-        on_locate: Optional async callback(start_char, end_char) to warp to
-            the highlight in Tab 1.
-
-    Returns:
-        The created ui.card element.
-    """
-    highlight_id = highlight.get("id", "")
-    raw_author = highlight.get("author", "Unknown")
-    start_char: int = int(highlight.get("start_char", 0))
-    end_char: int = int(highlight.get("end_char", 0))
-    full_text = highlight.get("text", "")
-    comments: list[dict[str, Any]] = list(highlight.get("comments", []))
-
-    card = (
-        ui.card()
-        .classes("w-full mb-2 cursor-grab")
-        .style(f"border-left: 4px solid {tag_colour};")
-        .props(
-            f'data-testid="organise-card"'
-            f' data-highlight-id="{highlight_id}"'
-            f' id="hl-{highlight_id}"'
-        )
-    )
-    with card:
-        with ui.row().classes("w-full items-center justify-between"):
-            ui.label(display_tag_name).classes("text-xs font-bold").style(
-                f"color: {tag_colour};"
-            )
-            if on_locate is not None:
-                hl_doc_id = highlight.get("document_id")
-
-                async def _do_locate(
-                    sc: int = start_char,
-                    ec: int = end_char,
-                    did: str | None = hl_doc_id,
-                ) -> None:
-                    await on_locate(sc, ec, did)
-
-                ui.button(icon="my_location", on_click=_do_locate).props(
-                    "flat dense size=xs"
-                ).tooltip("Locate in document").classes("sortable-ignore")
-
-        # Anonymise highlight author
-        hl_user_id = highlight.get("user_id")
-        display_author = anonymise_display_author(raw_author, hl_user_id, state)
-        ui.label(f"by {display_author}").classes("text-xs text-gray-500")
-        if full_text:
-            build_expandable_text(full_text)
-        if comments:
-            ui.separator().classes("my-1")
-            for comment in comments:
-                raw_c_author = comment.get("author", "Unknown")
-                comment_text = comment.get("text", "")
-                c_uid = comment.get("user_id")
-                display_c_author = anonymise_display_author(raw_c_author, c_uid, state)
-                with ui.row().classes("w-full gap-1 items-start"):
-                    ui.label(f"{display_c_author}:").classes(
-                        "text-xs font-semibold text-gray-600 flex-shrink-0"
-                    )
-                    ui.label(comment_text).classes("text-xs text-gray-700")
-
-    return card
 
 
 def _render_ordered_cards(

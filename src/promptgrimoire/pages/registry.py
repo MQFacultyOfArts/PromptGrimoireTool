@@ -94,7 +94,7 @@ async def _check_ban(user_id: str, route: str) -> bool:
     return False
 
 
-async def _check_admission_gate(
+async def _check_admission_gate(  # noqa: PLR0911 — guard-clause chain
     user_id: str,
     auth_user: dict[str, object] | None,
     request_path: str,
@@ -102,11 +102,21 @@ async def _check_admission_gate(
     """Return True (and redirect to /queue) if the user should be gated.
 
     Check order:
+    0. Gate disabled → pass through
     1. Already in client_registry → pass through (navigating within session)
     2. Has valid entry ticket → consume and pass through
     3. Privileged user → bypass gate
     4. Under cap → pass through
     5. Otherwise → enqueue and redirect to /queue
+
+    Note: the cap check at step 4 uses ``len(client_registry._registry)``
+    which counts *all* connected NiceGUI clients including privileged users.
+    This is intentional — the cap protects total server resources (memory,
+    event-loop time) regardless of how a client was admitted.
+
+    The cap is a soft limit: concurrent arrivals between asyncio await
+    points can both pass step 4, exceeding cap by up to ~batch_size.
+    This is acceptable — AIMD self-corrects on the next diagnostic cycle.
     """
     uid = _UUID(user_id)
 
@@ -121,6 +131,10 @@ async def _check_admission_gate(
         logger.debug("admission_state_not_ready", route=request_path)
         return False
 
+    # 0. Gate disabled via ADMISSION__ENABLED=false
+    if not state.enabled:
+        return False
+
     # 2. Valid entry ticket from queue admission
     if state.try_enter(uid):
         return False
@@ -129,7 +143,7 @@ async def _check_admission_gate(
     if is_privileged_user(auth_user):
         return False
 
-    # 4. Under cap — room available
+    # 4. Under cap — room available (soft limit, see docstring)
     if len(client_registry._registry) < state.cap:
         return False
 

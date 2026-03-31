@@ -5,6 +5,7 @@ Verifies acceptance criteria lag-admission-gate.AC1.* and AC2.*.
 
 from __future__ import annotations
 
+from typing import Any
 from unittest.mock import patch
 from uuid import uuid4
 
@@ -17,7 +18,7 @@ from promptgrimoire.config import AdmissionConfig
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-def _make_state(*, cap: int | None = None, **overrides: int) -> AdmissionState:
+def _make_state(*, cap: int | None = None, **overrides: Any) -> AdmissionState:
     """Build an AdmissionState from AdmissionConfig defaults with overrides.
 
     ``cap`` defaults to the config's ``initial_cap`` (matching production
@@ -25,6 +26,7 @@ def _make_state(*, cap: int | None = None, **overrides: int) -> AdmissionState:
     """
     config = AdmissionConfig(**overrides)
     return AdmissionState(
+        enabled=config.enabled,
         cap=cap if cap is not None else config.initial_cap,
         initial_cap=config.initial_cap,
         batch_size=config.batch_size,
@@ -409,3 +411,145 @@ class TestPriorityReenqueue:
         # User has ticket — re-enqueue should return same token
         token2 = state.enqueue(user)
         assert token2 == token
+
+    def test_enqueue_after_sweep_no_priority(self) -> None:
+        """User returning after sweep_expired cleaned their breadcrumb: back of queue.
+
+        When sweep runs before the user returns, _user_tokens is already
+        cleaned — enqueue() treats them as a fresh arrival (back of queue).
+        This is correct: the priority path only fires when the breadcrumb
+        is still present (user returned before sweep ran).
+        """
+        state = _make_state(cap=1, ticket_validity_seconds=600)
+        user_a = uuid4()
+        user_b = uuid4()
+
+        with patch("promptgrimoire.admission.time") as mock_time:
+            mock_time.monotonic.return_value = 1000.0
+            state.enqueue(user_a)
+            state.admit_batch(admitted_count=0)  # user_a gets ticket
+            # Advance past ticket validity AND run sweep
+            mock_time.monotonic.return_value = 1000.0 + 601.0
+            state.sweep_expired()  # cleans _user_tokens for user_a
+
+            # user_a's breadcrumb is gone
+            assert user_a not in state._user_tokens
+
+            # Enqueue user_b first
+            state.enqueue(user_b)
+            # user_a returns — no breadcrumb, treated as fresh (back of queue)
+            new_token = state.enqueue(user_a)
+
+        # user_a is at position 2 (back), not front
+        assert list(state._queue) == [user_b, user_a]
+        # Still gets a valid token
+        assert new_token in state._tokens
+
+
+# ===========================================================================
+# admit_batch accounts for outstanding tickets
+# ===========================================================================
+class TestAdmitBatchTicketAccounting:
+    """admit_batch subtracts ticket_count from available capacity."""
+
+    def test_outstanding_tickets_reduce_available(self) -> None:
+        """cap=20, 15 connected, 3 holding tickets → only 2 available."""
+        state = _make_state(cap=20)
+        # Enqueue 10 users
+        users = [uuid4() for _ in range(10)]
+        for u in users:
+            state.enqueue(u)
+        # Admit first 3 (creates 3 tickets)
+        state.admit_batch(
+            admitted_count=0
+        )  # admits min(20, 10)=10? No, cap=20, count=0 → 20 available
+        # Actually let me set this up more carefully
+        state2 = _make_state(cap=20)
+        users2 = [uuid4() for _ in range(10)]
+        for u in users2:
+            state2.enqueue(u)
+        # admitted_count=15, cap=20, 10 in queue
+        # Without ticket accounting: available = 20-15 = 5, admits 5
+        # With ticket accounting: available = 20-15-tickets
+        # First admit some to create tickets
+        admitted = state2.admit_batch(admitted_count=15)
+        assert len(admitted) == 5  # 20-15-0 tickets at this point
+        # Now the 5 admitted hold tickets (haven't consumed via try_enter)
+        assert state2.ticket_count == 5
+        # Try to admit more from the remaining 5 in queue
+        # available = 20-15-5 = 0 → admits none
+        admitted2 = state2.admit_batch(admitted_count=15)
+        assert admitted2 == []
+
+    def test_consumed_tickets_free_capacity(self) -> None:
+        """After try_enter consumes tickets, capacity opens back up."""
+        state = _make_state(cap=5)
+        users = [uuid4() for _ in range(5)]
+        for u in users:
+            state.enqueue(u)
+        # Admit all 5 (creates 5 tickets)
+        state.admit_batch(admitted_count=0)
+        assert state.ticket_count == 5
+        # Consume 3 tickets
+        for u in users[:3]:
+            state.try_enter(u)
+        assert state.ticket_count == 2
+        # Now enqueue more
+        extra = [uuid4() for _ in range(5)]
+        for u in extra:
+            state.enqueue(u)
+        # admitted_count=3 (consumed), tickets=2 → available = 5-3-2 = 0
+        admitted = state.admit_batch(admitted_count=3)
+        assert admitted == []
+        # admitted_count=3 + 2 tickets consumed → 5-3-0 = 2 available
+        for u in users[3:]:
+            state.try_enter(u)
+        admitted = state.admit_batch(admitted_count=3)
+        assert len(admitted) == 2
+
+
+# ===========================================================================
+# Full admission cycle integration test
+# ===========================================================================
+class TestFullAdmissionCycle:
+    """Integration test exercising the complete gate → admit → enter cycle."""
+
+    def test_full_cycle_enqueue_admit_enter(self) -> None:
+        """cap=1: user A passes, user B queued, admitted by batch, enters via ticket."""
+        state = _make_state(cap=1, batch_size=1)
+
+        user_b = uuid4()
+
+        # User A is already connected (counted in admitted_count=1 below).
+
+        # User B arrives at cap — gets enqueued
+        token_b = state.enqueue(user_b)
+        status = state.get_queue_status(token_b)
+        assert status["position"] == 1
+        assert status["admitted"] is False
+
+        # Diagnostic loop runs: admit_batch with admitted_count=1 (user A connected)
+        admitted = state.admit_batch(admitted_count=1)
+        # cap=1, admitted_count=1, ticket_count=0 → available=0
+        assert admitted == []
+
+        # Cap increases via AIMD (lag is low)
+        state.update_cap(lag_ms=5.0, admitted_count=1)  # 1 >= 1-1=0 → cap increases
+        assert state.cap == 2  # 1 + batch_size(1)
+
+        # Next diagnostic cycle: admit_batch with higher cap
+        admitted = state.admit_batch(admitted_count=1)
+        assert admitted == [user_b]
+
+        # User B's status now shows admitted
+        status = state.get_queue_status(token_b)
+        assert status["admitted"] is True
+
+        # User B loads the page — try_enter consumes ticket
+        assert state.try_enter(user_b) is True
+
+        # Ticket consumed — second try_enter fails
+        assert state.try_enter(user_b) is False
+
+        # Token cleaned up after try_enter consumed ticket
+        assert token_b not in state._tokens

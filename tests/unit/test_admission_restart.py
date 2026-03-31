@@ -6,14 +6,17 @@ and ramps up naturally via AIMD as lag stays low.
 
 from __future__ import annotations
 
+from typing import Any
+
 from promptgrimoire.admission import AdmissionState, init_admission
 from promptgrimoire.config import AdmissionConfig
 
 
-def _make_state(*, cap: int | None = None, **overrides: int) -> AdmissionState:
+def _make_state(*, cap: int | None = None, **overrides: Any) -> AdmissionState:
     """Build an AdmissionState from AdmissionConfig defaults with overrides."""
     config = AdmissionConfig(**overrides)
     return AdmissionState(
+        enabled=config.enabled,
         cap=cap if cap is not None else config.initial_cap,
         initial_cap=config.initial_cap,
         batch_size=config.batch_size,

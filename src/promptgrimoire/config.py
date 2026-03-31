@@ -131,6 +131,7 @@ class ExportConfig(BaseModel):
 class AdmissionConfig(BaseModel):
     """Dynamic admission gate configuration (AIMD algorithm)."""
 
+    enabled: bool = True
     initial_cap: int = 20
     batch_size: int = 20
     lag_increase_ms: int = 10

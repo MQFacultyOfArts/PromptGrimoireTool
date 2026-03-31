@@ -29,6 +29,7 @@ def _make_admission_state(
     ticket_validity_seconds: int = 30,
 ) -> AdmissionState:
     return AdmissionState(
+        enabled=True,
         cap=cap,
         initial_cap=initial_cap,
         batch_size=batch_size,

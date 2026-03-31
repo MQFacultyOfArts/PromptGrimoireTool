@@ -186,6 +186,28 @@ class TestCheckAdmissionGate:
         assert f"t={existing_token}" in redirect_url
 
     @pytest.mark.anyio
+    async def test_disabled_gate_passes_through(
+        self, user_id_str: str, auth_user: dict, gate_mocks: GateMocks
+    ) -> None:
+        """Gate disabled via ADMISSION__ENABLED=false: all users pass through."""
+        from promptgrimoire.pages.registry import _check_admission_gate
+
+        gate_mocks.state.enabled = False
+        gate_mocks.state.cap = 0  # Would normally block everyone
+        gate_mocks.cr._registry = {uuid4(): {MagicMock()} for _ in range(100)}
+
+        with patch(
+            "promptgrimoire.pages.registry.is_privileged_user",
+            return_value=False,
+        ):
+            result = await _check_admission_gate(
+                user_id_str, auth_user, "/annotation/abc"
+            )
+
+        assert result is False
+        gate_mocks.ui.navigate.to.assert_not_called()
+
+    @pytest.mark.anyio
     async def test_startup_race_passes_through(
         self, user_id_str: str, auth_user: dict, gate_mocks: GateMocks
     ) -> None:

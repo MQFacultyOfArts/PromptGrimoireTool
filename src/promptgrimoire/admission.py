@@ -22,6 +22,7 @@ if TYPE_CHECKING:
 class AdmissionState:
     """Mutable admission gate state (AIMD algorithm)."""
 
+    enabled: bool
     cap: int
     initial_cap: int
     batch_size: int
@@ -119,9 +120,18 @@ class AdmissionState:
     def admit_batch(self, admitted_count: int) -> list[UUID]:
         """Pop queued users up to available capacity, granting tickets.
 
+        ``admitted_count`` is the number of connected NiceGUI clients —
+        this deliberately includes privileged users who bypassed the gate,
+        because the cap protects total server resources (memory, event-loop
+        time) regardless of how a client was admitted.
+
+        Outstanding tickets (users admitted but not yet connected) are
+        subtracted from available capacity to prevent over-admission
+        bursts during the window between admit and page load.
+
         Returns list of newly admitted user_ids.
         """
-        available = self.cap - admitted_count
+        available = self.cap - admitted_count - self.ticket_count
         if available <= 0 or not self._queue:
             return []
 
@@ -231,7 +241,12 @@ class AdmissionState:
         }
 
     def _find_queue_position(self, user_id: UUID) -> int:
-        """Return 1-based queue position, or -1 if not found."""
+        """Return 1-based queue position, or -1 if not found.
+
+        O(n) scan — acceptable at expected queue depths (<1000).
+        A position cache would need invalidation on every deque
+        mutation (enqueue, popleft, sweep removal) for marginal gain.
+        """
         for i, uid in enumerate(self._queue):
             if uid == user_id:
                 return i + 1
@@ -254,6 +269,7 @@ def init_admission(config: AdmissionConfig) -> None:
     """Initialise the module-level admission state from config."""
     global _state  # noqa: PLW0603
     _state = AdmissionState(
+        enabled=config.enabled,
         cap=config.initial_cap,
         initial_cap=config.initial_cap,
         batch_size=config.batch_size,

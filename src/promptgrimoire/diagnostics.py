@@ -338,6 +338,8 @@ async def start_diagnostic_logger(
             snapshot = collect_snapshot()
             snapshot["event_loop_lag_ms"] = await measure_event_loop_lag()
 
+            # Includes ALL connected clients (including privileged) —
+            # the cap protects total server resources, not just gated users.
             admitted_count = len(client_registry._registry)
             _enrich_snapshot_with_admission(
                 snapshot,

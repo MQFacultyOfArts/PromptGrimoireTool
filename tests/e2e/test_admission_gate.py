@@ -77,6 +77,34 @@ class TestQueuePage:
         expect(rejoin).to_have_attribute("href", "/")
 
 
+class TestQueuePageXSS:
+    """XSS resistance tests for the /queue page token and return URL."""
+
+    def test_script_break_in_token(self, fresh_page: Page, app_server: str) -> None:
+        """Token containing </script> does not break out of the JS block."""
+        malicious = "</script><script>alert(1)</script>"
+        fresh_page.goto(f"{app_server}/queue?t={malicious}&return=/")
+        # Page should still render the heading (JS block intact)
+        heading = fresh_page.locator("h1")
+        expect(heading).to_have_text("Server is busy")
+        # No injected script alert — page rendered normally
+        # The expired div should appear (invalid token)
+        expired_div = fresh_page.locator("#expired")
+        expect(expired_div).to_be_visible(timeout=10_000)
+
+    def test_quotes_in_token(self, fresh_page: Page, app_server: str) -> None:
+        """Token with quotes does not escape the JSON string literal."""
+        fresh_page.goto(f'{app_server}/queue?t=";alert(1);//&return=/')
+        heading = fresh_page.locator("h1")
+        expect(heading).to_have_text("Server is busy")
+
+    def test_null_bytes_in_token(self, fresh_page: Page, app_server: str) -> None:
+        """Token with null bytes handled safely."""
+        fresh_page.goto(f"{app_server}/queue?t=abc%00def&return=/")
+        heading = fresh_page.locator("h1")
+        expect(heading).to_have_text("Server is busy")
+
+
 class TestQueueStatusAPI:
     """Tests for the /api/queue/status JSON endpoint."""
 

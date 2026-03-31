@@ -19,6 +19,7 @@ Traceability:
 
 from __future__ import annotations
 
+import time
 from typing import TYPE_CHECKING, Any
 
 import structlog
@@ -282,6 +283,9 @@ def render_organise_tab(
         else:
             untagged_highlights.append(hl)
 
+    _t0 = time.monotonic()
+    card_count = 0
+
     with (
         panel,
         (
@@ -303,6 +307,7 @@ def render_organise_tab(
                 state,
                 on_locate,
             )
+            card_count += len(highlights_for_tag)
 
         # Untagged column (AC2.6)
         if untagged_highlights:
@@ -317,6 +322,13 @@ def render_organise_tab(
                 state,
                 on_locate,
             )
+            card_count += len(untagged_highlights)
+
+    logger.info(
+        "organise_card_build",
+        elapsed_ms=round((time.monotonic() - _t0) * 1000, 1),
+        card_count=card_count,
+    )
 
     # Scroll restoration is handled by callers that can await
     # (see _rebuild_organise_with_scroll in workspace.py).

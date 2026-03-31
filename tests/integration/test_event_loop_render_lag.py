@@ -1,13 +1,21 @@
 """Card build time during annotation rendering (#457).
 
 Measures per-card and total build time when loading a heavy workspace
-(190 highlights). Uses direct timing from the ``card_diff_add``
-structured log event, which wraps the actual diff-add loop with
-``time.monotonic()``. This is more accurate than event loop lag
-sampling, which systematically underreports (showed 15-35ms while
-direct timing showed 425-479ms continuous blocking).
+(190 highlights) across all three tabs: Source, Organise, and Respond.
 
-The lag sampler is retained as informational-only diagnostic output.
+Uses direct timing from structured log events which wrap the actual
+build loops with ``time.monotonic()``:
+
+- Source tab: ``card_diff_add`` (diff-add loop in cards.py)
+- Organise tab: ``organise_card_build`` (render_organise_tab in organise.py)
+- Respond tab: ``respond_card_build`` (_build_reference_panel in respond.py)
+
+This is more accurate than event loop lag sampling, which systematically
+underreports (showed 15-35ms while direct timing showed 425-479ms
+continuous blocking).
+
+The lag sampler is retained as informational-only diagnostic output
+on the Source tab test.
 """
 
 from __future__ import annotations
@@ -169,4 +177,190 @@ class TestCardBuildTime:
             f"Total card build time {elapsed_ms:.1f}ms exceeds threshold "
             f"{_TOTAL_THRESHOLD_MS}ms for {added_count} cards. "
             f"Expected < 100ms with lazy detail and HTML header optimisations."
+        )
+
+    @pytest.mark.xfail(
+        reason="0.64ms/card baseline — Vue sidebar (#457) should bring below 0.5ms",
+        strict=False,
+    )
+    @pytest.mark.asyncio
+    async def test_organise_tab_card_build_time(self, nicegui_user: User) -> None:
+        """Organise tab: per-card and total build time with 190 highlights.
+
+        Rehydrates Pabai workspace, opens annotation page, switches to
+        Organise tab, and captures ``organise_card_build`` structlog event.
+        """
+        from nicegui import ElementFilter, ui
+        from structlog.testing import capture_logs
+
+        from tests.integration.conftest import _authenticate
+        from tests.integration.nicegui_helpers import (
+            _find_by_testid,
+            wait_for,
+            wait_for_annotation_load,
+        )
+        from tests.integration.test_memory_leak_probe import (
+            _rehydrate_heavy_workspace,
+        )
+
+        run_id = uuid4().hex[:6]
+        email = f"organise-lag-{run_id}@test.example.edu.au"
+
+        ws_id = await _rehydrate_heavy_workspace(email)
+        await _authenticate(nicegui_user, email=email)
+
+        await nicegui_user.open(f"/annotation?workspace_id={ws_id}")
+        await wait_for_annotation_load(nicegui_user)
+
+        # Switch to Organise tab and capture structlog events
+        with capture_logs() as cap:
+            with nicegui_user:
+                for el in ElementFilter():
+                    if isinstance(el, ui.tab_panels):
+                        el.value = "Organise"
+                        break
+
+            await wait_for(
+                lambda: _find_by_testid(nicegui_user, "organise-columns") is not None,
+                timeout=10.0,
+            )
+
+        # --- Extract organise_card_build event ---
+        build_events = [e for e in cap if e.get("event") == "organise_card_build"]
+        assert len(build_events) >= 1, (
+            f"Expected at least 1 organise_card_build event, got {len(build_events)}. "
+            f"Captured events: {[e.get('event') for e in cap]}"
+        )
+
+        build_event = build_events[0]
+        elapsed_ms: float = build_event["elapsed_ms"]
+        card_count: int = build_event["card_count"]
+        assert card_count > 0, (
+            "card_count is 0 — workspace may have rehydrated without highlights"
+        )
+        per_card_ms = elapsed_ms / card_count
+
+        # --- Report ---
+        report_lines = [
+            f"{'=' * 60}",
+            "ORGANISE TAB CARD BUILD TIME (190-HIGHLIGHT BASELINE)",
+            f"{'=' * 60}",
+            f"  Cards built:        {card_count}",
+            f"  Total time:         {elapsed_ms:.1f}ms",
+            f"  Per-card time:      {per_card_ms:.2f}ms",
+            f"  Total threshold:    {_TOTAL_THRESHOLD_MS:.0f}ms",
+            f"  Per-card threshold: {_PER_CARD_THRESHOLD_MS:.1f}ms",
+            f"{'=' * 60}",
+        ]
+        report = "\n".join(report_lines)
+        print(f"\n{report}")
+
+        from pathlib import Path
+
+        out = Path("output/perf/organise_render_lag.txt")
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(report, encoding="utf-8")
+
+        # Baseline assertion — will likely fail, establishing the "before" number
+        assert per_card_ms < _PER_CARD_THRESHOLD_MS, (
+            f"Organise per-card build time {per_card_ms:.2f}ms exceeds threshold "
+            f"{_PER_CARD_THRESHOLD_MS}ms ({card_count} cards in {elapsed_ms:.1f}ms)."
+        )
+        assert elapsed_ms < _TOTAL_THRESHOLD_MS, (
+            f"Organise total build time {elapsed_ms:.1f}ms exceeds threshold "
+            f"{_TOTAL_THRESHOLD_MS}ms for {card_count} cards."
+        )
+
+    @pytest.mark.xfail(
+        reason="0.60ms/card baseline — Vue sidebar (#457) should bring below 0.5ms",
+        strict=False,
+    )
+    @pytest.mark.asyncio
+    async def test_respond_tab_card_build_time(self, nicegui_user: User) -> None:
+        """Respond tab: per-card and total build time with 190 highlights.
+
+        Rehydrates Pabai workspace, opens annotation page, switches to
+        Respond tab, and captures ``respond_card_build`` structlog event.
+        """
+        from nicegui import ElementFilter, ui
+        from structlog.testing import capture_logs
+
+        from tests.integration.conftest import _authenticate
+        from tests.integration.nicegui_helpers import (
+            _find_by_testid,
+            wait_for,
+            wait_for_annotation_load,
+        )
+        from tests.integration.test_memory_leak_probe import (
+            _rehydrate_heavy_workspace,
+        )
+
+        run_id = uuid4().hex[:6]
+        email = f"respond-lag-{run_id}@test.example.edu.au"
+
+        ws_id = await _rehydrate_heavy_workspace(email)
+        await _authenticate(nicegui_user, email=email)
+
+        await nicegui_user.open(f"/annotation?workspace_id={ws_id}")
+        await wait_for_annotation_load(nicegui_user)
+
+        # Switch to Respond tab and capture structlog events
+        with capture_logs() as cap:
+            with nicegui_user:
+                for el in ElementFilter():
+                    if isinstance(el, ui.tab_panels):
+                        el.value = "Respond"
+                        break
+
+            await wait_for(
+                lambda: (
+                    _find_by_testid(nicegui_user, "respond-reference-panel") is not None
+                ),
+                timeout=10.0,
+            )
+
+        # --- Extract respond_card_build event ---
+        build_events = [e for e in cap if e.get("event") == "respond_card_build"]
+        assert len(build_events) >= 1, (
+            f"Expected at least 1 respond_card_build event, got {len(build_events)}. "
+            f"Captured events: {[e.get('event') for e in cap]}"
+        )
+
+        build_event = build_events[0]
+        elapsed_ms: float = build_event["elapsed_ms"]
+        card_count: int = build_event["card_count"]
+        assert card_count > 0, (
+            "card_count is 0 — workspace may have rehydrated without highlights"
+        )
+        per_card_ms = elapsed_ms / card_count
+
+        # --- Report ---
+        report_lines = [
+            f"{'=' * 60}",
+            "RESPOND TAB CARD BUILD TIME (190-HIGHLIGHT BASELINE)",
+            f"{'=' * 60}",
+            f"  Cards built:        {card_count}",
+            f"  Total time:         {elapsed_ms:.1f}ms",
+            f"  Per-card time:      {per_card_ms:.2f}ms",
+            f"  Total threshold:    {_TOTAL_THRESHOLD_MS:.0f}ms",
+            f"  Per-card threshold: {_PER_CARD_THRESHOLD_MS:.1f}ms",
+            f"{'=' * 60}",
+        ]
+        report = "\n".join(report_lines)
+        print(f"\n{report}")
+
+        from pathlib import Path
+
+        out = Path("output/perf/respond_render_lag.txt")
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(report, encoding="utf-8")
+
+        # Baseline assertion — will likely fail, establishing the "before" number
+        assert per_card_ms < _PER_CARD_THRESHOLD_MS, (
+            f"Respond per-card build time {per_card_ms:.2f}ms exceeds threshold "
+            f"{_PER_CARD_THRESHOLD_MS}ms ({card_count} cards in {elapsed_ms:.1f}ms)."
+        )
+        assert elapsed_ms < _TOTAL_THRESHOLD_MS, (
+            f"Respond total build time {elapsed_ms:.1f}ms exceeds threshold "
+            f"{_TOTAL_THRESHOLD_MS}ms for {card_count} cards."
         )

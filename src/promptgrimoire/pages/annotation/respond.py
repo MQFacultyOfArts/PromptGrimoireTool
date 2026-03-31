@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import base64
 import json
+import time
 from typing import TYPE_CHECKING, Any
 
 import structlog
@@ -283,6 +284,9 @@ def _build_reference_panel(
 
     active_filter = filter_text.strip() if filter_text else ""
 
+    _t0 = time.monotonic()
+    card_count = 0
+
     for tag_info in tags:
         filtered = _filter_highlights(
             tagged_highlights[tag_info.name], active_filter, state, tag_info.name
@@ -294,12 +298,20 @@ def _build_reference_panel(
                 _build_reference_card(
                     hl, tag_info.colour, tag_info.name, state, on_locate
                 )
+                card_count += 1
 
     untagged_filtered = _filter_highlights(untagged_highlights, active_filter, state)
     if untagged_filtered:
         with _tracked_expansion("Untagged", accordion_state):
             for hl in untagged_filtered:
                 _build_reference_card(hl, "#999999", "Untagged", state, on_locate)
+                card_count += 1
+
+    logger.info(
+        "respond_card_build",
+        elapsed_ms=round((time.monotonic() - _t0) * 1000, 1),
+        card_count=card_count,
+    )
 
 
 def _build_reference_column(

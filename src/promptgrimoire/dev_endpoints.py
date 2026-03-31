@@ -27,6 +27,7 @@ async def admission_control_handler(request: Request) -> JSONResponse:
     Query params:
         cap: Set the admission cap directly (int)
         enabled: Enable/disable the gate (true/false)
+        clear: If "true", call clear() to reset all state first
 
     With no params, returns current state.
     """
@@ -37,6 +38,11 @@ async def admission_control_handler(request: Request) -> JSONResponse:
     except RuntimeError:
         logger.warning("dev_admission_not_initialised")
         return JSONResponse({"error": "admission not initialised"}, status_code=503)
+
+    clear_param = request.query_params.get("clear")
+    if clear_param and clear_param.lower() in ("true", "1", "yes"):
+        state.clear()
+        logger.warning("dev_admission_cleared")
 
     cap_param = request.query_params.get("cap")
     enabled_param = request.query_params.get("enabled")
@@ -76,22 +82,63 @@ async def block_loop_handler(request: Request) -> JSONResponse:
     ms = min(int(request.query_params.get("ms", "200")), 5000)
     repeat = min(int(request.query_params.get("repeat", "1")), 10)
 
+    import asyncio  # noqa: PLC0415
+
     logger.warning("dev_block_loop_start", ms=ms, repeat=repeat)
 
+    # Schedule the lag measurement BEFORE blocking — the call_soon
+    # callback queues behind the sleep, so it measures how long the
+    # loop was actually blocked.
+    loop = asyncio.get_running_loop()
+    lag_future: asyncio.Future[float] = loop.create_future()
+    t0 = loop.time()
+
+    def _resolve_lag() -> None:
+        lag_future.set_result((loop.time() - t0) * 1000.0)
+
+    loop.call_soon(_resolve_lag)
+
+    # Now block — the _resolve_lag callback sits in the queue behind this
     for i in range(repeat):
         time.sleep(ms / 1000.0)
         if i < repeat - 1:
-            # Brief yield between blocks so the loop can process one tick
-            import asyncio  # noqa: PLC0415
-
             await asyncio.sleep(0.1)
 
-    logger.warning("dev_block_loop_done", ms=ms, repeat=repeat)
+    # Await the lag measurement — it fires as soon as we yield
+    lag_ms = await lag_future
+
+    logger.warning("dev_block_loop_done", ms=ms, repeat=repeat, lag_ms=round(lag_ms, 2))
+
+    # Run AIMD cycle with the measured lag
+    from promptgrimoire.admission import get_admission_state  # noqa: PLC0415
+
+    try:
+        state = get_admission_state()
+        from promptgrimoire.auth import client_registry  # noqa: PLC0415
+
+        admitted_count = len(client_registry._registry)
+        cap_before = state.cap
+        state.update_cap(lag_ms=lag_ms, admitted_count=admitted_count)
+        state.admit_batch(admitted_count=admitted_count)
+        state.sweep_expired()
+        cap_after = state.cap
+        logger.warning(
+            "dev_block_loop_aimd",
+            lag_ms=round(lag_ms, 2),
+            admitted_count=admitted_count,
+            cap_before=cap_before,
+            cap_after=cap_after,
+        )
+    except RuntimeError:
+        cap_before = cap_after = -1
 
     return JSONResponse(
         {
             "blocked_ms": ms,
             "repeat": repeat,
             "total_ms": ms * repeat + (repeat - 1) * 100,
+            "measured_lag_ms": round(lag_ms, 2),
+            "cap_before": cap_before,
+            "cap_after": cap_after,
         }
     )

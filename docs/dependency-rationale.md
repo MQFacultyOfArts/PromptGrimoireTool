@@ -210,6 +210,16 @@ Removed 2026-02-10. Same replacement as pylatexenc above. The Lark lexer grammar
 **Why not alternatives:** The application already runs in an asyncio event loop (NiceGUI). `aiohttp` was considered but httpx has a smaller API surface and does not require a persistent session. stdlib `urllib` is sync-only and would block the event loop.
 **Classification:** Protective belt. Used only by the Discord alerting processor; removing it disables alerting but does not affect core functionality.
 
+### redis (via nicegui[redis])
+
+**Added:** 2026-03-31
+**Design plan:** docs/design-plans/2026-03-31-horizontal-scaling-466.md
+**Claim:** Horizontal scaling requires shared session state, atomic workspace ownership claims (`SETNX`), and cross-instance ban broadcast (Pub/Sub). Redis provides all three from a single dependency.
+**Evidence:** `src/promptgrimoire/redis_client.py` (new) uses `redis.asyncio` for workspace `SETNX`/`DEL`/`EXPIRE` and Pub/Sub. NiceGUI uses `redis` internally when `NICEGUI_REDIS_URL` is set for `app.storage.user` sharing.
+**Serves:** Runtime users (session persistence across instances, workspace routing, real-time ban enforcement).
+**Why not alternatives:** `app.storage.general` (NiceGUI built-in) syncs lazily and cannot provide atomic operations. PostgreSQL `LISTEN/NOTIFY` was considered but adds ~500ms latency vs ~1ms for Redis Pub/Sub, and doesn't provide `SETNX` semantics. The `redis` package is already a transitive dependency of `nicegui[redis]`.
+**Classification:** Hard core for multi-instance deployment. Single-instance deployments (`INSTANCE_ID=s0`, no Redis) continue to work without it.
+
 ## Dev Dependencies
 
 ### pytest >= 8.0

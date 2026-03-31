@@ -86,6 +86,36 @@ async def claim_own_job(our_ids: set) -> ExportJob | None:
 _NICEGUI_TEST_APP = Path(__file__).parent / "nicegui_test_app.py"
 
 
+def _purge_page_modules() -> None:
+    """Remove promptgrimoire.pages.* from sys.modules so user_simulation re-imports.
+
+    If any test (or test-collection side-effect) imports
+    ``promptgrimoire.pages.annotation.cards`` before the first
+    ``user_simulation`` context, the full ``promptgrimoire.pages`` import
+    chain fires — registering ``@ui.page`` routes against the
+    uninitialised NiceGUI app and caching modules in ``sys.modules``.
+    When ``user_simulation`` later calls ``runpy.run_path``, the
+    ``import promptgrimoire.pages`` in ``nicegui_test_app.py`` is a
+    no-op, so routes never re-register (404 on ``/login``).
+
+    NiceGUI's ``nicegui_reset_globals`` only purges ``sys.modules`` in
+    its *finally* block (cleanup), not on entry — so the very first
+    ``user_simulation`` call after import-poisoning always fails.
+
+    This function is the belt-and-braces defence: purge before entering
+    the context so ``runpy.run_path`` triggers a fresh import.
+    """
+    import sys
+
+    to_remove = [
+        key
+        for key in sys.modules
+        if key == "promptgrimoire.pages" or key.startswith("promptgrimoire.pages.")
+    ]
+    for key in to_remove:
+        del sys.modules[key]
+
+
 @pytest_asyncio.fixture
 async def nicegui_user() -> AsyncGenerator[User]:
     """Yield a NiceGUI simulated User connected to the test app.
@@ -98,6 +128,7 @@ async def nicegui_user() -> AsyncGenerator[User]:
     so the NiceGUI harness stays out of xdist-backed unit/integration
     commands and runs in its own UI lane.
     """
+    _purge_page_modules()
     async with user_simulation(main_file=_NICEGUI_TEST_APP) as u:
         # Gate: verify routes are registered before yielding to tests.
         # user_simulation runs the app script synchronously, but NiceGUI

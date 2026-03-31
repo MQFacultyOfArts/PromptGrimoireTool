@@ -8074,3 +8074,309 @@ It catches any divergence that would cause highlights to render at wrong positio
 4. Extract the payload object, verify both fields in same emitEvent call
 
 **Verifies:** JS-side event emission always includes markdown alongside Yjs binary update
+
+## Admission Gate (AIMD Cap, FIFO Queue, Entry Tickets)
+
+### Cap increases when lag low and near capacity
+**File:** tests/unit/test_admission.py::TestUpdateCap::test_ac1_1_cap_increases_when_lag_low_and_near_cap
+1. Create state with default config (cap=20, batch_size=20)
+2. Call update_cap with lag_ms=5.0, admitted_count=15
+3. Assert cap increased to 40 (20 + batch_size)
+
+**Verifies:** AIMD additive increase fires when lag < lag_increase_ms and server near capacity
+
+### Cap unchanged in hysteresis band
+**File:** tests/unit/test_admission.py::TestUpdateCap::test_ac1_2_cap_unchanged_in_hysteresis_band
+1. Create state with default config
+2. Call update_cap with lag_ms=30.0 (between 10 and 50)
+3. Assert cap unchanged at 20
+
+**Verifies:** Cap stays stable when lag is between increase and decrease thresholds
+
+### Cap halves on high lag
+**File:** tests/unit/test_admission.py::TestUpdateCap::test_ac1_3_cap_halves_on_high_lag
+1. Create state with cap=100
+2. Call update_cap with lag_ms=60.0 (> lag_decrease_ms=50)
+3. Assert cap halved to 50
+
+**Verifies:** AIMD multiplicative decrease halves cap on high event-loop lag
+
+### Cap never drops below initial_cap
+**File:** tests/unit/test_admission.py::TestUpdateCap::test_ac1_5_cap_never_drops_below_initial
+1. Create state with cap=20
+2. Call update_cap with high lag 10 times
+3. Assert cap still 20
+
+**Verifies:** Floor guarantee -- cap never goes below initial_cap under sustained high lag
+
+### No speculative growth when well under cap
+**File:** tests/unit/test_admission.py::TestUpdateCap::test_ac1_6_no_speculative_growth
+1. Create state with cap=100
+2. Call update_cap with lag_ms=5.0 but admitted_count=10 (well below cap-batch_size=80)
+3. Assert cap unchanged at 100
+
+**Verifies:** Cap only increases when server is near capacity, preventing runaway growth
+
+### FIFO queue preserves arrival order
+**File:** tests/unit/test_admission.py::TestQueue::test_ac2_1_enqueue_preserves_fifo_order
+1. Create state, enqueue 3 users
+2. Assert all tokens are unique non-empty strings
+3. Assert internal queue order matches insertion order
+
+**Verifies:** Users are queued in arrival order with unique opaque tokens
+
+### Batch admission pops FIFO
+**File:** tests/unit/test_admission.py::TestQueue::test_ac2_2_admit_batch_pops_fifo
+1. Create state with cap=2, enqueue 3 users
+2. Call admit_batch(admitted_count=0)
+3. Assert first 2 users admitted, third still in queue
+4. Assert admitted users have tickets
+
+**Verifies:** admit_batch respects FIFO order and grants entry tickets
+
+### Idempotent enqueue returns same token
+**File:** tests/unit/test_admission.py::TestQueue::test_ac2_5_no_double_enqueue
+1. Enqueue same user twice
+2. Assert same token returned both times
+3. Assert queue depth is 1
+
+**Verifies:** Re-enqueuing same user is idempotent -- no duplicate queue entries
+
+### Entry ticket consumed by try_enter
+**File:** tests/unit/test_admission.py::TestQueue::test_ac2_6_try_enter_consumes_ticket
+1. Enqueue user, admit via batch
+2. Call try_enter -- assert True (ticket consumed)
+3. Call try_enter again -- assert False (already consumed)
+
+**Verifies:** Entry tickets are single-use; consumed on first try_enter call
+
+### Expired queue entries swept
+**File:** tests/unit/test_admission.py::TestQueue::test_ac2_4_expired_queue_entries_swept
+1. Enqueue user at t=1000
+2. Advance time past queue_timeout_seconds
+3. Call sweep_expired
+4. Assert user removed from all internal data structures
+
+**Verifies:** Users waiting longer than queue_timeout_seconds are dropped from queue
+
+### Priority re-enqueue for returning users
+**File:** tests/unit/test_admission.py::TestPriorityReenqueue::test_enqueue_stale_user_gets_priority
+1. Enqueue user_a, admit via batch (gets ticket)
+2. Advance time past ticket validity (ticket expired but breadcrumb remains)
+3. Enqueue user_b (back of queue)
+4. Re-enqueue user_a (returning after ticket expired)
+5. Assert user_a at position 1 (front), user_b at position 2
+6. Assert new token issued (old token invalidated)
+
+**Verifies:** Previously-admitted users returning after ticket expiry get front-of-queue priority
+
+### Outstanding tickets reduce available capacity
+**File:** tests/unit/test_admission.py::TestAdmitBatchTicketAccounting::test_outstanding_tickets_reduce_available
+1. Create state cap=20, enqueue 10 users
+2. admit_batch(admitted_count=15) -- admits 5 (20-15-0)
+3. Assert 5 tickets outstanding
+4. admit_batch(admitted_count=15) again -- admits 0 (20-15-5)
+
+**Verifies:** Outstanding tickets are subtracted from available capacity to prevent over-admission
+
+### Full admission cycle integration
+**File:** tests/unit/test_admission.py::TestFullAdmissionCycle::test_full_cycle_enqueue_admit_enter
+1. State cap=1, batch_size=1. User A already connected (admitted_count=1)
+2. Enqueue user B -- position 1, not admitted
+3. admit_batch(admitted_count=1) -- 0 available (cap=1)
+4. AIMD update with low lag -- cap increases to 2
+5. admit_batch(admitted_count=1) -- user B admitted
+6. get_queue_status shows admitted=true
+7. try_enter consumes ticket; second try_enter returns False
+
+**Verifies:** Complete gate -> queue -> AIMD -> admit -> ticket -> enter lifecycle
+
+## Admission Gate (page_route Integration)
+
+### Registered user passes through
+**File:** tests/unit/test_admission_gate.py::TestCheckAdmissionGate::test_registered_user_passes_through
+1. Put user in client_registry
+2. Call _check_admission_gate
+3. Assert False (no redirect), admission state never queried
+
+**Verifies:** Users already connected via NiceGUI skip the gate entirely
+
+### Ticket holder passes through
+**File:** tests/unit/test_admission_gate.py::TestCheckAdmissionGate::test_ticket_holder_passes_through
+1. Mock state.try_enter returning True
+2. Call _check_admission_gate
+3. Assert False (no redirect), ticket consumed
+
+**Verifies:** Users with valid entry tickets pass through; ticket is consumed
+
+### Privileged user bypasses gate
+**File:** tests/unit/test_admission_gate.py::TestCheckAdmissionGate::test_privileged_user_bypasses_gate
+1. Set cap=0 (would block everyone), mock is_privileged_user=True
+2. Call _check_admission_gate
+3. Assert False (no redirect)
+
+**Verifies:** Staff/admin users bypass gate regardless of cap state
+
+### New user at cap redirected to /queue
+**File:** tests/unit/test_admission_gate.py::TestCheckAdmissionGate::test_new_user_at_cap_redirected_to_queue
+1. Set cap=5, populate registry with 5 users
+2. Mock is_privileged_user=False
+3. Call _check_admission_gate
+4. Assert True (redirect), navigate.to called with /queue?t=...&return=...
+
+**Verifies:** New non-privileged users are redirected to queue page when at capacity
+
+### Disabled gate passes through
+**File:** tests/unit/test_admission_gate.py::TestCheckAdmissionGate::test_disabled_gate_passes_through
+1. Set state.enabled=False, cap=0, 100 registered users
+2. Call _check_admission_gate
+3. Assert False (no redirect)
+
+**Verifies:** ADMISSION__ENABLED=false disables gating without code deploy
+
+### Startup race passes through
+**File:** tests/unit/test_admission_gate.py::TestCheckAdmissionGate::test_startup_race_passes_through
+1. Mock get_admission_state raising RuntimeError
+2. Call _check_admission_gate
+3. Assert False (no redirect)
+
+**Verifies:** If admission state not yet initialised at startup, users pass through safely
+
+## Admission Gate (Diagnostic Integration)
+
+### Diagnostic snapshot contains admission fields
+**File:** tests/unit/test_admission_diagnostics.py::TestDiagnosticCycleAdmissionFields::test_snapshot_contains_admission_fields
+1. Create state cap=200, build diagnostic snapshot
+2. Call _enrich_snapshot_with_admission(snapshot, state, admitted_count=42)
+3. Assert snapshot has admission_cap=200, admission_admitted=42, admission_queue_depth=0, admission_tickets=0
+
+**Verifies:** memory_diagnostic structlog event includes all admission gate fields
+
+### AIMD cap update runs during enrichment
+**File:** tests/unit/test_admission_diagnostics.py::TestDiagnosticCycleAdmissionFields::test_update_cap_called_with_lag
+1. Create state cap=200, snapshot with lag_ms=300 (> lag_decrease_ms=200)
+2. Call _enrich_snapshot_with_admission
+3. Assert state.cap halved to 100, snapshot reflects new cap
+
+**Verifies:** Diagnostic cycle drives AIMD cap adjustment based on event-loop lag
+
+### Diagnostic loop integration
+**File:** tests/unit/test_admission_diagnostics.py::TestDiagnosticLoopAdmissionIntegration::test_diagnostic_log_includes_admission_fields
+1. Init admission with default config
+2. Mock client_registry with 2 users
+3. Start diagnostic logger, run one cycle, cancel
+4. Find memory_diagnostic event in captured logs
+5. Assert all 4 admission fields present, admission_admitted=2
+
+**Verifies:** End-to-end: start_diagnostic_logger emits admission fields in structlog events
+
+## Admission Gate (Restart)
+
+### init_admission creates fresh state at initial_cap
+**File:** tests/unit/test_admission_restart.py::TestAdmissionRestartClearing::test_init_admission_creates_fresh_state_at_initial_cap
+1. Reset module state to None
+2. Call init_admission with default config
+3. Assert cap=20, initial_cap=20, queue_depth=0, ticket_count=0
+
+**Verifies:** After restart, admission state starts clean with cap at initial_cap
+
+### AIMD ramp-up from initial_cap
+**File:** tests/unit/test_admission_restart.py::TestAdmissionRestartClearing::test_aimd_ramp_up_from_initial_cap
+1. Create state at initial_cap=20, batch_size=20
+2. Repeatedly call update_cap with low lag and admitted near cap
+3. Assert cap ramps: 20 -> 40 -> 60 -> 80 -> 100
+
+**Verifies:** Post-restart, cap grows naturally via AIMD as lag stays low
+
+## Admission Gate (Queue Page)
+
+### Queue page renders HTML without NiceGUI
+**File:** tests/unit/test_queue_page.py::TestQueuePageStructure::test_returns_html_response
+1. GET /queue?t=tok&return=/some/page via Starlette TestClient
+2. Assert 200 with text/html content type
+3. Assert "nicegui" not in response text
+
+**Verifies:** Queue page is raw Starlette HTML with zero NiceGUI overhead
+
+### Queue page has position, expired, and rejoin elements
+**File:** tests/unit/test_queue_page.py::TestQueuePageElements
+1. GET /queue
+2. Assert id="position", id="expired", id="rejoin" present in HTML
+
+**Verifies:** Queue page contains required DOM elements for JS polling
+
+### XSS prevention in token
+**File:** tests/unit/test_queue_page.py::TestQueuePageXSSPrevention::test_script_injection_escaped
+1. GET /queue with token containing </script><script>alert(1)
+2. Assert raw </script> does not appear
+3. Assert <\/script> (escaped) appears instead
+
+**Verifies:** Script-breaking tokens are JSON+HTML escaped, preventing XSS
+
+### Open-redirect guard on return URL
+**File:** tests/unit/test_queue_page.py::TestQueuePageOpenRedirectGuard
+1. Test javascript:, //, and https:// return URLs
+2. Assert malicious URLs not in response
+3. Test valid relative path /courses/123 -- assert present in response
+
+**Verifies:** Return URL must be relative path starting with / (not protocol-relative or absolute)
+
+## Admission Gate (Queue Status API)
+
+### Valid token returns position and total
+**File:** tests/unit/test_queue_status_api.py::TestQueueStatusQueued::test_returns_position_and_total
+1. Mock state.get_queue_status returning position=2, total=5
+2. GET /api/queue/status?t=some-token
+3. Assert 200 JSON with position=2, total=5, admitted=false, expired=false
+
+**Verifies:** Queued users see their position and total queue depth
+
+### Admitted token returns admitted=true
+**File:** tests/unit/test_queue_status_api.py::TestQueueStatusAdmitted::test_returns_admitted_true
+1. Mock state returning admitted=true
+2. GET /api/queue/status?t=valid-admitted-token
+3. Assert admitted=true, expired=false
+
+**Verifies:** Admitted users get signal to redirect to their destination
+
+### Invalid/missing token returns expired
+**File:** tests/unit/test_queue_status_api.py::TestQueueStatusInvalidToken
+1. Mock state returning expired=true
+2. GET /api/queue/status?t=invalid-token and GET without token
+3. Assert admitted=false, expired=true in both cases
+
+**Verifies:** Unknown or missing tokens are treated as expired -- client shows rejoin UI
+
+## Admission Gate (E2E)
+
+### Queue page renders in browser with heading and position
+**File:** tests/e2e/test_admission_gate.py::TestQueuePage::test_queue_page_renders_with_server_busy_heading
+1. Navigate to /queue?t=fake-token&return=/
+2. Assert h1 contains "Server is busy"
+3. Assert #position element visible
+
+**Verifies:** Queue page renders correctly in a real browser
+
+### Queue page shows expired state for invalid token
+**File:** tests/e2e/test_admission_gate.py::TestQueuePage::test_queue_page_shows_expired_for_invalid_token
+1. Navigate to /queue?t=nonexistent&return=/
+2. Wait for #expired div to become visible (JS polls after 1s)
+3. Assert #position hidden, expired message visible
+
+**Verifies:** JS polling detects expired token and shows rejoin UI
+
+### XSS resistance in browser
+**File:** tests/e2e/test_admission_gate.py::TestQueuePageXSS
+1. Navigate with tokens containing </script>, quotes, null bytes
+2. Assert page still renders normally (h1 visible)
+3. For script-break: assert expired div appears (token treated as invalid)
+
+**Verifies:** XSS payloads in token do not break the page in a real browser
+
+### Queue status API returns correct shape
+**File:** tests/e2e/test_admission_gate.py::TestQueueStatusAPI
+1. GET /api/queue/status with unknown token via httpx
+2. Assert 200 with admitted=false, expired=true, position and total keys
+3. GET without token -- same shape returned
+
+**Verifies:** Status API returns well-formed JSON for unknown/missing tokens

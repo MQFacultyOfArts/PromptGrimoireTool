@@ -190,6 +190,14 @@ def _register_db_lifecycle(app: object) -> None:
                 memory_restart_threshold_mb=_app_config.memory_restart_threshold_mb,
             ),
         )
+
+        # Safe: asyncio.create_task() schedules the coroutine but does not
+        # execute it. The task first runs when startup() awaits or returns,
+        # by which point init_admission() has already completed.
+        from promptgrimoire.admission import init_admission
+
+        init_admission(_settings.admission)
+
         log.info("database_connected")
 
     @app.on_shutdown
@@ -293,6 +301,38 @@ def main() -> None:
 
     # Admin kick endpoint for banning users in real time
     app.routes.insert(0, Route("/api/admin/kick", kick_user_handler, methods=["POST"]))
+
+    # Queue page and status API (raw Starlette, zero NiceGUI overhead)
+    from promptgrimoire.queue_handlers import (
+        queue_page_handler,
+        queue_status_handler,
+    )
+
+    app.routes.insert(
+        0,
+        Route(
+            "/api/queue/status",
+            queue_status_handler,
+            methods=["GET"],
+        ),
+    )
+    app.routes.insert(0, Route("/queue", queue_page_handler, methods=["GET"]))
+
+    # Dev-only endpoints for testing admission gate (gated behind DEV__AUTH_MOCK)
+    if get_settings().dev.auth_mock:
+        from promptgrimoire.dev_endpoints import (
+            admission_control_handler,
+            block_loop_handler,
+        )
+
+        app.routes.insert(
+            0,
+            Route("/api/dev/admission", admission_control_handler, methods=["POST"]),
+        )
+        app.routes.insert(
+            0,
+            Route("/api/dev/block-loop", block_loop_handler, methods=["POST"]),
+        )
 
     # Pre-restart flush and connection-count endpoints for zero-downtime deploy
     from promptgrimoire.pages.restart import (

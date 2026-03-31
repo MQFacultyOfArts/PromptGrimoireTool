@@ -179,6 +179,26 @@ async def _healthz(_request):
 
 app.routes.insert(0, Route("/healthz", _healthz, methods=["GET", "HEAD"]))
 
+# Queue page and status API (raw Starlette, zero NiceGUI overhead)
+from promptgrimoire.queue_handlers import queue_page_handler, queue_status_handler
+
+app.routes.insert(0, Route("/api/queue/status", queue_status_handler, methods=["GET"]))
+app.routes.insert(0, Route("/queue", queue_page_handler, methods=["GET"]))
+
+# Initialise admission gate so /queue and /api/queue/status work
+from promptgrimoire.admission import init_admission
+from promptgrimoire.config import get_settings
+
+init_admission(get_settings().admission)
+
+# Dev endpoints for admission gate testing
+from promptgrimoire.dev_endpoints import admission_control_handler, block_loop_handler
+
+app.routes.insert(
+    0, Route("/api/dev/admission", admission_control_handler, methods=["POST"])
+)
+app.routes.insert(0, Route("/api/dev/block-loop", block_loop_handler, methods=["POST"]))
+
 
 # Session identity page — exercises the full @ui.page -> background_tasks.create
 # path.  Used by test_session_contamination.py to verify that concurrent page

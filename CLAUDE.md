@@ -218,7 +218,7 @@ src/promptgrimoire/
 ├── pages/               # NiceGUI page routes
 │   ├── annotation/      # Main annotation page (see docs/annotation-architecture.md)
 │   ├── navigator/       # Workspace navigator (route: /, see docs/database.md § Navigator)
-│   ├── registry.py      # page_route decorator, ban guard middleware, page registry
+│   ├── registry.py      # page_route decorator, ban guard + admission gate middleware, page registry
 │   ├── banned.py        # /banned suspension page (uses @ui.page, not page_route)
 │   ├── courses.py       # Course management
 │   ├── roleplay.py      # AI roleplay / client interview
@@ -242,6 +242,9 @@ src/promptgrimoire/
 │   ├── codenames.py     # Unique codename generation (coolname slugs, collision avoidance)
 │   ├── roster.py        # CSV roster parsing, auto-assign round-robin (functional core)
 │   └── turn_cycle.py    # Turn cycle state machine, deadline calc, prompt assembly
+├── admission.py         # AIMD admission gate (pure state, no NiceGUI)
+├── queue_handlers.py    # Raw Starlette handlers for /queue and /api/queue/status
+├── dev_endpoints.py     # Dev-only admission gate test endpoints (DEV__AUTH_MOCK only)
 ├── crdt/                # pycrdt collaboration logic
 ├── word_count.py        # Multilingual word count (Latin/CJK via uniseg/jieba/MeCab)
 ├── word_count_enforcement.py  # Export-time violation check (pure functions, no UI)
@@ -331,13 +334,13 @@ Stytch handles magic link login, passkey authentication, RBAC, and class invitat
 
 ## Restart & Session Invalidation
 
-Sessions are invalidated on **every** restart path. This is a critical invariant — NiceGUI's `FilePersistentDict` uses lazy async writes that don't survive SIGTERM.
+Sessions are invalidated and admission state is cleared on **every** restart path. These are critical invariants — NiceGUI's `FilePersistentDict` uses lazy async writes that don't survive SIGTERM, and admission queue state must not persist across restarts (cap ramps up naturally via AIMD).
 
 | Restart path | Mechanism |
 |---|---|
-| `deploy/restart.sh` | `POST /api/pre-restart` → sync-writes storage files with `auth_user` removed |
-| Memory threshold | `graceful_memory_shutdown()` → same sync-write, navigates to `/restarting` |
-| Bare `systemctl restart` / crash | `invalidate_sessions_on_disk()` at app startup — iterates `.nicegui/storage-user-*.json` on disk |
+| `deploy/restart.sh` | `POST /api/pre-restart` → clears admission queue, sync-writes storage files with `auth_user` removed |
+| Memory threshold | `graceful_memory_shutdown()` → clears admission queue, same sync-write, navigates to `/restarting` |
+| Bare `systemctl restart` / crash | `invalidate_sessions_on_disk()` at app startup; `init_admission()` creates fresh state |
 
 **Key implementation details:**
 - `_invalidate_all_sessions()` in `diagnostics.py` uses `dict.pop()` (not `PersistentDict.pop()`) to bypass the lazy `on_change` → `backup()` hook, then sync-writes each file via `filepath.write_text()`.
@@ -372,6 +375,20 @@ The export worker (PDF compilation) can run in two modes controlled by `FEATURES
 - `EXPORT__MAX_CONCURRENT_COMPILATIONS` (int, default 2): Semaphore limit for parallel LaTeX compilations
 - `FEATURES__WORKER_IN_PROCESS` (bool, default true): In-process vs standalone worker mode
 - `DATABASE__USE_NULL_POOL` (bool, default false): Use NullPool instead of QueuePool (for environments without PgBouncer)
+
+## Admission Gate (Lag-Based)
+
+AIMD-based dynamic admission gate protects the server from overload by queuing new users when event-loop lag is high.
+
+**Architecture:** Pure state module (`admission.py`, no NiceGUI imports) with module-level singleton. Initialised via `init_admission(config)` at app startup. The diagnostic loop (`diagnostics.py`) drives the AIMD cycle each interval: cap adjustment, batch admission, expiry sweep.
+
+**Gate check:** `_check_admission_gate()` in `pages/registry.py` runs inside `page_route` before page handlers. Check order: gate disabled -> already connected -> valid ticket -> privileged bypass -> under cap -> enqueue and redirect to `/queue`.
+
+**Queue page:** Raw Starlette handlers (`/queue` HTML page, `/api/queue/status` JSON) with zero NiceGUI client overhead. Vanilla JS polls every 5s, auto-redirects on admission.
+
+**Config:** `ADMISSION__` prefix. Key vars: `ENABLED` (bool, default true), `INITIAL_CAP` (int, default 20), `BATCH_SIZE` (int, default 20), `LAG_INCREASE_MS` (int, default 10), `LAG_DECREASE_MS` (int, default 50), `QUEUE_TIMEOUT_SECONDS` (int, default 1800), `TICKET_VALIDITY_SECONDS` (int, default 600).
+
+**Dev endpoints** (gated behind `DEV__AUTH_MOCK=true`): `POST /api/dev/admission` (manipulate state), `POST /api/dev/block-loop` (trigger AIMD via real event-loop blocking).
 
 ## Conventions
 

@@ -13,9 +13,12 @@ import asyncio
 import contextlib
 import sys
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import structlog
+
+if TYPE_CHECKING:
+    from promptgrimoire.admission import AdmissionState
 
 # resource module is POSIX-only; gracefully degrade on other platforms
 _resource: Any = None
@@ -277,12 +280,42 @@ async def graceful_memory_shutdown(*, rss_mb: int, threshold_mb: int) -> None:
     )
     await _flush_milkdown_to_crdt()
     await _persist_dirty_workspaces()
+    # Clear admission queue before navigating clients to /restarting
+    from promptgrimoire.admission import get_admission_state  # noqa: PLC0415
+
+    with contextlib.suppress(RuntimeError):
+        get_admission_state().clear()
     # Navigate BEFORE invalidating — clients still rendering pages will
     # hit `assert auth_user is not None` if sessions vanish mid-load.
     await _navigate_clients_to_restarting()
     await _invalidate_all_sessions()
     logger.info("memory_restart_complete", rss_mb=rss_mb)
     raise SystemExit(MEMORY_RESTART_EXIT_CODE)
+
+
+def _enrich_snapshot_with_admission(
+    snapshot: dict[str, Any],
+    admission: AdmissionState,
+    admitted_count: int,
+) -> None:
+    """Run admission gate cycle and add fields to *snapshot*.
+
+    Performs AIMD cap update, batch admission, and expiry sweep, then
+    writes ``admission_cap``, ``admission_admitted``,
+    ``admission_queue_depth``, and ``admission_tickets`` into *snapshot*
+    so they appear in the ``memory_diagnostic`` structlog event.
+    """
+    admission.update_cap(
+        lag_ms=snapshot["event_loop_lag_ms"],
+        admitted_count=admitted_count,
+    )
+    admission.admit_batch(admitted_count=admitted_count)
+    admission.sweep_expired()
+
+    snapshot["admission_cap"] = admission.cap
+    snapshot["admission_admitted"] = admitted_count
+    snapshot["admission_queue_depth"] = admission.queue_depth
+    snapshot["admission_tickets"] = admission.ticket_count
 
 
 async def start_diagnostic_logger(
@@ -297,10 +330,23 @@ async def start_diagnostic_logger(
     clients to ``/restarting``, then ``sys.exit(0)`` so systemd restarts
     the process cleanly.
     """
+    from promptgrimoire.admission import get_admission_state  # noqa: PLC0415
+    from promptgrimoire.auth import client_registry  # noqa: PLC0415
+
     while True:
         try:
             snapshot = collect_snapshot()
             snapshot["event_loop_lag_ms"] = await measure_event_loop_lag()
+
+            # Includes ALL connected clients (including privileged) —
+            # the cap protects total server resources, not just gated users.
+            admitted_count = len(client_registry._registry)
+            _enrich_snapshot_with_admission(
+                snapshot,
+                get_admission_state(),
+                admitted_count,
+            )
+
             logger.info("memory_diagnostic", **snapshot)
             if _check_memory_threshold(
                 snapshot, threshold_mb=memory_restart_threshold_mb

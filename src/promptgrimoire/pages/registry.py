@@ -11,13 +11,16 @@ import contextlib
 import functools
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Literal
+from urllib.parse import urlencode
+from uuid import UUID as _UUID
 
 import structlog
 from nicegui import app, ui
 from nicegui.storage import request_contextvar
 from structlog.contextvars import bind_contextvars, clear_contextvars
 
-from promptgrimoire.auth import is_privileged_user
+from promptgrimoire import admission
+from promptgrimoire.auth import client_registry, is_privileged_user
 from promptgrimoire.config import get_settings
 
 logger = structlog.get_logger()
@@ -80,8 +83,6 @@ def _is_page_visible(
 
 async def _check_ban(user_id: str, route: str) -> bool:
     """Return True (and redirect) if the user is banned."""
-    from uuid import UUID as _UUID  # noqa: PLC0415
-
     from promptgrimoire.db.users import (  # noqa: PLC0415 -- inline to avoid circular import (registry -> db)
         is_user_banned,
     )
@@ -93,12 +94,76 @@ async def _check_ban(user_id: str, route: str) -> bool:
     return False
 
 
+async def _check_admission_gate(  # noqa: PLR0911 — guard-clause chain
+    user_id: str,
+    auth_user: dict[str, object] | None,
+    request_path: str,
+) -> bool:
+    """Return True (and redirect to /queue) if the user should be gated.
+
+    Check order:
+    0. Gate disabled → pass through
+    1. Already in client_registry → pass through (navigating within session)
+    2. Has valid entry ticket → consume and pass through
+    3. Privileged user → bypass gate
+    4. Under cap → pass through
+    5. Otherwise → enqueue and redirect to /queue
+
+    Note: the cap check at step 4 uses ``len(client_registry._registry)``
+    which counts *all* connected NiceGUI clients including privileged users.
+    This is intentional — the cap protects total server resources (memory,
+    event-loop time) regardless of how a client was admitted.
+
+    The cap is a soft limit: concurrent arrivals between asyncio await
+    points can both pass step 4, exceeding cap by up to ~batch_size.
+    This is acceptable — AIMD self-corrects on the next diagnostic cycle.
+    """
+    uid = _UUID(user_id)
+
+    # 1. Already connected — navigating within an admitted session
+    if uid in client_registry._registry:
+        return False
+
+    # Startup race: admission state may not be initialised yet
+    try:
+        state = admission.get_admission_state()
+    except RuntimeError:
+        logger.debug("admission_state_not_ready", route=request_path)
+        return False
+
+    # 0. Gate disabled via ADMISSION__ENABLED=false
+    if not state.enabled:
+        return False
+
+    # 2. Valid entry ticket from queue admission
+    if state.try_enter(uid):
+        return False
+
+    # 3. Staff / privileged users bypass the gate
+    if is_privileged_user(auth_user):
+        return False
+
+    # 4. Under cap — room available (soft limit, see docstring)
+    if len(client_registry._registry) < state.cap:
+        return False
+
+    # 5. At or over cap — enqueue and redirect (enqueue is idempotent)
+    token = state.enqueue(uid)
+
+    params = urlencode({"t": token, "return": request_path})
+    redirect_url = f"/queue?{params}"
+    logger.info(
+        "admission_gate_redirect",
+        user_id=user_id,
+        route=request_path,
+        queue_depth=state.queue_depth,
+    )
+    ui.navigate.to(redirect_url)
+    return True
+
+
 def _register_client(user_id: str) -> None:
     """Register the current NiceGUI client for real-time ban kick."""
-    from uuid import UUID as _UUID  # noqa: PLC0415
-
-    from promptgrimoire.auth import client_registry  # noqa: PLC0415
-
     client_registry.register(_UUID(user_id), ui.context.client)
 
 
@@ -115,6 +180,39 @@ def _get_session_identity() -> tuple[str, str]:
         else:
             ctx_session_id = "no-request"
     return ctx_session_id, task_name
+
+
+def _get_auth_identity(
+    route: str,
+    ctx_session_id: str,
+    task_name: str,
+) -> tuple[str | None, dict[str, object] | None]:
+    """Extract user_id and auth_user from NiceGUI session storage.
+
+    Returns (user_id, auth_user) — both None if unauthenticated or
+    storage is unavailable.
+    """
+    user_id = None
+    auth_user = None
+    try:
+        auth_user = app.storage.user.get("auth_user")
+        user_id = auth_user.get("user_id") if auth_user else None
+    except RuntimeError:
+        logger.debug("storage_unavailable", route=route)
+    except AssertionError:
+        # Session identity mismatch — session_id not in _users.
+        # Known race: request arrives before storage middleware
+        # initialises the session. Not an application error —
+        # the page handler treats the user as unauthenticated.
+        # Downgraded from error to warning to avoid Discord pings.
+        logger.warning(
+            "session_storage_assertion_failed",
+            route=route,
+            ctx_session_id=ctx_session_id,
+            task_name=task_name,
+            exc_info=True,
+        )
+    return user_id, auth_user
 
 
 def page_route(
@@ -170,25 +268,11 @@ def page_route(
 
             _ctx_session_id, _task_name = _get_session_identity()
 
-            user_id = None
-            try:
-                auth_user = app.storage.user.get("auth_user")
-                user_id = auth_user.get("user_id") if auth_user else None
-            except RuntimeError:
-                logger.debug("storage_unavailable", route=route)
-            except AssertionError:
-                # Session identity mismatch — session_id not in _users.
-                # Known race: request arrives before storage middleware
-                # initialises the session. Not an application error —
-                # the page handler treats the user as unauthenticated.
-                # Downgraded from error to warning to avoid Discord pings.
-                logger.warning(
-                    "session_storage_assertion_failed",
-                    route=route,
-                    ctx_session_id=_ctx_session_id,
-                    task_name=_task_name,
-                    exc_info=True,
-                )
+            user_id, auth_user = _get_auth_identity(
+                route,
+                _ctx_session_id,
+                _task_name,
+            )
 
             # Session identity tracing (#438): always log for correlation
             logger.info(
@@ -207,8 +291,14 @@ def page_route(
             if user_id and await _check_ban(user_id, route):
                 return
 
-            # Register client for real-time ban kick
+            # Admission gate + client registration (both require authenticated user)
             if user_id:
+                # Gate: redirect new users to /queue when at capacity.
+                # Uses resolved request path, not route template.
+                request_path = ui.context.client.request.url.path
+                if await _check_admission_gate(user_id, auth_user, request_path):
+                    return
+                # Register client for real-time ban kick
                 _register_client(user_id)
 
             await func(*args, **kwargs)

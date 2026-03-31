@@ -7,6 +7,7 @@ application process restarts.
 
 from __future__ import annotations
 
+import contextlib
 import hmac
 import sys
 from typing import TYPE_CHECKING
@@ -124,6 +125,12 @@ async def pre_restart_handler(request: Request) -> JSONResponse:
 
     # Persist all dirty CRDT state to database
     await get_persistence_manager().persist_all_dirty_workspaces()
+
+    # Clear admission queue
+    from promptgrimoire.admission import get_admission_state  # noqa: PLC0415
+
+    with contextlib.suppress(RuntimeError):
+        get_admission_state().clear()
 
     # Navigate BEFORE invalidating — clients still rendering pages will
     # hit `assert auth_user is not None` if sessions vanish mid-load.

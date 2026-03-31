@@ -217,9 +217,13 @@ async def test_finalise_parallel_results_treats_flaky_retries_as_pass(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    """A failed file that passes on retry is marked as flaky, not a final failure."""
+    """Locally (no CI env), a flaky retry is forgiven and all_passed is True."""
     from promptgrimoire.cli.e2e import _parallel
     from promptgrimoire.cli.e2e._lanes import PLAYWRIGHT_LANE, WorkerResult
+
+    # Ensure non-CI context so flaky tests are forgiven
+    monkeypatch.delenv("CI", raising=False)
+    monkeypatch.delenv("GRIMOIRE_STRICT_FLAKY", raising=False)
 
     run_dir = tmp_path / "run"
     run_dir.mkdir()
@@ -257,6 +261,57 @@ async def test_finalise_parallel_results_treats_flaky_retries_as_pass(
     )
 
     assert all_passed is True
+    assert had_flaky is True
+
+
+@pytest.mark.asyncio
+async def test_finalise_parallel_results_strict_flaky_fails_on_ci(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """On CI (or with GRIMOIRE_STRICT_FLAKY), flaky tests fail the run."""
+    from promptgrimoire.cli.e2e import _parallel
+    from promptgrimoire.cli.e2e._lanes import PLAYWRIGHT_LANE, WorkerResult
+
+    monkeypatch.setenv("CI", "true")
+    monkeypatch.delenv("GRIMOIRE_STRICT_FLAKY", raising=False)
+
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    failed_result = WorkerResult(
+        file=Path("tests/e2e/test_flaky.py"),
+        exit_code=1,
+        duration_s=0.4,
+        artifact_dir=tmp_path / "worker-flaky",
+    )
+
+    async def _fake_retry_parallel_failures(
+        *_args, **_kwargs
+    ) -> tuple[list[Path], list[Path]]:
+        return [], [failed_result.file]
+
+    async def _unused_worker(*_args, **_kwargs) -> WorkerResult:
+        raise AssertionError("worker should not be invoked by this test")
+
+    monkeypatch.setattr(
+        _parallel, "_retry_parallel_failures", _fake_retry_parallel_failures
+    )
+    monkeypatch.setattr(
+        _parallel, "_merge_junit_xml", lambda _run_dir: _run_dir / "combined.xml"
+    )
+
+    all_passed, had_flaky = await _parallel._finalise_parallel_results(
+        PLAYWRIGHT_LANE,
+        _unused_worker,
+        [failed_result],
+        0.0,
+        "postgresql+asyncpg://user:pass@localhost/test_db",
+        "test_db",
+        run_dir,
+        [],
+    )
+
+    assert all_passed is False
     assert had_flaky is True
 
 

@@ -543,6 +543,7 @@ def test_run_all_lanes_runs_playwright_then_nicegui_even_on_failure(
     monkeypatch.setattr("promptgrimoire.cli.e2e.run_nicegui_lane", _fake_nicegui)
     monkeypatch.setattr("promptgrimoire.cli.testing._run_pytest", lambda **_kw: 0)
     monkeypatch.setattr("promptgrimoire.cli.testing._run_bats", lambda: 0)
+    monkeypatch.setattr("promptgrimoire.cli.testing._run_js", lambda: 0)
 
     exit_code = run_all_lanes(["-k", "combined_filter"])
 
@@ -588,6 +589,7 @@ def test_run_all_lanes_returns_zero_only_when_both_lanes_pass(
     )
     monkeypatch.setattr("promptgrimoire.cli.testing._run_pytest", lambda **_kw: 0)
     monkeypatch.setattr("promptgrimoire.cli.testing._run_bats", lambda: 0)
+    monkeypatch.setattr("promptgrimoire.cli.testing._run_js", lambda: 0)
     assert run_all_lanes([]) == 0
 
     monkeypatch.setattr(

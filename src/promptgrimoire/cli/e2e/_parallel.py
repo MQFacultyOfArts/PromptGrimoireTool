@@ -42,6 +42,15 @@ if TYPE_CHECKING:
 logger = structlog.get_logger()
 
 
+def _strict_flaky_enabled() -> bool:
+    """Return True when flaky tests should be treated as failures.
+
+    Enabled by default on CI (``CI`` env var set by GitHub Actions).
+    Locally, opt in with ``--strict-flaky`` or ``GRIMOIRE_STRICT_FLAKY=1``.
+    """
+    return bool(os.environ.get("CI") or os.environ.get("GRIMOIRE_STRICT_FLAKY"))
+
+
 def _drop_database_with_debug(db_url: str, *, context: str) -> None:
     """Drop *db_url* and log cleanup failures at debug level."""
     try:
@@ -457,8 +466,14 @@ async def _finalise_parallel_results(
                 user_args,
                 browser=browser,
             )
-            all_passed = not genuine_failures and not any(
-                result.exit_code == -1 for result in results
+            # Flaky tests are failures when strict mode is active.
+            # CI sets this by default; locally use --strict-flaky.
+            # Brian's FIRST LAW: flakiness is a signal, not a stop word.
+            strict_flaky = _strict_flaky_enabled()
+            all_passed = (
+                not genuine_failures
+                and (not strict_flaky or not flaky_files)
+                and not any(result.exit_code == -1 for result in results)
             )
 
     try:

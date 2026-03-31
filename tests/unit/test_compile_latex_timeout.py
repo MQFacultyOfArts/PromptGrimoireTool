@@ -13,6 +13,7 @@ from __future__ import annotations
 import asyncio
 import os
 import textwrap
+from pathlib import Path
 from typing import TYPE_CHECKING
 from unittest.mock import patch
 
@@ -25,7 +26,6 @@ from promptgrimoire.export.pdf import (
 
 if TYPE_CHECKING:
     from collections.abc import Coroutine
-    from pathlib import Path
     from typing import Any
 
 
@@ -37,17 +37,31 @@ async def test_timeout_kills_process_group(tmp_path: Path) -> None:
     (mimicking latexmk -> lualatex). Verifies that both parent and child
     are dead after the timeout fires.
     """
-    # Script that spawns a child and both sleep forever
-    script = tmp_path / "fake_latexmk.sh"
+    # Simulate latexmk spawning lualatex via os.fork().  Bash's &
+    # operator creates separate process groups in Docker runtimes
+    # (gh act with tini), which doesn't model latexmk's actual
+    # fork behaviour.  os.fork() keeps the child in the parent's
+    # process group, matching production semantics.
+    script = tmp_path / "fake_latexmk.py"
     child_pid_file = tmp_path / "child.pid"
+    diag_file = tmp_path / "diag.txt"
     script.write_text(
         textwrap.dedent(f"""\
-        #!/bin/bash
-        # Spawn a "lualatex" child that sleeps
-        sleep 300 &
-        echo $! > {child_pid_file}
-        # Parent also sleeps
-        sleep 300
+        #!/usr/bin/env python3
+        import os, time
+        parent_pid = os.getpid()
+        parent_pgid = os.getpgrp()
+        child = os.fork()
+        if child == 0:
+            child_pgid = os.getpgrp()
+            with open("{diag_file}", "w") as f:
+                f.write(f"parent_pid={{parent_pid}} parent_pgid={{parent_pgid}} "
+                        f"child_pid={{os.getpid()}} child_pgid={{child_pgid}}\\n")
+            time.sleep(300)
+        else:
+            with open("{child_pid_file}", "w") as f:
+                f.write(str(child))
+            time.sleep(300)
         """)
     )
     script.chmod(0o755)
@@ -63,23 +77,48 @@ async def test_timeout_kills_process_group(tmp_path: Path) -> None:
     ) -> Any:
         return await original_wait_for(coro, timeout=1)
 
+    killpg_calls: list[tuple[int, int]] = []
+    original_killpg = os.killpg
+
+    def _recording_killpg(pgid: int, sig: int) -> None:
+        killpg_calls.append((pgid, sig))
+        original_killpg(pgid, sig)
+
     with (
         patch("promptgrimoire.export.pdf.get_latexmk_path", return_value=str(script)),
         patch.object(asyncio, "wait_for", short_wait_for),
+        patch("promptgrimoire.export.pdf.os.killpg", _recording_killpg),
         pytest.raises(LaTeXCompilationError, match="timed out"),
     ):
         await compile_latex(tex_path, output_dir=tmp_path)
 
-    # Give the OS a moment to clean up
-    await asyncio.sleep(0.2)
-
-    # Verify the child process was also killed
+    # Verify the child process was killed.  SIGKILL delivery is
+    # asynchronous — the kernel queues the signal but the target must be
+    # scheduled to receive it.  We wait for the /proc entry to show the
+    # process is dead (zombie 'Z') or gone (fully reaped).  os.kill(pid, 0)
+    # succeeds on zombies, so /proc/PID/stat is the authoritative check.
     assert child_pid_file.exists(), "Child PID file should have been written"
     child_pid = int(child_pid_file.read_text().strip())
+    proc_stat = Path(f"/proc/{child_pid}/stat")
 
-    # Check that the child is dead (os.kill with signal 0 probes without killing)
-    with pytest.raises(OSError):
-        os.kill(child_pid, 0)
+    deadline = asyncio.get_event_loop().time() + 2.0
+    while asyncio.get_event_loop().time() < deadline:
+        if not proc_stat.exists():
+            break  # Fully reaped
+        stat_fields = proc_stat.read_text().split()
+        state = stat_fields[2] if len(stat_fields) > 2 else "?"
+        if state == "Z":
+            break  # Zombie — killed but not yet reaped (Docker/tini)
+        await asyncio.sleep(0.05)
+    else:
+        state = "?"
+        if proc_stat.exists():
+            stat_fields = proc_stat.read_text().split()
+            state = stat_fields[2] if len(stat_fields) > 2 else "?"
+        pytest.fail(
+            f"Child {child_pid} still in state '{state}' after 2s. "
+            f"killpg_calls={killpg_calls}"
+        )
 
 
 @pytest.mark.asyncio

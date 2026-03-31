@@ -107,6 +107,14 @@ jobs:
         ports:
           - 5432:5432
     steps:
+      - name: Quieten Postgres logs
+        run: |
+          export PGPASSWORD=postgres
+          psql -h localhost -U postgres -d promptgrimoire_test \
+            -c "ALTER SYSTEM SET log_checkpoints = off" \
+            -c "ALTER SYSTEM SET log_min_messages = warning" \
+            -c "SELECT pg_reload_conf()"
+
       - uses: actions/checkout@v6.0.2
 
       - name: Cache apt packages
@@ -193,6 +201,14 @@ jobs:
         ports:
           - 5432:5432
     steps:
+      - name: Quieten Postgres logs
+        run: |
+          export PGPASSWORD=postgres
+          psql -h localhost -U postgres -d promptgrimoire_test \
+            -c "ALTER SYSTEM SET log_checkpoints = off" \
+            -c "ALTER SYSTEM SET log_min_messages = warning" \
+            -c "SELECT pg_reload_conf()"
+
       - uses: actions/checkout@v6.0.2
 
       - name: Install system dependencies
@@ -253,6 +269,14 @@ jobs:
         ports:
           - 5432:5432
     steps:
+      - name: Quieten Postgres logs
+        run: |
+          export PGPASSWORD=postgres
+          psql -h localhost -U postgres -d promptgrimoire_test \
+            -c "ALTER SYSTEM SET log_checkpoints = off" \
+            -c "ALTER SYSTEM SET log_min_messages = warning" \
+            -c "SELECT pg_reload_conf()"
+
       - uses: actions/checkout@v6.0.2
 
       - name: Install system dependencies

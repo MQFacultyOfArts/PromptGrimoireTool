@@ -178,7 +178,13 @@ def _retry_e2e_tests_in_isolation(
 
     _print_retry_outcome(flaky, genuine_failures)
 
-    return 1 if genuine_failures else 0
+    # Flaky tests are failures when strict mode is active (CI default).
+    strict = bool(os.environ.get("CI") or os.environ.get("GRIMOIRE_STRICT_FLAKY"))
+    if genuine_failures:
+        return 1
+    if flaky and strict:
+        return 1
+    return 0
 
 
 async def retry_failed_files_in_isolation(

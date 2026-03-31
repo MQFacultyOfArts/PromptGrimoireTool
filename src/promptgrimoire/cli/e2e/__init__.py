@@ -414,8 +414,15 @@ def run(
     browser: str | None = typer.Option(
         None, help="Browser engine: chromium, firefox (default: chromium)"
     ),
+    strict_flaky: bool = typer.Option(
+        False,
+        "--strict-flaky",
+        help="Treat flaky tests as failures (automatic on CI)",
+    ),
 ) -> None:
     """Run Playwright E2E tests (parallel by default, --serial for single server)."""
+    if strict_flaky:
+        os.environ["GRIMOIRE_STRICT_FLAKY"] = "1"
     args = _prepend_filter(ctx.args, filter_expr)
     args = _prepend_pytest_flags(args, exit_first=exit_first, failed_first=failed_first)
     sys.exit(

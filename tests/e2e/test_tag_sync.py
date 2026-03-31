@@ -258,9 +258,12 @@ class TestOrganiseTabSync:
         # Use .first because rapid CRDT broadcasts can leave two
         # tag-toolbar divs in the footer (rebuild race). Production
         # UX is unaffected (both are identical). Tracked for fix.
+        #
+        # Use click() directly instead of scroll_into_view_if_needed()
+        # + click() — Playwright's click() auto-scrolls and retries if
+        # the element detaches mid-action (CRDT rebuild race on Firefox).
         settings_btn_b = page_b.get_by_test_id("tag-settings-btn").first
         expect(settings_btn_b).to_be_visible(timeout=5000)
-        settings_btn_b.scroll_into_view_if_needed()
         settings_btn_b.click()
 
         done_btn_b = page_b.get_by_test_id("tag-management-done-btn")

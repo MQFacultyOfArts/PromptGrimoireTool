@@ -21,6 +21,7 @@ Traceability:
 from __future__ import annotations
 
 import base64
+import html as _html
 import json
 import time
 from typing import TYPE_CHECKING, Any
@@ -110,6 +111,76 @@ def group_highlights_by_tag(
     return tagged_highlights, untagged_highlights, has_any_highlights
 
 
+def _render_reference_card_html(
+    *,
+    tag_display: str,
+    color: str,
+    display_author: str,
+    text: str,
+    para_ref: str,
+    comments: list[tuple[str, str]],
+) -> str:
+    """Render the body of a reference card as an HTML string.
+
+    Returns an HTML fragment for use with ``ui.html(sanitize=False)``.
+    All interpolated string values are escaped via ``html.escape()``
+    (defence-in-depth — values originate from authenticated UI but
+    we never trust interpolated content in raw HTML).
+
+    The locate button is NOT included here — it requires a server-side
+    callback for tab switching and is added as a separate NiceGUI element
+    by the caller.
+
+    Args:
+        tag_display: Human-readable tag name.
+        color: Hex colour for tag label.
+        display_author: Pre-anonymised author display name.
+        text: Highlighted text content.
+        para_ref: Paragraph reference (empty string if absent).
+        comments: List of (display_author, text) tuples, pre-anonymised.
+    """
+    esc = _html.escape
+    parts: list[str] = [
+        # Tag label
+        f'<div style="display:flex;align-items:center;gap:4px;">'
+        f'<span style="font-weight:bold;color:{esc(color)};max-width:100px;'
+        f'overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'
+        f"{esc(tag_display)}</span>"
+        f"</div>",
+        # Author
+        f'<div style="font-size:0.85em;color:#666;">by {esc(display_author)}</div>',
+    ]
+
+    # Text preview with CSS overflow
+    if text:
+        parts.append(
+            f'<div style="font-size:0.85em;white-space:pre-wrap;'
+            f'max-height:4.5em;overflow:hidden;">'
+            f"{esc(text)}</div>"
+        )
+
+    # Para ref (conditional)
+    if para_ref:
+        parts.append(
+            f'<div class="text-xs font-mono text-gray-400">{esc(para_ref)}</div>'
+        )
+
+    # Comments
+    for c_author, c_text in comments:
+        if not c_text:
+            continue
+        parts.append(
+            f'<div style="border-left:2px solid #e0e0e0;padding-left:8px;'
+            f'margin-top:4px;">'
+            f'<span style="font-size:0.75em;color:#666;font-weight:500;">'
+            f"{esc(c_author)}:</span> "
+            f'<span style="font-size:0.75em;color:#555;">'
+            f"{esc(c_text)}</span></div>"
+        )
+
+    return "".join(parts)
+
+
 def _build_reference_card(
     highlight: dict[str, Any],
     tag_colour: str,
@@ -178,6 +249,79 @@ def _build_reference_card(
                         "text-xs text-gray-500 font-medium shrink-0"
                     )
                     ui.label(comment_text).classes("text-xs text-gray-700")
+
+
+def _build_reference_card_html(
+    highlight: dict[str, Any],
+    tag_colour: str,
+    display_tag_name: str,
+    state: PageState,
+    on_locate: Callable[..., Any] | None = None,
+) -> None:
+    """Render a reference card as single ``ui.html()`` plus NiceGUI locate button.
+
+    Replaces ``_build_reference_card()`` — collapses 8-10 NiceGUI elements
+    per card into 2-3 (wrapper div + html + optional locate button).
+
+    Args:
+        highlight: Highlight data dict from CRDT.
+        tag_colour: Hex colour for the left border.
+        display_tag_name: Human-readable tag name.
+        state: Page state for anonymisation context.
+        on_locate: Optional async callback(start_char, end_char, document_id)
+            to warp to the highlight in Tab 1.
+    """
+    raw_author = highlight.get("author", "Unknown")
+    hl_user_id = highlight.get("user_id")
+    start_char: int = int(highlight.get("start_char", 0))
+    end_char: int = int(highlight.get("end_char", 0))
+    full_text = highlight.get("text", "")
+    comments_raw: list[dict[str, Any]] = highlight.get("comments", [])
+    para_ref = highlight.get("para_ref", "")
+
+    display_author = anonymise_display_author(raw_author, hl_user_id, state)
+
+    # Pre-anonymise comment authors for the pure renderer
+    comments: list[tuple[str, str]] = []
+    for comment in comments_raw:
+        c_text = comment.get("text", "")
+        if not c_text:
+            continue
+        raw_c_author = comment.get("author", "")
+        c_uid = comment.get("user_id")
+        display_c_author = anonymise_display_author(raw_c_author, c_uid, state)
+        comments.append((display_c_author, c_text))
+
+    html_str = _render_reference_card_html(
+        tag_display=display_tag_name,
+        color=tag_colour,
+        display_author=display_author,
+        text=full_text,
+        para_ref=para_ref,
+        comments=comments,
+    )
+
+    with (
+        ui.element("div")
+        .style(
+            f"border-left: 4px solid {tag_colour}; padding: 8px; margin-bottom: 4px;"
+        )
+        .props('data-testid="respond-reference-card"')
+    ):
+        ui.html(html_str, sanitize=False)
+        if on_locate is not None:
+            hl_doc_id = highlight.get("document_id")
+
+            async def _do_locate(
+                sc: int = start_char,
+                ec: int = end_char,
+                did: str | None = hl_doc_id,
+            ) -> None:
+                await on_locate(sc, ec, did)
+
+            ui.button(icon="my_location", on_click=_do_locate).props(
+                'flat dense size=xs data-testid="respond-locate-btn"'
+            ).tooltip("Locate in document")
 
 
 def _matches_filter(
@@ -295,7 +439,7 @@ def _build_reference_panel(
             continue
         with _tracked_expansion(tag_info.name, accordion_state):
             for hl in filtered:
-                _build_reference_card(
+                _build_reference_card_html(
                     hl, tag_info.colour, tag_info.name, state, on_locate
                 )
                 card_count += 1
@@ -304,7 +448,7 @@ def _build_reference_panel(
     if untagged_filtered:
         with _tracked_expansion("Untagged", accordion_state):
             for hl in untagged_filtered:
-                _build_reference_card(hl, "#999999", "Untagged", state, on_locate)
+                _build_reference_card_html(hl, "#999999", "Untagged", state, on_locate)
                 card_count += 1
 
     logger.info(

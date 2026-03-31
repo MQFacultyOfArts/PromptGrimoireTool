@@ -179,10 +179,6 @@ class TestCardBuildTime:
             f"Expected < 100ms with lazy detail and HTML header optimisations."
         )
 
-    @pytest.mark.xfail(
-        reason="0.64ms/card baseline — Vue sidebar (#457) should bring below 0.5ms",
-        strict=False,
-    )
     @pytest.mark.asyncio
     async def test_organise_tab_card_build_time(self, nicegui_user: User) -> None:
         """Organise tab: per-card and total build time with 190 highlights.
@@ -271,10 +267,6 @@ class TestCardBuildTime:
             f"{_TOTAL_THRESHOLD_MS}ms for {card_count} cards."
         )
 
-    @pytest.mark.xfail(
-        reason="0.60ms/card baseline — Vue sidebar (#457) should bring below 0.5ms",
-        strict=False,
-    )
     @pytest.mark.asyncio
     async def test_respond_tab_card_build_time(self, nicegui_user: User) -> None:
         """Respond tab: per-card and total build time with 190 highlights.

@@ -12,7 +12,7 @@ Traceability:
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from uuid import UUID, uuid4
 
 import pytest
@@ -26,6 +26,20 @@ from tests.integration.nicegui_helpers import (
     wait_for,
     wait_for_annotation_load,
 )
+
+
+def _element_text_content(el: Any) -> str:
+    """Extract all text from a NiceGUI element, including ui.html() innerHTML."""
+    import re
+
+    parts: list[str] = []
+    if hasattr(el, "text"):
+        parts.append(str(el.text))
+    inner = el.props.get("innerHTML", "")
+    if inner:
+        parts.append(re.sub(r"<[^>]+>", " ", inner))
+    return " ".join(parts)
+
 
 if TYPE_CHECKING:
     from nicegui.testing.user import User
@@ -308,29 +322,18 @@ class TestOrganiseTabRendering:
         await _open_organise_tab(nicegui_user, ws_id, email)
 
         cards = _find_all_by_testid(nicegui_user, "organise-card")
-        # Find the card with long text (120 B's) — now 80-char truncation
+        # Find the card with long text (120 B's) — CSS overflow handles truncation
         found_truncated = False
         for card in cards:
-            for desc in card.descendants():
-                if not hasattr(desc, "text"):
-                    continue
-                text_val = str(desc.text)
-                if "BBB" in text_val and "..." in text_val:
-                    # Should be 80 B's + "..."
-                    inner = text_val.strip('"')
-                    assert inner.endswith("..."), (
-                        f"Expected '...' suffix, got: {text_val}"
-                    )
-                    # 80 chars of B + "..."
-                    assert len(inner) == 83, (
-                        f"Expected 83 chars (80+...), got {len(inner)}"
-                    )
+            for desc in [card, *card.descendants()]:
+                content = _element_text_content(desc)
+                if "BBB" in content:
                     found_truncated = True
                     break
             if found_truncated:
                 break
         assert found_truncated, (
-            "Expected expandable truncated text with '...' in organise card"
+            "Expected highlight text containing 'BBB' in organise card"
         )
 
     @pytest.mark.asyncio
@@ -343,14 +346,9 @@ class TestOrganiseTabRendering:
         cards = _find_all_by_testid(nicegui_user, "organise-card")
         found_short = False
         for card in cards:
-            for desc in card.descendants():
-                if not hasattr(desc, "text"):
-                    continue
-                text_val = str(desc.text)
-                if "Short highlight text" in text_val:
-                    assert "..." not in text_val, (
-                        f"Short text should not be truncated: {text_val}"
-                    )
+            for desc in [card, *card.descendants()]:
+                content = _element_text_content(desc)
+                if "Short highlight text" in content:
                     found_short = True
                     break
             if found_short:
@@ -384,10 +382,9 @@ class TestOrganiseTabRendering:
         cards = _find_all_by_testid(nicegui_user, "organise-card")
         found_comment = False
         for card in cards:
-            for desc in card.descendants():
-                if not hasattr(desc, "text"):
-                    continue
-                if "A test comment on organise card" in str(desc.text):
+            for desc in [card, *card.descendants()]:
+                content = _element_text_content(desc)
+                if "A test comment on organise card" in content:
                     found_comment = True
                     break
             if found_comment:
@@ -423,10 +420,9 @@ class TestOrganiseTabRendering:
         user_name = email.split("@", maxsplit=1)[0]
         found_author = False
         for card in cards:
-            for desc in card.descendants():
-                if not hasattr(desc, "text"):
-                    continue
-                if f"by {user_name}" in str(desc.text):
+            for desc in [card, *card.descendants()]:
+                content = _element_text_content(desc)
+                if f"by {user_name}" in content:
                     found_author = True
                     break
             if found_author:
@@ -482,13 +478,11 @@ class TestOrganiseTabRendering:
         # The exact deterministic pseudonym must appear
         pseudonym_found = False
         for card in cards:
-            for desc in card.descendants():
-                if not hasattr(desc, "text"):
-                    continue
-                text_val = str(desc.text)
-                if f"by {author_name}" in text_val:
+            for desc in [card, *card.descendants()]:
+                content = _element_text_content(desc)
+                if f"by {author_name}" in content:
                     raw_author_found = True
-                if f"by {expected_pseudonym}" in text_val:
+                if f"by {expected_pseudonym}" in content:
                     pseudonym_found = True
 
         assert not raw_author_found, (

@@ -51,6 +51,7 @@ Replace the per-card Python element loop (190 NiceGUI element trees, ~100ms bloc
 - **vue-annotation-sidebar-457.AC4.1 Success:** Users with `can_annotate` see tag dropdown, comment input, and post button
 - **vue-annotation-sidebar-457.AC4.2 Failure:** Viewers without `can_annotate` do not see edit controls
 - **vue-annotation-sidebar-457.AC4.3 Success:** Delete buttons shown only for content owner or privileged user
+- **vue-annotation-sidebar-457.AC4.4 Failure:** Unauthorized mutation event (crafted `delete_highlight` as viewer) rejected server-side, no CRDT change
 
 ### vue-annotation-sidebar-457.AC5: Performance
 - **vue-annotation-sidebar-457.AC5.1 Success:** Initial render of 190 cards completes with <5ms server-side blocking (prop serialisation only)
@@ -62,6 +63,16 @@ Replace the per-card Python element loop (190 NiceGUI element trees, ~100ms bloc
 
 ### vue-annotation-sidebar-457.AC7: Test Coverage
 - **vue-annotation-sidebar-457.AC7.1 Success:** All 8 test lanes pass with no test deletions without equivalent replacement
+
+### vue-annotation-sidebar-457.AC8: Respond Tab Performance
+- **vue-annotation-sidebar-457.AC8.1 Success:** Respond reference panel renders 190 highlights without blocking the event loop for >50ms
+- **vue-annotation-sidebar-457.AC8.2 Success:** Search/filter still works (rebuild with filtered highlights)
+- **vue-annotation-sidebar-457.AC8.3 Success:** Locate button on reference card switches to Source tab and scrolls to highlight
+
+### vue-annotation-sidebar-457.AC9: Organise Tab Performance
+- **vue-annotation-sidebar-457.AC9.1 Success:** Organise tab renders 190 highlights across tag columns without blocking the event loop for >50ms
+- **vue-annotation-sidebar-457.AC9.2 Success:** SortableJS drag-and-drop still works (reorder within column, move between columns)
+- **vue-annotation-sidebar-457.AC9.3 Success:** Locate button on organise card switches to Source tab and scrolls to highlight
 
 ## Glossary
 
@@ -175,7 +186,40 @@ Vue component sets `window.__annotationCardsEpoch` (and per-doc `window.__cardEp
 ## Implementation Phases
 
 <!-- START_PHASE_1 -->
-### Phase 1: Custom Component Spike
+### Phase 1: Respond Tab — Single-Element Reference Cards
+
+**Goal:** Collapse Respond tab's multi-element reference cards into single `ui.html()` elements, eliminating ~3,000+ NiceGUI element constructions for 190 highlights.
+
+**Components:**
+- `src/promptgrimoire/pages/annotation/respond.py` — `_render_reference_card_html()` pure function replacing `_build_reference_card()`. Each card becomes one `ui.html()` call.
+- Unit tests for HTML rendering (XSS escaping, data-testid, Locate onclick)
+
+**Dependencies:** None
+
+**Verifies:** vue-annotation-sidebar-457.AC8 (Respond tab performance)
+
+**Done when:** Respond reference panel renders 190 highlights as single `ui.html()` elements. Search/filter works. Locate button works. All existing E2E tests pass.
+<!-- END_PHASE_1 -->
+
+<!-- START_PHASE_2 -->
+### Phase 2: Organise Tab — Single-Element Highlight Cards
+
+**Goal:** Collapse Organise tab's multi-element highlight cards into single `ui.html()` elements. Preserve SortableJS drag-and-drop.
+
+**Components:**
+- `src/promptgrimoire/pages/annotation/organise.py` — `_render_organise_card_html()` pure function replacing `_build_highlight_card()`. Each card becomes one `ui.html()` call.
+- SortableJS contract preserved: `id="hl-{highlight_id}"`, `data-highlight-id`, `sortable-ignore` on Locate button
+- Unit tests for HTML rendering (SortableJS attributes, XSS escaping)
+
+**Dependencies:** None (independent of Phase 1)
+
+**Verifies:** vue-annotation-sidebar-457.AC9 (Organise tab performance)
+
+**Done when:** Organise tab renders 190 highlights as single `ui.html()` elements. Drag-and-drop works. Locate button works. All existing E2E tests pass.
+<!-- END_PHASE_2 -->
+
+<!-- START_PHASE_3 -->
+### Phase 3: Custom Component Spike
 
 **Goal:** Validate that NiceGUI custom Vue component wiring works in this codebase before building on it. Go/no-go gate.
 
@@ -194,10 +238,10 @@ Vue component sets `window.__annotationCardsEpoch` (and per-doc `window.__cardEp
 5. DOM exposes required `data-testid` / `data-*` attributes (Playwright can find them)
 
 **Done when:** All 5 go/no-go criteria pass. If any fail, halt and reassess before proceeding.
-<!-- END_PHASE_1 -->
+<!-- END_PHASE_3 -->
 
-<!-- START_PHASE_2 -->
-### Phase 2: Scaffold Card Rendering
+<!-- START_PHASE_4 -->
+### Phase 4: Scaffold Card Rendering
 
 **Goal:** Full compact header rendering from items prop, with no interactivity.
 
@@ -206,15 +250,15 @@ Vue component sets `window.__annotationCardsEpoch` (and per-doc `window.__cardEp
 - `src/promptgrimoire/static/annotation-sidebar.js` — Vue component rendering compact headers (colour dot, tag, initials, para ref, comment badge)
 - Unit tests for items serialisation function
 
-**Dependencies:** Phase 1 (spike passes go/no-go)
+**Dependencies:** Phase 3 (spike passes go/no-go)
 
 **Verifies:** vue-annotation-sidebar-457.AC2 (DOM contract)
 
 **Done when:** Component renders 190 card headers from items prop. Cards have correct `data-testid`, `data-highlight-id`, `data-start-char` attributes. Items serialisation has unit tests.
-<!-- END_PHASE_2 -->
+<!-- END_PHASE_4 -->
 
-<!-- START_PHASE_3 -->
-### Phase 3: Card Positioning
+<!-- START_PHASE_5 -->
+### Phase 5: Card Positioning
 
 **Goal:** Cards positioned absolutely aligned to document highlights.
 
@@ -222,15 +266,15 @@ Vue component sets `window.__annotationCardsEpoch` (and per-doc `window.__cardEp
 - `src/promptgrimoire/static/annotation-sidebar.js` — `positionCards()` method, scroll listener, resize observer
 - Positioning logic ported from `src/promptgrimoire/static/annotation-card-sync.js:44-83`
 
-**Dependencies:** Phase 2
+**Dependencies:** Phase 4
 
 **Verifies:** vue-annotation-sidebar-457.AC3 (overlay positioning)
 
 **Done when:** Cards align to their highlights in the document pane. Scroll triggers repositioning. Collision avoidance works. Visual parity with current sidebar.
-<!-- END_PHASE_3 -->
+<!-- END_PHASE_5 -->
 
-<!-- START_PHASE_4 -->
-### Phase 4: Expand/Collapse and Lazy Detail
+<!-- START_PHASE_6 -->
+### Phase 6: Expand/Collapse and Lazy Detail
 
 **Goal:** Cards expand to show detail section on click. Detail built lazily on first expand.
 
@@ -238,15 +282,15 @@ Vue component sets `window.__annotationCardsEpoch` (and per-doc `window.__cardEp
 - `src/promptgrimoire/static/annotation-sidebar.js` — expand/collapse toggle, lazy detail rendering (tag dropdown, author, text preview, para_ref display, comment list, comment input)
 - `src/promptgrimoire/pages/annotation/sidebar.py` — `toggle_expand` event handler, `expanded_ids` prop management
 
-**Dependencies:** Phase 3
+**Dependencies:** Phase 5
 
-**Verifies:** vue-annotation-sidebar-457.AC1.1, AC1.2, AC1.3, AC1.4
+**Verifies:** vue-annotation-sidebar-457.AC1.1, AC1.2, AC1.3
 
 **Done when:** Click header expands card. Detail section built on first expand, retained on collapse. Pre-expanded cards (from `expanded_ids` prop) render with detail visible. Repositioning fires after expand/collapse.
-<!-- END_PHASE_4 -->
+<!-- END_PHASE_6 -->
 
-<!-- START_PHASE_5 -->
-### Phase 5: Tag Change and Comment CRUD
+<!-- START_PHASE_7 -->
+### Phase 7: Tag Change and Comment CRUD
 
 **Goal:** All CRDT-mutating interactions work through Vue events → Python handlers → prop updates.
 
@@ -254,15 +298,15 @@ Vue component sets `window.__annotationCardsEpoch` (and per-doc `window.__cardEp
 - `src/promptgrimoire/static/annotation-sidebar.js` — tag dropdown change handler, comment submit, comment delete, highlight delete
 - `src/promptgrimoire/pages/annotation/sidebar.py` — event handlers for `change_tag`, `submit_comment`, `delete_comment`, `delete_highlight`
 
-**Dependencies:** Phase 4
+**Dependencies:** Phase 6
 
-**Verifies:** vue-annotation-sidebar-457.AC1.5, AC1.6, AC1.7, AC1.8, AC1.9, AC4 (permissions)
+**Verifies:** vue-annotation-sidebar-457.AC1.4, AC1.5, AC1.6, AC1.7, AC1.11, AC1.12, AC4 (permissions)
 
 **Done when:** Tag change updates CRDT and broadcasts. Comments can be added and deleted. Highlights can be deleted. Permission gating enforced (delete buttons, tag dropdown, comment input only shown to permitted users). All mutations trigger prop updates to all connected clients.
-<!-- END_PHASE_5 -->
+<!-- END_PHASE_7 -->
 
-<!-- START_PHASE_6 -->
-### Phase 6: Para_ref Editor, Locate, and Hover
+<!-- START_PHASE_8 -->
+### Phase 8: Para_ref Editor, Locate, and Hover
 
 **Goal:** Remaining interactions: click-to-edit para_ref, locate highlight, hover highlight.
 
@@ -270,15 +314,15 @@ Vue component sets `window.__annotationCardsEpoch` (and per-doc `window.__cardEp
 - `src/promptgrimoire/static/annotation-sidebar.js` — para_ref click-to-edit state machine, locate button emitting event, hover mouseenter/mouseleave calling window functions directly
 - `src/promptgrimoire/pages/annotation/sidebar.py` — `edit_para_ref` and `locate_highlight` event handlers
 
-**Dependencies:** Phase 5
+**Dependencies:** Phase 7
 
-**Verifies:** vue-annotation-sidebar-457.AC1.10, AC1.11, AC1.12
+**Verifies:** vue-annotation-sidebar-457.AC1.8, AC1.9, AC1.10
 
 **Done when:** Para_ref click-to-edit works (display → edit → save/cancel). Locate scrolls document to highlight and throbs. Hover over card highlights text range in document.
-<!-- END_PHASE_6 -->
+<!-- END_PHASE_8 -->
 
-<!-- START_PHASE_7 -->
-### Phase 7: Integration and Switchover
+<!-- START_PHASE_9 -->
+### Phase 9: Integration and Switchover
 
 **Goal:** Replace the current card-building code path with the Vue sidebar. Remove dead code.
 
@@ -288,15 +332,15 @@ Vue component sets `window.__annotationCardsEpoch` (and per-doc `window.__cardEp
 - `src/promptgrimoire/pages/annotation/cards.py` — remove `_build_annotation_card`, `_build_compact_header`, `_build_detail_section`, `_render_compact_header_html`, `_diff_annotation_cards`, `_snapshot_highlight`, all closure factories
 - `src/promptgrimoire/static/annotation-card-sync.js` — remove card positioning code (keep hover highlight, `charOffsetToRect`, `_textNodes` setup, `throbHighlight`)
 
-**Dependencies:** Phase 6
+**Dependencies:** Phase 8
 
 **Verifies:** vue-annotation-sidebar-457.AC5 (performance), AC6 (CRDT sync)
 
 **Done when:** Annotation page uses Vue sidebar. Old card-building code removed. Broadcast triggers prop updates. No regressions in E2E or integration tests.
-<!-- END_PHASE_7 -->
+<!-- END_PHASE_9 -->
 
-<!-- START_PHASE_8 -->
-### Phase 8: Test Adaptation
+<!-- START_PHASE_10 -->
+### Phase 10: Test Adaptation
 
 **Goal:** All existing tests pass or are adapted to equivalent assertions on the Vue component.
 
@@ -307,12 +351,12 @@ Vue component sets `window.__annotationCardsEpoch` (and per-doc `window.__cardEp
 - `tests/integration/test_event_loop_render_lag.py` — update timing assertions (should pass easily with Vue rendering)
 - `tests/unit/test_card_header_html.py` — replace with unit tests for items serialisation
 
-**Dependencies:** Phase 7
+**Dependencies:** Phase 9
 
 **Verifies:** vue-annotation-sidebar-457.AC7 (test coverage)
 
 **Done when:** All 8 test lanes pass. No test deletions without equivalent replacement. Timing test passes with adjusted thresholds.
-<!-- END_PHASE_8 -->
+<!-- END_PHASE_10 -->
 
 ## Additional Considerations
 

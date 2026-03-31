@@ -267,7 +267,6 @@ def page_route(
             clear_contextvars()
 
             _ctx_session_id, _task_name = _get_session_identity()
-<<<<<<< HEAD
 
             user_id, auth_user = _get_auth_identity(
                 route,

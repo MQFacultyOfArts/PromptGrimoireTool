@@ -86,7 +86,7 @@ class TestReferenceCardHtml:
     def test_comments_empty_not_rendered(self) -> None:
         result = _render(comments=[])
         # No comment section markers present
-        assert "border-left: 2px" not in result
+        assert "border-left:2px" not in result
 
     def test_para_ref_present(self) -> None:
         result = _render(para_ref="¶3")

@@ -158,7 +158,9 @@ def _build_highlight_card_html(
     wrapper = (
         ui.element("div")
         .classes("w-full mb-2 cursor-grab")
-        .style(f"border-left: 4px solid {tag_colour}; padding: 8px;")
+        .style(
+            f"border-left: 4px solid {tag_colour}; padding: 8px; position: relative;"
+        )
         .props(
             f'data-testid="organise-card"'
             f' data-highlight-id="{highlight_id}"'
@@ -178,8 +180,10 @@ def _build_highlight_card_html(
                 await on_locate(sc, ec, did)
 
             ui.button(icon="my_location", on_click=_do_locate).props(
-                "flat dense size=xs"
-            ).tooltip("Locate in document").classes("sortable-ignore")
+                'flat dense size=xs data-testid="organise-locate-btn"'
+            ).tooltip("Locate in document").classes("sortable-ignore").style(
+                "position: absolute; top: 4px; right: 4px;"
+            )
 
     return wrapper
 

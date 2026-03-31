@@ -231,7 +231,8 @@ def _build_reference_card_html(
     with (
         ui.element("div")
         .style(
-            f"border-left: 4px solid {tag_colour}; padding: 8px; margin-bottom: 4px;"
+            f"border-left: 4px solid {tag_colour}; padding: 8px;"
+            " margin-bottom: 4px; position: relative;"
         )
         .props('data-testid="respond-reference-card"')
     ):
@@ -248,7 +249,9 @@ def _build_reference_card_html(
 
             ui.button(icon="my_location", on_click=_do_locate).props(
                 'flat dense size=xs data-testid="respond-locate-btn"'
-            ).tooltip("Locate in document")
+            ).tooltip("Locate in document").style(
+                "position: absolute; top: 4px; right: 4px;"
+            )
 
 
 def _matches_filter(

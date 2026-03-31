@@ -85,7 +85,7 @@ class TestOrganiseCardHtml:
 
     def test_comments_empty_not_rendered(self) -> None:
         result = _render(comments=[])
-        assert "border-left: 2px" not in result
+        assert "border-left:2px" not in result
 
     def test_long_text_uses_css_overflow(self) -> None:
         long_text = "x" * 300

@@ -429,6 +429,16 @@ from promptgrimoire.config import get_settings
 
 init_admission(get_settings().admission)
 
+# Dev endpoints for admission gate testing
+from promptgrimoire.dev_endpoints import admission_control_handler, block_loop_handler
+
+app.routes.insert(
+    0, Route("/api/dev/admission", admission_control_handler, methods=["POST"])
+)
+app.routes.insert(
+    0, Route("/api/dev/block-loop", block_loop_handler, methods=["POST"])
+)
+
 # Session identity page — exercises the full @ui.page path for #438 testing.
 @ui.page("/test/session-identity")
 async def _session_identity_page():

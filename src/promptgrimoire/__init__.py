@@ -318,6 +318,22 @@ def main() -> None:
     )
     app.routes.insert(0, Route("/queue", queue_page_handler, methods=["GET"]))
 
+    # Dev-only endpoints for testing admission gate (gated behind DEV__AUTH_MOCK)
+    if get_settings().dev.auth_mock:
+        from promptgrimoire.dev_endpoints import (
+            admission_control_handler,
+            block_loop_handler,
+        )
+
+        app.routes.insert(
+            0,
+            Route("/api/dev/admission", admission_control_handler, methods=["POST"]),
+        )
+        app.routes.insert(
+            0,
+            Route("/api/dev/block-loop", block_loop_handler, methods=["POST"]),
+        )
+
     # Pre-restart flush and connection-count endpoints for zero-downtime deploy
     from promptgrimoire.pages.restart import (
         connection_count_handler,

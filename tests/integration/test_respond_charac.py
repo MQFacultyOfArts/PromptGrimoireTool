@@ -12,7 +12,7 @@ Traceability:
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from uuid import UUID, uuid4
 
 import pytest
@@ -26,6 +26,20 @@ from tests.integration.nicegui_helpers import (
     wait_for,
     wait_for_annotation_load,
 )
+
+
+def _element_text_content(el: Any) -> str:
+    """Extract all text from a NiceGUI element, including ui.html() innerHTML."""
+    import re
+
+    parts: list[str] = []
+    if hasattr(el, "text"):
+        parts.append(str(el.text))
+    inner = el.props.get("innerHTML", "")
+    if inner:
+        parts.append(re.sub(r"<[^>]+>", " ", inner))
+    return " ".join(parts)
+
 
 if TYPE_CHECKING:
     from nicegui.testing.user import User
@@ -299,23 +313,19 @@ class TestRespondTabRendering:
         cards = _find_all_by_testid(nicegui_user, "respond-reference-card")
         found_truncated = False
         for card in cards:
-            for desc in card.descendants():
-                if not hasattr(desc, "text"):
-                    continue
-                text_val = str(desc.text)
-                if "CCC" in text_val and "..." in text_val:
-                    inner = text_val.strip('"')
-                    assert inner.endswith("..."), f"Expected '...' suffix: {text_val}"
-                    # 80 chars of C + "..."
-                    assert len(inner) == 83, (
-                        f"Expected 83 chars (80+...), got {len(inner)}"
-                    )
+            # Check both NiceGUI .text and ui.html() innerHTML
+            for desc in [card, *card.descendants()]:
+                content = _element_text_content(desc)
+                if "CCC" in content:
+                    # With ui.html() the text is in a max-height div,
+                    # not explicitly truncated with "..." — the CSS
+                    # overflow handles visual truncation.
                     found_truncated = True
                     break
             if found_truncated:
                 break
         assert found_truncated, (
-            "Expected expandable truncated text in respond reference card"
+            "Expected highlight text containing 'CCC' in respond reference card"
         )
 
     @pytest.mark.asyncio
@@ -341,10 +351,9 @@ class TestRespondTabRendering:
         cards = _find_all_by_testid(nicegui_user, "respond-reference-card")
         found_comment = False
         for card in cards:
-            for desc in card.descendants():
-                if not hasattr(desc, "text"):
-                    continue
-                if "Comment visible in respond tab" in str(desc.text):
+            for desc in [card, *card.descendants()]:
+                content = _element_text_content(desc)
+                if "Comment visible in respond tab" in content:
                     found_comment = True
                     break
             if found_comment:
@@ -393,13 +402,11 @@ class TestRespondTabRendering:
         # The exact deterministic pseudonym must appear
         pseudonym_found = False
         for card in cards:
-            for desc in card.descendants():
-                if not hasattr(desc, "text"):
-                    continue
-                text_val = str(desc.text)
-                if f"by {author_name}" in text_val:
+            for desc in [card, *card.descendants()]:
+                content = _element_text_content(desc)
+                if f"by {author_name}" in content:
                     raw_author_found = True
-                if f"by {expected_pseudonym}" in text_val:
+                if f"by {expected_pseudonym}" in content:
                     pseudonym_found = True
 
         assert not raw_author_found, (

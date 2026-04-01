@@ -457,6 +457,7 @@ _NICEGUI_UI_FILES: frozenset[str] = frozenset(
         "test_memory_leak_probe.py",
         "test_event_loop_render_lag.py",
         "test_lazy_card_detail.py",
+        "test_vue_sidebar_spike.py",
     }
 )
 

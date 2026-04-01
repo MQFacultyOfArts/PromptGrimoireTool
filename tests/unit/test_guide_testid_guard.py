@@ -52,6 +52,8 @@ _EXCLUDED_FILES: set[str] = {
     # routes in conftest.py and cli/e2e/_server_script.py, not pages/
     "test_session_contamination.py",
     "conftest.py",
+    # Vue sidebar spike (#457) uses test-only testids for spike pages
+    "test_vue_sidebar_spike.py",
 }
 
 

@@ -16,8 +16,9 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import re
 import time
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from nicegui import ElementFilter
 
@@ -132,8 +133,6 @@ def _find_html_testid_texts(user: User, testid: str) -> list[str]:
     This helper searches ``ui.html`` elements' content for the testid
     and returns the text between ``>`` and ``</`` for each match.
     """
-    import re
-
     pattern = re.compile(
         rf'data-testid="{re.escape(testid)}"[^>]*>([^<]*)<',
     )
@@ -148,6 +147,22 @@ def _find_html_testid_texts(user: User, testid: str) -> list[str]:
             for m in pattern.finditer(html):
                 texts.append(m.group(1))
     return texts
+
+
+def _element_text_content(el: Any) -> str:
+    """Extract all text from a NiceGUI element, including ui.html() innerHTML.
+
+    Searches both the ``.text`` attribute (NiceGUI label/etc.) and the
+    ``innerHTML`` prop (``ui.html()`` content), stripping HTML tags from
+    innerHTML to return plain text for substring matching.
+    """
+    parts: list[str] = []
+    if hasattr(el, "text"):
+        parts.append(str(el.text))
+    inner = el.props.get("innerHTML", "")
+    if inner:
+        parts.append(re.sub(r"<[^>]+>", " ", inner))
+    return " ".join(parts)
 
 
 def _find_value_element_by_testid(user: User, testid: str) -> ValueElement | None:

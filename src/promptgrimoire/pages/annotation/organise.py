@@ -19,6 +19,8 @@ Traceability:
 
 from __future__ import annotations
 
+import html as _html
+import time
 from typing import TYPE_CHECKING, Any
 
 import structlog
@@ -27,7 +29,6 @@ from nicegui import ui
 from promptgrimoire.elements.sortable import Sortable
 from promptgrimoire.pages.annotation.card_shared import (
     anonymise_display_author,
-    build_expandable_text,
 )
 
 if TYPE_CHECKING:
@@ -47,85 +48,144 @@ _UNTAGGED_COLOUR = "#999999"
 _UNTAGGED_RAW_KEY = ""
 
 
-def _build_highlight_card(
+def _render_organise_card_html(
+    *,
+    tag_display: str,
+    color: str,
+    display_author: str,
+    text: str,
+    comments: list[tuple[str, str]],
+) -> str:
+    """Render the body of an organise card as an HTML string.
+
+    Returns an HTML fragment for use with ``ui.html(sanitize=False)``.
+    All interpolated string values are escaped via ``html.escape()``
+    (defence-in-depth).
+
+    SortableJS contract attributes (``id``, ``data-highlight-id``,
+    ``data-testid``) are set on the NiceGUI wrapper element by the
+    caller, not in this HTML body.
+
+    Args:
+        tag_display: Human-readable tag name.
+        color: Hex colour for tag label.
+        display_author: Pre-anonymised author display name.
+        text: Highlighted text content.
+        comments: List of (display_author, text) tuples, pre-anonymised.
+    """
+    esc = _html.escape
+    parts: list[str] = [
+        # Tag label
+        f'<div style="display:flex;align-items:center;gap:4px;">'
+        f'<span style="font-weight:bold;color:{esc(color)};max-width:100px;'
+        f'overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'
+        f"{esc(tag_display)}</span>"
+        f"</div>",
+        # Author
+        f'<div style="font-size:0.85em;color:#666;">by {esc(display_author)}</div>',
+    ]
+
+    # Text preview with CSS overflow
+    if text:
+        parts.append(
+            f'<div style="font-size:0.85em;white-space:pre-wrap;'
+            f'max-height:4.5em;overflow:hidden;">'
+            f"{esc(text)}</div>"
+        )
+
+    # Comments
+    for c_author, c_text in comments:
+        if not c_text:
+            continue
+        parts.append(
+            f'<div style="border-left:2px solid #e0e0e0;padding-left:8px;'
+            f'margin-top:4px;">'
+            f'<span style="font-size:0.75em;color:#666;font-weight:500;">'
+            f"{esc(c_author)}:</span> "
+            f'<span style="font-size:0.75em;color:#555;">'
+            f"{esc(c_text)}</span></div>"
+        )
+
+    return "".join(parts)
+
+
+def _build_highlight_card_html(
     highlight: dict[str, Any],
     tag_colour: str,
     display_tag_name: str,
     state: PageState,
     on_locate: Callable[..., Any] | None = None,
-) -> ui.card:
-    """Render a single highlight card inside a tag column.
+) -> ui.element:
+    """Render an organise card as ``ui.html()`` plus NiceGUI locate button.
 
-    The card's HTML id is set to ``hl-{highlight_id}`` so that SortableJS
-    event handlers can identify which highlight was dragged.
+    Replaces ``_build_highlight_card()`` — collapses 8-10 NiceGUI elements
+    per card into 2-3 (wrapper div + html + optional locate button).
 
-    Args:
-        highlight: Highlight data dict from CRDT.
-        tag_colour: Hex colour for the left border.
-        display_tag_name: Human-readable tag name.
-        state: Page state for anonymisation context.
-        on_locate: Optional async callback(start_char, end_char) to warp to
-            the highlight in Tab 1.
+    The wrapper div carries SortableJS contract attributes:
+    ``id="hl-{highlight_id}"``, ``data-highlight-id``, ``data-testid``.
 
-    Returns:
-        The created ui.card element.
+    Returns the wrapper element (needed by ``_render_ordered_cards``).
     """
     highlight_id = highlight.get("id", "")
     raw_author = highlight.get("author", "Unknown")
+    hl_user_id = highlight.get("user_id")
     start_char: int = int(highlight.get("start_char", 0))
     end_char: int = int(highlight.get("end_char", 0))
     full_text = highlight.get("text", "")
-    comments: list[dict[str, Any]] = list(highlight.get("comments", []))
+    comments_raw: list[dict[str, Any]] = list(highlight.get("comments", []))
 
-    card = (
-        ui.card()
+    display_author = anonymise_display_author(raw_author, hl_user_id, state)
+
+    # Pre-anonymise comment authors
+    comments: list[tuple[str, str]] = []
+    for comment in comments_raw:
+        c_text = comment.get("text", "")
+        if not c_text:
+            continue
+        raw_c_author = comment.get("author", "Unknown")
+        c_uid = comment.get("user_id")
+        display_c_author = anonymise_display_author(raw_c_author, c_uid, state)
+        comments.append((display_c_author, c_text))
+
+    html_str = _render_organise_card_html(
+        tag_display=display_tag_name,
+        color=tag_colour,
+        display_author=display_author,
+        text=full_text,
+        comments=comments,
+    )
+
+    wrapper = (
+        ui.element("div")
         .classes("w-full mb-2 cursor-grab")
-        .style(f"border-left: 4px solid {tag_colour};")
+        .style(
+            f"border-left: 4px solid {tag_colour}; padding: 8px; position: relative;"
+        )
         .props(
             f'data-testid="organise-card"'
             f' data-highlight-id="{highlight_id}"'
             f' id="hl-{highlight_id}"'
         )
     )
-    with card:
-        with ui.row().classes("w-full items-center justify-between"):
-            ui.label(display_tag_name).classes("text-xs font-bold").style(
-                f"color: {tag_colour};"
+    with wrapper:
+        ui.html(html_str, sanitize=False)
+        if on_locate is not None:
+            hl_doc_id = highlight.get("document_id")
+
+            async def _do_locate(
+                sc: int = start_char,
+                ec: int = end_char,
+                did: str | None = hl_doc_id,
+            ) -> None:
+                await on_locate(sc, ec, did)
+
+            ui.button(icon="my_location", on_click=_do_locate).props(
+                'flat dense size=xs data-testid="organise-locate-btn"'
+            ).tooltip("Locate in document").classes("sortable-ignore").style(
+                "position: absolute; top: 4px; right: 4px;"
             )
-            if on_locate is not None:
-                hl_doc_id = highlight.get("document_id")
 
-                async def _do_locate(
-                    sc: int = start_char,
-                    ec: int = end_char,
-                    did: str | None = hl_doc_id,
-                ) -> None:
-                    await on_locate(sc, ec, did)
-
-                ui.button(icon="my_location", on_click=_do_locate).props(
-                    "flat dense size=xs"
-                ).tooltip("Locate in document").classes("sortable-ignore")
-
-        # Anonymise highlight author
-        hl_user_id = highlight.get("user_id")
-        display_author = anonymise_display_author(raw_author, hl_user_id, state)
-        ui.label(f"by {display_author}").classes("text-xs text-gray-500")
-        if full_text:
-            build_expandable_text(full_text)
-        if comments:
-            ui.separator().classes("my-1")
-            for comment in comments:
-                raw_c_author = comment.get("author", "Unknown")
-                comment_text = comment.get("text", "")
-                c_uid = comment.get("user_id")
-                display_c_author = anonymise_display_author(raw_c_author, c_uid, state)
-                with ui.row().classes("w-full gap-1 items-start"):
-                    ui.label(f"{display_c_author}:").classes(
-                        "text-xs font-semibold text-gray-600 flex-shrink-0"
-                    )
-                    ui.label(comment_text).classes("text-xs text-gray-700")
-
-    return card
+    return wrapper
 
 
 def _render_ordered_cards(
@@ -155,13 +215,15 @@ def _render_ordered_cards(
 
     for hid in ordered_ids:
         if hid in hl_by_id:
-            _build_highlight_card(hl_by_id[hid], tag_colour, tag_name, state, on_locate)
+            _build_highlight_card_html(
+                hl_by_id[hid], tag_colour, tag_name, state, on_locate
+            )
             rendered_ids.add(hid)
 
     for hl in highlights:
         hid = hl.get("id", "")
         if hid not in rendered_ids:
-            _build_highlight_card(hl, tag_colour, tag_name, state, on_locate)
+            _build_highlight_card_html(hl, tag_colour, tag_name, state, on_locate)
 
     if not highlights:
         ui.label("No highlights").classes(
@@ -282,6 +344,9 @@ def render_organise_tab(
         else:
             untagged_highlights.append(hl)
 
+    _t0 = time.monotonic()
+    card_count = 0
+
     with (
         panel,
         (
@@ -303,6 +368,7 @@ def render_organise_tab(
                 state,
                 on_locate,
             )
+            card_count += len(highlights_for_tag)
 
         # Untagged column (AC2.6)
         if untagged_highlights:
@@ -317,6 +383,13 @@ def render_organise_tab(
                 state,
                 on_locate,
             )
+            card_count += len(untagged_highlights)
+
+    logger.info(
+        "organise_card_build",
+        elapsed_ms=round((time.monotonic() - _t0) * 1000, 1),
+        card_count=card_count,
+    )
 
     # Scroll restoration is handled by callers that can await
     # (see _rebuild_organise_with_scroll in workspace.py).

@@ -20,6 +20,7 @@ import pytest
 from promptgrimoire.config import get_settings
 from tests.integration.conftest import _authenticate
 from tests.integration.nicegui_helpers import (
+    _element_text_content,
     _find_all_by_testid,
     _find_by_testid,
     _should_see_testid,
@@ -288,35 +289,33 @@ class TestRespondTabRendering:
         assert len(cards) == 2, f"Expected 2 reference cards, got {len(cards)}"
 
     @pytest.mark.asyncio
-    async def test_expandable_text_truncated_at_80_chars(
+    async def test_long_text_rendered_with_css_overflow(
         self, nicegui_user: User
     ) -> None:
-        """Text >80 chars uses expandable text with expand chevron (AC11.2)."""
+        """Long text (>80 chars) rendered with CSS max-height overflow."""
         email = "student-rsp-trunc@test.example.edu.au"
         ws_id, _, _ = await _setup_workspace_with_highlights(email=email)
         await _open_respond_tab(nicegui_user, ws_id, email)
 
         cards = _find_all_by_testid(nicegui_user, "respond-reference-card")
-        found_truncated = False
+        found_long_text = False
+        found_max_height = False
         for card in cards:
-            for desc in card.descendants():
-                if not hasattr(desc, "text"):
-                    continue
-                text_val = str(desc.text)
-                if "CCC" in text_val and "..." in text_val:
-                    inner = text_val.strip('"')
-                    assert inner.endswith("..."), f"Expected '...' suffix: {text_val}"
-                    # 80 chars of C + "..."
-                    assert len(inner) == 83, (
-                        f"Expected 83 chars (80+...), got {len(inner)}"
-                    )
-                    found_truncated = True
+            for desc in [card, *card.descendants()]:
+                content = _element_text_content(desc)
+                if "CCC" in content:
+                    found_long_text = True
+                    # Verify CSS overflow is used (in innerHTML)
+                    inner = desc.props.get("innerHTML", "")
+                    if "max-height" in inner:
+                        found_max_height = True
                     break
-            if found_truncated:
+            if found_long_text:
                 break
-        assert found_truncated, (
-            "Expected expandable truncated text in respond reference card"
+        assert found_long_text, (
+            "Expected highlight text containing 'CCC' in respond reference card"
         )
+        assert found_max_height, "Expected max-height CSS for overflow on long text"
 
     @pytest.mark.asyncio
     async def test_locate_button_present(self, nicegui_user: User) -> None:
@@ -341,10 +340,9 @@ class TestRespondTabRendering:
         cards = _find_all_by_testid(nicegui_user, "respond-reference-card")
         found_comment = False
         for card in cards:
-            for desc in card.descendants():
-                if not hasattr(desc, "text"):
-                    continue
-                if "Comment visible in respond tab" in str(desc.text):
+            for desc in [card, *card.descendants()]:
+                content = _element_text_content(desc)
+                if "Comment visible in respond tab" in content:
                     found_comment = True
                     break
             if found_comment:
@@ -393,13 +391,11 @@ class TestRespondTabRendering:
         # The exact deterministic pseudonym must appear
         pseudonym_found = False
         for card in cards:
-            for desc in card.descendants():
-                if not hasattr(desc, "text"):
-                    continue
-                text_val = str(desc.text)
-                if f"by {author_name}" in text_val:
+            for desc in [card, *card.descendants()]:
+                content = _element_text_content(desc)
+                if f"by {author_name}" in content:
                     raw_author_found = True
-                if f"by {expected_pseudonym}" in text_val:
+                if f"by {expected_pseudonym}" in content:
                     pseudonym_found = True
 
         assert not raw_author_found, (

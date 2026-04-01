@@ -2,7 +2,9 @@
 
 **Goal:** Collapse Organise tab's multi-element highlight cards into single `ui.html()` elements, eliminating ~3,000+ NiceGUI element constructions for 190 highlights. Preserve SortableJS drag-and-drop.
 
-**Architecture:** Replace `_build_highlight_card()` (4+ NiceGUI elements per card, plus 3 per comment and 7 for long text) with a pure function `_render_organise_card_html()` that returns a single HTML string. Each card becomes one `ui.html()` call. The tag column structure, SortableJS wiring, scroll preservation, and Locate button remain functionally unchanged.
+**Architecture:** Replace `_build_highlight_card()` (4+ NiceGUI elements per card, plus 3 per comment and 7 for long text) with a pure function `_render_organise_card_html()` that returns an HTML string for the card body, rendered inside a wrapper `ui.element("div")` carrying the SortableJS contract attributes. The locate button remains a NiceGUI `ui.button` (positioned `absolute` top-right, with `sortable-ignore` class) because it requires server-side `_warp_to_highlight()` for tab switching. Each card becomes 3 NiceGUI elements (wrapper + html + button) instead of 8-10. The tag column structure, SortableJS wiring, and scroll preservation remain unchanged.
+
+**Plan deviation (2026-03-31):** Same as Phase 1 — locate button requires server-side tab switching, so it stays as a NiceGUI element. Performance target met (0.26ms/card vs 0.5ms threshold).
 
 **Tech Stack:** NiceGUI 3.9.0, Python 3.14, SortableJS
 
@@ -46,54 +48,37 @@
 
 **Implementation:**
 
-Create a pure function that renders an organise card as a single HTML string. Port the visual structure from `_build_highlight_card()` (lines 50-128).
+Create a pure function for the card body HTML, plus a wrapper function `_build_highlight_card_html()` that assembles the NiceGUI elements with SortableJS contract attributes.
 
-**Critical SortableJS contract:**
-- The `ui.html()` element's root `<div>` must have:
-  - `id="hl-{highlight_id}"` — SortableJS uses this to identify dragged elements. `_parse_sort_end_args()` strips the `hl-` prefix to get the highlight ID.
+**Critical SortableJS contract (on NiceGUI wrapper, not in HTML body):**
+- `ui.element("div")` wrapper must have:
+  - `id="hl-{highlight_id}"` — SortableJS uses this to identify dragged elements
   - `data-highlight-id="{highlight_id}"` — used in event parsing
-- The card must have `cursor: grab` styling for drag affordance
-- Locate button must have class `sortable-ignore` to prevent drag interference
+  - `data-testid="organise-card"`
+  - `cursor: grab` styling, `position: relative`
+- Locate button must have `sortable-ignore` class and `data-testid="organise-locate-btn"`
 
-**HTML structure per card:**
-```html
-<div id="hl-{highlight_id}" data-highlight-id="{highlight_id}" data-testid="organise-card"
-     style="border-left: 4px solid {color}; padding: 8px; margin-bottom: 4px; cursor: grab;">
-  <div style="display: flex; align-items: center; gap: 4px;">
-    <span style="font-weight: bold; color: {color}; max-width: 100px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{tag_display}</span>
-    <span style="flex-grow: 1;"></span>
-    <button class="sortable-ignore" data-testid="organise-locate-btn"
-            onclick="scrollToCharOffset(window._textNodes, {start_char}, {end_char}); throbHighlight(window._textNodes, {start_char}, {end_char}, 800);"
-            style="..." title="Locate in document">
-      <span class="material-icons" style="font-size: 16px;">my_location</span>
-    </button>
-  </div>
-  <div style="font-size: 0.85em; color: #666;">by {display_author}</div>
-  <div style="font-size: 0.85em; white-space: pre-wrap; max-height: 4.5em; overflow: hidden;">{text_preview}</div>
-  {comments_html}
-</div>
-```
+**Wrapper** `_build_highlight_card_html()` creates:
+1. `ui.element("div")` — wrapper with SortableJS attrs, border styling, `position: relative`
+2. `ui.html(body_html, sanitize=False)` — the pure function's output
+3. `ui.button(icon="my_location")` — NiceGUI locate button, `position: absolute; top: 4px; right: 4px`, `sortable-ignore`
 
 **Key details:**
 - `html.escape()` on ALL interpolated text — XSS defence-in-depth
-- `id="hl-{highlight_id}"` is **not** escaped (UUID, safe) — SortableJS parses it
-- Locate button with `onclick` (fire-and-forget JS, no round-trip)
-- `sortable-ignore` class on Locate button prevents it from initiating drag
+- Locate button is a NiceGUI element (not inline JS) — requires server-side tab switching
 - Comments as simple `<div>` blocks (no interactive delete — Organise is read + reorder only)
 - Text preview with CSS `max-height` (no interactive expand/collapse)
-- `data-testid="organise-card"` preserved
-- `data-testid="organise-locate-btn"` added (was missing in current implementation)
+- Comment authors pre-anonymised before passing to pure renderer
 
-**Function signature:**
+**Pure function signature:**
 ```python
 def _render_organise_card_html(
-    highlight: dict[str, Any],
-    highlight_id: str,
+    *,
     tag_display: str,
     color: str,
     display_author: str,
-    start_char: int,
-    end_char: int,
+    text: str,
+    comments: list[tuple[str, str]],
 ) -> str:
 ```
 
@@ -116,9 +101,10 @@ In `_render_ordered_cards()` (lines 131-169) and anywhere `_build_highlight_card
 
 Replace the NiceGUI card construction with:
 ```python
-html_str = _render_organise_card_html(highlight, highlight_id, tag_display, color, display_author, start_char, end_char)
-ui.html(html_str)
+_build_highlight_card_html(highlight, tag_colour, tag_name, state, on_locate)
 ```
+
+This changes each card from 8-10 NiceGUI elements to 3 (wrapper div + html + locate button). The old `_build_highlight_card()` is deleted.
 
 **SortableJS compatibility:**
 - SortableJS is initialised on the column container via `ui.run_javascript()` (in `_build_tag_column()`)
@@ -151,15 +137,13 @@ Expected: Tests pass, drag-and-drop works
 **Testing:**
 Pure function test — no NiceGUI, no database.
 
-Cases:
+Cases (pure function only — SortableJS contract attrs and locate button tested in integration):
 - Basic rendering: tag display, colour, author, text present in output
-- **SortableJS contract:** `id="hl-{highlight_id}"` present on root element
-- **SortableJS contract:** `data-highlight-id="{highlight_id}"` present
-- **SortableJS contract:** Locate button has `class="sortable-ignore"`
-- XSS escaping: `<script>` in tag_display, author, text → escaped
-- Locate button: `onclick` contains correct `start_char` and `end_char`
-- Comments: rendered with author and text
-- data-testid: `organise-card`, `organise-locate-btn` present
+- XSS escaping: `<script>` in tag_display, author, text, comment text, comment author → escaped
+- Comments: 2 comments → both rendered; empty text → skipped
+- Long text: rendered with CSS `max-height` + `overflow`
+- Empty text: no text div rendered
+- Card-level `data-testid` NOT in body HTML (on NiceGUI wrapper instead)
 
 **Verification:**
 Run: `uv run grimoire test run tests/unit/test_organise_card_html.py`

@@ -2,7 +2,9 @@
 
 **Goal:** Collapse Respond tab's multi-element reference cards into single `ui.html()` elements, eliminating ~3,000+ NiceGUI element constructions for 190 highlights.
 
-**Architecture:** Replace `_build_reference_card()` (5+ NiceGUI elements per card, plus 3 per comment and 7 for long text) with a pure function `_render_reference_card_html()` that returns a single HTML string. Each card becomes one `ui.html()` call. The accordion-per-tag structure, search/filter, and refresh mechanism remain unchanged.
+**Architecture:** Replace `_build_reference_card()` (5+ NiceGUI elements per card, plus 3 per comment and 7 for long text) with a pure function `_render_reference_card_html()` that returns an HTML string for the card body, rendered inside a wrapper `ui.element("div")`. The locate button remains a NiceGUI `ui.button` (positioned `absolute` top-right) because it requires server-side `_warp_to_highlight()` for tab switching — pure JS onclick cannot call `state.tab_panels.set_value()`. Each card becomes 3 NiceGUI elements (wrapper + html + button) instead of 8-10. The accordion-per-tag structure, search/filter, and refresh mechanism remain unchanged.
+
+**Plan deviation (2026-03-31):** The original plan specified a single `ui.html()` with inline JS onclick for locate. This was incorrect — locate from Respond/Organise tabs must switch to the Source tab server-side via `_warp_to_highlight()`. The wrapper-plus-button architecture achieves the performance target (0.22ms/card vs 0.5ms threshold) while preserving correct tab-switching behaviour.
 
 **Tech Stack:** NiceGUI 3.9.0, Python 3.14
 
@@ -43,44 +45,34 @@
 
 **Implementation:**
 
-Create a pure function that renders a reference card as a single HTML string. Port the visual structure from `_build_reference_card()` (lines 112-180) into an HTML template with `html.escape()` on all interpolated values.
+Create a pure function that renders the card body as an HTML string, plus a wrapper function `_build_reference_card_html()` that assembles the NiceGUI elements.
 
-**HTML structure per card:**
-```html
-<div data-testid="respond-reference-card" style="border-left: 4px solid {color}; padding: 8px; margin-bottom: 4px;">
-  <div style="display: flex; align-items: center; gap: 4px;">
-    <span style="font-weight: bold; color: {color}; max-width: 100px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{tag_display}</span>
-    <span style="flex-grow: 1;"></span>
-    <button data-testid="respond-locate-btn"
-            onclick="scrollToCharOffset(window._textNodes, {start_char}, {end_char}); throbHighlight(window._textNodes, {start_char}, {end_char}, 800);"
-            style="..." title="Locate in document">
-      <span class="material-icons" style="font-size: 16px;">my_location</span>
-    </button>
-  </div>
-  <div style="font-size: 0.85em; color: #666;">by {display_author}</div>
-  <div style="font-size: 0.85em; white-space: pre-wrap; max-height: 4.5em; overflow: hidden;">{text_preview}</div>
-  {para_ref_html}
-  {comments_html}
-</div>
-```
+**Pure function** `_render_reference_card_html()` renders the card body (tag label, author, text, para_ref, comments) as HTML. The locate button and card-level attributes (`data-testid`, border styling) are handled by the wrapper.
+
+**Wrapper** `_build_reference_card_html()` creates:
+1. `ui.element("div")` — wrapper with `data-testid="respond-reference-card"`, border styling, `position: relative`
+2. `ui.html(body_html, sanitize=False)` — the pure function's output
+3. `ui.button(icon="my_location")` — NiceGUI locate button, `position: absolute; top: 4px; right: 4px`, with `data-testid="respond-locate-btn"`
 
 **Key details:**
-- `html.escape()` on ALL interpolated text values (tag_display, display_author, text, comment text, para_ref) — defence-in-depth XSS protection
-- Locate button uses `onclick` with fire-and-forget JS — no server round-trip needed (read-only tab)
-- Text preview: truncate to ~200 chars with `...` (longer than Source tab's 80 chars since this is the reference view)
+- `html.escape()` on ALL interpolated text values — defence-in-depth XSS protection
+- Locate button is a NiceGUI element (not inline JS) because it calls `_warp_to_highlight()` for server-side tab switching
+- Locate button positioned `absolute` top-right to visually sit in the header area
+- Text preview with CSS `max-height` + `overflow: hidden` (no interactive expand/collapse)
 - Comments: rendered as simple `<div>` blocks with author and text
 - Para ref: conditional, only rendered if non-empty
-- `build_expandable_text()` replaced with CSS `max-height` + `overflow: hidden` — no interactive expand/collapse needed for reference cards (keeps it to one element)
+- Comment authors pre-anonymised before passing to pure renderer
 
-**Function signature:**
+**Pure function signature:**
 ```python
 def _render_reference_card_html(
-    highlight: dict[str, Any],
+    *,
     tag_display: str,
     color: str,
     display_author: str,
-    start_char: int,
-    end_char: int,
+    text: str,
+    para_ref: str,
+    comments: list[tuple[str, str]],
 ) -> str:
 ```
 
@@ -108,11 +100,10 @@ _build_reference_card(highlight, tag_info, on_locate=on_locate, ...)
 
 With:
 ```python
-html_str = _render_reference_card_html(highlight, tag_display, color, display_author, start_char, end_char)
-ui.html(html_str)
+_build_reference_card_html(highlight, tag_colour, tag_name, state, on_locate)
 ```
 
-This changes each card from 5+ NiceGUI elements (card + row + labels + button) to 1 `ui.html()` element.
+This changes each card from 8-10 NiceGUI elements to 3 (wrapper div + html + locate button). The old `_build_reference_card()` is deleted.
 
 **Search/filter:** `_filter_highlights()` (lines 182-227) runs before rendering — no change needed. It filters the highlight list, then the builder renders only matching highlights.
 
@@ -140,14 +131,14 @@ Expected: Tests pass, Respond tab renders correctly
 **Testing:**
 Pure function test — no NiceGUI, no database.
 
-Cases:
+Cases (pure function only — locate button and card-level attrs tested in integration):
 - Basic rendering: tag display, colour, author, text present in output
-- XSS escaping: `<script>` in tag_display, author, text → escaped in output
-- Locate button: `onclick` contains correct `start_char` and `end_char` values
-- Comments: 2 comments → both author and text present in output
+- XSS escaping: `<script>` in tag_display, author, text, comment text, comment author → escaped
+- Comments: 2 comments → both author and text present; empty text → skipped
 - Para ref: present → rendered; absent → not rendered
-- Long text: truncated with CSS `max-height` (not JS expand/collapse)
-- data-testid attributes present: `respond-reference-card`, `respond-locate-btn`
+- Long text: rendered with CSS `max-height` + `overflow` (not JS expand/collapse)
+- Empty text: no text div rendered
+- Card-level `data-testid` NOT in body HTML (on NiceGUI wrapper instead)
 
 **Verification:**
 Run: `uv run grimoire test run tests/unit/test_respond_reference_card_html.py`

@@ -56,6 +56,8 @@ _EXCLUDED_FILES: set[str] = {
     "test_vue_sidebar_spike.py",
     # Vue sidebar DOM contract (#457) uses test-only testids for prop validation
     "test_vue_sidebar_dom_contract.py",
+    # Vue sidebar E2E spike (#457) uses test-only testids for browser validation
+    "test_vue_sidebar_spike_e2e.py",
 }
 
 

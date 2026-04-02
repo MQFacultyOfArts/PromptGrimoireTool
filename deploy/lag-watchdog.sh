@@ -14,6 +14,23 @@ set -euo pipefail
 WARN="${LAG_WARN:-100}"      # ms — escalation strike threshold
 CRITICAL="${LAG_CRITICAL:-1000}"  # ms — instant restart, no strikes
 SERVICE="promptgrimoire"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+TELEMETRY_WINDOW_MINUTES="${TELEMETRY_WINDOW_MINUTES:-15}"
+
+# Capture telemetry before restarting so log rotation can't clobber evidence.
+# Runs in background — restart proceeds immediately, tarball lands in /tmp/.
+capture_and_restart() {
+    local reason="$1"
+    local end_time start_time
+    end_time=$(date '+%Y-%m-%d %H:%M')
+    start_time=$(date -d "${TELEMETRY_WINDOW_MINUTES} minutes ago" '+%Y-%m-%d %H:%M')
+
+    echo "  📦 capturing telemetry [${reason}] (${start_time} → ${end_time})"
+    "$SCRIPT_DIR/collect-telemetry.sh" \
+        --start "$start_time" --end "$end_time" &
+
+    systemctl restart "$SERVICE"
+}
 
 prev_lag=0
 prev_users=0
@@ -75,7 +92,7 @@ journalctl -u "$SERVICE" -f --output cat | while IFS= read -r line; do
         echo "  $(date '+%H:%M:%S') — restarting ${SERVICE}"
         echo "=========================================="
         echo ""
-        systemctl restart "$SERVICE"
+        capture_and_restart "critical_lag=${lag}ms"
         strike_count=0
         prev_lag=0
         prev_users=0
@@ -92,7 +109,7 @@ journalctl -u "$SERVICE" -f --output cat | while IFS= read -r line; do
         echo "  $(date '+%H:%M:%S') — restarting ${SERVICE}"
         echo "=========================================="
         echo ""
-        systemctl restart "$SERVICE"
+        capture_and_restart "mass_disconnect=${prev_users}_to_${users}"
         strike_count=0
         prev_lag=0
         prev_users=0
@@ -113,7 +130,7 @@ journalctl -u "$SERVICE" -f --output cat | while IFS= read -r line; do
             echo "  $(date '+%H:%M:%S') — restarting ${SERVICE}"
             echo "=========================================="
             echo ""
-            systemctl restart "$SERVICE"
+            capture_and_restart "escalating_lag=${prev_lag}ms_to_${lag}ms"
             strike_count=0
             prev_lag=0
             prev_users=0

@@ -16,7 +16,7 @@ from junitparser import JUnitXml
 
 from promptgrimoire.cli._shared import console
 from promptgrimoire.cli.e2e._artifacts import write_worker_metadata
-from promptgrimoire.cli.e2e._lanes import WorkerResult
+from promptgrimoire.cli.e2e._lanes import NICEGUI_LANE, WorkerResult
 from promptgrimoire.cli.e2e._server import _SERVER_SCRIPT_PATH
 
 
@@ -281,7 +281,7 @@ async def run_nicegui_file(
         "pytest",
         str(test_file),
         "-m",
-        "nicegui_ui",
+        NICEGUI_LANE.marker_expr or "nicegui_ui",
         "--tb=short",
         f"--junitxml={junit_path}",
         *_filter_junitxml_args(user_args),

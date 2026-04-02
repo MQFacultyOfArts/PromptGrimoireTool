@@ -62,6 +62,42 @@ def _exc_type_name(exc_info: object) -> str:
     return ""
 
 
+def _build_diagnostic_commands(
+    event_name: str,
+    event_dict: MutableMapping[str, Any],
+) -> str:
+    """Build copy-pasteable diagnostic commands for a Discord alert.
+
+    LaTeX errors get workspace extraction + scp.
+    All other errors get collect-telemetry (last 5 min) plus workspace
+    extraction if workspace_id is present.
+    """
+    workspace_id = event_dict.get("workspace_id")
+    is_latex = event_name in ("latex_compilation_failed", "latex_subprocess_output")
+
+    lines: list[str] = []
+
+    if is_latex:
+        if workspace_id:
+            lines.append(f"grimoire-run scripts/extract_workspace.py {workspace_id}")
+            lines.append(
+                f"scp grimoire.drbbs.org:/tmp/workspace_{workspace_id}.json /tmp/"
+            )
+    else:
+        # General error: collect recent telemetry
+        lines.append(
+            "sudo deploy/collect-telemetry.sh --start \"$(date -d '5 minutes ago' "
+            "'+%Y-%m-%d %H:%M')\" --end \"$(date '+%Y-%m-%d %H:%M')\"",
+        )
+        if workspace_id:
+            lines.append(f"grimoire-run scripts/extract_workspace.py {workspace_id}")
+            lines.append(
+                f"scp grimoire.drbbs.org:/tmp/workspace_{workspace_id}.json /tmp/"
+            )
+
+    return "\n".join(lines)
+
+
 class DiscordAlertProcessor:
     """structlog processor that POSTs Discord embeds on ERROR/CRITICAL.
 
@@ -176,6 +212,17 @@ class DiscordAlertProcessor:
                         "inline": True,
                     }
                 )
+
+        # Diagnostic commands for the alert recipient
+        diag_commands = _build_diagnostic_commands(event_name, event_dict)
+        if diag_commands:
+            fields.append(
+                {
+                    "name": "diagnostic commands",
+                    "value": _truncate(diag_commands, _FIELD_VALUE_MAX),
+                    "inline": False,
+                }
+            )
 
         embed: dict[str, Any] = {
             "title": title,

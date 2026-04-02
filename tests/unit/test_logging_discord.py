@@ -15,7 +15,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 
-from promptgrimoire.logging_discord import DiscordAlertProcessor
+from promptgrimoire.logging_discord import (
+    DiscordAlertProcessor,
+    _build_diagnostic_commands,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -446,3 +449,67 @@ class TestTruncation:
             embed = mock_fire.call_args[0][0]["embeds"][0]
             for field in embed.get("fields", []):
                 assert len(str(field["value"])) <= 1024
+
+
+# ---------------------------------------------------------------------------
+# Diagnostic commands
+# ---------------------------------------------------------------------------
+class TestDiagnosticCommands:
+    """Webhook embeds include copy-pasteable diagnostic commands."""
+
+    def test_latex_error_includes_extract_and_scp(self) -> None:
+        event: dict[str, object] = {
+            "event": "latex_compilation_failed",
+            "workspace_id": "918b64b0-066f-4e17-afda-f99cb9912e37",
+        }
+        cmds = _build_diagnostic_commands("latex_compilation_failed", event)
+        assert "extract_workspace.py 918b64b0" in cmds
+        assert "scp grimoire.drbbs.org:/tmp/workspace_918b64b0" in cmds
+        # LaTeX errors should NOT include collect-telemetry
+        assert "collect-telemetry" not in cmds
+
+    def test_latex_subprocess_output_also_matches(self) -> None:
+        event: dict[str, object] = {
+            "event": "latex_subprocess_output",
+            "workspace_id": "abcdef01-0000-0000-0000-000000000000",
+        }
+        cmds = _build_diagnostic_commands("latex_subprocess_output", event)
+        assert "extract_workspace.py abcdef01" in cmds
+
+    def test_latex_error_without_workspace_id_is_empty(self) -> None:
+        event: dict[str, object] = {"event": "latex_compilation_failed"}
+        cmds = _build_diagnostic_commands("latex_compilation_failed", event)
+        assert cmds == ""
+
+    def test_general_error_includes_telemetry_and_extract(self) -> None:
+        event: dict[str, object] = {
+            "event": "database_connection_failed",
+            "workspace_id": "ws-456",
+        }
+        cmds = _build_diagnostic_commands("database_connection_failed", event)
+        assert "collect-telemetry.sh" in cmds
+        assert "extract_workspace.py ws-456" in cmds
+        assert "scp grimoire.drbbs.org:/tmp/workspace_ws-456" in cmds
+
+    def test_general_error_without_workspace_id_has_telemetry_only(self) -> None:
+        event: dict[str, object] = {"event": "unrecoverable_error"}
+        cmds = _build_diagnostic_commands("unrecoverable_error", event)
+        assert "collect-telemetry.sh" in cmds
+        assert "extract_workspace" not in cmds
+
+    def test_diagnostic_field_in_embed(
+        self,
+        processor: DiscordAlertProcessor,
+        event_dict_error: dict[str, object],
+    ) -> None:
+        """Diagnostic commands appear as an embed field."""
+        with patch.object(processor, "_fire_and_forget") as mock_fire:
+            processor(None, "error", event_dict_error)
+            embed = mock_fire.call_args[0][0]["embeds"][0]
+            field_names = [f["name"] for f in embed.get("fields", [])]
+            assert "diagnostic commands" in field_names
+            diag_field = next(
+                f for f in embed["fields"] if f["name"] == "diagnostic commands"
+            )
+            assert "collect-telemetry.sh" in diag_field["value"]
+            assert not diag_field["inline"]

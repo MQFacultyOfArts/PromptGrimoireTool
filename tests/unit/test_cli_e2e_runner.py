@@ -181,7 +181,7 @@ async def test_run_nicegui_file_omits_server_and_base_url(
     assert len(calls) == 1
     assert "promptgrimoire/cli/e2e/_server_script.py" not in " ".join(calls[0]["cmd"])
     assert calls[0]["cmd"][2] == "pytest"
-    assert "nicegui_ui" in calls[0]["cmd"]
+    assert "nicegui_ui and not perf" in calls[0]["cmd"]
     assert calls[0]["env"]["DATABASE__URL"].endswith("/test_db")
     assert calls[0]["env"]["DEV__TEST_DATABASE_URL"].endswith("/test_db")
     assert calls[0]["env"]["DEV__BRANCH_DB_SUFFIX"] == "0"

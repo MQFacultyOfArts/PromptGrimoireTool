@@ -14,12 +14,13 @@ from pathlib import Path
 import pytest
 
 from promptgrimoire.export.latex_format import format_annot_latex
+from promptgrimoire.export.pdf_export import generate_tex_only
 from promptgrimoire.export.preamble import (
     _format_timestamp,
     generate_tag_colour_definitions,
 )
 from promptgrimoire.export.unicode_latex import escape_unicode_latex
-from tests.conftest import requires_latexmk
+from tests.conftest import requires_latexmk, requires_pandoc
 from tests.helpers.latex_parse import (
     find_macros,
     get_body_text,
@@ -517,3 +518,79 @@ class TestUnicodeAnnotationEscaping:
         cjks = find_macros(nodes, "cjktext")
         bodies = {get_body_text(c) for c in cjks}
         assert "田中" in bodies
+
+
+class TestDocTitleEscaping:
+    """Document titles with LaTeX specials must be escaped in \\section*{} headings."""
+
+    @requires_pandoc
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "title,must_contain",
+        [
+            pytest.param(
+                "_Final -  Case Note - Luchetti v R.pdf",
+                r"\_",
+                id="underscore",
+            ),
+            pytest.param(
+                "Report #3 — 50% complete & reviewed",
+                [r"\#", r"\%", r"\&"],
+                id="hash-percent-ampersand",
+            ),
+            pytest.param(
+                "Notes on $100 deal {draft}",
+                [r"\$", r"\{", r"\}"],
+                id="dollar-braces",
+            ),
+        ],
+    )
+    async def test_doc_title_latex_specials_escaped(
+        self,
+        tmp_path: Path,
+        title: str,
+        must_contain: str | list[str],
+    ) -> None:
+        """Multi-doc section headings must escape LaTeX special chars in titles."""
+        documents = [
+            {"html_content": "<p>First document.</p>", "title": "Safe Title"},
+            {"html_content": "<p>Second document.</p>", "title": title},
+        ]
+        tex_path = await generate_tex_only(
+            html_content="",
+            highlights=[],
+            tag_colours={},
+            output_dir=tmp_path,
+            documents=documents,
+        )
+        tex = tex_path.read_text()
+
+        if isinstance(must_contain, str):
+            must_contain = [must_contain]
+        for pattern in must_contain:
+            assert pattern in tex, f"Expected {pattern!r} in section heading"
+
+    @requires_pandoc
+    @requires_latexmk
+    @pytest.mark.asyncio
+    async def test_doc_title_with_underscores_compiles(self, tmp_path: Path) -> None:
+        """Regression: filename with underscores as doc title must compile."""
+        from promptgrimoire.export.pdf import compile_latex
+
+        documents = [
+            {"html_content": "<p>First document.</p>", "title": "Luchetti v R.docx"},
+            {
+                "html_content": "<p>Second document.</p>",
+                "title": "_Final -  Case Note - Luchetti v R.pdf",
+            },
+        ]
+        tex_path = await generate_tex_only(
+            html_content="",
+            highlights=[],
+            tag_colours={},
+            output_dir=tmp_path,
+            documents=documents,
+        )
+        pdf_path = await compile_latex(tex_path)
+        assert pdf_path.exists()
+        assert pdf_path.stat().st_size > 0

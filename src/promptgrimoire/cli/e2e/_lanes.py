@@ -55,7 +55,7 @@ PLAYWRIGHT_LANE = LaneSpec(
 NICEGUI_LANE = LaneSpec(
     name="nicegui",
     test_paths=(Path("tests/integration"),),
-    marker_expr="nicegui_ui",
+    marker_expr="nicegui_ui and not perf",
     needs_server=False,
     artifact_subdir="nicegui",
 )

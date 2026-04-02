@@ -10,6 +10,18 @@
 
 **Codebase verified:** 2026-03-30
 
+**Status: COMPLETED (2026-04-02).** All unit and integration tests pass.
+
+**Deviations from plan (2026-04-02):**
+
+1. **`anonymise_author()` called directly instead of `anonymise_display_author()`.** Plan specified `anonymise_display_author()` from `card_shared.py`, but that function wraps `anonymise_author()` with `PageState` coupling. Since `serialise_items()` is a pure function (functional core, no `PageState`), the implementation calls `anonymise_author()` from `auth/anonymise.py` directly with explicit parameters. This is architecturally correct — the pure function should not depend on a NiceGUI-coupled wrapper.
+
+2. **Compact header comment badge testid renamed to `comment-count-badge`.** Plan specified `data-testid="comment-count"` for both the compact header badge and the detail section count. Code review identified this as an ambiguity violation (two sibling DOM nodes with the same testid within one card). Header badge renamed to `comment-count-badge`; detail section retains `comment-count`.
+
+3. **Integration tests validate prop data contract, not rendered DOM.** Same limitation as Phase 3: NiceGUI `user_simulation` has no Vue runtime. Tests verify that `refresh_items()` produces correct `_props["items"]` data and that the JS template structurally contains the required `data-testid` attributes. Full DOM rendering validated by Phase 10 cross-tab E2E.
+
+4. **`expanded_ids` not pushed in `refresh_items()`.** Plan says to push `expanded_ids` prop, but `refresh_items()` has no `expanded_ids` parameter — expansion state is managed separately from highlight data. The prop is set in the constructor and updated independently. Not a defect.
+
 ---
 
 ## Acceptance Criteria Coverage

@@ -10,6 +10,16 @@
 
 **Codebase verified:** 2026-03-30
 
+**Status: COMPLETED (2026-04-02).** Verdict: GO — proceed to Phase 4. Full results in `phase-3-results.md`.
+
+**Deviations from plan (2026-04-02):**
+
+1. **Testing scope narrower than planned.** NiceGUI `user_simulation` has no Vue runtime — Vue templates are not rendered server-side. The plan specified `_find_all_by_testid(user, 'annotation-card')` and `_should_see_testid` to verify Vue-rendered DOM elements (criteria 2, 4, 5). These helpers search NiceGUI's Python element tree, which does not contain Vue-rendered children. Tests validate **Python-side wiring only**: prop setting, event listener registration/dispatch, JS file structure. Criteria 2, 3, 4 are **partial passes** — Vue rendering, `$emit` → websocket → Python, and prop reactivity are unverified until Phase 4+ browser tests and Phase 10 cross-tab E2E.
+
+2. **Route registration pattern discovered.** Module-level `@ui.page()` decorators are cleared by `user_simulation`'s NiceGUI reset. Test pages must be registered inside test function bodies, not at module level. This pattern applies to all subsequent NiceGUI integration tests.
+
+3. **Results file named `phase-3-results.md`** (plan specified `phase-1-results.md`). More accurate since this is Phase 3.
+
 ---
 
 ## Acceptance Criteria Coverage

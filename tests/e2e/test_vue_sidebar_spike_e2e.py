@@ -96,16 +96,13 @@ def test_go3_emit_reaches_python(spike_page: Page) -> None:
     event_label = spike_page.get_by_test_id("spike-event-label")
     expect(event_label).to_have_text("event:none")
 
-    # Click a card's compact header row.
-    # force=True needed because cards have position:absolute without
-    # top/left (Phase 5 adds positioning) — zero layout size.
-    # Cards stack at (0,0), so click hits the last card (hl-2).
-    card2 = spike_page.locator("[data-testid='annotation-card']").nth(1)
-    card2.click(force=True)
+    # Click first card's compact header row
+    card1 = spike_page.locator("[data-testid='annotation-card']").nth(0)
+    card1.click()
 
     # Python handler updates the label with the event payload.
     # Validates the full Vue $emit -> websocket -> Python handler path.
-    expect(event_label).to_have_text("event:hl-2", timeout=5000)
+    expect(event_label).to_have_text("event:hl-1", timeout=5000)
 
 
 def test_go4_prop_updates_rerender(spike_page: Page) -> None:

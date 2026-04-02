@@ -59,7 +59,6 @@ export default {
         :data-highlight-id="item.id"
         :data-start-char="item.start_char"
         :data-end-char="item.end_char"
-        style="position: absolute;"
       >
         <div
           style="display: flex; align-items: center; gap: 4px; padding: 2px 8px; height: 28px; cursor: pointer;"

@@ -505,6 +505,12 @@ async def _handle_source_tab_switch(
 
     _restore_source_tab_state(state, doc_tab)
 
+    # Clear footer before rendering/restoring this tab's toolbar to prevent
+    # doubling — the footer is shared across all source tabs and retains the
+    # previous tab's toolbar children until explicitly cleared.
+    if footer is not None:
+        footer.clear()
+
     if not doc_tab.rendered:
         await _render_source_tab_content(
             state,
@@ -516,6 +522,10 @@ async def _handle_source_tab_switch(
         )
     else:
         _refresh_source_tab(state)
+        # Rebuild toolbar for this tab (first-visit path does this
+        # inside _render_source_tab_content → _build_tag_toolbar).
+        if state.refresh_toolbar:
+            await state.refresh_toolbar()
 
     # Sync paragraph toggle to this document's setting on every
     # tab switch (first visit and return visit).

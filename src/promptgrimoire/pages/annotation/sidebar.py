@@ -12,7 +12,7 @@ if TYPE_CHECKING:
 
 # Path to the JS file — follows project convention of JS in static/
 _JS_PATH = (
-    Path(__file__).resolve().parent.parent.parent / "static" / "annotation-sidebar.js"
+    Path(__file__).resolve().parent.parent.parent / "static" / "annotationsidebar.js"
 )
 
 

@@ -26,7 +26,7 @@ from promptgrimoire.export.pandoc import convert_html_with_annotations
 from promptgrimoire.export.pdf import compile_latex
 from promptgrimoire.export.platforms import preprocess_for_export
 from promptgrimoire.export.preamble import build_annotation_preamble
-from promptgrimoire.export.unicode_latex import detect_scripts
+from promptgrimoire.export.unicode_latex import detect_scripts, escape_unicode_latex
 from promptgrimoire.word_count_enforcement import check_word_count_violation
 
 logger = structlog.get_logger()
@@ -302,7 +302,7 @@ async def _build_multi_doc_body(
         )
         if len(documents) > 1:
             title = doc.get("title", f"Source {i + 1}")
-            escaped = html.escape(title).replace("&amp;", r"\&")
+            escaped = escape_unicode_latex(title)
             parts.append(f"\\section*{{{escaped}}}")
         parts.append(latex)
     return "\n\n".join(parts)

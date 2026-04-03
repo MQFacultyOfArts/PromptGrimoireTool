@@ -22,9 +22,156 @@ export default {
     },
   },
   setup(props) {
-    const { ref, watch, computed } = Vue;
+    const { ref, watch, computed, onMounted, onBeforeUnmount } = Vue;
 
     const renderCount = ref(0);
+    const rootRef = ref(null);
+    const MIN_GAP = 8;
+
+    // --- Text node helpers (shared with annotation-highlight.js) ---
+
+    function getTextNodes() {
+      var dcId = props.doc_container_id;
+      if (!dcId) return null;
+      var dc = document.getElementById(dcId);
+      var t = window._textNodes;
+      if (!dc || !t || !t.length) return null;
+      // Re-walk if text nodes are stale (container replaced by NiceGUI/Vue)
+      if (!dc.contains(t[0].node)) {
+        if (typeof walkTextNodes !== 'function') return null;
+        t = walkTextNodes(dc);
+        window._textNodes = t;
+      }
+      return t;
+    }
+
+    // --- positionCards: port from annotation-card-sync.js:44-83 ---
+
+    function positionCards() {
+      if (window.__perfInstrumented) console.time('positionCards');
+      var nodes = getTextNodes();
+      if (!nodes || !nodes.length) {
+        if (window.__perfInstrumented) console.timeEnd('positionCards');
+        return;
+      }
+      var dcId = props.doc_container_id;
+      var dc = document.getElementById(dcId);
+      var ac = rootRef.value;
+      if (!dc || !ac) {
+        if (window.__perfInstrumented) console.timeEnd('positionCards');
+        return;
+      }
+      var cards = Array.from(ac.querySelectorAll('[data-start-char]'));
+      if (!cards.length) {
+        if (window.__perfInstrumented) console.timeEnd('positionCards');
+        return;
+      }
+      if (typeof charOffsetToRect !== 'function') {
+        if (window.__perfInstrumented) console.timeEnd('positionCards');
+        return;
+      }
+      var docRect = dc.getBoundingClientRect();
+      var annRect = ac.getBoundingClientRect();
+      var cOff = annRect.top - docRect.top;
+      var cardInfos = cards.map(function(card) {
+        var sc = parseInt(card.dataset.startChar, 10);
+        var cr = charOffsetToRect(nodes, sc);
+        if (cr.width === 0 && cr.height === 0) return null;
+        // Cache height so hidden cards (display:none, offsetHeight=0)
+        // use their last-known height (#284).
+        var h = card.offsetHeight;
+        if (h > 0) {
+          card.dataset.cachedHeight = h;
+        } else {
+          h = parseInt(card.dataset.cachedHeight, 10) || 80;
+        }
+        return {
+          card: card,
+          startChar: sc,
+          height: h,
+          targetY: (cr.top - docRect.top) - cOff,
+        };
+      }).filter(Boolean);
+      cardInfos.sort(function(a, b) { return a.startChar - b.startChar; });
+      var minY = 0;
+      for (var i = 0; i < cardInfos.length; i++) {
+        var info = cardInfos[i];
+        info.card.style.position = 'absolute';
+        info.card.style.display = '';
+        var y = Math.max(info.targetY, minY);
+        info.card.style.top = y + 'px';
+        minY = y + info.height + MIN_GAP;
+      }
+      if (window.__perfInstrumented) console.timeEnd('positionCards');
+    }
+
+    // --- Scroll listener with rAF throttle ---
+
+    let ticking = false;
+    function onScroll() {
+      if (!ticking) {
+        requestAnimationFrame(function() { positionCards(); ticking = false; });
+        ticking = true;
+      }
+    }
+
+    // --- Hover highlight handlers (pure client-side, no server round-trip) ---
+
+    function onCardHover(item) {
+      var nodes = window._textNodes;
+      if (nodes && typeof showHoverHighlight === 'function') {
+        showHoverHighlight(nodes, item.start_char, item.end_char);
+      }
+    }
+
+    function onCardLeave() {
+      if (typeof clearHoverHighlight === 'function') {
+        clearHoverHighlight();
+      }
+    }
+
+    // --- Highlights-ready listener ---
+
+    function onHighlightsReady() {
+      requestAnimationFrame(positionCards);
+    }
+
+    // --- Lifecycle ---
+
+    onMounted(function() {
+      window.addEventListener('scroll', onScroll, { passive: true });
+      document.addEventListener('highlights-ready', onHighlightsReady);
+
+      // Register in per-document positionCards map for tab switching
+      var dcId = props.doc_container_id;
+      if (dcId) {
+        window._positionCardsMap = window._positionCardsMap || {};
+        window._positionCardsMap[dcId] = positionCards;
+        window._positionCards = positionCards;
+        window._activeDocContainerId = dcId;
+      }
+
+      // If highlights already applied before mount, position now
+      if (window._highlightsReady) {
+        requestAnimationFrame(positionCards);
+      }
+    });
+
+    onBeforeUnmount(function() {
+      window.removeEventListener('scroll', onScroll);
+      document.removeEventListener('highlights-ready', onHighlightsReady);
+
+      // Clean up per-document registration
+      var dcId = props.doc_container_id;
+      if (dcId && window._positionCardsMap) {
+        delete window._positionCardsMap[dcId];
+      }
+      if (window._activeDocContainerId === dcId) {
+        window._activeDocContainerId = null;
+      }
+    });
+
+    // --- Watch items for repositioning after DOM update ---
 
     watch(
       () => props.items,
@@ -32,18 +179,20 @@ export default {
         renderCount.value++;
         // Global epoch for E2E test synchronisation
         window.__annotationCardsEpoch = (window.__annotationCardsEpoch || 0) + 1;
-        // Per-document epoch (Phase 5 will provide doc_container_id)
+        // Per-document epoch
         if (props.doc_container_id) {
           window.__cardEpochs = window.__cardEpochs || {};
           window.__cardEpochs[props.doc_container_id] = window.__annotationCardsEpoch;
         }
+        // Reposition after DOM update (flush: 'post' ensures DOM is ready)
+        requestAnimationFrame(positionCards);
       },
       { deep: true, flush: 'post' }
     );
 
     const expandedSet = computed(() => new Set(props.expanded_ids));
 
-    return { renderCount, expandedSet };
+    return { renderCount, expandedSet, onCardHover, onCardLeave, rootRef };
   },
   methods: {
     onItemClick(item) {
@@ -51,7 +200,7 @@ export default {
     },
   },
   template: `
-    <div>
+    <div ref="rootRef" data-testid="annotation-sidebar-root" style="position: relative;">
       <div
         v-for="item in items"
         :key="item.id"
@@ -59,6 +208,8 @@ export default {
         :data-highlight-id="item.id"
         :data-start-char="item.start_char"
         :data-end-char="item.end_char"
+        @mouseenter="onCardHover(item)"
+        @mouseleave="onCardLeave()"
       >
         <div
           style="display: flex; align-items: center; gap: 4px; padding: 2px 8px; height: 28px; cursor: pointer;"

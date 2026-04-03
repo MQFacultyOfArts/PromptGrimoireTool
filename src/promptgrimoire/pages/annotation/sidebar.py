@@ -26,6 +26,7 @@ class AnnotationSidebar(ui.element, component=_JS_PATH):
         tag_options: dict[str, str] | None = None,
         permissions: dict[str, bool] | None = None,
         expanded_ids: list[str] | None = None,
+        doc_container_id: str = "",
         on_test_event: Callable[[dict[str, Any]], None] | None = None,
     ) -> None:
         super().__init__()
@@ -33,6 +34,7 @@ class AnnotationSidebar(ui.element, component=_JS_PATH):
         self._props["tag_options"] = tag_options or {}
         self._props["permissions"] = permissions or {}
         self._props["expanded_ids"] = expanded_ids or []
+        self._props["doc_container_id"] = doc_container_id
         if on_test_event is not None:
             self.on("test_event", lambda e: on_test_event(e.args))
 

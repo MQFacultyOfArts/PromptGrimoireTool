@@ -139,6 +139,35 @@ async def test_go4_prop_dict_updated(nicegui_user: Any) -> None:
 
 
 @pytest.mark.asyncio
+async def test_doc_container_id_prop_forwarded(nicegui_user: Any) -> None:
+    """doc_container_id prop is forwarded to the Vue component."""
+
+    @ui.page("/spike-doc-container-test")
+    def _page() -> None:
+        AnnotationSidebar(
+            items=[{"id": "h1"}],
+            doc_container_id="doc-abc",
+        ).props('data-testid="spike-dc-sidebar"')
+
+    await nicegui_user.open("/spike-doc-container-test")
+
+    el = _find_by_testid(nicegui_user, "spike-dc-sidebar")
+    assert el is not None
+    assert el._props["doc_container_id"] == "doc-abc"
+
+
+@pytest.mark.asyncio
+async def test_doc_container_id_default_empty(nicegui_user: Any) -> None:
+    """doc_container_id defaults to empty string when not provided."""
+    _register_spike_page()
+    await nicegui_user.open("/spike-test")
+
+    el = _find_by_testid(nicegui_user, "spike-sidebar")
+    assert el is not None
+    assert el._props["doc_container_id"] == ""
+
+
+@pytest.mark.asyncio
 async def test_go5_js_file_exists() -> None:
     """GO5: JS component file exists at the resolved path."""
     from promptgrimoire.pages.annotation.sidebar import _JS_PATH

@@ -77,6 +77,7 @@ def _make_sidebar(
                     "display_author": "Carol",
                     "text": "Nice",
                     "created_at": "2026-01-01",
+                    "can_delete": False,
                 },
             ],
         },

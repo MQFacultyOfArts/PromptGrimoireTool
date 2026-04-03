@@ -79,6 +79,7 @@ _NICEGUI_ALLOWLIST: tuple[str, ...] = (
     "test_vue_sidebar_spike.py",
     "test_vue_sidebar_dom_contract.py",
     "test_vue_sidebar_expand.py",
+    "test_vue_sidebar_mutations.py",
 )
 
 

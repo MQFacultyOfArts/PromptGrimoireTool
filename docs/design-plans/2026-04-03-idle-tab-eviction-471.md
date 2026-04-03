@@ -51,11 +51,15 @@ The implementation is deliberately client-side: a small JavaScript module (`idle
 - **idle-tab-eviction-471.AC5.3 Success:** `IDLE__ENABLED=false` disables idle eviction entirely (no script injected, no event listeners attached)
 - **idle-tab-eviction-471.AC5.4 Success:** Defaults are 1800s timeout, 60s warning, enabled=true
 
-### idle-tab-eviction-471.AC6: Login page element reduction
-- **idle-tab-eviction-471.AC6.1 Success:** Login page renders identically in the browser after migration to `ui.html()`
-- **idle-tab-eviction-471.AC6.2 Success:** Server-side NiceGUI element count on `/login` reduced from ~15-20 to ~5-6
-- **idle-tab-eviction-471.AC6.3 Success:** Interactive elements (buttons, email input) retain full functionality
-- **idle-tab-eviction-471.AC6.4 Success:** Mock login section (dev mode) still functions correctly
+### idle-tab-eviction-471.AC6: Login page element reduction — DROPPED
+
+**Rationale:** Dropped during implementation planning (2026-04-03). `ui.card()` context managers cannot be replaced with `ui.html()` without breaking NiceGUI's slot model for child event handlers. The achievable reduction (~20 to ~10-12 elements) did not justify the effort. Replaced by AC7 (pre-auth landing page).
+
+### idle-tab-eviction-471.AC7: Pre-auth landing page
+- **idle-tab-eviction-471.AC7.1 Success:** `GET /welcome` returns static HTML with "Login to PromptGrimoire" button linking to `/login?return=/`
+- **idle-tab-eviction-471.AC7.2 Success:** `/welcome` creates no NiceGUI client (raw Starlette handler, no WebSocket)
+- **idle-tab-eviction-471.AC7.3 Success:** Clicking Login on `/welcome` navigates to `/login?return=/`, and after authentication returns user to `/`
+- **idle-tab-eviction-471.AC7.4 Success:** `/welcome` renders correctly with same visual style as `/paused` and `/queue` pages
 
 ## Glossary
 

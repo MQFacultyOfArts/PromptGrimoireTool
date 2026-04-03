@@ -72,7 +72,7 @@ def main() -> int:
 
     # Step 3: ty check (via uvx)
     result = subprocess.run(
-        ["uvx", "--quiet", "ty", "check", file_path],
+        ["uvx", "--quiet", "ty@0.0.24", "check", file_path],
         capture_output=True,
         text=True,
         timeout=60,

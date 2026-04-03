@@ -390,6 +390,22 @@ AIMD-based dynamic admission gate protects the server from overload by queuing n
 
 **Dev endpoints** (gated behind `DEV__AUTH_MOCK=true`): `POST /api/dev/admission` (manipulate state), `POST /api/dev/block-loop` (trigger AIMD via real event-loop blocking).
 
+## Idle Tab Eviction
+
+Client-side idle tracking that pauses inactive browser tabs to free server resources. A JavaScript module (`idle-tracker.js`) monitors click/keypress/scroll events using wall-clock timestamps (`Date.now()`), resistant to Chrome's background tab throttling.
+
+**Flow:** `page_route` injects `window.__idleConfig` + `idle-tracker.js` → JS polls inactivity → warning modal at `timeout - warning` seconds → navigates to `/paused?return=...` at timeout → NiceGUI disconnect lifecycle frees resources → user clicks Resume → admission gate with priority re-entry (`appendleft`).
+
+**Key files:**
+- `src/promptgrimoire/static/idle-tracker.js` — client-side idle detection, warning modal, eviction navigation
+- `src/promptgrimoire/queue_handlers.py` — `/paused` and `/welcome` raw Starlette handlers (zero NiceGUI overhead)
+- `src/promptgrimoire/config.py` — `IdleConfig` sub-model
+- `src/promptgrimoire/pages/registry.py` — injection point in `page_route` decorator
+
+**Config:** `IDLE__` prefix. `IDLE__ENABLED` (bool, default true), `IDLE__TIMEOUT_SECONDS` (int, default 1800), `IDLE__WARNING_SECONDS` (int, default 60).
+
+**Lightweight pages:** `/paused` (session paused landing) and `/welcome` (pre-auth bookmark target) are raw Starlette handlers — no NiceGUI client, no WebSocket. Follow the same pattern as `/queue`.
+
 ## Conventions
 
 - Type hints on all functions

@@ -461,6 +461,7 @@ _NICEGUI_UI_FILES: frozenset[str] = frozenset(
         "test_vue_sidebar_dom_contract.py",
         "test_vue_sidebar_expand.py",
         "test_vue_sidebar_mutations.py",
+        "test_vue_sidebar_interactions.py",
     }
 )
 

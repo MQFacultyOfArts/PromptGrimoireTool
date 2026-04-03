@@ -62,6 +62,8 @@ _EXCLUDED_FILES: set[str] = {
     "test_vue_sidebar_mutations.py",
     # Vue sidebar E2E spike (#457) uses test-only testids for browser validation
     "test_vue_sidebar_spike_e2e.py",
+    # Vue sidebar interactions (#457) uses test-only testids for para_ref/locate/hover
+    "test_vue_sidebar_interactions.py",
 }
 
 

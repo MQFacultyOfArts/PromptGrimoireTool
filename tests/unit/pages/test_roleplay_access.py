@@ -105,6 +105,7 @@ class TestRoleplayPagesUseSharedAccessGuard:
 
         with (
             patch("promptgrimoire.pages.roleplay.ui") as mock_ui,
+            patch("promptgrimoire.pages.registry.ui"),
             patch(
                 "promptgrimoire.pages.roleplay.require_roleplay_enabled",
                 return_value=True,
@@ -128,6 +129,7 @@ class TestRoleplayPagesUseSharedAccessGuard:
 
         with (
             patch("promptgrimoire.pages.logviewer.ui") as mock_ui,
+            patch("promptgrimoire.pages.registry.ui"),
             patch(
                 "promptgrimoire.pages.logviewer.require_roleplay_enabled",
                 return_value=True,

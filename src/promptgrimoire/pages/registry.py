@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import functools
+import json
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Literal
 from urllib.parse import urlencode
@@ -300,6 +301,22 @@ def page_route(
                     return
                 # Register client for real-time ban kick
                 _register_client(user_id)
+
+            # Inject idle tracker script and config
+            idle_cfg = get_settings().idle
+            if idle_cfg.enabled:
+                _config_json = json.dumps(
+                    {
+                        "timeoutMs": idle_cfg.timeout_seconds * 1000,
+                        "warningMs": idle_cfg.warning_seconds * 1000,
+                        "enabled": True,
+                    }
+                )
+                ui.add_head_html(
+                    f"<script>window.__idleConfig = {_config_json};</script>"
+                    '<script src="/static/idle-tracker.js"></script>'
+                    "<script>initIdleTracker();</script>"
+                )
 
             await func(*args, **kwargs)
 

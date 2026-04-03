@@ -113,7 +113,7 @@ async def navigator_page() -> None:
     user = app.storage.user.get("auth_user")
 
     if not user:
-        ui.navigate.to("/login")
+        ui.navigate.to("/welcome")
         return
 
     if not get_settings().database.url:

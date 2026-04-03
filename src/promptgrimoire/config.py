@@ -110,6 +110,7 @@ class AppConfig(BaseModel):
     reload: bool = True
     diagnostic_interval_seconds: int = 300
     memory_restart_threshold_mb: int = 3072
+    tagline: str = "Collaborative text annotation tool."
 
 
 class FeaturesConfig(BaseModel):
@@ -196,6 +197,14 @@ class HelpConfig(BaseModel):
                 )
                 raise ValueError(msg)
         return self
+
+
+class IdleConfig(BaseModel):
+    """Idle tab eviction configuration."""
+
+    timeout_seconds: int = 1800
+    warning_seconds: int = 60
+    enabled: bool = True
 
 
 # ---------------------------------------------------------------------------
@@ -334,6 +343,7 @@ class Settings(BaseSettings):
     browserstack: BrowserstackConfig = BrowserstackConfig()
     help: HelpConfig = HelpConfig()
     admission: AdmissionConfig = AdmissionConfig()
+    idle: IdleConfig = IdleConfig()
 
     @model_validator(mode="after")
     def _apply_branch_db_suffix(self) -> Settings:

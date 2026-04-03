@@ -69,6 +69,9 @@ ALLOWED_JS_FILES = {
     # Performance instrumentation (#377): evaluate() reads
     # window.__annotationCardsEpoch for rebuild-epoch pattern.
     "test_browser_perf_377.py",
+    # Idle tab eviction (#471): visibilitychange simulation requires
+    # evaluate() — Playwright has no native API for tab visibility.
+    "test_idle_tab_eviction.py",
 }
 
 

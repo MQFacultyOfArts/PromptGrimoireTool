@@ -640,9 +640,9 @@ class TestNavigator:
 
     @pytest.mark.skip_browserstack
     def test_unauthenticated_redirect(self, fresh_page: Page, app_server: str) -> None:
-        """AC2.5: Unauthenticated access to / redirects to /login."""
+        """AC2.5: Unauthenticated access to / redirects to /welcome."""
         fresh_page.goto(f"{app_server}/")
-        expect(fresh_page).to_have_url(re.compile(r"/login"), timeout=10000)
+        expect(fresh_page).to_have_url(re.compile(r"/welcome"), timeout=10000)
 
     def test_navigator_renders_my_work(
         self,

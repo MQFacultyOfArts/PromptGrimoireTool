@@ -257,12 +257,12 @@ def _vue_sidebar_spike_page() -> None:
 
     received_events: list[dict] = []
 
-    def _on_test_event(payload: dict) -> None:
+    def _on_toggle_expand(payload: dict) -> None:
         received_events.append(payload)
         # Update a visible label so Playwright can observe the event
         event_label.set_text(f"event:{payload.get('id', '?')}")
 
-    sidebar = AnnotationSidebar(on_test_event=_on_test_event)
+    sidebar = AnnotationSidebar(on_toggle_expand=_on_toggle_expand)
     sidebar.props('data-testid="spike-sidebar"')
     sidebar.refresh_items(
         highlights=highlights,

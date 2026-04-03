@@ -91,13 +91,13 @@ def test_go2_compact_header_content(spike_page: Page) -> None:
 
 
 def test_go3_emit_reaches_python(spike_page: Page) -> None:
-    """GO3: Vue $emit('test_event') reaches Python handler via websocket."""
+    """GO3: Vue $emit('toggle_expand') reaches Python handler via websocket."""
     # Label starts at "event:none"
     event_label = spike_page.get_by_test_id("spike-event-label")
     expect(event_label).to_have_text("event:none")
 
-    # Click first card's compact header row
-    card1 = spike_page.locator("[data-testid='annotation-card']").nth(0)
+    # Click first card's header row — triggers toggle_expand event
+    card1 = spike_page.locator("[data-testid='card-header']").nth(0)
     card1.click()
 
     # Python handler updates the label with the event payload.

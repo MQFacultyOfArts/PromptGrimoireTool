@@ -173,7 +173,7 @@ def _take_snapshot(
 
 
 HEAVY_FIXTURE = (
-    Path(__file__).parent / "fixtures" / "workspace_pabai_190hl_scrubbed.json"
+    Path(__file__).parent.parent / "fixtures" / "pabai_workspace_scrubbed.json"
 )
 
 

@@ -49,7 +49,9 @@ pytestmark = [
 ]
 
 PABAI_WORKSPACE_ID = "0e5e9b04-de94-4728-a8c9-e625c141fea3"
-_WORKSPACE_JSON = Path(__file__).parent / "fixtures" / "pabai_workspace.json"
+_WORKSPACE_JSON = (
+    Path(__file__).parent.parent / "fixtures" / "pabai_workspace_scrubbed.json"
+)
 
 # Concurrency parameters.  Production incident had ~189 users.
 # 10 is enough to create meaningful event loop contention with

@@ -34,7 +34,9 @@ if TYPE_CHECKING:
     from playwright.sync_api import Browser, Page
 
 PABAI_WORKSPACE_ID = "0e5e9b04-de94-4728-a8c9-e625c141fea3"
-_WORKSPACE_JSON = Path(__file__).parent / "fixtures" / "pabai_workspace.json"
+_WORKSPACE_JSON = (
+    Path(__file__).parent.parent / "fixtures" / "pabai_workspace_scrubbed.json"
+)
 _MAX_LOAD_AVG = 10.0  # 1-min load average ceiling for perf tests
 
 # structlog events we want to capture

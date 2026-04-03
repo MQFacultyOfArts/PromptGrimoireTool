@@ -32,6 +32,7 @@ if TYPE_CHECKING:
 
 pytestmark = [
     pytest.mark.e2e,
+    pytest.mark.noci,
     pytest.mark.skipif(
         os.environ.get("IDLE__TIMEOUT_SECONDS", "1800") != "5",
         reason="Requires IDLE__TIMEOUT_SECONDS=5 (set via env before server start)",

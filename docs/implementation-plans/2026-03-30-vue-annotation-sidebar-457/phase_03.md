@@ -20,6 +20,10 @@
 
 3. **Results file named `phase-3-results.md`** (plan specified `phase-1-results.md`). More accurate since this is Phase 3.
 
+4. **JS file renamed from `annotation-sidebar.js` to `annotationsidebar.js`.** Hyphens in JS filenames break NiceGUI's browser-side `import()` — `"Unexpected token '-'"`. Discovered by E2E browser testing added after the human identified the integration-only test gap. Task 2 still references the original filename.
+
+5. **E2E browser tests added retroactively.** The original integration-only test design was insufficient for go/no-go validation — it could not catch the three showstopper bugs (JS filename hyphens, CSS position:absolute producing invisible cards, websocket requiring authentication). Playwright E2E tests (`tests/e2e/test_vue_sidebar_spike_e2e.py`) were added after the human flagged this gap. See phase-3-results.md for details.
+
 ---
 
 ## Acceptance Criteria Coverage

@@ -22,6 +22,14 @@
 
 4. **`expanded_ids` not pushed in `refresh_items()`.** Plan says to push `expanded_ids` prop, but `refresh_items()` has no `expanded_ids` parameter — expansion state is managed separately from highlight data. The prop is set in the constructor and updated independently. Not a defect.
 
+5. **`position: absolute` removed from card wrappers.** Plan specified `style="position: absolute"` on card wrapper divs (Task 4). This produced zero-size invisible cards because `top`/`left` were not set — caught by E2E browser testing. Removed entirely. Phase 5 must add `position: absolute` together with computed `top` values.
+
+6. **`can_annotate` added to each item dict.** Not in plan's item dict spec (Task 1). Included as a per-item copy of the viewer permission for future use by Phase 7 edit control visibility (`v-if="permissions.can_annotate"` in the Vue template).
+
+7. **Comment dicts include `display_author`.** Plan spec lists `{id, author, text, created_at, can_delete}`. Implementation adds `display_author` (anonymised name). Required for correct rendering under anonymisation.
+
+8. **JS file renamed from `annotation-sidebar.js` to `annotationsidebar.js`.** Hyphens in JS filenames break NiceGUI's browser-side `import()` call — `"Unexpected token '-'"`. Discovered by E2E testing.
+
 ---
 
 ## Acceptance Criteria Coverage

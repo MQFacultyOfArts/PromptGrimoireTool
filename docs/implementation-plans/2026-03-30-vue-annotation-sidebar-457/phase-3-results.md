@@ -45,6 +45,21 @@ These are covered by Phase 4's integration tests (DOM contract) and Phase 10's c
 
 Module-level `@ui.page()` decorators are cleared by `user_simulation`'s NiceGUI reset. Test pages must be registered inside the test function body (after the `nicegui_user` fixture establishes the simulation context). This pattern is documented in the spike test for future phases.
 
+## E2E Browser Validation (added retroactively)
+
+The initial spike test design (NiceGUI `user_simulation` integration tests) was **insufficient for go/no-go validation**. The human identified this gap and requested Playwright E2E tests. The browser tests discovered three showstopper bugs that the integration tests could not catch:
+
+1. **JS filename hyphens break NiceGUI's `import()`** — `annotation-sidebar.js` caused `"Unexpected token '-'"` in the browser. Renamed to `annotationsidebar.js`.
+2. **`position: absolute` without `top`/`left` produces zero-size invisible cards** — cards rendered but had no visible area. Removed positioning entirely (Phase 5 will add it with computed values).
+3. **NiceGUI websocket requires an authenticated session** — unauthenticated page loads produce a blank white page (Vue never mounts).
+
+After fixing these bugs and adding E2E tests (`tests/e2e/test_vue_sidebar_spike_e2e.py`), all 5 criteria pass at the browser level:
+- GO1: Component renders in Chromium (2 cards as real DOM nodes)
+- GO2: Props arrive as `data-highlight-id`, `data-start-char`, tag labels, initials, comment badges
+- GO3: Vue `$emit("test_event")` reaches Python handler via websocket (full round-trip confirmed)
+- GO4: `set_items()` from Python re-renders Vue component (2 cards → 1 card)
+- GO5: All `data-testid` and `data-*` attributes present in DOM
+
 ## Decision
 
-Criteria 1 and 5 fully pass. Criteria 2, 3, and 4 pass at the Python-side wiring level (partial). Vue rendering and `$emit` -> websocket paths are unverified — these gaps close naturally in Phase 4 (DOM contract browser tests) and Phase 10 (cross-tab E2E in real Chromium). No blockers to proceeding.
+Criteria 1-5 now pass at the E2E browser level. The original integration-only test design was inadequate for the stated go/no-go purpose — it validated Python wiring but could not catch the three integration bugs listed above. Proceed to Phase 4.

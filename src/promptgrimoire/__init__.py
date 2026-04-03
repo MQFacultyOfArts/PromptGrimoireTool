@@ -302,10 +302,12 @@ def main() -> None:
     # Admin kick endpoint for banning users in real time
     app.routes.insert(0, Route("/api/admin/kick", kick_user_handler, methods=["POST"]))
 
-    # Queue page and status API (raw Starlette, zero NiceGUI overhead)
+    # Queue page, paused page, and status API (raw Starlette, zero NiceGUI overhead)
     from promptgrimoire.queue_handlers import (
+        paused_page_handler,
         queue_page_handler,
         queue_status_handler,
+        welcome_page_handler,
     )
 
     app.routes.insert(
@@ -317,6 +319,8 @@ def main() -> None:
         ),
     )
     app.routes.insert(0, Route("/queue", queue_page_handler, methods=["GET"]))
+    app.routes.insert(0, Route("/paused", paused_page_handler, methods=["GET"]))
+    app.routes.insert(0, Route("/welcome", welcome_page_handler, methods=["GET"]))
 
     # Dev-only endpoints for testing admission gate (gated behind DEV__AUTH_MOCK)
     if get_settings().dev.auth_mock:

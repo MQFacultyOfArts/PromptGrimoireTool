@@ -11,6 +11,7 @@ const files = [
   'annotation-highlight.js',     // Must be first (others depend on it)
   'annotation-card-sync.js',
   'annotation-copy-protection.js',
+  'idle-tracker.js',
 ];
 
 for (const file of files) {
@@ -61,7 +62,8 @@ const functionNames = [
   'clearHoverHighlight', 'throbHighlight', 'setupSelection', 'setupAnnotationSelection',
   'rangePointToCharOffset', '_boundaryFromSiblings', 'countCollapsed',
   'renderRemoteCursor', 'removeRemoteCursor', 'updateRemoteCursorPositions',
-  'renderRemoteSelection', 'removeRemoteSelection', 'removeAllRemotePresence'
+  'renderRemoteSelection', 'removeRemoteSelection', 'removeAllRemotePresence',
+  'initIdleTracker', 'cleanupIdleTracker'
 ];
 
 for (const name of functionNames) {

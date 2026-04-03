@@ -1499,6 +1499,39 @@ def _run_management_sections(
     _entry_upload_document(guide)
     _entry_paste_sources(guide)
 
+    guide.section("Session Management")
+    _entry_session_timeout(guide)
+
+
+def _entry_session_timeout(guide: Guide) -> None:
+    """Why did my session pause, and how do I get back in?"""
+    with guide.step(
+        "Why did my session pause, and how do I get back in?",
+        level=3,
+        text_only=True,
+    ) as g:
+        g.note(
+            "PromptGrimoire automatically pauses your session after "
+            "30 minutes of inactivity (no clicks, key presses, or scrolling). "
+            "This frees server resources for other students."
+        )
+        g.note(
+            "**Before you are paused,** a warning appears with a countdown: "
+            '"Session will pause in N seconds." Click **Stay Active** or '
+            "interact with the page to reset the timer."
+        )
+        g.note(
+            "**If you are paused,** you will see a page saying "
+            '"Your session was paused due to inactivity" with a **Resume** '
+            "button. Click Resume to return to where you were. "
+            "All your saved work (highlights, comments, responses) is preserved."
+        )
+        g.note(
+            "**Tip:** Bookmark `grimoire.drbbs.org/welcome` instead of the "
+            "home page. The welcome page uses fewer server resources when "
+            "your browser reloads it automatically."
+        )
+
 
 def run_using_promptgrimoire_guide(page: Page, base_url: str) -> None:
     """Run the Using PromptGrimoire flight-rules guide."""

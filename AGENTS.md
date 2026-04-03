@@ -61,7 +61,7 @@ uv run grimoire e2e cards               # Card-specific E2E tests (@pytest.mark.
 # Code Quality
 uv run ruff check .         # Linting
 uv run ruff format .        # Formatting
-uvx ty check                # Type checking
+uvx ty@0.0.24 check         # Type checking
 
 # Execution & Data
 uv run grimoire seed run            # Idempotent development data seeding
@@ -111,6 +111,18 @@ The export worker (PDF compilation) runs in two modes controlled by `FEATURES__W
 Key contracts: `sd_notify.py` sends `READY=1`/`WATCHDOG=1`/`STOPPING=1` to systemd. `SIGTERM` triggers graceful cancellation. `deploy/restart.sh` manages worker lifecycle (stop before app restart, start after `/healthz`).
 
 Config: `EXPORT__MAX_CONCURRENT_COMPILATIONS` (int, default 2), `FEATURES__WORKER_IN_PROCESS` (bool, default true), `DATABASE__USE_NULL_POOL` (bool, default false).
+
+## Idle Tab Eviction
+
+Client-side idle tracking that pauses inactive browser tabs to free server resources. JavaScript module (`idle-tracker.js`) monitors user interaction via wall-clock timestamps (`Date.now()`), resistant to Chrome's background tab throttling.
+
+**Flow:** `page_route` injects `window.__idleConfig` + `idle-tracker.js` on every page -> JS polls inactivity -> warning modal at `timeout - warning` seconds -> navigates to `/paused?return=...` at timeout -> NiceGUI disconnect lifecycle frees resources -> user clicks Resume -> admission gate re-entry.
+
+**Key files:** `static/idle-tracker.js` (client-side detection + warning modal), `queue_handlers.py` (`/paused` and `/welcome` raw Starlette handlers), `config.py` (`IdleConfig`), `pages/registry.py` (injection in `page_route`).
+
+**Config:** `IDLE__ENABLED` (bool, default true), `IDLE__TIMEOUT_SECONDS` (int, default 1800), `IDLE__WARNING_SECONDS` (int, default 60).
+
+**Lightweight pages:** `/paused` (session paused landing) and `/welcome` (pre-auth bookmark target) are raw Starlette handlers -- no NiceGUI client, no WebSocket. Same pattern as `/queue`.
 
 ## Architecture References
 Before modifying core systems, reference the detailed documentation in the `docs/` folder:

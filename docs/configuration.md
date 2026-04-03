@@ -22,6 +22,7 @@ All configuration is managed through `src/promptgrimoire/config.py` using pydant
 | `STYTCH__` | `StytchConfig` | `project_id`, `secret`, `public_token`, `default_org_id`, `sso_connection_id` |
 | `ADMISSION__` | `AdmissionConfig` | `enabled`, `initial_cap`, `batch_size`, `lag_increase_ms`, `lag_decrease_ms`, `queue_timeout_seconds`, `ticket_validity_seconds` |
 | `HELP__` | `HelpConfig` | `help_enabled`, `help_backend`, `algolia_app_id`, `algolia_search_api_key`, `algolia_index_name` |
+| `IDLE__` | `IdleConfig` | `enabled`, `timeout_seconds`, `warning_seconds` |
 
 ## Environment Variables
 

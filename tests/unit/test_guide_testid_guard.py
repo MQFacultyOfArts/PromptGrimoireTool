@@ -33,6 +33,9 @@ ALLOWED_TESTIDS: set[str] = {
     # Dynamic: built from section_key at runtime in navigator/_sections.py
     "section-header-unstarted",
     "section-header-my-work",
+    # Created by JS at runtime in static/idle-tracker.js (not in pages/)
+    "idle-warning-modal",
+    "idle-stay-active-btn",
 }
 
 # Files whose testid references are test fixtures / infrastructure,

@@ -21,7 +21,7 @@ export default {
       default: '',
     },
   },
-  emits: ['test_event', 'toggle_expand'],
+  emits: ['test_event', 'toggle_expand', 'change_tag', 'submit_comment', 'delete_comment', 'delete_highlight'],
   setup(props, { emit }) {
     const { ref, reactive, watch, computed, nextTick, onMounted, onBeforeUnmount } = Vue;
 
@@ -32,6 +32,9 @@ export default {
     // --- Expand/collapse state (sidebar-level, keyed by highlight ID) ---
     const expandedIds = reactive(new Set(props.expanded_ids));
     const detailBuiltIds = reactive(new Set(props.expanded_ids));
+
+    // --- Comment draft state (sidebar-level, maps highlight ID → draft text) ---
+    const commentDrafts = reactive(new Map());
 
     // Sync when server pushes new expanded_ids (e.g. reconnection).
     // expandedIds is server-authoritative (clear + rebuild).
@@ -58,6 +61,35 @@ export default {
       }
       // Reposition cards after DOM update from expand/collapse
       nextTick(function() { requestAnimationFrame(positionCards); });
+    }
+
+    // --- Mutation event handlers ---
+
+    function onTagChange(id, newTag) {
+      emit('change_tag', { id: id, new_tag: newTag });
+    }
+
+    function onSubmitComment(id) {
+      var text = (commentDrafts.get(id) || '').trim();
+      if (!text) return;  // AC1.11: reject empty/whitespace
+      emit('submit_comment', { id: id, text: text });
+      commentDrafts.set(id, '');  // Clear draft immediately (optimistic)
+    }
+
+    function onDeleteComment(highlightId, commentId) {
+      emit('delete_comment', { highlight_id: highlightId, comment_id: commentId });
+    }
+
+    function onDeleteHighlight(id) {
+      emit('delete_highlight', { id: id });
+    }
+
+    function getCommentDraft(id) {
+      return commentDrafts.get(id) || '';
+    }
+
+    function setCommentDraft(id, value) {
+      commentDrafts.set(id, value);
     }
 
     // --- Text node helpers (shared with annotation-highlight.js) ---
@@ -227,8 +259,11 @@ export default {
     return {
       renderCount, rootRef,
       expandedIds, detailBuiltIds,
+      commentDrafts,
       onCardHover, onCardLeave,
       toggleExpand,
+      onTagChange, onSubmitComment, onDeleteComment, onDeleteHighlight,
+      getCommentDraft, setCommentDraft,
     };
   },
   methods: {
@@ -276,7 +311,7 @@ export default {
           <button
             v-if="item.can_delete"
             data-testid="delete-highlight-btn"
-            disabled
+            @click.stop="onDeleteHighlight(item.id)"
             style="border: none; background: none; cursor: pointer; padding: 0 2px; font-size: 12px; color: #c00;"
           >&#10005;</button>
         </div>
@@ -286,7 +321,12 @@ export default {
           data-testid="card-detail"
           style="padding: 8px;"
         >
-          <select v-if="permissions.can_annotate" data-testid="tag-select" disabled :value="item.tag_key">
+          <select
+            v-if="permissions.can_annotate"
+            data-testid="tag-select"
+            :value="item.tag_key"
+            @change="onTagChange(item.id, $event.target.value)"
+          >
             <option v-for="(name, key) in tag_options" :key="key" :value="key" :selected="key === item.tag_key">{{ name }}</option>
             <option v-if="!tag_options[item.tag_key]" :value="item.tag_key">\u26a0 recovered</option>
           </select>
@@ -296,11 +336,22 @@ export default {
           <div v-for="comment in item.comments" :key="comment.id" data-testid="comment-item">
             <span data-testid="comment-author">{{ comment.display_author }}</span>
             <span>{{ comment.text }}</span>
+            <button
+              v-if="comment.can_delete"
+              data-testid="comment-delete"
+              @click="onDeleteComment(item.id, comment.id)"
+              style="border: none; background: none; cursor: pointer; font-size: 12px; color: #c00;"
+            >&times;</button>
           </div>
           <span data-testid="comment-count">{{ item.comments.length }}</span>
           <template v-if="permissions.can_annotate">
-            <input data-testid="comment-input" disabled placeholder="Add comment..." />
-            <button data-testid="post-comment-btn" disabled>Post</button>
+            <input
+              data-testid="comment-input"
+              :value="getCommentDraft(item.id)"
+              @input="setCommentDraft(item.id, $event.target.value)"
+              placeholder="Add comment..."
+            />
+            <button data-testid="post-comment-btn" @click="onSubmitComment(item.id)">Post</button>
           </template>
         </div>
       </div>

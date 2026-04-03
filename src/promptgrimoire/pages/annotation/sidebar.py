@@ -29,6 +29,10 @@ class AnnotationSidebar(ui.element, component=_JS_PATH):
         doc_container_id: str = "",
         on_test_event: Callable[[dict[str, Any]], None] | None = None,
         on_toggle_expand: Callable[[dict[str, Any]], None] | None = None,
+        on_change_tag: Callable[[dict[str, Any]], None] | None = None,
+        on_submit_comment: Callable[[dict[str, Any]], None] | None = None,
+        on_delete_comment: Callable[[dict[str, Any]], None] | None = None,
+        on_delete_highlight: Callable[[dict[str, Any]], None] | None = None,
     ) -> None:
         super().__init__()
         self._props["items"] = items or []
@@ -36,10 +40,17 @@ class AnnotationSidebar(ui.element, component=_JS_PATH):
         self._props["permissions"] = permissions or {}
         self._props["expanded_ids"] = expanded_ids or []
         self._props["doc_container_id"] = doc_container_id
-        if on_test_event is not None:
-            self.on("test_event", lambda e: on_test_event(e.args))
-        if on_toggle_expand is not None:
-            self.on("toggle_expand", lambda e: on_toggle_expand(e.args))
+        _event_map: dict[str, Callable[[dict[str, Any]], None] | None] = {
+            "test_event": on_test_event,
+            "toggle_expand": on_toggle_expand,
+            "change_tag": on_change_tag,
+            "submit_comment": on_submit_comment,
+            "delete_comment": on_delete_comment,
+            "delete_highlight": on_delete_highlight,
+        }
+        for event_name, handler in _event_map.items():
+            if handler is not None:
+                self.on(event_name, lambda e, h=handler: h(e.args))
 
     def set_items(self, items: list[dict[str, Any]]) -> None:
         """Update the items prop and push to client."""

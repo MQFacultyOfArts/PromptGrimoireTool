@@ -33,6 +33,8 @@ class AnnotationSidebar(ui.element, component=_JS_PATH):
         on_submit_comment: Callable[[dict[str, Any]], None] | None = None,
         on_delete_comment: Callable[[dict[str, Any]], None] | None = None,
         on_delete_highlight: Callable[[dict[str, Any]], None] | None = None,
+        on_edit_para_ref: Callable[[dict[str, Any]], None] | None = None,
+        on_locate_highlight: Callable[[dict[str, Any]], None] | None = None,
     ) -> None:
         super().__init__()
         self._props["items"] = items or []
@@ -47,6 +49,8 @@ class AnnotationSidebar(ui.element, component=_JS_PATH):
             "submit_comment": on_submit_comment,
             "delete_comment": on_delete_comment,
             "delete_highlight": on_delete_highlight,
+            "edit_para_ref": on_edit_para_ref,
+            "locate_highlight": on_locate_highlight,
         }
         for event_name, handler in _event_map.items():
             if handler is not None:

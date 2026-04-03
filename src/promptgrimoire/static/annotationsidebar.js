@@ -21,7 +21,7 @@ export default {
       default: '',
     },
   },
-  emits: ['test_event', 'toggle_expand', 'change_tag', 'submit_comment', 'delete_comment', 'delete_highlight'],
+  emits: ['test_event', 'toggle_expand', 'change_tag', 'submit_comment', 'delete_comment', 'delete_highlight', 'edit_para_ref', 'locate_highlight'],
   setup(props, { emit }) {
     const { ref, reactive, watch, computed, nextTick, onMounted, onBeforeUnmount } = Vue;
 
@@ -35,6 +35,10 @@ export default {
 
     // --- Comment draft state (sidebar-level, maps highlight ID → draft text) ---
     const commentDrafts = reactive(new Map());
+
+    // --- Para ref edit state ---
+    const paraRefEditMode = reactive(new Map());  // highlightId → boolean
+    const paraRefDrafts = reactive(new Map());    // highlightId → draft text
 
     // Sync when server pushes new expanded_ids (e.g. reconnection).
     // expandedIds is server-authoritative (clear + rebuild).
@@ -90,6 +94,26 @@ export default {
 
     function setCommentDraft(id, value) {
       commentDrafts.set(id, value);
+    }
+
+    function startParaRefEdit(id, currentValue) {
+      paraRefDrafts.set(id, currentValue || '');
+      paraRefEditMode.set(id, true);
+      nextTick(function() {
+        var input = document.querySelector('[data-highlight-id="' + id + '"] [data-testid="para-ref-input"]');
+        if (input) input.focus();
+      });
+    }
+
+    function finishParaRefEdit(id) {
+      var newValue = (paraRefDrafts.get(id) || '').trim();
+      var item = props.items.find(function(i) { return i.id === id; });
+      var oldValue = item ? item.para_ref : '';
+      paraRefEditMode.delete(id);
+      paraRefDrafts.delete(id);
+      if (newValue !== oldValue) {
+        emit('edit_para_ref', { id: id, value: newValue });
+      }
     }
 
     // --- Text node helpers (shared with annotation-highlight.js) ---
@@ -196,6 +220,10 @@ export default {
       }
     }
 
+    function onLocate(startChar, endChar) {
+      emit('locate_highlight', { start_char: startChar, end_char: endChar });
+    }
+
     // --- Highlights-ready listener ---
 
     function onHighlightsReady() {
@@ -260,10 +288,12 @@ export default {
       renderCount, rootRef,
       expandedIds, detailBuiltIds,
       commentDrafts,
+      paraRefEditMode, paraRefDrafts,
       onCardHover, onCardLeave,
       toggleExpand,
       onTagChange, onSubmitComment, onDeleteComment, onDeleteHighlight,
       getCommentDraft, setCommentDraft,
+      startParaRefEdit, finishParaRefEdit, onLocate,
     };
   },
   methods: {
@@ -304,6 +334,12 @@ export default {
           >{{ item.comments.length }}</span>
           <span style="flex-grow: 1;"></span>
           <button
+            data-testid="locate-btn"
+            @click.stop="onLocate(item.start_char, item.end_char)"
+            title="Scroll to highlight"
+            style="border: none; background: none; cursor: pointer; padding: 0 2px; font-size: 14px;"
+          >&#x1F4CD;</button>
+          <button
             data-testid="expand-btn"
             style="border: none; background: none; cursor: pointer; padding: 0 2px; font-size: 12px;"
             @click.stop="toggleExpand(item.id)"
@@ -332,7 +368,25 @@ export default {
           </select>
           <div data-testid="display-author">by {{ item.display_author }}</div>
           <div data-testid="text-preview">{{ item.text_preview }}</div>
-          <div v-if="item.para_ref" data-testid="para-ref-label">{{ item.para_ref }}</div>
+          <span v-if="!paraRefEditMode.get(item.id) && permissions.can_annotate"
+                @click="startParaRefEdit(item.id, item.para_ref)"
+                data-testid="para-ref-label"
+                style="cursor: pointer; font-size: 11px; color: #999;">
+            {{ item.para_ref || '(no ref)' }}
+          </span>
+          <!-- Viewers only see para_ref when non-empty (no "(no ref)" affordance for read-only) -->
+          <span v-if="!permissions.can_annotate && item.para_ref"
+                data-testid="para-ref-label"
+                style="font-size: 11px; color: #999;">
+            {{ item.para_ref }}
+          </span>
+          <input v-if="paraRefEditMode.get(item.id)"
+                 :value="paraRefDrafts.get(item.id) ?? item.para_ref"
+                 @input="paraRefDrafts.set(item.id, $event.target.value)"
+                 @blur="finishParaRefEdit(item.id)"
+                 @keydown.enter="finishParaRefEdit(item.id)"
+                 data-testid="para-ref-input"
+                 style="font-size: 11px; max-width: 80px;" />
           <div v-for="comment in item.comments" :key="comment.id" data-testid="comment-item">
             <span data-testid="comment-author">{{ comment.display_author }}</span>
             <span>{{ comment.text }}</span>

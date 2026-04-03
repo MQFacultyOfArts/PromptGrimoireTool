@@ -190,6 +190,6 @@ async def test_composition_api_hybrid_in_js() -> None:
     from promptgrimoire.pages.annotation.sidebar import _JS_PATH
 
     content = _JS_PATH.read_text()
-    assert "setup(props)" in content, "Missing Composition API setup()"
+    assert "setup(props" in content, "Missing Composition API setup()"
     assert "ref(" in content, "Missing Composition API ref()"
     assert "watch(" in content, "Missing Composition API watch()"

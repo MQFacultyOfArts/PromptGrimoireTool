@@ -28,6 +28,7 @@ class AnnotationSidebar(ui.element, component=_JS_PATH):
         expanded_ids: list[str] | None = None,
         doc_container_id: str = "",
         on_test_event: Callable[[dict[str, Any]], None] | None = None,
+        on_toggle_expand: Callable[[dict[str, Any]], None] | None = None,
     ) -> None:
         super().__init__()
         self._props["items"] = items or []
@@ -37,6 +38,8 @@ class AnnotationSidebar(ui.element, component=_JS_PATH):
         self._props["doc_container_id"] = doc_container_id
         if on_test_event is not None:
             self.on("test_event", lambda e: on_test_event(e.args))
+        if on_toggle_expand is not None:
+            self.on("toggle_expand", lambda e: on_toggle_expand(e.args))
 
     def set_items(self, items: list[dict[str, Any]]) -> None:
         """Update the items prop and push to client."""

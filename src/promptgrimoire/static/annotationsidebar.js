@@ -21,12 +21,44 @@ export default {
       default: '',
     },
   },
-  setup(props) {
-    const { ref, watch, computed, onMounted, onBeforeUnmount } = Vue;
+  emits: ['test_event', 'toggle_expand'],
+  setup(props, { emit }) {
+    const { ref, reactive, watch, computed, nextTick, onMounted, onBeforeUnmount } = Vue;
 
     const renderCount = ref(0);
     const rootRef = ref(null);
     const MIN_GAP = 8;
+
+    // --- Expand/collapse state (sidebar-level, keyed by highlight ID) ---
+    const expandedIds = reactive(new Set(props.expanded_ids));
+    const detailBuiltIds = reactive(new Set(props.expanded_ids));
+
+    // Sync when server pushes new expanded_ids (e.g. reconnection).
+    // expandedIds is server-authoritative (clear + rebuild).
+    // detailBuiltIds is additive — never destroy already-built detail DOM.
+    watch(
+      () => props.expanded_ids,
+      (newIds) => {
+        expandedIds.clear();
+        for (var i = 0; i < newIds.length; i++) {
+          expandedIds.add(newIds[i]);
+          detailBuiltIds.add(newIds[i]);
+        }
+      }
+    );
+
+    function toggleExpand(id) {
+      if (expandedIds.has(id)) {
+        expandedIds.delete(id);
+        emit('toggle_expand', { id: id, expanded: false });
+      } else {
+        expandedIds.add(id);
+        detailBuiltIds.add(id);
+        emit('toggle_expand', { id: id, expanded: true });
+      }
+      // Reposition cards after DOM update from expand/collapse
+      nextTick(function() { requestAnimationFrame(positionCards); });
+    }
 
     // --- Text node helpers (shared with annotation-highlight.js) ---
 
@@ -46,6 +78,8 @@ export default {
     }
 
     // --- positionCards: port from annotation-card-sync.js:44-83 ---
+    // TODO(#457): extract shared positionCards to annotation-utils.js,
+    // remove duplication with annotation-card-sync.js
 
     function positionCards() {
       if (window.__perfInstrumented) console.time('positionCards');
@@ -190,12 +224,16 @@ export default {
       { deep: true, flush: 'post' }
     );
 
-    const expandedSet = computed(() => new Set(props.expanded_ids));
-
-    return { renderCount, expandedSet, onCardHover, onCardLeave, rootRef };
+    return {
+      renderCount, rootRef,
+      expandedIds, detailBuiltIds,
+      onCardHover, onCardLeave,
+      toggleExpand,
+    };
   },
   methods: {
     onItemClick(item) {
+      // Test hook — fires test_event for spike tests
       this.$emit("test_event", { id: item.id });
     },
   },
@@ -212,8 +250,9 @@ export default {
         @mouseleave="onCardLeave()"
       >
         <div
+          data-testid="card-header"
           style="display: flex; align-items: center; gap: 4px; padding: 2px 8px; height: 28px; cursor: pointer;"
-          @click="onItemClick(item)"
+          @click="toggleExpand(item.id)"
         >
           <span
             :style="{ width: '8px', height: '8px', borderRadius: '50%', flexShrink: 0, backgroundColor: item.color }"
@@ -229,7 +268,11 @@ export default {
             style="font-size: 11px; background: #e0e0e0; border-radius: 8px; padding: 0 5px; min-width: 16px; text-align: center;"
           >{{ item.comments.length }}</span>
           <span style="flex-grow: 1;"></span>
-          <button data-testid="expand-btn" disabled style="border: none; background: none; cursor: pointer; padding: 0 2px; font-size: 12px;">&#9660;</button>
+          <button
+            data-testid="expand-btn"
+            style="border: none; background: none; cursor: pointer; padding: 0 2px; font-size: 12px;"
+            @click.stop="toggleExpand(item.id)"
+          >{{ expandedIds.has(item.id) ? '&#9650;' : '&#9660;' }}</button>
           <button
             v-if="item.can_delete"
             data-testid="delete-highlight-btn"
@@ -237,17 +280,28 @@ export default {
             style="border: none; background: none; cursor: pointer; padding: 0 2px; font-size: 12px; color: #c00;"
           >&#10005;</button>
         </div>
-        <div data-testid="card-detail" v-show="expandedSet.has(item.id)" style="padding: 8px;">
-          <select data-testid="tag-select" disabled>
-            <option v-for="(name, key) in tag_options" :key="key" :value="key">{{ name }}</option>
+        <div
+          v-if="detailBuiltIds.has(item.id)"
+          v-show="expandedIds.has(item.id)"
+          data-testid="card-detail"
+          style="padding: 8px;"
+        >
+          <select v-if="permissions.can_annotate" data-testid="tag-select" disabled :value="item.tag_key">
+            <option v-for="(name, key) in tag_options" :key="key" :value="key" :selected="key === item.tag_key">{{ name }}</option>
+            <option v-if="!tag_options[item.tag_key]" :value="item.tag_key">\u26a0 recovered</option>
           </select>
+          <div data-testid="display-author">by {{ item.display_author }}</div>
           <div data-testid="text-preview">{{ item.text_preview }}</div>
+          <div v-if="item.para_ref" data-testid="para-ref-label">{{ item.para_ref }}</div>
           <div v-for="comment in item.comments" :key="comment.id" data-testid="comment-item">
-            <span>{{ comment.display_author }}: {{ comment.text }}</span>
+            <span data-testid="comment-author">{{ comment.display_author }}</span>
+            <span>{{ comment.text }}</span>
           </div>
-          <input data-testid="comment-input" disabled placeholder="Add comment..." />
-          <button data-testid="post-comment-btn" disabled>Post</button>
           <span data-testid="comment-count">{{ item.comments.length }}</span>
+          <template v-if="permissions.can_annotate">
+            <input data-testid="comment-input" disabled placeholder="Add comment..." />
+            <button data-testid="post-comment-btn" disabled>Post</button>
+          </template>
         </div>
       </div>
     </div>

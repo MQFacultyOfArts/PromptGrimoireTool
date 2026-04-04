@@ -250,7 +250,6 @@ class PageState:
     expanded_cards: set[str] = field(
         default_factory=set
     )  # highlight IDs currently expanded
-    cards_epoch: int = 0  # Incremented on every Vue prop push
     refresh_annotations: Any | None = None  # Callable to refresh cards
     broadcast_update: Any | None = None  # Callable to broadcast to other clients
     broadcast_cursor: Any | None = None  # Callable to broadcast cursor position

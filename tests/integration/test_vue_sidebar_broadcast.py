@@ -2,7 +2,7 @@
 
 Verifies:
 - AC6.1: Remote CRDT change updates cards via prop push
-- AC6.2: cards_epoch increments after each items prop update
+- AC6.2: vue_sidebar_refresh structlog event fires with highlight data
 
 Uses NiceGUI user_simulation to exercise the full server-side path:
 CRDT mutation → broadcast callback → refresh_from_state → prop push.
@@ -35,12 +35,11 @@ class TestBroadcastPropPush:
 
     @pytest.mark.asyncio
     async def test_epoch_increments_on_refresh(self, nicegui_user: User) -> None:
-        """AC6.2: cards_epoch increments after each refresh_from_state.
+        """AC6.2: vue_sidebar_refresh fires with highlight data.
 
-        Opens an annotation page, captures the initial epoch from
-        the vue_sidebar_refresh structlog event, then triggers a
-        second refresh via refresh_annotations and verifies epoch
-        incremented.
+        Opens an annotation page, captures the vue_sidebar_refresh
+        structlog event and verifies it reports highlight_count.
+        Epoch tracking is now Vue-managed (client-side watch on items).
         """
         from tests.integration.conftest import _authenticate
         from tests.integration.nicegui_helpers import (

@@ -362,8 +362,6 @@ def _save_source_tab_state(
     Every field that ``_render_document_with_highlights`` writes to
     ``PageState`` must be saved here.
     """
-    # Card state — Vue sidebar re-renders from props, only epoch needed
-    doc_tab.cards_epoch = state.cards_epoch
     # Document content
     doc_tab.document_chars = state.document_chars
     doc_tab.paragraph_map = dict(state.paragraph_map)
@@ -394,7 +392,6 @@ def _restore_source_tab_state(
     """
     state.document_id = doc_tab.document_id
     state.annotations_container = doc_tab.cards_container
-    state.cards_epoch = doc_tab.cards_epoch
     # Per-document DOM IDs
     state.doc_container_id = doc_tab.doc_container_id
     state.ann_container_id = doc_tab.ann_container_id

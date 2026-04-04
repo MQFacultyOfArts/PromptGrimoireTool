@@ -135,15 +135,11 @@ class AnnotationSidebar(ui.element, component=_JS_PATH):
             anonymous_sharing=state.is_anonymous,
         )
 
-        # Epoch increment is handled by the Vue watch on items
-        # (annotationsidebar.js, flush: 'post') — no Python-side push needed.
-
         _elapsed = round((time.monotonic() - _t0) * 1000, 1)
         logger.info(
             "vue_sidebar_refresh",
             trigger="refresh_from_state",
             elapsed_ms=_elapsed,
             highlight_count=len(highlights),
-            cards_epoch="vue-managed",
             document_id=str(state.document_id),
         )

@@ -27,7 +27,6 @@ class DocumentTabState:
     panel: ui.tab_panel | None
     # Card state — Vue sidebar re-renders from props
     cards_container: ui.element | None = None
-    cards_epoch: int = 0
     # Document content state
     document_chars: list[str] | None = None
     paragraph_map: dict[str, int] = field(default_factory=dict)

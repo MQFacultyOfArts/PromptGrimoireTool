@@ -23,7 +23,6 @@ class TestDocumentTabState:
         state = DocumentTabState(document_id=uuid4(), tab=None, panel=None)
         assert state.cards_container is None
         assert state.rendered is False
-        assert state.cards_epoch == 0
         # Document content defaults
         assert state.document_chars is None
         assert state.paragraph_map == {}

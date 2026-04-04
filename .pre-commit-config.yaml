@@ -1,7 +1,7 @@
 repos:
   # Ruff: lint with autofix, then format
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.15.5
+    rev: v0.15.9
     hooks:
       # Run the linter with autofix
       - id: ruff-check
@@ -19,7 +19,7 @@ repos:
 
   # JavaScript lint (Biome) — annotation static JS
   - repo: https://github.com/biomejs/pre-commit
-    rev: v2.4.1
+    rev: v2.4.10
     hooks:
       - id: biome-lint
         additional_dependencies: ["@biomejs/biome@2.4.7"]

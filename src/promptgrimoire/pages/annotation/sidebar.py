@@ -99,7 +99,7 @@ class AnnotationSidebar(ui.element, component=_JS_PATH):
 
         Extracts highlights from the CRDT doc, serialises them via
         ``items_serialise.serialise_items``, pushes all props, increments
-        ``state.cards_epoch``, and broadcasts the epoch to the client via
+        The Vue component's watch on ``items`` increments the client-side
         fire-and-forget ``ui.run_javascript()``.
         """
         if state.crdt_doc is None:
@@ -135,16 +135,8 @@ class AnnotationSidebar(ui.element, component=_JS_PATH):
             anonymous_sharing=state.is_anonymous,
         )
 
-        # Increment epoch and push to client
-        state.cards_epoch += 1
-        doc_id = self._props.get("doc_container_id", "")
-        epoch = state.cards_epoch
-        # Fire-and-forget JS: set BOTH global and per-doc epoch
-        ui.run_javascript(
-            f"window.__annotationCardsEpoch = {epoch};"
-            f"window.__cardEpochs = window.__cardEpochs || {{}};"
-            f"window.__cardEpochs['{doc_id}'] = {epoch};"
-        )
+        # Epoch increment is handled by the Vue watch on items
+        # (annotationsidebar.js, flush: 'post') — no Python-side push needed.
 
         _elapsed = round((time.monotonic() - _t0) * 1000, 1)
         logger.info(
@@ -152,6 +144,6 @@ class AnnotationSidebar(ui.element, component=_JS_PATH):
             trigger="refresh_from_state",
             elapsed_ms=_elapsed,
             highlight_count=len(highlights),
-            cards_epoch=epoch,
+            cards_epoch="vue-managed",
             document_id=str(state.document_id),
         )

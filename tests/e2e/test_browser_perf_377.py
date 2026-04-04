@@ -5,7 +5,7 @@ and captures:
 - Browser console.time output (applyHighlights, positionCards)
 - Server-side structlog timing (render_phase, tag_apply_phase, page_phase)
 
-The fixture at tests/e2e/fixtures/pabai_workspace.json is a PII-sanitised
+The fixture at tests/fixtures/pabai_workspace_scrubbed.json is a PII-sanitised
 copy of the production workspace (author names and user_ids replaced).
 
 Run with:

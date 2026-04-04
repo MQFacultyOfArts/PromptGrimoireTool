@@ -2,7 +2,7 @@
 
 *Last updated: 2026-04-04*
 
-The annotation page (`pages/annotation/`) is a 30-module package split from a monolith.
+The annotation page (`pages/annotation/`) is a 31-module package split from a monolith.
 
 ## Deferred Background Loading (#377)
 

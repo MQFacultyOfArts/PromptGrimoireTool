@@ -133,9 +133,7 @@ export default {
       return t;
     }
 
-    // --- positionCards: port from annotation-card-sync.js:44-83 ---
-    // TODO(#457): extract shared positionCards to annotation-utils.js,
-    // remove duplication with annotation-card-sync.js
+    // --- positionCards: scroll-synced absolute card positioning ---
 
     function positionCards() {
       if (window.__perfInstrumented) console.time('positionCards');

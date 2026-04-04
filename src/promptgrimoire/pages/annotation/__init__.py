@@ -8,7 +8,7 @@ This page provides the new workspace-based annotation flow:
 
 Route: /annotation
 
-Package structure (30 authored modules):
+Package structure (31 authored modules):
     __init__                Core types, globals, route definition
     broadcast               Multi-client sync and remote presence
     card_shared             Shared card helpers (author display, initials)

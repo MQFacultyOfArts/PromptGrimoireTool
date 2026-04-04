@@ -168,7 +168,7 @@ def _print_all_lanes_summary(
 
 
 def _run_all_lane_steps(user_args: list[str]) -> list[LaneResult]:
-    """Execute all 7 standard lanes and return their results (no summary)."""
+    """Execute all 8 standard lanes and return their results (no summary)."""
     from promptgrimoire.cli.testing import (
         _NON_UI_MARKER_EXPRESSION,
         _TEST_ALL_MARKER_EXPRESSION,
@@ -297,7 +297,7 @@ def _run_all_lane_steps(user_args: list[str]) -> list[LaneResult]:
 
 
 def run_all_lanes(user_args: list[str]) -> int:
-    """Run all 7 test lanes sequentially: BATS + 6 pytest lanes."""
+    """Run all 8 test lanes: JS + BATS + 6 pytest lanes."""
     from promptgrimoire.config import get_current_branch
 
     branch = get_current_branch() or "unknown"

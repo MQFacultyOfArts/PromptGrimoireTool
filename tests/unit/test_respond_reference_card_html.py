@@ -26,7 +26,7 @@ def _render(**kwargs: object) -> str:
         "comments": [],
     }
     defaults.update(kwargs)
-    return _render_reference_card_html(**defaults)  # type: ignore[arg-type]
+    return _render_reference_card_html(**defaults)
 
 
 class TestReferenceCardHtml:

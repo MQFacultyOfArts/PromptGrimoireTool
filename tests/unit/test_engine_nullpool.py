@@ -72,7 +72,7 @@ class TestInitDbPoolSelection:
         # Force settings reload
         monkeypatch.setattr(
             "promptgrimoire.db.engine.get_settings",
-            lambda: Settings(_env_file=None),  # type: ignore[call-arg]  # ty: ignore[unknown-argument]
+            lambda: Settings(_env_file=None),  # type: ignore[call-arg]
         )
 
         kwargs = await self._run_init_db_with_captured_kwargs(monkeypatch)
@@ -94,7 +94,7 @@ class TestInitDbPoolSelection:
 
         monkeypatch.setattr(
             "promptgrimoire.db.engine.get_settings",
-            lambda: Settings(_env_file=None),  # type: ignore[call-arg]  # ty: ignore[unknown-argument]
+            lambda: Settings(_env_file=None),  # type: ignore[call-arg]
         )
 
         kwargs = await self._run_init_db_with_captured_kwargs(monkeypatch)
@@ -114,7 +114,7 @@ class TestInitDbPoolSelection:
 
         monkeypatch.setattr(
             "promptgrimoire.db.engine.get_settings",
-            lambda: Settings(_env_file=None),  # type: ignore[call-arg]  # ty: ignore[unknown-argument]
+            lambda: Settings(_env_file=None),  # type: ignore[call-arg]
         )
 
         kwargs = await self._run_init_db_with_captured_kwargs(monkeypatch)
@@ -132,7 +132,7 @@ class TestInitDbPoolSelection:
 
         monkeypatch.setattr(
             "promptgrimoire.db.engine.get_settings",
-            lambda: Settings(_env_file=None),  # type: ignore[call-arg]  # ty: ignore[unknown-argument]
+            lambda: Settings(_env_file=None),  # type: ignore[call-arg]
         )
 
         kwargs = await self._run_init_db_with_captured_kwargs(monkeypatch)

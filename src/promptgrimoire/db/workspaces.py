@@ -382,13 +382,11 @@ async def resolve_annotation_context(
     async with get_session() as session:
         # 1. Workspace + template flag in a single query
         template_exists = exists(
-            select(Activity.id).where(
-                Activity.template_workspace_id == workspace_id  # type: ignore[arg-type]  -- Column == returns ColumnElement
-            )
+            select(Activity.id).where(Activity.template_workspace_id == workspace_id)
         )
         ws_result = await session.exec(
-            select(Workspace, template_exists.label("is_template")).where(  # type: ignore[arg-type]  -- label returns ColumnElement
-                Workspace.id == workspace_id  # type: ignore[arg-type]  -- Column == returns ColumnElement
+            select(Workspace, template_exists.label("is_template")).where(
+                Workspace.id == workspace_id
             )
         )
         ws_row = ws_result.first()
@@ -510,13 +508,11 @@ async def get_placement_context(workspace_id: UUID) -> PlacementContext:
         # Fetch workspace and template flag in a single query using an
         # EXISTS subquery, avoiding a separate round-trip for the check.
         template_exists = exists(
-            select(Activity.id).where(
-                Activity.template_workspace_id == workspace_id  # type: ignore[arg-type]  -- Column == returns ColumnElement
-            )
+            select(Activity.id).where(Activity.template_workspace_id == workspace_id)
         )
         result = await session.exec(
-            select(Workspace, template_exists.label("is_template")).where(  # type: ignore[arg-type]  -- label returns ColumnElement
-                Workspace.id == workspace_id  # type: ignore[arg-type]  -- Column == returns ColumnElement
+            select(Workspace, template_exists.label("is_template")).where(
+                Workspace.id == workspace_id
             )
         )
         row = result.first()
@@ -559,7 +555,7 @@ async def _resolve_activity_placement(
         select(Activity, Week, Course)
         .join(Week, Activity.week_id == Week.id)  # type: ignore[arg-type]  -- Column == returns ColumnElement
         .join(Course, Week.course_id == Course.id)  # type: ignore[arg-type]  -- Column == returns ColumnElement
-        .where(Activity.id == activity_id)  # type: ignore[arg-type]  -- Column == returns ColumnElement
+        .where(Activity.id == activity_id)
     )
     row = result.first()
     if row is None:

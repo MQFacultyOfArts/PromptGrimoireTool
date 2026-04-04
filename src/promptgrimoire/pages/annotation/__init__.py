@@ -8,33 +8,37 @@ This page provides the new workspace-based annotation flow:
 
 Route: /annotation
 
-Package structure (26 authored modules):
+Package structure (30 authored modules):
     __init__                Core types, globals, route definition
     broadcast               Multi-client sync and remote presence
-    sidebar                 Vue annotation sidebar component
+    card_shared             Shared card helpers (author display, initials)
     content_form            Document upload/paste form (orchestration)
-    paste_handler           Paste submission processing
-    paste_script            Client-side paste interception JavaScript
-    upload_handler          File upload detection and processing
     css                     CSS styles and tag toolbar
-    document                Document rendering and selection wiring
+    document                Document rendering, selection wiring, sidebar event handlers
     document_management     Manage Documents dialog (list, edit, delete)
+    document_render         Document HTML rendering helpers
     header                  Workspace header, placement chip, sharing, copy protection
     highlights              Highlight CRUD and rendering
+    items_serialise         Serialise highlights/comments to Vue sidebar item dicts
     organise                Organise tab (tag columns, drag-and-drop)
+    paste_handler           Paste submission processing
+    paste_script            Client-side paste interception JavaScript
     pdf_export              PDF export orchestration
     placement               Placement dialog (course/activity assignment)
     respond                 Respond tab (reference panel, editor)
     sharing                 Sharing controls and per-user sharing dialog
+    sidebar                 Vue annotation sidebar component (AnnotationSidebar)
+    tab_bar                 Tab bar builder, tab change handler, organise drag
+    tab_state               Per-document UI state dataclass (DocumentTabState)
     tag_import              Tag import from other activities
     tag_management          Tag/group management dialog orchestrator
     tag_management_rows     Tag/group row rendering and deletion
     tag_management_save     Tag/group save-on-blur handlers
     tag_quick_create        Quick tag creation dialog and colour picker
     tags                    Tag definitions and colour mapping
+    upload_handler          File upload detection and processing
     word_count_badge        Word count badge UI component
     word_count_enforcement  Export-time word count violation check
-    tab_bar                  Tab bar builder, tab change handler, organise drag
     workspace               Workspace view, document rendering, tag callbacks
 """
 

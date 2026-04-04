@@ -15,6 +15,9 @@ for key in list(os.environ.keys()):
 os.environ["DEV__AUTH_MOCK"] = "true"
 os.environ["APP__STORAGE_SECRET"] = "test-secret-for-e2e"
 # asyncio debug DISABLED — it causes event loop blocks (linecache.checkcache)
+# Disable admission gate — production load-protection that interferes with
+# latexmk tests (event loop lag triggers AIMD cap reduction, redirecting to /queue)
+os.environ.setdefault("ADMISSION__ENABLED", "false")
 os.environ.setdefault("STYTCH__DEFAULT_ORG_ID", "mock-org-test")
 os.environ.setdefault("STYTCH__SSO_CONNECTION_ID", "test-sso-connection-id")
 os.environ.setdefault("STYTCH__PUBLIC_TOKEN", "test-public-token")
@@ -275,7 +278,7 @@ def _vue_sidebar_spike_page() -> None:
         anonymous_sharing=False,
     )
 
-    # Label to observe test_event payloads from Playwright
+    # Label to observe toggle_expand payloads from Playwright
     event_label = ui.label("event:none")
     event_label.props('data-testid="spike-event-label"')
 

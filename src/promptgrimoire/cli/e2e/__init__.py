@@ -340,11 +340,6 @@ def run_slow_lanes(user_args: list[str]) -> int:
     # --- Phase 2: latexmk + slow-only lanes ---
     previous_skip_latexmk = os.environ.get("E2E_SKIP_LATEXMK")
     os.environ["E2E_SKIP_LATEXMK"] = "0"
-    # Short idle timeouts so idle-eviction E2E tests complete in seconds
-    previous_idle_timeout = os.environ.get("IDLE__TIMEOUT_SECONDS")
-    previous_idle_warning = os.environ.get("IDLE__WARNING_SECONDS")
-    os.environ["IDLE__TIMEOUT_SECONDS"] = "5"
-    os.environ["IDLE__WARNING_SECONDS"] = "2"
     try:
         console.print("[blue]Running Playwright slow lane (latexmk enabled)...[/]")
         previous_playwright_artifact = _latest_artifact_dir("playwright")
@@ -363,14 +358,6 @@ def run_slow_lanes(user_args: list[str]) -> int:
             os.environ.pop("E2E_SKIP_LATEXMK", None)
         else:
             os.environ["E2E_SKIP_LATEXMK"] = previous_skip_latexmk
-        if previous_idle_timeout is None:
-            os.environ.pop("IDLE__TIMEOUT_SECONDS", None)
-        else:
-            os.environ["IDLE__TIMEOUT_SECONDS"] = previous_idle_timeout
-        if previous_idle_warning is None:
-            os.environ.pop("IDLE__WARNING_SECONDS", None)
-        else:
-            os.environ["IDLE__WARNING_SECONDS"] = previous_idle_warning
     lane_results.append(
         LaneResult(
             "playwright-latexmk",

@@ -350,6 +350,7 @@ def run_slow_lanes(user_args: list[str]) -> int:
                 reruns=True,
                 clear_cache=True,
                 marker_expr=PLAYWRIGHT_SLOW_MARKER_EXPR,
+                test_timeout=120,
             ),
             user_args,
         )
@@ -930,6 +931,7 @@ def _run_serial_playwright_e2e(
     clear_cache: bool = False,
     browser: str | None = None,
     marker_expr: str = PLAYWRIGHT_DEFAULT_MARKER_EXPR,
+    test_timeout: int | None = None,
 ) -> int:
     """Run Playwright tests in single-server serial mode."""
     from promptgrimoire.config import get_settings
@@ -964,6 +966,8 @@ def _run_serial_playwright_e2e(
         "--tb=short",
         "--log-cli-level=WARNING",
     ]
+    if test_timeout is not None:
+        default_args += ["--timeout", str(test_timeout)]
     if browser is not None:
         default_args += ["--browser", browser]
     if not _has_test_path(extra_args):

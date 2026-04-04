@@ -742,6 +742,56 @@ def slow(
 
 
 @e2e_app.command(
+    "latexmk",
+    context_settings={
+        "allow_extra_args": True,
+        "allow_interspersed_args": False,
+    },
+)
+def latexmk(
+    ctx: typer.Context,
+    filter_expr: str | None = typer.Option(
+        None, "-k", "--filter", help="Pytest keyword filter expression"
+    ),
+    strict_flaky: bool = typer.Option(
+        False,
+        "--strict-flaky",
+        help="Treat flaky tests as failures (automatic on CI)",
+    ),
+    exit_first: bool = typer.Option(
+        False, "-x", "--exit-first", help="Stop on first failure (-x)"
+    ),
+    failed_first: bool = typer.Option(
+        False, "--ff", "--failed-first", help="Run previously failed tests first (--ff)"
+    ),
+) -> None:
+    """Run only the latexmk serial Playwright lane (real PDF compilation)."""
+    if strict_flaky:
+        os.environ["GRIMOIRE_STRICT_FLAKY"] = "1"
+    args = _prepend_filter(ctx.args, filter_expr)
+    args = _prepend_pytest_flags(args, exit_first=exit_first, failed_first=failed_first)
+
+    previous_skip_latexmk = os.environ.get("E2E_SKIP_LATEXMK")
+    os.environ["E2E_SKIP_LATEXMK"] = "0"
+    try:
+        exit_code = _run_serial_playwright_e2e(
+            args,
+            use_pyspy=False,
+            reruns=True,
+            clear_cache=True,
+            marker_expr=PLAYWRIGHT_SLOW_MARKER_EXPR,
+            test_timeout=120,
+            log_file=Path("test-playwright-latexmk.log"),
+        )
+    finally:
+        if previous_skip_latexmk is None:
+            os.environ.pop("E2E_SKIP_LATEXMK", None)
+        else:
+            os.environ["E2E_SKIP_LATEXMK"] = previous_skip_latexmk
+    sys.exit(exit_code)
+
+
+@e2e_app.command(
     "noretry",
     context_settings={
         "allow_extra_args": True,

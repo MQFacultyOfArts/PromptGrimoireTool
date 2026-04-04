@@ -301,105 +301,144 @@ export default {
       <div
         v-for="item in items"
         :key="item.id"
+        class="q-card ann-card-positioned"
         data-testid="annotation-card"
         :data-highlight-id="item.id"
         :data-start-char="item.start_char"
         :data-end-char="item.end_char"
+        :style="{ borderLeft: '4px solid ' + item.color }"
         @mouseenter="onCardHover(item)"
         @mouseleave="onCardLeave()"
       >
+        <!-- Compact header (always visible) -->
         <div
           data-testid="card-header"
-          style="display: flex; align-items: center; gap: 4px; padding: 2px 8px; height: 28px; cursor: pointer;"
+          class="row items-center no-wrap cursor-pointer"
+          style="min-height: 20px; padding: 4px 8px; gap: 0.25rem;"
           @click="toggleExpand(item.id)"
         >
           <span
             :style="{ width: '8px', height: '8px', borderRadius: '50%', flexShrink: 0, backgroundColor: item.color }"
           ></span>
           <span
-            :style="{ fontSize: '12px', maxWidth: '100px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: item.color }"
+            class="text-xs text-bold"
+            :style="{ color: item.color, maxWidth: '100px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }"
           >{{ item.tag_display }}</span>
-          <span style="font-size: 12px; color: #888;">{{ item.initials }}</span>
-          <span v-if="item.para_ref" style="font-size: 11px; color: #999;">{{ item.para_ref }}</span>
+          <span class="text-xs text-grey-7">{{ item.initials }}</span>
+          <span v-if="item.para_ref" class="text-xs font-mono text-grey-5">{{ item.para_ref }}</span>
           <span
             v-if="item.comments.length > 0"
             data-testid="comment-count-badge"
-            style="font-size: 11px; background: #e0e0e0; border-radius: 8px; padding: 0 5px; min-width: 16px; text-align: center;"
+            class="text-xs bg-blue-1 text-blue-8 rounded-borders"
+            style="border-radius: 9999px; padding: 0 6px;"
           >{{ item.comments.length }}</span>
           <span style="flex-grow: 1;"></span>
-          <button
+          <q-btn
+            flat dense size="xs" icon="my_location"
             data-testid="locate-btn"
             @click.stop="onLocate(item.start_char, item.end_char)"
-            title="Scroll to highlight"
-            style="border: none; background: none; cursor: pointer; padding: 0 2px; font-size: 14px;"
-          >&#x1F4CD;</button>
-          <button
+          ><q-tooltip>Go to highlight</q-tooltip></q-btn>
+          <q-btn
+            flat dense size="xs"
+            :icon="expandedIds.has(item.id) ? 'expand_less' : 'expand_more'"
             data-testid="expand-btn"
-            style="border: none; background: none; cursor: pointer; padding: 0 2px; font-size: 12px;"
             @click.stop="toggleExpand(item.id)"
-          >{{ expandedIds.has(item.id) ? '&#9650;' : '&#9660;' }}</button>
-          <button
+          ><q-tooltip>{{ expandedIds.has(item.id) ? 'Collapse' : 'Expand' }}</q-tooltip></q-btn>
+          <q-btn
             v-if="item.can_delete"
+            flat dense size="xs" icon="close"
             data-testid="delete-highlight-btn"
             @click.stop="onDeleteHighlight(item.id)"
-            style="border: none; background: none; cursor: pointer; padding: 0 2px; font-size: 12px; color: #c00;"
-          >&#10005;</button>
+          ><q-tooltip>Delete highlight</q-tooltip></q-btn>
         </div>
+
+        <!-- Detail section (collapsed by default) -->
         <div
           v-if="detailBuiltIds.has(item.id)"
           v-show="expandedIds.has(item.id)"
           data-testid="card-detail"
-          style="padding: 8px;"
+          style="padding: 0 8px 8px 8px;"
         >
-          <select
+          <!-- Tag select (annotators only) -->
+          <q-select
             v-if="permissions.can_annotate"
+            dense borderless
             data-testid="tag-select"
-            :value="item.tag_key"
-            @change="onTagChange(item.id, $event.target.value)"
-          >
-            <option v-for="(name, key) in tag_options" :key="key" :value="key" :selected="key === item.tag_key">{{ name }}</option>
-            <option v-if="!tag_options[item.tag_key]" :value="item.tag_key">\u26a0 recovered</option>
-          </select>
-          <div data-testid="display-author">by {{ item.display_author }}</div>
-          <div data-testid="text-preview">{{ item.text_preview }}</div>
-          <span v-if="!paraRefEditMode.get(item.id) && permissions.can_annotate"
-                @click="startParaRefEdit(item.id, item.para_ref)"
-                data-testid="para-ref-label"
-                style="cursor: pointer; font-size: 11px; color: #999;">
-            {{ item.para_ref || '(no ref)' }}
-          </span>
-          <!-- Viewers only see para_ref when non-empty (no "(no ref)" affordance for read-only) -->
-          <span v-if="!permissions.can_annotate && item.para_ref"
-                data-testid="para-ref-label"
-                style="font-size: 11px; color: #999;">
-            {{ item.para_ref }}
-          </span>
-          <input v-if="paraRefEditMode.get(item.id)"
-                 :value="paraRefDrafts.get(item.id) ?? item.para_ref"
-                 @input="paraRefDrafts.set(item.id, $event.target.value)"
-                 @blur="finishParaRefEdit(item.id)"
-                 @keydown.enter="finishParaRefEdit(item.id)"
-                 data-testid="para-ref-input"
-                 style="font-size: 11px; max-width: 80px;" />
-          <div v-for="comment in item.comments" :key="comment.id" data-testid="comment-item">
-            <span data-testid="comment-author">{{ comment.display_author }}</span>
-            <span>{{ comment.text }}</span>
-            <button
-              v-if="comment.can_delete"
-              data-testid="comment-delete"
-              @click="onDeleteComment(item.id, comment.id)"
-              style="border: none; background: none; cursor: pointer; font-size: 12px; color: #c00;"
-            >&times;</button>
+            class="text-sm text-bold"
+            :style="{ color: item.color, minWidth: '120px' }"
+            :model-value="item.tag_key"
+            :options="Object.entries(tag_options).map(([k,v]) => ({ label: v, value: k }))"
+            option-label="label"
+            option-value="value"
+            emit-value map-options
+            @update:model-value="onTagChange(item.id, $event)"
+          />
+
+          <!-- Author and para_ref row -->
+          <div class="row items-center" style="gap: 0.5rem;">
+            <span data-testid="display-author" class="text-xs text-grey-7">by {{ item.display_author }}</span>
+            <span v-if="!paraRefEditMode.get(item.id) && permissions.can_annotate"
+                  @click="startParaRefEdit(item.id, item.para_ref)"
+                  data-testid="para-ref-label"
+                  class="text-xs font-mono text-grey-5 cursor-pointer">
+              {{ item.para_ref || '(no ref)' }}
+            </span>
+            <span v-if="!permissions.can_annotate && item.para_ref"
+                  data-testid="para-ref-label"
+                  class="text-xs font-mono text-grey-5">
+              {{ item.para_ref }}
+            </span>
+            <input v-if="paraRefEditMode.get(item.id)"
+                   :value="paraRefDrafts.get(item.id) ?? item.para_ref"
+                   @input="paraRefDrafts.set(item.id, $event.target.value)"
+                   @blur="finishParaRefEdit(item.id)"
+                   @keydown.enter="finishParaRefEdit(item.id)"
+                   data-testid="para-ref-input"
+                   class="text-xs font-mono q-field__native"
+                   style="max-width: 80px;" />
           </div>
-          <span data-testid="comment-count">{{ item.comments.length }}</span>
+
+          <!-- Text preview -->
+          <div v-if="item.text_preview" data-testid="text-preview" class="text-sm q-mt-xs">{{ item.text_preview }}</div>
+
+          <!-- Comments -->
+          <q-separator v-if="item.comments.length > 0" class="q-my-xs" />
+          <div
+            v-for="comment in item.comments"
+            :key="comment.id"
+            data-testid="comment-item"
+            class="bg-grey-2 q-pa-sm rounded-borders q-mt-xs"
+          >
+            <div class="row items-center justify-between">
+              <span data-testid="comment-author" class="text-xs text-bold">{{ comment.display_author }}</span>
+              <q-btn
+                v-if="comment.can_delete"
+                flat dense size="xs" icon="close"
+                data-testid="comment-delete"
+                @click="onDeleteComment(item.id, comment.id)"
+              ><q-tooltip>Delete comment</q-tooltip></q-btn>
+            </div>
+            <div class="text-sm">{{ comment.text }}</div>
+          </div>
+          <span data-testid="comment-count" class="hidden">{{ item.comments.length }}</span>
+
+          <!-- Comment input (annotators only) -->
           <template v-if="permissions.can_annotate">
             <input
               data-testid="comment-input"
+              class="q-field__native q-mt-sm full-width"
               :value="getCommentDraft(item.id)"
               @input="setCommentDraft(item.id, $event.target.value)"
+              @keydown.enter="onSubmitComment(item.id)"
               placeholder="Add comment..."
             />
-            <button data-testid="post-comment-btn" @click="onSubmitComment(item.id)">Post</button>
+            <q-btn
+              dense size="sm" color="primary"
+              data-testid="post-comment-btn"
+              class="q-mt-xs"
+              @click="onSubmitComment(item.id)"
+              label="Post"
+            />
           </template>
         </div>
       </div>

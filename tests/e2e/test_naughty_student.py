@@ -244,6 +244,7 @@ class TestNaughtyStudent:
             page.close()
             context.close()
 
+    @pytest.mark.timeout(60)
     def test_blns_content_resilience(
         self,
         browser: Browser,
@@ -332,6 +333,7 @@ class TestNaughtyStudent:
             page.close()
             context.close()
 
+    @pytest.mark.timeout(90)
     def test_copy_protection_bypass(  # noqa: PLR0915
         self,
         browser: Browser,

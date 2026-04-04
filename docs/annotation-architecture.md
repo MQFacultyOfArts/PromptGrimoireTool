@@ -1,8 +1,8 @@
 # Annotation Page Architecture
 
-*Last updated: 2026-03-28*
+*Last updated: 2026-04-04*
 
-The annotation page (`pages/annotation/`) is a 29-module package split from a monolith.
+The annotation page (`pages/annotation/`) is a 31-module package split from a monolith.
 
 ## Deferred Background Loading (#377)
 
@@ -30,7 +30,7 @@ The annotation page uses `page_layout(footer=True)` to get a Quasar `q-footer` e
 **Key elements:**
 - `#tag-toolbar-wrapper` -- The `q-footer` element containing the tag toolbar (fixed bottom, z-index managed by Quasar)
 - `#highlight-menu` -- Popup menu for highlight creation (z-index 110, above toolbar; flips above selection if it would overlap toolbar)
-- `.annotations-sidebar` -- Card sidebar uses `position: relative`; cards are always visible (compact by default, expandable on click). `annotation-card-sync.js` caches card heights via `data-cached-height` so layout remains stable when cards are collapsed
+- `.annotations-sidebar` -- Vue annotation sidebar (`AnnotationSidebar` in `sidebar.py`, rendered by `annotationsidebar.js`). Cards use `position: absolute` with scroll-synced positioning driven by the Vue component's `positionCards()`. Compact by default, expandable on click. Card heights are cached in `data-cached-height` for stable layout when cards are collapsed
 
 `page_layout()` yields the footer element (or `None`). Pages manage their own content padding -- the layout no longer wraps content in a `q-pa-lg` div.
 
@@ -81,14 +81,14 @@ Do not reorder. Types must be defined before submodule imports to resolve circul
 Multi-document workspaces use a three-tab bar (Source, Respond, Organise) with deferred rendering per document.
 
 - `tab_bar.py` -- Tab creation (`build_tabs`), tab change handler factory (`_make_tab_change_handler`), deferred tab panel rendering (`_build_tab_panels`), and SortableJS drag-and-drop wiring for the Organise tab (`_setup_organise_drag`). Extracted from `workspace.py` in Phase 6 to separate tab mechanics from workspace assembly.
-- `tab_state.py` -- `DocumentTabState` dataclass holding per-document UI state: `document_id`, `tab`/`panel` element references, `document_container`/`cards_container`, `annotation_cards` dict, `card_snapshots`, `rendered` flag, and `cards_epoch` counter. Created for Phase 7 multi-document support so each source tab tracks its own rendering state independently.
+- `tab_state.py` -- `DocumentTabState` dataclass holding per-document UI state: `document_id`, `tab`/`panel` element references, `document_container`/`cards_container`, `rendered` flag. Created for Phase 7 multi-document support so each source tab tracks its own rendering state independently.
 - `workspace.py` -- Top-level workspace entry point (`_load_workspace_content`, formerly `_render_workspace_view`). Runs as a background task for deferred loading. Receives pre-resolved `AnnotationContext` from `db/workspaces.py`, renders document containers, and wires tag management callbacks. Tab management was extracted to `tab_bar.py`; workspace now imports `build_tabs`, `_make_tab_change_handler`, `_setup_organise_drag`, and `_build_tab_panels` from there.
 
 ## Broadcast & Presence (`broadcast.py`)
 
 `_RemotePresence` (defined in `__init__.py`) carries two separate callbacks for broadcast events:
 
-- **`callback`** -- Full annotation refresh. Called when a remote peer changes CRDT state (highlights, comments, tags). Triggers `refresh_annotations()` which calls `container.clear()` and rebuilds all annotation cards, incrementing the epoch counter.
+- **`callback`** -- Full annotation refresh. Called when a remote peer changes CRDT state (highlights, comments, tags). Triggers `refresh_annotations()` which updates the Vue sidebar's `items` prop via `sidebar.refresh_from_state()`. The Vue component's `watch` on `items` increments `window.__annotationCardsEpoch`.
 - **`on_peer_left`** -- Lightweight user-count update. Called on CLIENT_DELETE (peer disconnection). Does NOT rebuild the DOM. CLIENT_DELETE changes zero CRDT state; a full rebuild would race with in-flight user interactions (fill + click), destroying input values and button handlers mid-action.
 
 **Invariant:** `_handle_client_delete` in `broadcast.py` must call `invoke_peer_left()`, never `invoke_callback()`. Only CRDT-mutating events may trigger full rebuilds.
@@ -102,16 +102,24 @@ Two new modules support word count limits in the annotation page:
 
 `PageState` carries four word count fields populated from `PlacementContext` during workspace content loading: `word_minimum`, `word_limit`, `word_limit_enforcement`, and `word_count_badge` (the live `ui.label` element). The badge updates on every keystroke in the respond tab via `word_count()` from `src/promptgrimoire/word_count.py`.
 
-## Card Layout (Compact/Expandable)
+## Vue Annotation Sidebar (Compact/Expandable)
 
-Annotation cards (`cards.py`) use a two-tier layout:
+The annotation sidebar is a Vue component (`annotationsidebar.js`) wrapped by `AnnotationSidebar` in `sidebar.py`. All card rendering, positioning, expand/collapse, hover highlights, and scroll sync are handled client-side in Vue — no server round-trips for UI interactions.
 
-- **Compact header** (always visible, ~28px) -- colour dot, tag name, author initials (`_author_initials()`), paragraph reference, comment count badge, locate/delete buttons, and expand chevron. The entire header row is clickable to toggle expansion.
-- **Detail section** (hidden by default) -- tag select dropdown (annotators only), full author name, editable paragraph reference, text preview, and comments with input.
+**Two-tier card layout:**
 
-`PageState.expanded_cards: set[str]` tracks which highlight IDs are currently expanded. This set survives annotation refreshes (card rebuilds) so expansion state is preserved across CRDT updates and broadcast refreshes.
+- **Compact header** (always visible, ~20px) -- colour dot, tag name, author initials, paragraph reference, comment count badge (Quasar `bg-blue-1` pill), locate/expand/delete `q-btn` buttons. The entire header row is clickable to toggle expansion.
+- **Detail section** (hidden by default, lazy-built on first expand via `v-if`/`v-show`) -- Quasar `q-select` for tag picker (annotators only), full author name, editable paragraph reference, text preview, comments with `bg-grey-2` rounded styling, and comment input.
 
-`annotation-card-sync.js` positions cards absolutely based on their highlight's character offset in the document. It caches each card's `offsetHeight` into `data-cached-height` so that collapsed cards (which have `offsetHeight=0` when hidden) use their last-known height for layout calculations. Fallback height is 80px when no cache exists.
+**Server-side state:** `PageState.expanded_cards: set[str]` tracks which highlight IDs are currently expanded. This set is passed to the Vue component as the `expanded_ids` prop and survives annotation refreshes so expansion state is preserved across CRDT updates and broadcast refreshes.
+
+**Event flow:** Vue emits events (`toggle_expand`, `change_tag`, `submit_comment`, `delete_comment`, `delete_highlight`, `edit_para_ref`, `locate_highlight`) which are handled by module-level functions in `document.py` (`_on_toggle_expand`, `_on_change_tag`, etc.). These functions receive the current `PageState` and the event payload, perform CRDT mutations, and trigger persist+broadcast.
+
+**Positioning:** The Vue component's `positionCards()` function (ported from `annotation-card-sync.js`) positions cards absolutely based on their highlight's character offset. Cards cache `offsetHeight` into `data-cached-height` so collapsed cards use their last-known height. Fallback height is 80px. Scroll listener with `requestAnimationFrame` throttling drives repositioning.
+
+**Epoch synchronisation:** The Vue `watch` on `items` (with `flush: 'post'`) increments `window.__annotationCardsEpoch` and the per-document `window.__cardEpochs` map after each prop update. E2E tests use `wait_for_function` on the epoch to synchronise after CRDT mutations.
+
+`annotation-card-sync.js` now contains only the toolbar height `ResizeObserver` — all card-related JS was removed.
 
 ## Content Form Architecture (File Upload / Paste)
 

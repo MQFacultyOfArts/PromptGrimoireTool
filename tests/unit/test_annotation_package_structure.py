@@ -27,7 +27,6 @@ _ANNOTATION_PKG = _PAGES_DIR / "annotation"
 _AUTHORED_MODULES = (
     "__init__.py",
     "broadcast.py",
-    "cards.py",
     "content_form.py",
     "css.py",
     "document.py",

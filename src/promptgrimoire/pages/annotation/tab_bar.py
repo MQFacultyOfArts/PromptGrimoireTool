@@ -320,17 +320,6 @@ def _refresh_source_tab(state: PageState) -> None:
     # Sync paragraph toggle to this document's auto_number setting
     if state.paragraph_toggle is not None:
         state.paragraph_toggle.value = state.auto_number_paragraphs
-    # Restore per-document card positioning function
-    cid = state.doc_container_id
-    ui.run_javascript(
-        f"if (window._positionCardsMap"
-        f" && window._positionCardsMap['{cid}']) {{"
-        f"  window._positionCards ="
-        f" window._positionCardsMap['{cid}'];"
-        f"  window._activeDocContainerId = '{cid}';"
-        f"  requestAnimationFrame(window._positionCards);"
-        f"}}"
-    )
 
 
 def _handle_organise_tab(state: PageState) -> None:
@@ -373,10 +362,6 @@ def _save_source_tab_state(
     Every field that ``_render_document_with_highlights`` writes to
     ``PageState`` must be saved here.
     """
-    # Card state
-    doc_tab.annotation_cards = state.annotation_cards or {}
-    doc_tab.card_snapshots = dict(state.card_snapshots)
-    doc_tab.cards_epoch = state.cards_epoch
     # Document content
     doc_tab.document_chars = state.document_chars
     doc_tab.paragraph_map = dict(state.paragraph_map)
@@ -397,19 +382,16 @@ def _restore_source_tab_state(
     state: PageState,
     doc_tab: DocumentTabState,
 ) -> None:
-    """Restore all document-scoped fields from a DocumentTabState into PageState.
+    """Restore all document-scoped fields from a DocumentTabState.
 
     Called when switching to a source tab.  Restores document_id,
-    card state, document content, and UI element refs so that all
-    operations (highlight creation, refresh, paragraph toggle) target
-    the correct document.
-
-    For unrendered tabs, annotation_cards is set to None so that
-    ``_refresh_annotation_cards`` performs a full build on first render.
+    document content, and UI element refs so that all operations
+    (highlight creation, refresh, paragraph toggle) target the
+    correct document.  The Vue sidebar re-renders from props so
+    no card state needs restoring.
     """
     state.document_id = doc_tab.document_id
     state.annotations_container = doc_tab.cards_container
-    state.cards_epoch = doc_tab.cards_epoch
     # Per-document DOM IDs
     state.doc_container_id = doc_tab.doc_container_id
     state.ann_container_id = doc_tab.ann_container_id
@@ -424,14 +406,6 @@ def _restore_source_tab_state(
     state.highlight_style = doc_tab.highlight_style
     state.highlight_menu = doc_tab.highlight_menu
     state.toolbar_container = doc_tab.toolbar_container
-
-    if doc_tab.rendered:
-        state.annotation_cards = doc_tab.annotation_cards
-        state.card_snapshots = dict(doc_tab.card_snapshots)
-    else:
-        # Force full build on first render
-        state.annotation_cards = None
-        state.card_snapshots = {}
 
 
 async def _render_source_tab_content(
@@ -456,10 +430,6 @@ async def _render_source_tab_content(
             doc_tab.document_id,
         )
         return
-
-    # Reset card state for fresh full build
-    state.annotation_cards = None
-    state.card_snapshots = {}
 
     assert doc_tab.panel is not None
     assert state.crdt_doc is not None

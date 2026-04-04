@@ -277,8 +277,6 @@ _ALLOWED_TEST_OS_ENVIRON_GET = {
     _TESTS_DIR / "integration" / "test_pool_cancellation.py",
     # memory probe reads PERF_MAX_LOAD + MALLOC_ARENA_MAX (test-runner flags)
     _TESTS_DIR / "e2e" / "test_memory_probe_434.py",
-    # Idle eviction reads IDLE__TIMEOUT_SECONDS for skipif guard (test-runner flag)
-    _TESTS_DIR / "e2e" / "test_idle_tab_eviction.py",
 }
 
 

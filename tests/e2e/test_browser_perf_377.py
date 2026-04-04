@@ -5,7 +5,7 @@ and captures:
 - Browser console.time output (applyHighlights, positionCards)
 - Server-side structlog timing (render_phase, tag_apply_phase, page_phase)
 
-The fixture at tests/e2e/fixtures/pabai_workspace.json is a PII-sanitised
+The fixture at tests/fixtures/pabai_workspace_scrubbed.json is a PII-sanitised
 copy of the production workspace (author names and user_ids replaced).
 
 Run with:
@@ -27,14 +27,16 @@ from playwright.sync_api import ConsoleMessage, expect
 
 from promptgrimoire.config import get_settings
 from promptgrimoire.docs.helpers import select_chars
+from tests.e2e.card_helpers import (
+    PABAI_WORKSPACE_ID,
+    ensure_pabai_workspace,
+    test_db_conninfo,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Generator
 
     from playwright.sync_api import Browser, Page
-
-PABAI_WORKSPACE_ID = "0e5e9b04-de94-4728-a8c9-e625c141fea3"
-_WORKSPACE_JSON = Path(__file__).parent / "fixtures" / "pabai_workspace.json"
 _MAX_LOAD_AVG = 10.0  # 1-min load average ceiling for perf tests
 
 # structlog events we want to capture
@@ -67,25 +69,6 @@ pytestmark = [
         reason="DEV__TEST_DATABASE_URL not configured",
     ),
 ]
-
-
-def _test_db_conninfo() -> str:
-    """Build psycopg conninfo for the test database."""
-    from urllib.parse import urlparse
-
-    url = get_settings().dev.test_database_url
-    if not url:
-        msg = "DEV__TEST_DATABASE_URL not configured"
-        raise RuntimeError(msg)
-    parsed = urlparse(url)
-    user = parsed.username or "brian"
-    dbname = parsed.path.lstrip("/")
-    host = parsed.hostname or "/var/run/postgresql"
-    if "host=" in (parsed.query or ""):
-        for param in parsed.query.split("&"):
-            if param.startswith("host="):
-                host = param.split("=", 1)[1]
-    return f"user={user} dbname={dbname} host={host}"
 
 
 class ServerLogReader:
@@ -192,41 +175,10 @@ def _print_server_timings(entries: list[dict[str, object]], label: str) -> None:
         print(f"  {event}/{phase}: {elapsed}ms{extra_str}")
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture(scope="module")
 def pabai_workspace() -> str:
-    """Ensure the Pabai workspace is rehydrated into the test DB.
-
-    Session-scoped: runs once, rehydrates from JSON extraction if
-    the workspace is missing. Skips if the JSON file doesn't exist.
-
-    Returns the workspace ID.
-    """
-    import psycopg
-
-    if not _WORKSPACE_JSON.exists():
-        pytest.skip(
-            f"Workspace JSON not found at {_WORKSPACE_JSON}. "
-            "Extract from prod or dev DB first."
-        )
-
-    conninfo = _test_db_conninfo()
-
-    # Check if already present
-    with psycopg.connect(conninfo) as conn:
-        cur = conn.cursor()
-        cur.execute(
-            "SELECT 1 FROM workspace WHERE id = %s::uuid",
-            (PABAI_WORKSPACE_ID,),
-        )
-        if cur.fetchone() is not None:
-            return PABAI_WORKSPACE_ID
-
-    # Rehydrate
-    from scripts.rehydrate_workspace import rehydrate
-
-    result = rehydrate(_WORKSPACE_JSON, conninfo)
-    assert result["workspace_id"] == PABAI_WORKSPACE_ID
-    return PABAI_WORKSPACE_ID
+    """Rehydrate the Pabai workspace (idempotent, module-scoped)."""
+    return ensure_pabai_workspace()
 
 
 @pytest.fixture(scope="session")
@@ -269,7 +221,7 @@ def pabai_page(
     page.wait_for_url(lambda url: "/auth/callback" not in url, timeout=10_000)
 
     # Grant owner ACL via direct SQL
-    conninfo = _test_db_conninfo()
+    conninfo = test_db_conninfo()
     with psycopg.connect(conninfo) as conn:
         cur = conn.cursor()
         cur.execute(

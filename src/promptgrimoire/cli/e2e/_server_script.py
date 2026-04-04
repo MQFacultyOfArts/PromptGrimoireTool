@@ -15,6 +15,9 @@ for key in list(os.environ.keys()):
 os.environ["DEV__AUTH_MOCK"] = "true"
 os.environ["APP__STORAGE_SECRET"] = "test-secret-for-e2e"
 # asyncio debug DISABLED — it causes event loop blocks (linecache.checkcache)
+# Disable admission gate — production load-protection that interferes with
+# latexmk tests (event loop lag triggers AIMD cap reduction, redirecting to /queue)
+os.environ.setdefault("ADMISSION__ENABLED", "false")
 os.environ.setdefault("STYTCH__DEFAULT_ORG_ID", "mock-org-test")
 os.environ.setdefault("STYTCH__SSO_CONNECTION_ID", "test-sso-connection-id")
 os.environ.setdefault("STYTCH__PUBLIC_TOKEN", "test-public-token")
@@ -205,6 +208,108 @@ app.routes.insert(
     0, Route("/api/dev/admission", admission_control_handler, methods=["POST"])
 )
 app.routes.insert(0, Route("/api/dev/block-loop", block_loop_handler, methods=["POST"]))
+
+
+# Vue sidebar spike page — validates custom Vue component wiring in a real browser.
+# Used by tests/e2e/test_vue_sidebar_spike_e2e.py to exercise Phase 3-4 go/no-go
+# criteria that cannot be tested with NiceGUI user_simulation (no Vue runtime).
+@ui.page("/test/vue-sidebar-spike")
+def _vue_sidebar_spike_page() -> None:
+    from promptgrimoire.pages.annotation.sidebar import AnnotationSidebar
+    from promptgrimoire.pages.annotation.tags import TagInfo
+
+    tag_map = {
+        "tag-1": TagInfo(name="Jurisdiction", colour="#1f77b4", raw_key="tag-1"),
+        "tag-2": TagInfo(name="Legal Issues", colour="#ff7f0e", raw_key="tag-2"),
+    }
+    tag_colours = {"tag-1": "#1f77b4", "tag-2": "#ff7f0e"}
+    highlights = [
+        {
+            "id": "hl-1",
+            "start_char": 10,
+            "end_char": 50,
+            "tag": "tag-1",
+            "text": "highlighted text one",
+            "author": "Alice",
+            "user_id": "u-1",
+            "para_ref": "[3]",
+            "created_at": "2026-03-01T10:00:00",
+            "comments": [
+                {
+                    "id": "c-1",
+                    "author": "Bob",
+                    "user_id": "u-2",
+                    "text": "Good point",
+                    "created_at": "2026-03-01T11:00:00",
+                },
+            ],
+        },
+        {
+            "id": "hl-2",
+            "start_char": 60,
+            "end_char": 90,
+            "tag": "tag-2",
+            "text": "highlighted text two",
+            "author": "Carol",
+            "user_id": "u-3",
+            "para_ref": "",
+            "created_at": "2026-03-01T12:00:00",
+            "comments": [],
+        },
+    ]
+
+    received_events: list[dict] = []
+
+    def _on_toggle_expand(payload: dict) -> None:
+        received_events.append(payload)
+        # Update a visible label so Playwright can observe the event
+        event_label.set_text(f"event:{payload.get('id', '?')}")
+
+    sidebar = AnnotationSidebar(on_toggle_expand=_on_toggle_expand)
+    sidebar.props('data-testid="spike-sidebar"')
+    sidebar.refresh_items(
+        highlights=highlights,
+        tag_info_map=tag_map,
+        tag_colours=tag_colours,
+        user_id="u-1",
+        viewer_is_privileged=False,
+        privileged_user_ids=frozenset(),
+        can_annotate=True,
+        anonymous_sharing=False,
+    )
+
+    # Label to observe toggle_expand payloads from Playwright
+    event_label = ui.label("event:none")
+    event_label.props('data-testid="spike-event-label"')
+
+    # Button to trigger set_items with a single item (for prop update test)
+    def _update_items() -> None:
+        sidebar.set_items(
+            [
+                {
+                    "id": "hl-3",
+                    "tag_key": "tag-1",
+                    "tag_display": "Jurisdiction",
+                    "color": "#1f77b4",
+                    "start_char": 100,
+                    "end_char": 120,
+                    "para_ref": "",
+                    "author": "Dave",
+                    "display_author": "Dave",
+                    "initials": "D.",
+                    "user_id": "u-4",
+                    "can_delete": False,
+                    "can_annotate": True,
+                    "text": "updated text",
+                    "text_preview": "updated text",
+                    "comments": [],
+                }
+            ]
+        )
+
+    ui.button("Update Items", on_click=_update_items).props(
+        'data-testid="spike-update-btn"'
+    )
 
 
 # Session identity page — exercises the full @ui.page -> background_tasks.create

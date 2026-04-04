@@ -618,12 +618,16 @@ def test_run_slow_lanes_runs_all_lanes_then_latexmk(
         reruns: bool,
         clear_cache: bool = False,
         marker_expr: str,
+        test_timeout: int | None = None,
+        log_file: Path | None = None,
     ) -> int:
         captured["playwright_args"] = extra_args
         captured["playwright_use_pyspy"] = use_pyspy
         captured["playwright_reruns"] = reruns
         captured["playwright_clear_cache"] = clear_cache
+        captured["playwright_test_timeout"] = test_timeout
         captured["playwright_marker_expr"] = marker_expr
+        captured["playwright_log_file"] = log_file
         captured["e2e_skip_latexmk"] = os.environ["E2E_SKIP_LATEXMK"]
         return 0
 
@@ -660,6 +664,8 @@ def test_run_slow_lanes_runs_all_lanes_then_latexmk(
     assert captured["playwright_reruns"] is True
     assert captured["playwright_clear_cache"] is True
     assert captured["playwright_marker_expr"] == "e2e and not perf"
+    assert captured["playwright_test_timeout"] == 120
+    assert captured["playwright_log_file"] == Path("test-playwright-latexmk.log")
     assert captured["e2e_skip_latexmk"] == "0"
     assert captured["latex_default_args"] == ["-m", "latexmk_full", "-v", "--tb=short"]
     assert captured["latex_extra_args"] == ["-k", "combined_filter"]

@@ -249,7 +249,7 @@ class TestTranslationStudent:
                 comment_uuid = uuid4().hex[:8]
                 _post_comment_on_first_card(page, comment_uuid)
                 expect(
-                    page.get_by_test_id("comment").filter(has_text=comment_uuid)
+                    page.get_by_test_id("comment-item").filter(has_text=comment_uuid)
                 ).to_be_visible(timeout=10000)
 
         finally:
@@ -298,14 +298,14 @@ class TestTranslationStudent:
                 comment_uuid = uuid4().hex[:8]
                 _post_comment_on_first_card(page, comment_uuid)
                 expect(
-                    page.get_by_test_id("comment").filter(has_text=comment_uuid)
+                    page.get_by_test_id("comment-item").filter(has_text=comment_uuid)
                 ).to_be_visible(timeout=10000)
 
                 # Post a second comment with emoji to test #274
                 emoji_comment = f"Great work! \U0001f389 {uuid4().hex[:8]}"
                 add_comment_to_highlight(page, emoji_comment, card_index=0)
                 expect(
-                    page.get_by_test_id("comment").filter(has_text=emoji_comment)
+                    page.get_by_test_id("comment-item").filter(has_text=emoji_comment)
                 ).to_be_visible(timeout=10000)
 
             with subtests.test(msg="export_pdf"):

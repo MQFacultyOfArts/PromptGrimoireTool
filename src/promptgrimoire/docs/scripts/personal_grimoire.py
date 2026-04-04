@@ -342,7 +342,7 @@ def _section_annotate(page: Page, guide: Guide) -> None:
 
         # Expand card detail (collapsed by default) to reveal comment input
         card = page.locator("[data-testid='annotation-card']").first
-        card.get_by_test_id("card-expand-btn").click()
+        card.get_by_test_id("expand-btn").click()
         card.get_by_test_id("card-detail").wait_for(state="visible", timeout=5000)
         comment_input = card.get_by_test_id("comment-input")
         comment_input.fill(

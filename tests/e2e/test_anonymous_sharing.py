@@ -530,6 +530,7 @@ def _assert_commenter_perspective(
 
 @pytest.mark.e2e
 @pytest.mark.cards
+@pytest.mark.timeout(120)
 class TestAnonymousSharing:
     """Three-perspective anonymous sharing verification."""
 

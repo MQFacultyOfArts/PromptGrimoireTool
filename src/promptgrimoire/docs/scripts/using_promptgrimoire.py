@@ -329,7 +329,7 @@ def _entry_add_comment(page: Page, guide: Guide) -> None:
         card = page.locator("[data-testid='annotation-card']").first
         card.wait_for(state="visible", timeout=5000)
         # Expand card detail to reveal comment input
-        card.get_by_test_id("card-expand-btn").click()
+        card.get_by_test_id("expand-btn").click()
         card.get_by_test_id("card-detail").wait_for(state="visible", timeout=5000)
         g.screenshot(
             "Comment input on an annotation card",

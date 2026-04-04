@@ -10,6 +10,20 @@
 
 **Codebase verified:** 2026-03-30
 
+**Status: COMPLETED (2026-04-02).** Verdict: GO — proceed to Phase 4. Full results in `phase-3-results.md`.
+
+**Deviations from plan (2026-04-02):**
+
+1. **Testing scope narrower than planned.** NiceGUI `user_simulation` has no Vue runtime — Vue templates are not rendered server-side. The plan specified `_find_all_by_testid(user, 'annotation-card')` and `_should_see_testid` to verify Vue-rendered DOM elements (criteria 2, 4, 5). These helpers search NiceGUI's Python element tree, which does not contain Vue-rendered children. Tests validate **Python-side wiring only**: prop setting, event listener registration/dispatch, JS file structure. Criteria 2, 3, 4 are **partial passes** — Vue rendering, `$emit` → websocket → Python, and prop reactivity are unverified until Phase 4+ browser tests and Phase 10 cross-tab E2E.
+
+2. **Route registration pattern discovered.** Module-level `@ui.page()` decorators are cleared by `user_simulation`'s NiceGUI reset. Test pages must be registered inside test function bodies, not at module level. This pattern applies to all subsequent NiceGUI integration tests.
+
+3. **Results file named `phase-3-results.md`** (plan specified `phase-1-results.md`). More accurate since this is Phase 3.
+
+4. **JS file renamed from `annotation-sidebar.js` to `annotationsidebar.js`.** Hyphens in JS filenames break NiceGUI's browser-side `import()` — `"Unexpected token '-'"`. Discovered by E2E browser testing added after the human identified the integration-only test gap. Task 2 still references the original filename.
+
+5. **E2E browser tests added retroactively.** The original integration-only test design was insufficient for go/no-go validation — it could not catch the three showstopper bugs (JS filename hyphens, CSS position:absolute producing invisible cards, websocket requiring authentication). Playwright E2E tests (`tests/e2e/test_vue_sidebar_spike_e2e.py`) were added after the human flagged this gap. See phase-3-results.md for details.
+
 ---
 
 ## Acceptance Criteria Coverage

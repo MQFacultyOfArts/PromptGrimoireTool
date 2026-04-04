@@ -323,7 +323,7 @@ class TestDragBetweenColumns:
 
         # Find the annotation card in the sidebar
         # The true boundary is the sidebar card showing the new tag (Procedural History)
-        sidebar_card = page.locator(".ann-card-positioned").first
+        sidebar_card = page.locator("[data-testid='annotation-card']").first
         expect(sidebar_card).to_be_visible(timeout=3000)
 
         # Expand the card first, as they are collapsed by default

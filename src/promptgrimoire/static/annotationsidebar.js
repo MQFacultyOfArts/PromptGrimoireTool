@@ -1,0 +1,445 @@
+export default {
+  props: {
+    items: {
+      type: Array,
+      default: () => [],
+    },
+    tag_options: {
+      type: Object,
+      default: () => ({}),
+    },
+    permissions: {
+      type: Object,
+      default: () => ({}),
+    },
+    expanded_ids: {
+      type: Array,
+      default: () => [],
+    },
+    doc_container_id: {
+      type: String,
+      default: '',
+    },
+  },
+  emits: ['toggle_expand', 'change_tag', 'submit_comment', 'delete_comment', 'delete_highlight', 'edit_para_ref', 'locate_highlight'],
+  setup(props, { emit }) {
+    const { ref, reactive, watch, computed, nextTick, onMounted, onBeforeUnmount } = Vue;
+
+    const renderCount = ref(0);
+    const rootRef = ref(null);
+    const MIN_GAP = 8;
+
+    // --- Expand/collapse state (sidebar-level, keyed by highlight ID) ---
+    const expandedIds = reactive(new Set(props.expanded_ids));
+    const detailBuiltIds = reactive(new Set(props.expanded_ids));
+
+    // --- Comment draft state (sidebar-level, maps highlight ID → draft text) ---
+    const commentDrafts = reactive(new Map());
+
+    // --- Para ref edit state ---
+    const paraRefEditMode = reactive(new Map());  // highlightId → boolean
+    const paraRefDrafts = reactive(new Map());    // highlightId → draft text
+
+    // Sync when server pushes new expanded_ids (e.g. reconnection).
+    // expandedIds is server-authoritative (clear + rebuild).
+    // detailBuiltIds is additive — never destroy already-built detail DOM.
+    watch(
+      () => props.expanded_ids,
+      (newIds) => {
+        expandedIds.clear();
+        for (var i = 0; i < newIds.length; i++) {
+          expandedIds.add(newIds[i]);
+          detailBuiltIds.add(newIds[i]);
+        }
+      }
+    );
+
+    function toggleExpand(id) {
+      if (expandedIds.has(id)) {
+        expandedIds.delete(id);
+        emit('toggle_expand', { id: id, expanded: false });
+      } else {
+        expandedIds.add(id);
+        detailBuiltIds.add(id);
+        emit('toggle_expand', { id: id, expanded: true });
+      }
+      // Reposition cards after DOM update from expand/collapse
+      nextTick(function() { requestAnimationFrame(positionCards); });
+    }
+
+    // --- Mutation event handlers ---
+
+    function onTagChange(id, newTag) {
+      emit('change_tag', { id: id, new_tag: newTag });
+    }
+
+    function onSubmitComment(id) {
+      var text = (commentDrafts.get(id) || '').trim();
+      if (!text) return;  // AC1.11: reject empty/whitespace
+      emit('submit_comment', { id: id, text: text });
+      commentDrafts.set(id, '');  // Clear draft immediately (optimistic)
+    }
+
+    function onDeleteComment(highlightId, commentId) {
+      emit('delete_comment', { highlight_id: highlightId, comment_id: commentId });
+    }
+
+    function onDeleteHighlight(id) {
+      emit('delete_highlight', { id: id });
+    }
+
+    function getCommentDraft(id) {
+      return commentDrafts.get(id) || '';
+    }
+
+    function setCommentDraft(id, value) {
+      commentDrafts.set(id, value);
+    }
+
+    function startParaRefEdit(id, currentValue) {
+      paraRefDrafts.set(id, currentValue || '');
+      paraRefEditMode.set(id, true);
+      nextTick(function() {
+        var input = document.querySelector('[data-highlight-id="' + id + '"] [data-testid="para-ref-input"]');
+        if (input) input.focus();
+      });
+    }
+
+    function finishParaRefEdit(id) {
+      var newValue = (paraRefDrafts.get(id) || '').trim();
+      var item = props.items.find(function(i) { return i.id === id; });
+      var oldValue = item ? item.para_ref : '';
+      paraRefEditMode.delete(id);
+      paraRefDrafts.delete(id);
+      if (newValue !== oldValue) {
+        emit('edit_para_ref', { id: id, value: newValue });
+      }
+    }
+
+    // --- Text node helpers (shared with annotation-highlight.js) ---
+
+    function getTextNodes() {
+      var dcId = props.doc_container_id;
+      if (!dcId) return null;
+      var dc = document.getElementById(dcId);
+      var t = window._textNodes;
+      if (!dc || !t || !t.length) return null;
+      // Re-walk if text nodes are stale (container replaced by NiceGUI/Vue)
+      if (!dc.contains(t[0].node)) {
+        if (typeof walkTextNodes !== 'function') return null;
+        t = walkTextNodes(dc);
+        window._textNodes = t;
+      }
+      return t;
+    }
+
+    // --- positionCards: scroll-synced absolute card positioning ---
+
+    function positionCards() {
+      if (window.__perfInstrumented) console.time('positionCards');
+      var nodes = getTextNodes();
+      if (!nodes || !nodes.length) {
+        if (window.__perfInstrumented) console.timeEnd('positionCards');
+        return;
+      }
+      var dcId = props.doc_container_id;
+      var dc = document.getElementById(dcId);
+      var ac = rootRef.value;
+      if (!dc || !ac) {
+        if (window.__perfInstrumented) console.timeEnd('positionCards');
+        return;
+      }
+      var cards = Array.from(ac.querySelectorAll('[data-start-char]'));
+      if (!cards.length) {
+        if (window.__perfInstrumented) console.timeEnd('positionCards');
+        return;
+      }
+      if (typeof charOffsetToRect !== 'function') {
+        if (window.__perfInstrumented) console.timeEnd('positionCards');
+        return;
+      }
+      var docRect = dc.getBoundingClientRect();
+      var annRect = ac.getBoundingClientRect();
+      var cOff = annRect.top - docRect.top;
+      var cardInfos = cards.map(function(card) {
+        var sc = parseInt(card.dataset.startChar, 10);
+        var cr = charOffsetToRect(nodes, sc);
+        if (cr.width === 0 && cr.height === 0) return null;
+        // Cache height so hidden cards (display:none, offsetHeight=0)
+        // use their last-known height (#284).
+        var h = card.offsetHeight;
+        if (h > 0) {
+          card.dataset.cachedHeight = h;
+        } else {
+          h = parseInt(card.dataset.cachedHeight, 10) || 80;
+        }
+        return {
+          card: card,
+          startChar: sc,
+          height: h,
+          targetY: (cr.top - docRect.top) - cOff,
+        };
+      }).filter(Boolean);
+      cardInfos.sort(function(a, b) { return a.startChar - b.startChar; });
+      var minY = 0;
+      for (var i = 0; i < cardInfos.length; i++) {
+        var info = cardInfos[i];
+        info.card.style.position = 'absolute';
+        info.card.style.display = '';
+        var y = Math.max(info.targetY, minY);
+        info.card.style.top = y + 'px';
+        minY = y + info.height + MIN_GAP;
+      }
+      if (window.__perfInstrumented) console.timeEnd('positionCards');
+    }
+
+    // --- Scroll listener with rAF throttle ---
+
+    let ticking = false;
+    function onScroll() {
+      if (!ticking) {
+        requestAnimationFrame(function() { positionCards(); ticking = false; });
+        ticking = true;
+      }
+    }
+
+    // --- Hover highlight handlers (pure client-side, no server round-trip) ---
+
+    function onCardHover(item) {
+      var nodes = window._textNodes;
+      if (nodes && typeof showHoverHighlight === 'function') {
+        showHoverHighlight(nodes, item.start_char, item.end_char);
+      }
+    }
+
+    function onCardLeave() {
+      if (typeof clearHoverHighlight === 'function') {
+        clearHoverHighlight();
+      }
+    }
+
+    function onLocate(startChar, endChar) {
+      emit('locate_highlight', { start_char: startChar, end_char: endChar });
+    }
+
+    // --- Highlights-ready listener ---
+
+    function onHighlightsReady() {
+      requestAnimationFrame(positionCards);
+    }
+
+    // --- Lifecycle ---
+
+    onMounted(function() {
+      window.addEventListener('scroll', onScroll, { passive: true });
+      document.addEventListener('highlights-ready', onHighlightsReady);
+
+      // Register in per-document positionCards map for tab switching
+      var dcId = props.doc_container_id;
+      if (dcId) {
+        window._positionCardsMap = window._positionCardsMap || {};
+        window._positionCardsMap[dcId] = positionCards;
+        window._positionCards = positionCards;
+        window._activeDocContainerId = dcId;
+      }
+
+      // If highlights already applied before mount, position now
+      if (window._highlightsReady) {
+        requestAnimationFrame(positionCards);
+      }
+    });
+
+    onBeforeUnmount(function() {
+      window.removeEventListener('scroll', onScroll);
+      document.removeEventListener('highlights-ready', onHighlightsReady);
+
+      // Clean up per-document registration
+      var dcId = props.doc_container_id;
+      if (dcId && window._positionCardsMap) {
+        delete window._positionCardsMap[dcId];
+      }
+      if (window._activeDocContainerId === dcId) {
+        window._activeDocContainerId = null;
+      }
+    });
+
+    // --- Watch items for repositioning after DOM update ---
+
+    watch(
+      () => props.items,
+      () => {
+        renderCount.value++;
+        // Global epoch for E2E test synchronisation
+        window.__annotationCardsEpoch = (window.__annotationCardsEpoch || 0) + 1;
+        // Per-document epoch
+        if (props.doc_container_id) {
+          window.__cardEpochs = window.__cardEpochs || {};
+          window.__cardEpochs[props.doc_container_id] = window.__annotationCardsEpoch;
+        }
+        // Reposition after DOM update (flush: 'post' ensures DOM is ready)
+        requestAnimationFrame(positionCards);
+      },
+      { deep: true, flush: 'post' }
+    );
+
+    return {
+      renderCount, rootRef,
+      expandedIds, detailBuiltIds,
+      commentDrafts,
+      paraRefEditMode, paraRefDrafts,
+      onCardHover, onCardLeave,
+      toggleExpand,
+      onTagChange, onSubmitComment, onDeleteComment, onDeleteHighlight,
+      getCommentDraft, setCommentDraft,
+      startParaRefEdit, finishParaRefEdit, onLocate,
+    };
+  },
+  template: `
+    <div ref="rootRef" data-testid="annotation-sidebar-root" style="position: relative;">
+      <div
+        v-for="item in items"
+        :key="item.id"
+        class="q-card ann-card-positioned"
+        data-testid="annotation-card"
+        :data-highlight-id="item.id"
+        :data-start-char="item.start_char"
+        :data-end-char="item.end_char"
+        :style="{ borderLeft: '4px solid ' + item.color }"
+        @mouseenter="onCardHover(item)"
+        @mouseleave="onCardLeave()"
+      >
+        <!-- Compact header (always visible) -->
+        <div
+          data-testid="card-header"
+          class="row items-center no-wrap cursor-pointer"
+          style="min-height: 20px; padding: 4px 8px; gap: 0.25rem;"
+          @click="toggleExpand(item.id)"
+        >
+          <span
+            :style="{ width: '8px', height: '8px', borderRadius: '50%', flexShrink: 0, backgroundColor: item.color }"
+          ></span>
+          <span
+            class="text-xs text-bold"
+            :style="{ color: item.color, maxWidth: '100px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }"
+          >{{ item.tag_display }}</span>
+          <span class="text-xs text-grey-7">{{ item.initials }}</span>
+          <span v-if="item.para_ref" class="text-xs font-mono text-grey-5">{{ item.para_ref }}</span>
+          <span
+            v-if="item.comments.length > 0"
+            data-testid="comment-count-badge"
+            class="text-xs bg-blue-1 text-blue-8 rounded-borders"
+            style="border-radius: 9999px; padding: 0 6px;"
+          >{{ item.comments.length }}</span>
+          <span style="flex-grow: 1;"></span>
+          <q-btn
+            flat dense size="xs" icon="my_location"
+            data-testid="locate-btn"
+            @click.stop="onLocate(item.start_char, item.end_char)"
+          ><q-tooltip>Go to highlight</q-tooltip></q-btn>
+          <q-btn
+            flat dense size="xs"
+            :icon="expandedIds.has(item.id) ? 'expand_less' : 'expand_more'"
+            data-testid="expand-btn"
+            @click.stop="toggleExpand(item.id)"
+          ><q-tooltip>{{ expandedIds.has(item.id) ? 'Collapse' : 'Expand' }}</q-tooltip></q-btn>
+          <q-btn
+            v-if="item.can_delete"
+            flat dense size="xs" icon="close"
+            data-testid="delete-highlight-btn"
+            @click.stop="onDeleteHighlight(item.id)"
+          ><q-tooltip>Delete highlight</q-tooltip></q-btn>
+        </div>
+
+        <!-- Detail section (collapsed by default) -->
+        <div
+          v-if="detailBuiltIds.has(item.id)"
+          v-show="expandedIds.has(item.id)"
+          data-testid="card-detail"
+          style="padding: 0 8px 8px 8px;"
+        >
+          <!-- Tag select (annotators only) -->
+          <q-select
+            v-if="permissions.can_annotate"
+            dense borderless
+            data-testid="tag-select"
+            class="text-sm text-bold"
+            :style="{ color: item.color, minWidth: '120px' }"
+            :model-value="item.tag_key"
+            :options="Object.entries(tag_options).map(([k,v]) => ({ label: v, value: k }))"
+            option-label="label"
+            option-value="value"
+            emit-value map-options
+            @update:model-value="onTagChange(item.id, $event)"
+          />
+
+          <!-- Author and para_ref row -->
+          <div class="row items-center" style="gap: 0.5rem;">
+            <span data-testid="display-author" class="text-xs text-grey-7">by {{ item.display_author }}</span>
+            <span v-if="!paraRefEditMode.get(item.id) && permissions.can_annotate"
+                  @click="startParaRefEdit(item.id, item.para_ref)"
+                  data-testid="para-ref-label"
+                  class="text-xs font-mono text-grey-5 cursor-pointer">
+              {{ item.para_ref || '(no ref)' }}
+            </span>
+            <span v-if="!permissions.can_annotate && item.para_ref"
+                  data-testid="para-ref-label"
+                  class="text-xs font-mono text-grey-5">
+              {{ item.para_ref }}
+            </span>
+            <input v-if="paraRefEditMode.get(item.id)"
+                   :value="paraRefDrafts.get(item.id) ?? item.para_ref"
+                   @input="paraRefDrafts.set(item.id, $event.target.value)"
+                   @blur="finishParaRefEdit(item.id)"
+                   @keydown.enter="finishParaRefEdit(item.id)"
+                   data-testid="para-ref-input"
+                   class="text-xs font-mono q-field__native"
+                   style="max-width: 80px;" />
+          </div>
+
+          <!-- Text preview -->
+          <div v-if="item.text_preview" data-testid="text-preview" class="text-sm q-mt-xs">{{ item.text_preview }}</div>
+
+          <!-- Comments -->
+          <q-separator v-if="item.comments.length > 0" class="q-my-xs" />
+          <div
+            v-for="comment in item.comments"
+            :key="comment.id"
+            data-testid="comment-item"
+            class="bg-grey-2 q-pa-sm rounded-borders q-mt-xs"
+          >
+            <div class="row items-center justify-between">
+              <span data-testid="comment-author" class="text-xs text-bold">{{ comment.display_author }}</span>
+              <q-btn
+                v-if="comment.can_delete"
+                flat dense size="xs" icon="close"
+                data-testid="comment-delete"
+                @click="onDeleteComment(item.id, comment.id)"
+              ><q-tooltip>Delete comment</q-tooltip></q-btn>
+            </div>
+            <div class="text-sm">{{ comment.text }}</div>
+          </div>
+          <span data-testid="comment-count" class="hidden">{{ item.comments.length }}</span>
+
+          <!-- Comment input (annotators only) -->
+          <template v-if="permissions.can_annotate">
+            <input
+              data-testid="comment-input"
+              class="q-field__native q-mt-sm full-width"
+              :value="getCommentDraft(item.id)"
+              @input="setCommentDraft(item.id, $event.target.value)"
+              @keydown.enter="onSubmitComment(item.id)"
+              placeholder="Add comment..."
+            />
+            <q-btn
+              dense size="sm" color="primary"
+              data-testid="post-comment-btn"
+              class="q-mt-xs"
+              @click="onSubmitComment(item.id)"
+              label="Post"
+            />
+          </template>
+        </div>
+      </div>
+    </div>
+  `,
+};

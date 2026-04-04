@@ -213,7 +213,7 @@ class TestAnnotationCanvas:
 
         # Verify first comment is visible
         expect(
-            first_card.locator("[data-testid='comment']", has_text=first_comment)
+            first_card.locator("[data-testid='comment-item']", has_text=first_comment)
         ).to_be_visible(timeout=5000)
 
         # Step 5: Add a second sequential comment on the same highlight
@@ -221,13 +221,13 @@ class TestAnnotationCanvas:
         add_comment_to_highlight(page, second_comment, card_index=0)
 
         # Verify both comments are visible (sequential, in DOM order)
-        comments = first_card.locator("[data-testid='comment']")
+        comments = first_card.locator("[data-testid='comment-item']")
         expect(comments).to_have_count(2, timeout=5000)
         expect(
-            first_card.locator("[data-testid='comment']", has_text=first_comment)
+            first_card.locator("[data-testid='comment-item']", has_text=first_comment)
         ).to_be_visible()
         expect(
-            first_card.locator("[data-testid='comment']", has_text=second_comment)
+            first_card.locator("[data-testid='comment-item']", has_text=second_comment)
         ).to_be_visible()
 
         # Step 6: Switch to Organise tab

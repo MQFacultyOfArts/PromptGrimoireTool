@@ -56,7 +56,7 @@ globalThis.Quasar = {
 
 // Explicitly bind evaluated global functions to globalThis so vi.spyOn works on them
 const functionNames = [
-  'setupCardPositioning', 'initToolbarObserver', 'setupCopyProtection',
+  'initToolbarObserver', 'setupCopyProtection',
   'walkTextNodes', 'clearHighlights', 'applyHighlights', 'charOffsetToRange',
   'findLocalOffset', 'charOffsetToRect', 'scrollToCharOffset', 'showHoverHighlight',
   'clearHoverHighlight', 'throbHighlight', 'setupSelection', 'setupAnnotationSelection',

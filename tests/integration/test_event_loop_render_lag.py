@@ -6,22 +6,17 @@ Measures per-card and total build time when loading a heavy workspace
 Uses direct timing from structured log events which wrap the actual
 build loops with ``time.monotonic()``:
 
-- Source tab: ``card_diff_add`` (diff-add loop in cards.py)
+- Source tab: ``vue_sidebar_refresh`` (prop serialisation in sidebar.py)
 - Organise tab: ``organise_card_build`` (render_organise_tab in organise.py)
 - Respond tab: ``respond_card_build`` (_build_reference_panel in respond.py)
 
-This is more accurate than event loop lag sampling, which systematically
-underreports (showed 15-35ms while direct timing showed 425-479ms
-continuous blocking).
-
-The lag sampler is retained as informational-only diagnostic output
-on the Source tab test.
+The Vue sidebar (Source tab) pushes serialised props — no NiceGUI element
+creation. AC5.1 target: <5ms total server-side blocking for 190 cards.
 """
 
 from __future__ import annotations
 
 import asyncio
-import contextlib
 from typing import TYPE_CHECKING
 from uuid import uuid4
 
@@ -45,36 +40,27 @@ pytestmark = [
     pytest.mark.perf,
 ]
 
-# Per-card build time threshold in milliseconds.
-# With lazy detail + HTML header optimisations, each card should build
-# in under 0.5ms (just the collapsed header, no detail panel).
+# Per-card build time threshold for Organise/Respond tabs.
 _PER_CARD_THRESHOLD_MS = 0.5
 
-# Total build time threshold for 190 cards.
-# 190 * 0.5ms = 95ms, rounded up to 100ms.
+# Total build time threshold for Organise/Respond tabs (190 cards).
 _TOTAL_THRESHOLD_MS = 100.0
 
 
 class TestCardBuildTime:
     """Card build time during heavy annotation page render."""
 
-    @pytest.mark.xfail(
-        reason="0.58ms/card actual vs 0.5ms target — custom Vue sidebar needed (#457)",
-        strict=False,
-    )
     @pytest.mark.asyncio
     async def test_heavy_render_card_build_time(self, nicegui_user: User) -> None:
-        """Loading 190-annotation workspace: per-card < 0.5ms, total < 100ms.
+        """Loading 190-annotation workspace: total < 5ms server blocking.
 
         Strategy:
           1. Rehydrate PABAI workspace (190 highlights, ~180KB CRDT)
           2. Capture structlog events during page load
-          3. Extract ``card_diff_add`` event with ``elapsed_ms`` and
-             ``added_count`` fields (direct ``time.monotonic()`` timing)
-          4. Assert per-card and total thresholds
-          5. Run lag sampler as informational diagnostic (no assertion)
+          3. Extract ``vue_sidebar_refresh`` event with ``elapsed_ms``
+             and ``highlight_count`` (prop serialisation timing)
+          4. Assert total < 5ms (AC5.1)
         """
-        from promptgrimoire.diagnostics import measure_event_loop_lag
         from tests.integration.conftest import _authenticate
         from tests.integration.nicegui_helpers import wait_for_annotation_load
         from tests.integration.test_memory_leak_probe import (
@@ -88,95 +74,54 @@ class TestCardBuildTime:
         await _authenticate(nicegui_user, email=email)
 
         # Warm up: let any one-time initialisation settle
-        await asyncio.sleep(0.1)  # noqa: PG001 — deliberate settle before measurement
-
-        # --- Informational lag sampler (no assertion) ---
-        lag_samples: list[float] = []
-        stop = asyncio.Event()
-
-        async def _sample_lag() -> None:
-            """Continuously measure event loop lag until stopped."""
-            while not stop.is_set():
-                lag = await measure_event_loop_lag()
-                lag_samples.append(lag)
-                with contextlib.suppress(TimeoutError):
-                    await asyncio.wait_for(stop.wait(), timeout=0.005)
-
-        sampler = asyncio.create_task(_sample_lag())
-        await asyncio.sleep(0.05)  # noqa: PG001 — sampler needs baseline before load
+        await asyncio.sleep(0.1)  # noqa: PG001 — deliberate settle
 
         # --- Load page and capture structlog events ---
         with capture_logs() as cap:
             await nicegui_user.open(f"/annotation?workspace_id={ws_id}")
             await wait_for_annotation_load(nicegui_user)
 
-        # Stop lag sampler
-        await asyncio.sleep(0.05)  # noqa: PG001 — trailing callbacks before measurement
-        stop.set()
-        await sampler
-
-        # --- Extract card_diff_add event ---
-        diff_events = [e for e in cap if e.get("event") == "card_diff_add"]
-        # Exactly one diff-add cycle expected; a second would indicate a rebuild race
-        assert len(diff_events) == 1, (
-            f"Expected exactly 1 card_diff_add event, got {len(diff_events)}. "
-            f"Captured events: {[e.get('event') for e in cap]}"
+        # --- Extract vue_sidebar_refresh event ---
+        refresh_events = [e for e in cap if e.get("event") == "vue_sidebar_refresh"]
+        assert len(refresh_events) >= 1, (
+            f"Expected vue_sidebar_refresh event, got 0. "
+            f"Events: {[e.get('event') for e in cap]}"
         )
 
-        diff_event = diff_events[0]
-        elapsed_ms: float = diff_event["elapsed_ms"]
-        added_count: int = diff_event["added_count"]
-        assert added_count > 0, (
-            "added_count is 0 — workspace may have rehydrated without highlights"
+        # Use the first refresh (initial load)
+        refresh = refresh_events[0]
+        elapsed_ms: float = refresh["elapsed_ms"]
+        hl_count: int = refresh["highlight_count"]
+        assert hl_count > 0, (
+            "highlight_count is 0 — workspace may have rehydrated without highlights"
         )
-        per_card_ms = elapsed_ms / added_count
 
-        # --- Lag sampler diagnostic (informational only) ---
-        peak_lag = max(lag_samples) if lag_samples else 0.0
-        avg_lag = sum(lag_samples) / len(lag_samples) if lag_samples else 0.0
-
-        logger.info(
-            "render_lag_diagnostic",
-            samples=len(lag_samples),
-            peak_ms=round(peak_lag, 1),
-            avg_ms=round(avg_lag, 1),
-            note="informational_only_not_asserted",
-        )
+        # AC5.1: <5ms total server-side blocking
+        _vue_threshold_ms = 5.0
 
         # --- Report ---
         report_lines = [
             f"{'=' * 60}",
-            "CARD BUILD TIME DURING 190-HIGHLIGHT RENDER",
+            "VUE SIDEBAR PROP PUSH (190-HIGHLIGHT RENDER)",
             f"{'=' * 60}",
-            f"  Cards built:        {added_count}",
-            f"  Total time:         {elapsed_ms:.1f}ms",
-            f"  Per-card time:      {per_card_ms:.2f}ms",
-            f"  Total threshold:    {_TOTAL_THRESHOLD_MS:.0f}ms",
-            f"  Per-card threshold: {_PER_CARD_THRESHOLD_MS:.1f}ms",
-            f"  Lag sampler peak:   {peak_lag:.1f}ms (informational)",
-            f"  Lag sampler avg:    {avg_lag:.1f}ms (informational)",
+            f"  Highlights:     {hl_count}",
+            f"  Total time:     {elapsed_ms:.1f}ms",
+            f"  Threshold:      {_vue_threshold_ms:.0f}ms",
             f"{'=' * 60}",
         ]
         report = "\n".join(report_lines)
         print(f"\n{report}")
 
-        # Persist results outside artifact dir (survives cleanup)
         from pathlib import Path
 
         out = Path("output/perf/render_lag.txt")
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_text(report, encoding="utf-8")
 
-        # --- Assertions on direct timing ---
-        assert per_card_ms < _PER_CARD_THRESHOLD_MS, (
-            f"Per-card build time {per_card_ms:.2f}ms exceeds threshold "
-            f"{_PER_CARD_THRESHOLD_MS}ms ({added_count} cards in {elapsed_ms:.1f}ms). "
-            f"Lazy detail and HTML header optimisations should bring this below 0.5ms."
-        )
-        assert elapsed_ms < _TOTAL_THRESHOLD_MS, (
-            f"Total card build time {elapsed_ms:.1f}ms exceeds threshold "
-            f"{_TOTAL_THRESHOLD_MS}ms for {added_count} cards. "
-            f"Expected < 100ms with lazy detail and HTML header optimisations."
+        assert elapsed_ms < _vue_threshold_ms, (
+            f"Vue sidebar refresh {elapsed_ms:.1f}ms exceeds "
+            f"{_vue_threshold_ms}ms threshold for {hl_count} "
+            f"highlights. Prop serialisation should be <5ms."
         )
 
     @pytest.mark.asyncio

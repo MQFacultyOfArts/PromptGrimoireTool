@@ -3,7 +3,6 @@
 Tests verify:
 - AC2.4: Tab content renders on first visit (deferred) and persists
 - AC2.1: Each source tab renders its own document HTML content
-- AC2.2: Per-document annotation cards filtered by document_id
 
 Traceability:
 - Design: docs/design-plans/multi-document-tabbed-workspace.md Phase 7 Task 3
@@ -41,22 +40,6 @@ class TestIsSourceTab:
 class TestSaveSourceTabState:
     """_save_source_tab_state persists PageState to DocumentTabState."""
 
-    def test_saves_annotation_cards_and_snapshots(self) -> None:
-        """Annotation cards and card snapshots are saved to the document tab."""
-        doc_id = uuid4()
-        doc_tab = DocumentTabState(document_id=doc_id, tab=None, panel=None)
-
-        state = _make_mock_state(doc_id, doc_tab)
-        state.annotation_cards = {"hl-1": MagicMock()}
-        state.card_snapshots = {"hl-1": {"tag": "foo"}}
-        state.cards_epoch = 5
-
-        _save_source_tab_state(state, doc_tab)
-
-        assert doc_tab.annotation_cards == {"hl-1": state.annotation_cards["hl-1"]}
-        assert doc_tab.card_snapshots == {"hl-1": {"tag": "foo"}}
-        assert doc_tab.cards_epoch == 5
-
     def test_saves_document_content_fields(self) -> None:
         """Document chars, paragraph_map, and UI refs are saved."""
         doc_id = uuid4()
@@ -70,10 +53,6 @@ class TestSaveSourceTabState:
         state.highlight_style = MagicMock()
         state.highlight_menu = MagicMock()
         state.toolbar_container = MagicMock()
-        state.annotation_cards = {}
-        state.card_snapshots = {}
-        state.cards_epoch = 0
-
         _save_source_tab_state(state, doc_tab)
 
         assert doc_tab.document_chars == ["a", "b", "c"]
@@ -84,33 +63,16 @@ class TestSaveSourceTabState:
         assert doc_tab.highlight_menu is state.highlight_menu
         assert doc_tab.toolbar_container is state.toolbar_container
 
-    def test_saves_none_annotation_cards_as_empty_dict(self) -> None:
-        """When annotation_cards is None, saves as empty dict."""
-        doc_id = uuid4()
-        doc_tab = DocumentTabState(document_id=doc_id, tab=None, panel=None)
-
-        state = _make_mock_state(doc_id, doc_tab)
-        state.annotation_cards = None
-        state.card_snapshots = {}
-        state.cards_epoch = 0
-
-        _save_source_tab_state(state, doc_tab)
-
-        assert doc_tab.annotation_cards == {}
-
 
 class TestRestoreSourceTabState:
-    """Verify that _restore_source_tab_state loads DocumentTabState into PageState."""
+    """Verify _restore_source_tab_state loads DocumentTabState."""
 
     def test_restores_document_id_and_containers(self) -> None:
-        """Document ID, annotations container, and card state are restored."""
+        """Document ID and annotations container restored."""
         doc_id = uuid4()
         mock_container = MagicMock()
         doc_tab = DocumentTabState(document_id=doc_id, tab=None, panel=None)
         doc_tab.cards_container = mock_container
-        doc_tab.annotation_cards = {"hl-2": MagicMock()}
-        doc_tab.card_snapshots = {"hl-2": {"tag": "bar"}}
-        doc_tab.cards_epoch = 3
         doc_tab.rendered = True
 
         state = _make_mock_state(doc_id, doc_tab)
@@ -119,9 +81,6 @@ class TestRestoreSourceTabState:
 
         assert state.document_id == doc_id
         assert state.annotations_container is mock_container
-        assert state.annotation_cards == doc_tab.annotation_cards
-        assert state.card_snapshots == {"hl-2": {"tag": "bar"}}
-        assert state.cards_epoch == 3
 
     def test_restores_document_content_and_ui_refs(self) -> None:
         """Document chars, paragraph_map, and UI refs are restored."""
@@ -133,8 +92,6 @@ class TestRestoreSourceTabState:
 
         doc_tab = DocumentTabState(document_id=doc_id, tab=None, panel=None)
         doc_tab.rendered = True
-        doc_tab.annotation_cards = {}
-        doc_tab.card_snapshots = {}
         doc_tab.document_chars = ["x", "y"]
         doc_tab.paragraph_map = {"p1": 5}
         doc_tab.document_content = "<p>test</p>"
@@ -154,24 +111,21 @@ class TestRestoreSourceTabState:
         assert state.highlight_menu is mock_hl_menu
         assert state.toolbar_container is mock_toolbar
 
-    def test_restores_unrendered_tab_with_none_cards(self) -> None:
-        """Unrendered tabs restore annotation_cards as None for full build."""
+    def test_restores_unrendered_tab_state(self) -> None:
+        """Unrendered tabs restore basic state."""
         doc_id = uuid4()
         doc_tab = DocumentTabState(document_id=doc_id, tab=None, panel=None)
         doc_tab.rendered = False
-        doc_tab.annotation_cards = {}
 
         state = _make_mock_state(doc_id, doc_tab)
-
         _restore_source_tab_state(state, doc_tab)
 
-        # Unrendered tab should set annotation_cards to None
-        # so _refresh_annotation_cards does a full build
-        assert state.annotation_cards is None
+        # Vue sidebar re-renders from props — no card state
+        assert state.document_id == doc_id
 
 
 class TestDeferredRenderingFlags:
-    """Verify deferred rendering flag management on DocumentTabState."""
+    """Verify deferred rendering flag management."""
 
     def test_new_tab_state_not_rendered(self) -> None:
         """Newly created DocumentTabState has rendered=False."""
@@ -179,24 +133,21 @@ class TestDeferredRenderingFlags:
         assert doc_tab.rendered is False
 
     def test_save_does_not_change_rendered_flag(self) -> None:
-        """_save_source_tab_state does not alter the rendered flag."""
+        """_save_source_tab_state does not alter rendered flag."""
         doc_id = uuid4()
         doc_tab = DocumentTabState(document_id=doc_id, tab=None, panel=None)
         doc_tab.rendered = False
 
         state = _make_mock_state(doc_id, doc_tab)
-        state.annotation_cards = {"x": MagicMock()}
-        state.card_snapshots = {}
-        state.cards_epoch = 1
 
         _save_source_tab_state(state, doc_tab)
 
         assert doc_tab.rendered is False
 
 
-# ---------------------------------------------------------------------------
+# -------------------------------------------------------------------
 # Test helpers
-# ---------------------------------------------------------------------------
+# -------------------------------------------------------------------
 
 
 def _make_mock_state(doc_id, doc_tab):
@@ -204,9 +155,6 @@ def _make_mock_state(doc_id, doc_tab):
     state = MagicMock()
     state.document_id = doc_id
     state.document_tabs = {doc_id: doc_tab}
-    state.annotation_cards = {}
-    state.card_snapshots = {}
-    state.cards_epoch = 0
     state.annotations_container = None
     # Document content fields
     state.document_chars = None

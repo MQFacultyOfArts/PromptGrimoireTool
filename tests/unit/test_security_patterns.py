@@ -104,41 +104,74 @@ class TestUrlConstruction:
 class TestPathTraversal:
     """Tests for path traversal vulnerability patterns."""
 
-    # Known safe usages (file:line patterns to skip)
+    # Reviewed usages — add new entries here after security review.
+    # Format: substring match against "rel_path" or "filename:lineno".
     KNOWN_SAFE: ClassVar[set[str]] = {
-        # These are safe because they use constants or validated paths
-        "sillytavern.py:30",  # Uses pathlib for file reading, not user input
+        # Internal path operations, not user-controlled
+        "sillytavern.py:30",  # pathlib for bundled file reading
         "sillytavern.py:31",
-        "jsonl_log.py",  # Internal logging, not user-controlled
-        "config.py",  # Reading from env vars, not user input
+        "jsonl_log.py",  # internal logging path
+        "config.py",  # env var paths
+        "pdf.py",  # output_dir from function arg / compile_latex
+        "pdf_export.py",  # tempfile.gettempdir() export dir
+        "worker.py",  # tempfile.mkdtemp() export dir
+        "diagnostics.py",  # .nicegui storage dir from env var
+        "export_jobs.py",  # tempfile.gettempdir() for export
+        "rtf.py",  # internal RTF parsing
+        "download.py",  # job.pdf_path from DB row
+        "anonymise.py",  # coolname module introspection
+        # User-controlled but validated/sandboxed
+        "roleplay.py",  # file upload name in /tmp — nosec B108
+        "logviewer.py",  # Path(e.value).resolve() — restricted to log dir
+        # Dev tooling (cli/), not user-facing
+        "cli/",
+        "_server_script.py",
     }
 
-    def test_document_path_construction_points(self) -> None:
-        """Document all Path() constructions for manual security review.
+    def test_no_unreviewed_path_constructions(self) -> None:
+        """All Path() constructions with dynamic input must be in KNOWN_SAFE.
 
-        This test doesn't fail - it generates a report of all Path()
-        constructions that should be manually reviewed for path traversal.
+        Fails if new Path() constructions appear that haven't been reviewed
+        for path traversal safety. Add reviewed entries to KNOWN_SAFE.
         """
-        path_constructions: list[tuple[Path, int, str]] = []
+        unreviewed: list[tuple[Path, int, str]] = []
 
-        pattern = re.compile(r"Path\([^)]+\)")
+        # Match Path() with variable/expression args, not string literals.
+        # Path("constant") is safe; Path(user_input) or Path(f"...{var}") is not.
+        pattern = re.compile(
+            r"Path\("
+            r"(?!"  # negative lookahead: skip safe patterns
+            r'["\']'  # string literal
+            r"|__file__"  # __file__ reference
+            r"|Path\."  # Path.home(), Path.cwd()
+            r")"
+            r"[^)]+\)"
+        )
 
         for py_file in _get_python_files():
             content = py_file.read_text()
             for i, line in enumerate(content.splitlines(), start=1):
                 if pattern.search(line):
                     rel_path = py_file.relative_to(PROJECT_ROOT)
-                    # Skip known safe patterns
-                    skip = False
-                    for safe in self.KNOWN_SAFE:
-                        if safe in str(rel_path) or safe in f"{rel_path.name}:{i}":
-                            skip = True
-                            break
+                    skip = any(
+                        safe in str(rel_path) or safe in f"{rel_path.name}:{i}"
+                        for safe in self.KNOWN_SAFE
+                    )
                     if not skip:
-                        path_constructions.append((py_file, i, line.strip()))
+                        unreviewed.append((py_file, i, line.strip()))
 
-        # This test is informational - stored for potential future reporting
-        _ = path_constructions  # Currently unused, but kept for manual review
+        if unreviewed:
+            msg_lines = [
+                "Unreviewed Path() constructions found.",
+                "Review each for path traversal risk, then add to KNOWN_SAFE:",
+                "",
+            ]
+            for path, line_num, line in unreviewed:
+                rel_path = path.relative_to(PROJECT_ROOT)
+                msg_lines.append(f"  {rel_path}:{line_num}")
+                msg_lines.append(f"    {line}")
+                msg_lines.append("")
+            pytest.fail("\n".join(msg_lines))
 
 
 class TestInputValidation:

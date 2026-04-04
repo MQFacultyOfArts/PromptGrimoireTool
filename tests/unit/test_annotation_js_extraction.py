@@ -19,7 +19,7 @@ _SRC_DIR = Path(__file__).resolve().parent.parent.parent / "src" / "promptgrimoi
 
 
 class TestCardSyncJsExists:
-    """AC2.1: static/annotation-card-sync.js exists and exposes setupCardPositioning."""
+    """AC2.1: static/annotation-card-sync.js exists and exposes initToolbarObserver."""
 
     def test_file_exists(self) -> None:
         """annotation-card-sync.js must exist in the static directory."""
@@ -27,12 +27,12 @@ class TestCardSyncJsExists:
         assert path.exists(), f"Expected file not found: {path}"
 
     def test_exposes_setup_function(self) -> None:
-        """annotation-card-sync.js must declare setupCardPositioning function."""
+        """annotation-card-sync.js must declare initToolbarObserver."""
         path = _STATIC_DIR / "annotation-card-sync.js"
         content = path.read_text()
-        assert "function setupCardPositioning" in content, (
+        assert "function initToolbarObserver" in content, (
             "annotation-card-sync.js does not contain "
-            "'function setupCardPositioning' declaration"
+            "'function initToolbarObserver' declaration"
         )
 
 

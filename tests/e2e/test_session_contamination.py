@@ -32,12 +32,12 @@ from __future__ import annotations
 
 import threading
 from dataclasses import dataclass, field
-from pathlib import Path
 from uuid import uuid4
 
 import pytest
 
 from promptgrimoire.config import get_settings
+from tests.e2e.card_helpers import ensure_pabai_workspace
 
 pytestmark = [
     pytest.mark.e2e,
@@ -47,9 +47,6 @@ pytestmark = [
         reason="DEV__TEST_DATABASE_URL not configured",
     ),
 ]
-
-PABAI_WORKSPACE_ID = "0e5e9b04-de94-4728-a8c9-e625c141fea3"
-_WORKSPACE_JSON = Path(__file__).parent / "fixtures" / "pabai_workspace.json"
 
 # Concurrency parameters.  Production incident had ~189 users.
 # 10 is enough to create meaningful event loop contention with
@@ -207,29 +204,6 @@ def _run_session(
             browser.close()
 
 
-def _ensure_pabai_workspace(conninfo: str) -> str:
-    """Rehydrate the PABAI workspace into the test DB if missing."""
-    import psycopg
-
-    if not _WORKSPACE_JSON.exists():
-        pytest.skip(f"PABAI fixture not found at {_WORKSPACE_JSON}")
-
-    with psycopg.connect(conninfo) as conn:
-        cur = conn.cursor()
-        cur.execute(
-            "SELECT 1 FROM workspace WHERE id = %s::uuid",
-            (PABAI_WORKSPACE_ID,),
-        )
-        if cur.fetchone() is not None:
-            return PABAI_WORKSPACE_ID
-
-    from scripts.rehydrate_workspace import rehydrate
-
-    result = rehydrate(_WORKSPACE_JSON, conninfo)
-    assert result["workspace_id"] == PABAI_WORKSPACE_ID
-    return PABAI_WORKSPACE_ID
-
-
 class TestSessionContamination:
     """Concurrent PABAI page loads must not cross-contaminate sessions."""
 
@@ -245,7 +219,7 @@ class TestSessionContamination:
         After full render, each checks its session identity.
         """
         conninfo = _test_db_conninfo()
-        workspace_id = _ensure_pabai_workspace(conninfo)
+        workspace_id = ensure_pabai_workspace()
 
         barrier = threading.Barrier(N_SESSIONS, timeout=120)
         results: list[WorkerResult] = [WorkerResult() for _ in range(N_SESSIONS)]

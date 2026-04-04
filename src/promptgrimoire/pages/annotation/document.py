@@ -13,10 +13,10 @@ from typing import Any
 import structlog
 from nicegui import ui
 
+from promptgrimoire.crdt.persistence import get_persistence_manager
 from promptgrimoire.input_pipeline.html_input import extract_text_from_html
 from promptgrimoire.input_pipeline.paragraph_map import inject_paragraph_attributes
 from promptgrimoire.pages.annotation import PageState, _RawJS, _render_js
-from promptgrimoire.pages.annotation.cards import _refresh_annotation_cards
 from promptgrimoire.pages.annotation.css import (
     _build_highlight_pseudo_css,
     _build_tag_toolbar,
@@ -230,8 +230,6 @@ def _init_document_state(state: PageState, doc: Any, crdt_doc: Any) -> None:
     state.ann_container_id = f"ann-container-{doc.id}"
     state.highlight_menu_id = f"hl-menu-{doc.id}"
     state.crdt_doc = crdt_doc
-    state.annotation_cards = {}
-    state.card_snapshots = {}
 
     # Extract characters from clean HTML for text extraction when highlighting
     # (char spans are injected client-side, not stored in DB)
@@ -285,8 +283,6 @@ def _inject_highlight_scripts(state: PageState) -> None:
         t"    if (typeof initToolbarObserver === 'function') {{"
         t"      initToolbarObserver();"
         t"    }}"
-        t"    setupCardPositioning("
-        t"      {state.doc_container_id}, {state.ann_container_id}, 8);"
         t"  }}"
         t"  if (typeof walkTextNodes === 'function') {{ init(); return; }}"
         t"  var loaded = 0;"
@@ -301,6 +297,143 @@ def _inject_highlight_scripts(state: PageState) -> None:
         t"}})();"
     )
     ui.run_javascript(init_js)
+
+
+async def _persist_and_broadcast(
+    state: PageState,
+    *,
+    trigger: str,
+) -> None:
+    """Persist CRDT changes, update status, refresh sidebar, broadcast."""
+    if state.crdt_doc is None:
+        return
+    pm = get_persistence_manager()
+    pm.mark_dirty_workspace(
+        state.workspace_id,
+        state.crdt_doc.doc_id,
+        last_editor=state.user_name,
+    )
+    await pm.force_persist_workspace(state.workspace_id)
+    if state.save_status:
+        state.save_status.text = "Saved"
+    if state.refresh_annotations:
+        state.refresh_annotations(trigger=trigger)
+    if state.broadcast_update:
+        await state.broadcast_update()
+
+
+def _on_toggle_expand(state: PageState, payload: dict[str, Any]) -> None:
+    hid = payload.get("id", "")
+    if hid in state.expanded_cards:
+        state.expanded_cards.discard(hid)
+    else:
+        state.expanded_cards.add(hid)
+
+
+async def _on_change_tag(state: PageState, payload: dict[str, Any]) -> None:
+    from promptgrimoire.pages.annotation.highlights import (  # noqa: PLC0415
+        _update_highlight_css,
+    )
+
+    hid = payload.get("id", "")
+    new_tag = payload.get("new_tag", "")
+    if state.crdt_doc and new_tag:
+        state.crdt_doc.update_highlight_tag(hid, new_tag)
+        _update_highlight_css(state)
+        await _persist_and_broadcast(state, trigger="tag_change")
+
+
+async def _on_submit_comment(state: PageState, payload: dict[str, Any]) -> None:
+    hid = payload.get("id", "")
+    text = (payload.get("text") or "").strip()
+    if text and state.crdt_doc:
+        state.crdt_doc.add_comment(
+            hid,
+            state.user_name,
+            text,
+            user_id=state.user_id,
+        )
+        await _persist_and_broadcast(state, trigger="comment_save")
+
+
+async def _on_delete_comment(state: PageState, payload: dict[str, Any]) -> None:
+    hid = payload.get("highlight_id", "")
+    cid = payload.get("comment_id", "")
+    if state.crdt_doc:
+        deleted = state.crdt_doc.delete_comment(
+            hid,
+            cid,
+            requesting_user_id=state.user_id,
+            is_privileged=state.viewer_is_privileged,
+        )
+        if deleted:
+            await _persist_and_broadcast(state, trigger="comment_delete")
+
+
+async def _on_delete_highlight(state: PageState, payload: dict[str, Any]) -> None:
+    from promptgrimoire.pages.annotation.highlights import (  # noqa: PLC0415
+        _update_highlight_css,
+    )
+
+    hid = payload.get("id", "")
+    if state.crdt_doc:
+        state.crdt_doc.remove_highlight(hid)
+        _update_highlight_css(state)
+        await _persist_and_broadcast(state, trigger="highlight_delete")
+
+
+async def _on_edit_para_ref(state: PageState, payload: dict[str, Any]) -> None:
+    hid = payload.get("id", "")
+    new_ref = (payload.get("value") or "").strip()
+    if new_ref and state.crdt_doc:
+        state.crdt_doc.update_highlight_para_ref(hid, new_ref)
+        await _persist_and_broadcast(state, trigger="para_ref_edit")
+
+
+def _on_locate_highlight(state: PageState, payload: dict[str, Any]) -> None:
+    sc = payload.get("start_char", 0)
+    ec = payload.get("end_char", sc)
+    js = _render_js(
+        t"(function(){{"
+        t"  var c = document.getElementById("
+        t"    {state.doc_container_id});"
+        t"  if (!c) return;"
+        t"  window._textNodes = walkTextNodes(c);"
+        t"  scrollToCharOffset("
+        t"    window._textNodes, {sc}, {ec});"
+        t"  throbHighlight("
+        t"    window._textNodes, {sc}, {ec}, 800);"
+        t"}})();"
+    )
+    ui.run_javascript(js)
+
+
+def _make_sidebar_handlers(
+    state: PageState,
+) -> dict[str, Any]:
+    """Build event handler closures for the Vue annotation sidebar."""
+    return {
+        "on_toggle_expand": lambda p: _on_toggle_expand(state, p),
+        "on_change_tag": lambda p: _on_change_tag(state, p),
+        "on_submit_comment": lambda p: _on_submit_comment(state, p),
+        "on_delete_comment": lambda p: _on_delete_comment(state, p),
+        "on_delete_highlight": lambda p: _on_delete_highlight(state, p),
+        "on_edit_para_ref": lambda p: _on_edit_para_ref(state, p),
+        "on_locate_highlight": lambda p: _on_locate_highlight(state, p),
+    }
+
+
+def _create_annotation_sidebar(state: PageState) -> Any:
+    """Create an AnnotationSidebar with CRDT mutation handlers."""
+    from promptgrimoire.pages.annotation.sidebar import (  # noqa: PLC0415
+        AnnotationSidebar,
+    )
+
+    handlers = _make_sidebar_handlers(state)
+    return AnnotationSidebar(
+        doc_container_id=state.doc_container_id,
+        **handlers,
+    )
 
 
 async def _render_document_with_highlights(
@@ -396,30 +529,29 @@ async def _render_document_with_highlights(
 
         _inject_highlight_scripts(state)
 
-        # Annotations sidebar (~35% of layout)
-        # Needs ID for scroll-sync JavaScript positioning
+        # Annotations sidebar (~35% of layout) — Vue component
         state.annotations_container = (
             ui.element("div")
             .classes("annotations-sidebar")
             .style("flex: 1; min-width: 300px; max-width: 450px;")
             .props(f'id="{state.ann_container_id}"')
         )
+        with state.annotations_container:
+            sidebar = _create_annotation_sidebar(state)
 
-    # Set up refresh function.
-    # WARNING: this closure is NOT saved/restored on tab switch — each
-    # source tab render overwrites it.  It works because it reads
-    # state.annotations_container dynamically at call time (restored by
-    # _restore_source_tab_state).  Do NOT refactor to capture the
-    # container at closure creation time — that would silently target
-    # the wrong document after a tab switch.
+    # Set up refresh function via the Vue sidebar.
+    # WARNING: this closure is NOT saved/restored on tab switch —
+    # each source tab render overwrites it. It works because
+    # sidebar.refresh_from_state reads state dynamically.
     def refresh_annotations(*, trigger: str = "unknown") -> None:
-        _refresh_annotation_cards(state, trigger=trigger)
+        logger.debug("refresh_annotations", trigger=trigger)
+        sidebar.refresh_from_state(state)
 
     state.refresh_annotations = refresh_annotations
 
-    # Load existing annotations
+    # Push initial items to the Vue sidebar
     _t_cards = time.monotonic()
-    _refresh_annotation_cards(state, trigger="initial_load")
+    sidebar.refresh_from_state(state)
     _t_cards_done = time.monotonic()
 
     # Set up selection detection (viewers get read-only view)
@@ -437,11 +569,5 @@ async def _render_document_with_highlights(
         pre_cards_ms=_pre_cards_ms,
         cards_ms=_cards_ms,
         post_cards_ms=_post_cards_ms,
-        highlight_count=len(state.annotation_cards or {}),
         document_id=str(state.document_id),
     )
-
-    # Card positioning is set up inside init_js (see _inject_highlight_scripts)
-    # to guarantee annotation-card-sync.js is loaded before the call.
-    # Do NOT add a standalone ui.run_javascript("setupCardPositioning(...)") here —
-    # it races with the async script fetch in deferred-load contexts.

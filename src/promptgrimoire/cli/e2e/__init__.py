@@ -128,6 +128,20 @@ def run_nicegui_lane(user_args: list[str]) -> int:
         return 130
 
 
+def _format_lane_output(lr: LaneResult) -> str:
+    """Format log/artifact paths for a lane result.
+
+    Shows all available output locations. Returns ``—`` only when the
+    lane genuinely produces no output files (e.g. JS, BATS).
+    """
+    parts: list[str] = []
+    if lr.log_path:
+        parts.append(str(lr.log_path))
+    if lr.artifact_dir:
+        parts.append(str(lr.artifact_dir))
+    return ", ".join(parts) if parts else "—"
+
+
 def _print_all_lanes_summary(
     cwd: Path,
     branch: str,
@@ -143,8 +157,7 @@ def _print_all_lanes_summary(
     console.print(f"  {'─' * 14} {'─' * 6} {'─' * 40}")
     for lr in results:
         status = "[green]PASS[/]" if lr.exit_code == 0 else "[red]FAIL[/]"
-        path_info = str(lr.log_path or lr.artifact_dir or "—")
-        console.print(f"  {lr.name:<14} {status}  {path_info}")
+        console.print(f"  {lr.name:<14} {status}  {_format_lane_output(lr)}")
     console.print()
 
     any_failed = any(lr.exit_code != 0 for lr in results)
@@ -155,7 +168,7 @@ def _print_all_lanes_summary(
 
 
 def _run_all_lane_steps(user_args: list[str]) -> list[LaneResult]:
-    """Execute all 7 standard lanes and return their results (no summary)."""
+    """Execute all 8 standard lanes and return their results (no summary)."""
     from promptgrimoire.cli.testing import (
         _NON_UI_MARKER_EXPRESSION,
         _TEST_ALL_MARKER_EXPRESSION,
@@ -221,9 +234,8 @@ def _run_all_lane_steps(user_args: list[str]) -> list[LaneResult]:
         LaneResult("integration", integration_exit, log_path=integration_log)
     )
 
-    # --- Lane 3: Playwright (unchanged) ---
+    # --- Lane 3: Playwright (parallel) ---
     console.print("[blue]Running Playwright lane (parallel)...[/]")
-    previous_playwright_artifact = _latest_artifact_dir("playwright")
     playwright_exit = run_playwright_lane(
         user_args,
         parallel=True,
@@ -234,21 +246,18 @@ def _run_all_lane_steps(user_args: list[str]) -> list[LaneResult]:
         LaneResult(
             "playwright",
             playwright_exit,
-            artifact_dir=_artifact_dir_if_new(
-                "playwright", previous_playwright_artifact
-            ),
+            artifact_dir=_latest_artifact_dir("playwright"),
         )
     )
 
-    # --- Lane 4: NiceGUI (unchanged) ---
+    # --- Lane 4: NiceGUI (parallel) ---
     console.print("[blue]Running NiceGUI lane...[/]")
-    previous_nicegui_artifact = _latest_artifact_dir("nicegui")
     nicegui_exit = run_nicegui_lane(user_args)
     lane_results.append(
         LaneResult(
             "nicegui",
             nicegui_exit,
-            artifact_dir=_artifact_dir_if_new("nicegui", previous_nicegui_artifact),
+            artifact_dir=_latest_artifact_dir("nicegui"),
         )
     )
 
@@ -288,7 +297,7 @@ def _run_all_lane_steps(user_args: list[str]) -> list[LaneResult]:
 
 
 def run_all_lanes(user_args: list[str]) -> int:
-    """Run all 7 test lanes sequentially: BATS + 6 pytest lanes."""
+    """Run all 8 test lanes: JS + BATS + 6 pytest lanes."""
     from promptgrimoire.config import get_current_branch
 
     branch = get_current_branch() or "unknown"
@@ -340,14 +349,9 @@ def run_slow_lanes(user_args: list[str]) -> int:
     # --- Phase 2: latexmk + slow-only lanes ---
     previous_skip_latexmk = os.environ.get("E2E_SKIP_LATEXMK")
     os.environ["E2E_SKIP_LATEXMK"] = "0"
-    # Short idle timeouts so idle-eviction E2E tests complete in seconds
-    previous_idle_timeout = os.environ.get("IDLE__TIMEOUT_SECONDS")
-    previous_idle_warning = os.environ.get("IDLE__WARNING_SECONDS")
-    os.environ["IDLE__TIMEOUT_SECONDS"] = "5"
-    os.environ["IDLE__WARNING_SECONDS"] = "2"
     try:
         console.print("[blue]Running Playwright slow lane (latexmk enabled)...[/]")
-        previous_playwright_artifact = _latest_artifact_dir("playwright")
+        pw_latexmk_log = Path("test-playwright-latexmk.log")
         pw_latexmk_exit = _normalise_optional_lane_exit(
             _run_serial_playwright_e2e(
                 user_args,
@@ -355,6 +359,8 @@ def run_slow_lanes(user_args: list[str]) -> int:
                 reruns=True,
                 clear_cache=True,
                 marker_expr=PLAYWRIGHT_SLOW_MARKER_EXPR,
+                test_timeout=120,
+                log_file=pw_latexmk_log,
             ),
             user_args,
         )
@@ -363,21 +369,11 @@ def run_slow_lanes(user_args: list[str]) -> int:
             os.environ.pop("E2E_SKIP_LATEXMK", None)
         else:
             os.environ["E2E_SKIP_LATEXMK"] = previous_skip_latexmk
-        if previous_idle_timeout is None:
-            os.environ.pop("IDLE__TIMEOUT_SECONDS", None)
-        else:
-            os.environ["IDLE__TIMEOUT_SECONDS"] = previous_idle_timeout
-        if previous_idle_warning is None:
-            os.environ.pop("IDLE__WARNING_SECONDS", None)
-        else:
-            os.environ["IDLE__WARNING_SECONDS"] = previous_idle_warning
     lane_results.append(
         LaneResult(
             "playwright-latexmk",
             pw_latexmk_exit,
-            artifact_dir=_artifact_dir_if_new(
-                "playwright", previous_playwright_artifact
-            ),
+            log_path=pw_latexmk_log,
         )
     )
 
@@ -746,6 +742,56 @@ def slow(
 
 
 @e2e_app.command(
+    "latexmk",
+    context_settings={
+        "allow_extra_args": True,
+        "allow_interspersed_args": False,
+    },
+)
+def latexmk(
+    ctx: typer.Context,
+    filter_expr: str | None = typer.Option(
+        None, "-k", "--filter", help="Pytest keyword filter expression"
+    ),
+    strict_flaky: bool = typer.Option(
+        False,
+        "--strict-flaky",
+        help="Treat flaky tests as failures (automatic on CI)",
+    ),
+    exit_first: bool = typer.Option(
+        False, "-x", "--exit-first", help="Stop on first failure (-x)"
+    ),
+    failed_first: bool = typer.Option(
+        False, "--ff", "--failed-first", help="Run previously failed tests first (--ff)"
+    ),
+) -> None:
+    """Run only the latexmk serial Playwright lane (real PDF compilation)."""
+    if strict_flaky:
+        os.environ["GRIMOIRE_STRICT_FLAKY"] = "1"
+    args = _prepend_filter(ctx.args, filter_expr)
+    args = _prepend_pytest_flags(args, exit_first=exit_first, failed_first=failed_first)
+
+    previous_skip_latexmk = os.environ.get("E2E_SKIP_LATEXMK")
+    os.environ["E2E_SKIP_LATEXMK"] = "0"
+    try:
+        exit_code = _run_serial_playwright_e2e(
+            args,
+            use_pyspy=False,
+            reruns=True,
+            clear_cache=True,
+            marker_expr=PLAYWRIGHT_SLOW_MARKER_EXPR,
+            test_timeout=120,
+            log_file=Path("test-playwright-latexmk.log"),
+        )
+    finally:
+        if previous_skip_latexmk is None:
+            os.environ.pop("E2E_SKIP_LATEXMK", None)
+        else:
+            os.environ["E2E_SKIP_LATEXMK"] = previous_skip_latexmk
+    sys.exit(exit_code)
+
+
+@e2e_app.command(
     "noretry",
     context_settings={
         "allow_extra_args": True,
@@ -943,6 +989,8 @@ def _run_serial_playwright_e2e(
     clear_cache: bool = False,
     browser: str | None = None,
     marker_expr: str = PLAYWRIGHT_DEFAULT_MARKER_EXPR,
+    test_timeout: int | None = None,
+    log_file: Path | None = None,
 ) -> int:
     """Run Playwright tests in single-server serial mode."""
     from promptgrimoire.config import get_settings
@@ -977,6 +1025,8 @@ def _run_serial_playwright_e2e(
         "--tb=short",
         "--log-cli-level=WARNING",
     ]
+    if test_timeout is not None:
+        default_args += ["--timeout", str(test_timeout)]
     if browser is not None:
         default_args += ["--browser", browser]
     if not _has_test_path(extra_args):
@@ -987,7 +1037,7 @@ def _run_serial_playwright_e2e(
 
     exit_code = 1
     try:
-        log_path = Path("test-e2e.log")
+        log_path = log_file or Path("test-e2e.log")
         exit_code = _run_pytest(
             title=(f"Playwright Test Suite (serial, fail-fast) — server {url}"),
             log_path=log_path,

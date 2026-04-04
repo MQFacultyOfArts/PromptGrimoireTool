@@ -126,12 +126,15 @@ class TestClaimNextJob:
 
     @pytest.mark.asyncio
     async def test_returns_none_when_empty(self) -> None:
-        """claim_next_job returns None when no queued jobs exist."""
-        from promptgrimoire.db.export_jobs import claim_next_job
+        """claim_own_job returns None when no matching queued jobs exist.
 
-        await claim_next_job()
-        # May or may not be None depending on other test state,
-        # but at least should not raise
+        Uses claim_own_job with an empty ID set so the query is scoped
+        to this test only — never picks up jobs from other xdist workers.
+        """
+        from tests.integration.conftest import claim_own_job
+
+        result = await claim_own_job(set())
+        assert result is None, f"Expected None when no jobs queued, got {result}"
 
     @pytest.mark.asyncio
     async def test_fair_scheduling_three_users(self) -> None:

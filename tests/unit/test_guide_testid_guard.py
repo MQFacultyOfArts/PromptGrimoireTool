@@ -16,6 +16,7 @@ import re
 from pathlib import Path
 
 _PAGES_DIR = Path("src/promptgrimoire/pages")
+_STATIC_DIR = Path("src/promptgrimoire/static")
 _TESTS_DIR = Path("tests")
 _SCRIPTS_DIR = Path("src/promptgrimoire/docs/scripts")
 
@@ -36,6 +37,8 @@ ALLOWED_TESTIDS: set[str] = {
     # Created by JS at runtime in static/idle-tracker.js (not in pages/)
     "idle-warning-modal",
     "idle-stay-active-btn",
+    # Test-only testids (set by test fixtures, not pages)
+    "charac-sidebar",  # test_vue_sidebar_charac.py fixture
 }
 
 # Files whose testid references are test fixtures / infrastructure,
@@ -52,6 +55,18 @@ _EXCLUDED_FILES: set[str] = {
     # routes in conftest.py and cli/e2e/_server_script.py, not pages/
     "test_session_contamination.py",
     "conftest.py",
+    # Vue sidebar spike (#457) uses test-only testids for spike pages
+    "test_vue_sidebar_spike.py",
+    # Vue sidebar DOM contract (#457) uses test-only testids for prop validation
+    "test_vue_sidebar_dom_contract.py",
+    # Vue sidebar expand (#457) uses test-only testids for expand/collapse validation
+    "test_vue_sidebar_expand.py",
+    # Vue sidebar mutations (#457) uses test-only testids for mutation validation
+    "test_vue_sidebar_mutations.py",
+    # Vue sidebar E2E spike (#457) uses test-only testids for browser validation
+    "test_vue_sidebar_spike_e2e.py",
+    # Vue sidebar interactions (#457) uses test-only testids for para_ref/locate/hover
+    "test_vue_sidebar_interactions.py",
 }
 
 
@@ -222,6 +237,19 @@ def _collect_definitions(
             # F-strings: data-testid="prefix-{dynamic}"
             if isinstance(node, ast.JoinedStr):
                 _defs_from_fstring(node, exact_testids, prefix_testids)
+
+    # Also scan JS files in static/ for Vue component testids
+    for js_file in sorted(_STATIC_DIR.glob("*.js")):
+        source = js_file.read_text()
+        for m in _TESTID_RE.finditer(source):
+            tid = m.group(1) or m.group(2)
+            _classify_testid(
+                tid,
+                exact_testids,
+                prefix_testids,
+            )
+        for m in _VUE_TESTID_RE.finditer(source):
+            prefix_testids.add(m.group(1))
 
     return exact_testids, prefix_testids
 

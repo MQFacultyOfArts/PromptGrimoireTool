@@ -60,7 +60,7 @@ class TestTagToolbarGating:
                 return_value="{}",
             ),
             patch(
-                "promptgrimoire.pages.annotation.document._refresh_annotation_cards",
+                "promptgrimoire.pages.annotation.document._create_annotation_sidebar",
             ),
             patch(
                 "promptgrimoire.pages.annotation.document._render_js",
@@ -103,7 +103,7 @@ class TestTagToolbarGating:
                 return_value="{}",
             ),
             patch(
-                "promptgrimoire.pages.annotation.document._refresh_annotation_cards",
+                "promptgrimoire.pages.annotation.document._create_annotation_sidebar",
             ),
             patch(
                 "promptgrimoire.pages.annotation.document._render_js",

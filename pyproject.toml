@@ -241,6 +241,9 @@ testpaths = ["tests/unit", "tests/integration", "tests/e2e"]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 addopts = "-ra -q -m 'not blns and not slow and not perf and not smoke'"
+timeout = 30
+timeout_method = "thread"
+faulthandler_timeout = 60
 markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
     "e2e: marks end-to-end tests requiring Playwright browsers",
@@ -316,4 +319,5 @@ dev = [
     "browserstack-sdk>=1.40.0",
     "types-openpyxl>=3.1.5.20250919",
     "shellcheck-py>=0.11.0",
+    "pytest-timeout>=2.4.0",
 ]

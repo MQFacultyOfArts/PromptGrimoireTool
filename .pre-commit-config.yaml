@@ -93,6 +93,22 @@ repos:
         files: ^(deploy/.*\.sh|deploy/tests/.*)$
         pass_filenames: false
 
+  # npm lockfile integrity (supply chain safety)
+  - repo: local
+    hooks:
+      - id: lockfile-lint
+        name: lockfile-lint (root)
+        entry: npx lockfile-lint --path package-lock.json --type npm --allowed-hosts npm --validate-https --validate-package-names --validate-integrity
+        language: system
+        files: ^package-lock\.json$
+        pass_filenames: false
+      - id: lockfile-lint-milkdown
+        name: lockfile-lint (milkdown)
+        entry: npx lockfile-lint --path src/promptgrimoire/static/milkdown/package-lock.json --type npm --allowed-hosts npm --validate-https --validate-package-names --validate-integrity
+        language: system
+        files: ^src/promptgrimoire/static/milkdown/package-lock\.json$
+        pass_filenames: false
+
   # General pre-commit hooks
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0

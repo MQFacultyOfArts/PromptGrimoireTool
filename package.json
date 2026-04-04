@@ -8,7 +8,10 @@
     "test": "tests"
   },
   "scripts": {
-    "test": "vitest run"
+    "test": "vitest run",
+    "lint:lockfile": "lockfile-lint --path package-lock.json --type npm --allowed-hosts npm --validate-https --validate-package-names --validate-integrity",
+    "lint:lockfile:milkdown": "lockfile-lint --path src/promptgrimoire/static/milkdown/package-lock.json --type npm --allowed-hosts npm --validate-https --validate-package-names --validate-integrity",
+    "audit": "npm audit && cd src/promptgrimoire/static/milkdown && npm audit"
   },
   "keywords": [],
   "author": "",
@@ -16,6 +19,8 @@
   "type": "module",
   "devDependencies": {
     "happy-dom": "^20.8.4",
+    "lockfile-lint": "^5.0.0",
+    "npq": "^3.16.2",
     "vitest": "^4.1.0"
   }
 }

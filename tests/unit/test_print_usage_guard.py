@@ -8,7 +8,7 @@ import ast
 from pathlib import Path
 
 SRC_DIR = Path(__file__).parent.parent.parent / "src" / "promptgrimoire"
-EXCLUDED_DIRS = {"cli", "__pycache__"}
+EXCLUDED_DIRS = {"cli", "__pycache__", "node_modules"}
 
 
 def test_no_print_calls_in_source() -> None:

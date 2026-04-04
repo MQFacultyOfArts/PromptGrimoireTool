@@ -19,6 +19,7 @@ from unittest.mock import patch
 
 import pytest
 
+from promptgrimoire.config import get_settings
 from promptgrimoire.export.pdf import (
     LaTeXCompilationError,
     compile_latex,
@@ -129,7 +130,9 @@ async def test_timeout_kills_process_group(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_semaphore_caps_concurrent_compilations(tmp_path: Path) -> None:
+async def test_semaphore_caps_concurrent_compilations(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Only 2 LaTeX compilations may run concurrently; a 3rd must wait.
 
     Load-invariant: no sleeps, no timeouts, no mid-flight observation.
@@ -143,6 +146,12 @@ async def test_semaphore_caps_concurrent_compilations(tmp_path: Path) -> None:
     If the semaphore is broken and allows 3 concurrent entries,
     ``max_concurrent`` will be 3.  If it works, it will be exactly 2.
     """
+    # Force semaphore to 2 regardless of host env (prod sets it to 1,
+    # which deadlocks the rendezvous logic that needs 2 concurrent entries).
+    monkeypatch.setenv("EXPORT__MAX_CONCURRENT_COMPILATIONS", "2")
+    get_settings.cache_clear()
+    reset_compile_semaphore()
+
     rendezvous = asyncio.Event()
     max_concurrent = 0
     concurrent_count = 0

@@ -618,14 +618,29 @@ def _build_editor_init_js(
         (async function() {{
             try {{
                 const root = document.getElementById('{editor_id}');
-                if (!root || !window._createMilkdownEditor) {{
+                if (!root) {{
+                    console.error('[respond-tab] #{editor_id} missing');
+                    emitEvent('editor_ready', {{
+                        status: 'error',
+                        error: 'editor root element missing'
+                    }});
+                    return;
+                }}
+                // Poll for the Milkdown bundle — under load the <script>
+                // fetch can lag behind the run_javascript call.
+                var _bundleRetries = 0;
+                while (!window._createMilkdownEditor && _bundleRetries < 50) {{
+                    await new Promise(function(r) {{ setTimeout(r, 100); }});
+                    _bundleRetries++;
+                }}
+                if (!window._createMilkdownEditor) {{
                     console.error(
-                        '[respond-tab] bundle not loaded'
-                        + ' or #{editor_id} missing'
+                        '[respond-tab] bundle not loaded after '
+                        + _bundleRetries + ' retries'
                     );
                     emitEvent('editor_ready', {{
                         status: 'error',
-                        error: 'bundle not loaded or root missing'
+                        error: 'bundle not loaded after timeout'
                     }});
                     return;
                 }}

@@ -217,6 +217,9 @@ def _move_annots_outside_restricted(latex: str) -> str:
 
     Uses brace-depth tracking -- no hardcoded command name list.
 
+    Single reverse pass: collect all nested ``\annot`` positions, then
+    splice from last to first so earlier indices remain valid.
+
     Args:
         latex: LaTeX with ``\annot`` commands potentially inside brace groups.
 
@@ -226,53 +229,50 @@ def _move_annots_outside_restricted(latex: str) -> str:
     if r"\annot" not in latex:
         return latex
 
-    result = latex
-    max_iterations = 50  # Safety limit
-    for _ in range(max_iterations):
-        moved = False
-        pos = 0
-        while pos < len(result):
-            idx = result.find(r"\annot", pos)
-            if idx == -1:
-                break
-
-            # Verify it's \annot{ not \annotation or similar
-            after = idx + len(r"\annot")
-            if after < len(result) and result[after] != "{":
-                pos = after
-                continue
-
-            depth = _brace_depth_at(result, idx)
-            if depth <= 0:
-                pos = after
-                continue
-
-            # \annot is nested at depth > 0 -- extract and move out
-            annot_text = _extract_annot_command(result, idx)
-            if not annot_text:
-                pos = after
-                continue
-
-            annot_end_pos = idx + len(annot_text)
-            close_pos = _find_closing_brace_at_depth(
-                result, annot_end_pos, start_depth=depth, target_depth=0
-            )
-            if close_pos == -1:
-                pos = after
-                continue
-
-            # Remove \annot from current position, place after outermost }
-            result = (
-                result[:idx]
-                + result[annot_end_pos : close_pos + 1]
-                + annot_text
-                + result[close_pos + 1 :]
-            )
-            moved = True
-            break  # Restart since positions shifted
-
-        if not moved:
+    # Collect all nested \annot commands with their move instructions.
+    # Each entry: (annot_start, annot_end, close_brace_pos, annot_text)
+    moves: list[tuple[int, int, int, str]] = []
+    pos = 0
+    while pos < len(latex):
+        idx = latex.find(r"\annot", pos)
+        if idx == -1:
             break
+
+        after = idx + len(r"\annot")
+        if after >= len(latex) or latex[after] != "{":
+            pos = after
+            continue
+
+        depth = _brace_depth_at(latex, idx)
+        if depth <= 0:
+            pos = after
+            continue
+
+        annot_text = _extract_annot_command(latex, idx)
+        if not annot_text:
+            pos = after
+            continue
+
+        annot_end_pos = idx + len(annot_text)
+        close_pos = _find_closing_brace_at_depth(
+            latex, annot_end_pos, start_depth=depth, target_depth=0
+        )
+        if close_pos == -1:
+            pos = after
+            continue
+
+        moves.append((idx, annot_end_pos, close_pos, annot_text))
+        pos = annot_end_pos
+
+    # Apply moves in reverse order so positions stay valid.
+    result = latex
+    for annot_start, annot_end, close_pos, annot_text in reversed(moves):
+        result = (
+            result[:annot_start]
+            + result[annot_end : close_pos + 1]
+            + annot_text
+            + result[close_pos + 1 :]
+        )
 
     return result
 

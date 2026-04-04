@@ -3,7 +3,7 @@ revision = 3
 requires-python = ">=3.14"
 
 [options]
-exclude-newer = "2026-04-01T00:48:38.746718438Z"
+exclude-newer = "2026-04-01T00:49:59.267024788Z"
 exclude-newer-span = "P3D"
 
 [[package]]
@@ -348,7 +348,7 @@ wheels = [
 
 [[package]]
 name = "browserstack-sdk"
-version = "1.42.0"
+version = "1.43.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "browserstack-local" },
@@ -369,7 +369,7 @@ dependencies = [
     { name = "robotframework-retryfailed" },
     { name = "watchdog" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/f7/dd/870f77d8f7de9d1b688269cea172429d1958eccbfd2e57c2cf0e414ca714/browserstack_sdk-1.42.0.tar.gz", hash = "sha256:f923e06f5eec3a7f7a62539125c0f015bc7c276cc5e7b557d0f17422f3f51e91", size = 359718, upload-time = "2026-03-19T10:53:25.018Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/ce/a7/0703d749c8f5016beae4852244f3c114edf018d93014721914b794230268/browserstack_sdk-1.43.1.tar.gz", hash = "sha256:70dc595741b19a1d30d6d411b29d32eeea5161b68c3c8d749445ff2955116b3e", size = 362231, upload-time = "2026-03-30T07:36:32.844Z" }
 
 [[package]]
 name = "cachecontrol"

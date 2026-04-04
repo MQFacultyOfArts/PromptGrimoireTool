@@ -1,13 +1,14 @@
 """Annotation card interaction helpers for E2E tests.
 
 Extracted from annotation_helpers.py to keep file sizes manageable.
-These helpers handle card expand/collapse, commenting, and comment
-inspection.
+These helpers handle card expand/collapse, commenting, comment
+inspection, and Pabai workspace rehydration.
 """
 
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -16,6 +17,70 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 ANNOTATION_CARD = "[data-testid='annotation-card']"
+
+PABAI_WORKSPACE_ID = "0e5e9b04-de94-4728-a8c9-e625c141fea3"
+PABAI_FIXTURE_JSON = (
+    Path(__file__).parent.parent / "fixtures" / "pabai_workspace_scrubbed.json"
+)
+
+
+def test_db_conninfo() -> str:
+    """Build psycopg conninfo for the branch-specific test database."""
+    from urllib.parse import urlparse
+
+    from promptgrimoire.config import get_settings
+
+    url = get_settings().dev.test_database_url
+    if not url:
+        msg = "DEV__TEST_DATABASE_URL not configured"
+        raise RuntimeError(msg)
+    parsed = urlparse(url)
+    user = parsed.username or "brian"
+    dbname = parsed.path.lstrip("/")
+    host = parsed.hostname or "/var/run/postgresql"
+    if "host=" in (parsed.query or ""):
+        for param in parsed.query.split("&"):
+            if param.startswith("host="):
+                host = param.split("=", 1)[1]
+    return f"user={user} dbname={dbname} host={host}"
+
+
+def ensure_pabai_workspace() -> str:
+    """Rehydrate the Pabai workspace into the test DB (idempotent).
+
+    The rehydrate script deletes then re-inserts, so calling this
+    unconditionally is safe. Returns the workspace ID.
+
+    Raises ``pytest.skip`` if the fixture JSON doesn't exist.
+    """
+    import pytest
+
+    if not PABAI_FIXTURE_JSON.exists():
+        pytest.skip(
+            f"Workspace JSON not found at {PABAI_FIXTURE_JSON}. "
+            "Extract from prod or dev DB first."
+        )
+
+    from scripts.rehydrate_workspace import rehydrate
+
+    conninfo = test_db_conninfo()
+    result = rehydrate(PABAI_FIXTURE_JSON, conninfo)
+    assert result["workspace_id"] == PABAI_WORKSPACE_ID
+    return PABAI_WORKSPACE_ID
+
+
+def select_tag(page: Page, label: str, *, card_index: int = 0) -> None:
+    """Change an annotation card's tag via the Quasar q-select dropdown.
+
+    Clicks the q-select to open its popup menu, then clicks the option
+    matching *label*. Works with the Vue sidebar's Quasar select (not
+    a native ``<select>``).
+    """
+    card = page.locator(ANNOTATION_CARD).nth(card_index)
+    tag_select = card.get_by_test_id("tag-select")
+    tag_select.click()
+    # Quasar q-select opens a popup menu with role="listbox"
+    page.locator(".q-menu .q-item").filter(has_text=label).click()
 
 
 def expand_card(page: Page, card_index: int = 0) -> None:

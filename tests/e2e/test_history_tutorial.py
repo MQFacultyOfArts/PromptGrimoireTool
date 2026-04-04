@@ -30,7 +30,7 @@ import pytest
 from playwright.sync_api import expect
 
 from promptgrimoire.docs.helpers import select_chars
-from tests.e2e.card_helpers import add_comment_to_highlight, expand_card
+from tests.e2e.card_helpers import add_comment_to_highlight, expand_card, select_tag
 from tests.e2e.highlight_tools import create_highlight_with_tag, find_text_range
 
 if TYPE_CHECKING:
@@ -117,11 +117,7 @@ class TestHistoryTutorial:
         with subtests.test(msg="student_a_changes_tag"):
             # Change first card's tag from Jurisdiction to Procedural History
             expand_card(page1, 0)
-            first_card = page1.locator(ANNOTATION_CARD).first
-            tag_select = first_card.get_by_test_id("tag-select")
-
-            # Vue sidebar uses native <select> — use select_option
-            tag_select.select_option(label="Procedural History")
+            select_tag(page1, "Procedural History", card_index=0)
 
         with subtests.test(msg="tag_change_syncs_to_student_b"):
             # Student B should see the updated tag

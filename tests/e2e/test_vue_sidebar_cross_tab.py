@@ -15,7 +15,6 @@ Run with:
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import TYPE_CHECKING
 from uuid import uuid4
 
@@ -24,16 +23,15 @@ from playwright.sync_api import expect
 
 from promptgrimoire.config import get_settings
 from promptgrimoire.docs.helpers import wait_for_text_walker
+from tests.e2e.card_helpers import (
+    ensure_pabai_workspace,
+    test_db_conninfo,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Generator
 
     from playwright.sync_api import Browser, Page
-
-PABAI_WORKSPACE_ID = "0e5e9b04-de94-4728-a8c9-e625c141fea3"
-_WORKSPACE_JSON = (
-    Path(__file__).parent.parent / "fixtures" / "pabai_workspace_scrubbed.json"
-)
 
 pytestmark = [
     pytest.mark.e2e,
@@ -45,58 +43,10 @@ pytestmark = [
 ]
 
 
-def _test_db_conninfo() -> str:
-    """Build psycopg conninfo for the test database."""
-    from urllib.parse import urlparse
-
-    url = get_settings().dev.test_database_url
-    if not url:
-        msg = "DEV__TEST_DATABASE_URL not configured"
-        raise RuntimeError(msg)
-    parsed = urlparse(url)
-    user = parsed.username or "brian"
-    dbname = parsed.path.lstrip("/")
-    host = parsed.hostname or "/var/run/postgresql"
-    if "host=" in (parsed.query or ""):
-        for param in parsed.query.split("&"):
-            if param.startswith("host="):
-                host = param.split("=", 1)[1]
-    return f"user={user} dbname={dbname} host={host}"
-
-
-@pytest.fixture(scope="session")
+@pytest.fixture(scope="module")
 def pabai_workspace() -> str:
-    """Ensure the Pabai workspace is rehydrated into the test DB.
-
-    Session-scoped: runs once, rehydrates from JSON extraction if
-    the workspace is missing. Skips if the JSON file doesn't exist.
-
-    Returns the workspace ID.
-    """
-    import psycopg
-
-    if not _WORKSPACE_JSON.exists():
-        pytest.skip(
-            f"Workspace JSON not found at {_WORKSPACE_JSON}. "
-            "Extract from prod or dev DB first."
-        )
-
-    conninfo = _test_db_conninfo()
-
-    with psycopg.connect(conninfo) as conn:
-        cur = conn.cursor()
-        cur.execute(
-            "SELECT 1 FROM workspace WHERE id = %s::uuid",
-            (PABAI_WORKSPACE_ID,),
-        )
-        if cur.fetchone() is not None:
-            return PABAI_WORKSPACE_ID
-
-    from scripts.rehydrate_workspace import rehydrate
-
-    result = rehydrate(_WORKSPACE_JSON, conninfo)
-    assert result["workspace_id"] == PABAI_WORKSPACE_ID
-    return PABAI_WORKSPACE_ID
+    """Rehydrate the Pabai workspace (idempotent, module-scoped)."""
+    return ensure_pabai_workspace()
 
 
 @pytest.fixture
@@ -121,7 +71,7 @@ def pabai_page(
     page.goto(f"{app_server}/auth/callback?token=mock-token-{email}")
     page.wait_for_url(lambda url: "/auth/callback" not in url, timeout=10_000)
 
-    conninfo = _test_db_conninfo()
+    conninfo = test_db_conninfo()
     with psycopg.connect(conninfo) as conn:
         cur = conn.cursor()
         cur.execute(

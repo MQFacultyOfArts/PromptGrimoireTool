@@ -43,7 +43,7 @@ from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 from playwright.sync_api import expect
 
 from promptgrimoire.docs.helpers import select_chars, wait_for_text_walker
-from tests.e2e.card_helpers import add_comment_to_highlight, expand_card
+from tests.e2e.card_helpers import add_comment_to_highlight, expand_card, select_tag
 from tests.e2e.conftest import _authenticate_page
 from tests.e2e.export_tools import export_annotation_tex_text
 from tests.e2e.fixture_loaders import _load_fixture_via_paste
@@ -177,10 +177,7 @@ class TestLawStudent:
                 first_card = page.locator("[data-testid='annotation-card']").first
                 expect(first_card).to_be_visible(timeout=5000)
                 expand_card(page, 0)
-                tag_select = first_card.get_by_test_id("tag-select")
-
-                # Vue sidebar uses native <select> — use select_option
-                tag_select.select_option(label="Procedural History")
+                select_tag(page, "Procedural History", card_index=0)
 
             with subtests.test(msg="keyboard_shortcut_tag"):
                 # Select text range for keyboard shortcut highlight

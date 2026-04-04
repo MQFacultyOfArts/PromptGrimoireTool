@@ -128,6 +128,20 @@ def run_nicegui_lane(user_args: list[str]) -> int:
         return 130
 
 
+def _format_lane_output(lr: LaneResult) -> str:
+    """Format log/artifact paths for a lane result.
+
+    Shows all available output locations. Returns ``—`` only when the
+    lane genuinely produces no output files (e.g. JS, BATS).
+    """
+    parts: list[str] = []
+    if lr.log_path:
+        parts.append(str(lr.log_path))
+    if lr.artifact_dir:
+        parts.append(str(lr.artifact_dir))
+    return ", ".join(parts) if parts else "—"
+
+
 def _print_all_lanes_summary(
     cwd: Path,
     branch: str,
@@ -143,8 +157,7 @@ def _print_all_lanes_summary(
     console.print(f"  {'─' * 14} {'─' * 6} {'─' * 40}")
     for lr in results:
         status = "[green]PASS[/]" if lr.exit_code == 0 else "[red]FAIL[/]"
-        path_info = str(lr.log_path or lr.artifact_dir or "—")
-        console.print(f"  {lr.name:<14} {status}  {path_info}")
+        console.print(f"  {lr.name:<14} {status}  {_format_lane_output(lr)}")
     console.print()
 
     any_failed = any(lr.exit_code != 0 for lr in results)
@@ -221,9 +234,8 @@ def _run_all_lane_steps(user_args: list[str]) -> list[LaneResult]:
         LaneResult("integration", integration_exit, log_path=integration_log)
     )
 
-    # --- Lane 3: Playwright (unchanged) ---
+    # --- Lane 3: Playwright (parallel) ---
     console.print("[blue]Running Playwright lane (parallel)...[/]")
-    previous_playwright_artifact = _latest_artifact_dir("playwright")
     playwright_exit = run_playwright_lane(
         user_args,
         parallel=True,
@@ -234,21 +246,18 @@ def _run_all_lane_steps(user_args: list[str]) -> list[LaneResult]:
         LaneResult(
             "playwright",
             playwright_exit,
-            artifact_dir=_artifact_dir_if_new(
-                "playwright", previous_playwright_artifact
-            ),
+            artifact_dir=_latest_artifact_dir("playwright"),
         )
     )
 
-    # --- Lane 4: NiceGUI (unchanged) ---
+    # --- Lane 4: NiceGUI (parallel) ---
     console.print("[blue]Running NiceGUI lane...[/]")
-    previous_nicegui_artifact = _latest_artifact_dir("nicegui")
     nicegui_exit = run_nicegui_lane(user_args)
     lane_results.append(
         LaneResult(
             "nicegui",
             nicegui_exit,
-            artifact_dir=_artifact_dir_if_new("nicegui", previous_nicegui_artifact),
+            artifact_dir=_latest_artifact_dir("nicegui"),
         )
     )
 
@@ -342,7 +351,7 @@ def run_slow_lanes(user_args: list[str]) -> int:
     os.environ["E2E_SKIP_LATEXMK"] = "0"
     try:
         console.print("[blue]Running Playwright slow lane (latexmk enabled)...[/]")
-        previous_playwright_artifact = _latest_artifact_dir("playwright")
+        pw_latexmk_log = Path("test-playwright-latexmk.log")
         pw_latexmk_exit = _normalise_optional_lane_exit(
             _run_serial_playwright_e2e(
                 user_args,
@@ -351,6 +360,7 @@ def run_slow_lanes(user_args: list[str]) -> int:
                 clear_cache=True,
                 marker_expr=PLAYWRIGHT_SLOW_MARKER_EXPR,
                 test_timeout=120,
+                log_file=pw_latexmk_log,
             ),
             user_args,
         )
@@ -363,9 +373,7 @@ def run_slow_lanes(user_args: list[str]) -> int:
         LaneResult(
             "playwright-latexmk",
             pw_latexmk_exit,
-            artifact_dir=_artifact_dir_if_new(
-                "playwright", previous_playwright_artifact
-            ),
+            log_path=pw_latexmk_log,
         )
     )
 
@@ -932,6 +940,7 @@ def _run_serial_playwright_e2e(
     browser: str | None = None,
     marker_expr: str = PLAYWRIGHT_DEFAULT_MARKER_EXPR,
     test_timeout: int | None = None,
+    log_file: Path | None = None,
 ) -> int:
     """Run Playwright tests in single-server serial mode."""
     from promptgrimoire.config import get_settings
@@ -978,7 +987,7 @@ def _run_serial_playwright_e2e(
 
     exit_code = 1
     try:
-        log_path = Path("test-e2e.log")
+        log_path = log_file or Path("test-e2e.log")
         exit_code = _run_pytest(
             title=(f"Playwright Test Suite (serial, fail-fast) — server {url}"),
             log_path=log_path,

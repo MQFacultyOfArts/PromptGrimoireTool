@@ -65,16 +65,12 @@ class TestBroadcastPropPush:
         assert len(initial_events) >= 1, (
             f"No vue_sidebar_refresh event. Events: {[e.get('event') for e in cap]}"
         )
-        initial_epoch = initial_events[-1]["cards_epoch"]
-        assert initial_epoch >= 1, "Epoch should be >=1 after initial load"
-
-        # Verify epoch incremented (initial load fires once)
-        epochs = [e["cards_epoch"] for e in initial_events]
-        assert epochs[-1] >= 1
-        # If multiple refreshes occurred (e.g. tab switch),
-        # epochs must be monotonically increasing.
-        for i in range(1, len(epochs)):
-            assert epochs[i] > epochs[i - 1], f"Epoch did not increment: {epochs}"
+        # Epoch is now Vue-managed (client-side watch on items prop).
+        # The structlog event records "vue-managed" as a sentinel.
+        # Verify the event fires with highlight data, not epoch values.
+        assert initial_events[-1].get("highlight_count", 0) >= 1, (
+            "vue_sidebar_refresh should report highlight_count"
+        )
 
     @pytest.mark.asyncio
     async def test_prop_push_after_initial_load(self, nicegui_user: User) -> None:

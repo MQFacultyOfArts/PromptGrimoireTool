@@ -32,7 +32,7 @@ def expand_card(page: Page, card_index: int = 0) -> None:
     if detail.is_visible():
         return  # already expanded
 
-    expand_btn = card.get_by_test_id("card-expand-btn")
+    expand_btn = card.get_by_test_id("expand-btn")
     expand_btn.click()
 
     detail.wait_for(state="visible", timeout=5000)
@@ -53,7 +53,7 @@ def collapse_card(page: Page, card_index: int = 0) -> None:
     if not detail.is_visible():
         return  # already collapsed
 
-    expand_btn = card.get_by_test_id("card-expand-btn")
+    expand_btn = card.get_by_test_id("expand-btn")
     expand_btn.click()
 
     detail.wait_for(state="hidden", timeout=5000)
@@ -117,7 +117,7 @@ def add_comment_to_highlight(
     new_detail.wait_for(state="visible", timeout=5000)
 
     # Wait for the specific comment text to be visible in the new card
-    new_comment = new_card.get_by_test_id("comment").filter(has_text=text)
+    new_comment = new_card.get_by_test_id("comment-item").filter(has_text=text)
     try:
         new_comment.wait_for(state="visible", timeout=5000)
     except Exception:
@@ -130,7 +130,7 @@ def add_comment_to_highlight(
                 const card = cards[cardIdx];
                 if (!card) return { error: 'card not found', cardCount: cards.length };
                 const detail = card.querySelector('[data-testid="card-detail"]');
-                const comments = card.querySelectorAll('[data-testid="comment"]');
+                const comments = card.querySelectorAll('[data-testid="comment-item"]');
                 return {
                     cardCount: cards.length,
                     detailVisible: detail ? detail.offsetHeight > 0 : null,

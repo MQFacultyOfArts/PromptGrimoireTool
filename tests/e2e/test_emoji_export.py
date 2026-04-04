@@ -89,7 +89,7 @@ class TestEmojiExport:
                 emoji_comment = f"Test emoji comment 🎉 {uuid4().hex[:8]}"
                 add_comment_to_highlight(page, emoji_comment, card_index=0)
                 expect(
-                    page.get_by_test_id("comment").filter(has_text=emoji_comment),
+                    page.get_by_test_id("comment-item").filter(has_text=emoji_comment),
                 ).to_be_visible(timeout=10000)
 
             with subtests.test(msg="export_contains_emoji"):

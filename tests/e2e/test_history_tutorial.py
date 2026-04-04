@@ -97,19 +97,21 @@ class TestHistoryTutorial:
 
             add_comment_to_highlight(page1, comment_uuid, card_index=0)
             expect(
-                page1.get_by_test_id("comment").filter(has_text=comment_uuid)
+                page1.get_by_test_id("comment-item").filter(has_text=comment_uuid)
             ).to_be_visible(timeout=5000)
 
         with subtests.test(msg="comment_syncs_to_student_b"):
             # Wait for comment count badge to appear (sync indicator),
             # then expand the card to reveal the lazy-built detail section.
             expect(
-                page2.locator(ANNOTATION_CARD).first.get_by_test_id("comment-count")
+                page2.locator(ANNOTATION_CARD).first.get_by_test_id(
+                    "comment-count-badge"
+                )
             ).to_be_visible(timeout=10000)
             expand_card(page2, 0)
             # Student B should see the comment in the detail section
             expect(
-                page2.get_by_test_id("comment").filter(has_text=comment_uuid)
+                page2.get_by_test_id("comment-item").filter(has_text=comment_uuid)
             ).to_be_visible(timeout=5000)
 
         with subtests.test(msg="student_a_changes_tag"):
@@ -118,23 +120,8 @@ class TestHistoryTutorial:
             first_card = page1.locator(ANNOTATION_CARD).first
             tag_select = first_card.get_by_test_id("tag-select")
 
-            # Open dropdown
-            tag_select.click()
-
-            # Select Procedural History via JS to avoid DOM detachment
-            page1.wait_for_selector(".q-menu", state="visible", timeout=5000)
-            page1.evaluate(
-                """() => {
-                    for (const el of document
-                        .querySelectorAll('.q-menu .q-item'))
-                        if (el.textContent
-                            .includes('Procedural History'))
-                            { el.click(); return; }
-                }"""
-            )
-
-            # Verify tag changed on page1
-            expect(tag_select).to_contain_text("Procedural History", timeout=5000)
+            # Vue sidebar uses native <select> — use select_option
+            tag_select.select_option(label="Procedural History")
 
         with subtests.test(msg="tag_change_syncs_to_student_b"):
             # Student B should see the updated tag

@@ -342,7 +342,7 @@ class TestCollapsedCards:
         expect(detail).to_be_hidden()
 
         # Expand button should be visible in the compact header
-        expand_btn = card.get_by_test_id("card-expand-btn")
+        expand_btn = card.get_by_test_id("expand-btn")
         expect(expand_btn).to_be_visible()
 
     def test_expand_collapse_toggle(

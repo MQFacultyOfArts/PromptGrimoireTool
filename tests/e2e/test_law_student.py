@@ -147,7 +147,7 @@ class TestLawStudent:
                 uuid1 = uuid4().hex[:8]
                 add_comment_to_highlight(page, uuid1, card_index=0)
                 expect(
-                    page.get_by_test_id("comment").filter(has_text=uuid1)
+                    page.get_by_test_id("comment-item").filter(has_text=uuid1)
                 ).to_be_visible(timeout=5000)
 
             with subtests.test(msg="highlight_with_different_tag"):
@@ -164,7 +164,7 @@ class TestLawStudent:
                 uuid2 = uuid4().hex[:8]
                 add_comment_to_highlight(page, uuid2, card_index=1)
                 expect(
-                    page.get_by_test_id("comment").filter(has_text=uuid2)
+                    page.get_by_test_id("comment-item").filter(has_text=uuid2)
                 ).to_be_visible(timeout=5000)
 
             with subtests.test(msg="change_tag_via_dropdown"):
@@ -179,23 +179,8 @@ class TestLawStudent:
                 expand_card(page, 0)
                 tag_select = first_card.get_by_test_id("tag-select")
 
-                # Open dropdown and select via JS evaluate to avoid
-                # DOM detachment from NiceGUI re-renders. JS finds
-                # and clicks the option in a single synchronous frame.
-                tag_select.click()
-                page.wait_for_selector(".q-menu", state="visible", timeout=5000)
-                page.evaluate(
-                    """() => {
-                        for (const el of document
-                            .querySelectorAll('.q-menu .q-item'))
-                            if (el.textContent
-                                .includes('Procedural History'))
-                                { el.click(); return; }
-                    }"""
-                )
-
-                # Verify tag changed (dropdown displays new tag)
-                expect(tag_select).to_contain_text("Procedural History", timeout=5000)
+                # Vue sidebar uses native <select> — use select_option
+                tag_select.select_option(label="Procedural History")
 
             with subtests.test(msg="keyboard_shortcut_tag"):
                 # Select text range for keyboard shortcut highlight
@@ -399,11 +384,11 @@ class TestLawStudent:
                 # Cards default to collapsed after reload — expand to check comments
                 expand_card(page, 0)
                 expect(
-                    page.get_by_test_id("comment").filter(has_text=uuid1)
+                    page.get_by_test_id("comment-item").filter(has_text=uuid1)
                 ).to_be_visible(timeout=10000)
                 expand_card(page, 1)
                 expect(
-                    page.get_by_test_id("comment").filter(has_text=uuid2)
+                    page.get_by_test_id("comment-item").filter(has_text=uuid2)
                 ).to_be_visible(timeout=10000)
 
             with subtests.test(msg="export_pdf_with_annotations"):

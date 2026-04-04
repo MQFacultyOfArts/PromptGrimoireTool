@@ -5,7 +5,7 @@ cannot test (no Vue runtime server-side):
 
 1. Component renders in Chromium (Vue template produces real DOM nodes)
 2. Props arrive in Vue (items rendered with correct data-* attributes)
-3. Vue $emit reaches Python (click → test_event → Python handler → label update)
+3. Vue $emit reaches Python (click → toggle_expand → Python handler → label update)
 4. Prop updates re-render (set_items → DOM card count changes)
 5. DOM exposes data-testid and data-* attributes
 

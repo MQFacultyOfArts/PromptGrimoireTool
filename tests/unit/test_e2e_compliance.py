@@ -72,6 +72,9 @@ ALLOWED_JS_FILES = {
     # Idle tab eviction (#471): visibilitychange simulation requires
     # evaluate() — Playwright has no native API for tab visibility.
     "test_idle_tab_eviction.py",
+    # Cross-tab Vue sidebar test: reads inline style.top values and
+    # checks card positioning — no Playwright-native API for this.
+    "test_vue_sidebar_cross_tab.py",
 }
 
 

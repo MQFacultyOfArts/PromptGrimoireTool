@@ -61,7 +61,6 @@ NICEGUI_LANE = LaneSpec(
 )
 
 _NICEGUI_ALLOWLIST: tuple[str, ...] = (
-    "test_annotation_cards_charac.py",
     "test_annotation_pdf_export_filename_ui.py",
     "test_bulk_enrol_upload_ui.py",
     "test_crud_management_ui.py",
@@ -75,12 +74,13 @@ _NICEGUI_ALLOWLIST: tuple[str, ...] = (
     "test_tag_management_crdt_sync.py",
     "test_memory_leak_probe.py",
     "test_event_loop_render_lag.py",
-    "test_lazy_card_detail.py",
     "test_vue_sidebar_spike.py",
+    "test_vue_sidebar_broadcast.py",
     "test_vue_sidebar_dom_contract.py",
     "test_vue_sidebar_expand.py",
     "test_vue_sidebar_mutations.py",
     "test_vue_sidebar_interactions.py",
+    "test_vue_sidebar_charac.py",
 )
 
 

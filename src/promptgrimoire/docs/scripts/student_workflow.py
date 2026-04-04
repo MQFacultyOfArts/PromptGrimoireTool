@@ -130,7 +130,7 @@ def _step_add_comment(page: Page, guide: Guide) -> None:
 
         # Click the expand chevron to open the detail section (collapsed
         # by default) which contains the comment input.
-        card.get_by_test_id("card-expand-btn").click()
+        card.get_by_test_id("expand-btn").click()
         card.get_by_test_id("card-detail").wait_for(state="visible", timeout=5000)
 
         comment_input = card.get_by_test_id("comment-input")

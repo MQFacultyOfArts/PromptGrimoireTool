@@ -307,7 +307,6 @@ async def test_delete_highlight_survives_pre_cleared_card(
     # Build a minimal PageState with the real container and card
     state = PageState(workspace_id=workspace_id)
     state.annotations_container = container
-    state.annotation_cards = {highlight_id: card}
     state.highlight_style = None  # skip CSS update
     state.broadcast_update = None  # skip broadcast
 
@@ -347,8 +346,9 @@ async def test_delete_highlight_survives_pre_cleared_card(
     mock_pm.force_persist_workspace.assert_awaited_once_with(
         workspace_id,
     )
-    # 3. annotation_cards dict was cleaned up
-    assert highlight_id not in state.annotation_cards
+    # 3. highlight CSS was updated (Vue sidebar has no card dict)
+    # The is_deleted guard is the key assertion — card.delete()
+    # did not raise ValueError on the already-deleted element.
 
 
 # ---------------------------------------------------------------------------

@@ -21,7 +21,7 @@ export default {
       default: '',
     },
   },
-  emits: ['test_event', 'toggle_expand', 'change_tag', 'submit_comment', 'delete_comment', 'delete_highlight', 'edit_para_ref', 'locate_highlight'],
+  emits: ['toggle_expand', 'change_tag', 'submit_comment', 'delete_comment', 'delete_highlight', 'edit_para_ref', 'locate_highlight'],
   setup(props, { emit }) {
     const { ref, reactive, watch, computed, nextTick, onMounted, onBeforeUnmount } = Vue;
 
@@ -295,12 +295,6 @@ export default {
       getCommentDraft, setCommentDraft,
       startParaRefEdit, finishParaRefEdit, onLocate,
     };
-  },
-  methods: {
-    onItemClick(item) {
-      // Test hook — fires test_event for spike tests
-      this.$emit("test_event", { id: item.id });
-    },
   },
   template: `
     <div ref="rootRef" data-testid="annotation-sidebar-root" style="position: relative;">

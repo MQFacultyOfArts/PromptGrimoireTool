@@ -25,10 +25,8 @@ class DocumentTabState:
     document_id: UUID
     tab: ui.tab | None
     panel: ui.tab_panel | None
-    # Card state (diff algorithm)
+    # Card state — Vue sidebar re-renders from props
     cards_container: ui.element | None = None
-    annotation_cards: dict[str, Any] = field(default_factory=dict)
-    card_snapshots: dict[str, dict[str, Any]] = field(default_factory=dict)
     cards_epoch: int = 0
     # Document content state
     document_chars: list[str] | None = None

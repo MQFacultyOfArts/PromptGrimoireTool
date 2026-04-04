@@ -22,8 +22,6 @@ class TestDocumentTabState:
         """Mutable defaults are isolated and correct."""
         state = DocumentTabState(document_id=uuid4(), tab=None, panel=None)
         assert state.cards_container is None
-        assert state.annotation_cards == {}
-        assert state.card_snapshots == {}
         assert state.rendered is False
         assert state.cards_epoch == 0
         # Document content defaults
@@ -41,5 +39,5 @@ class TestDocumentTabState:
         """Each instance gets its own mutable containers."""
         a = DocumentTabState(document_id=uuid4(), tab=None, panel=None)
         b = DocumentTabState(document_id=uuid4(), tab=None, panel=None)
-        a.annotation_cards["x"] = 1
-        assert "x" not in b.annotation_cards
+        a.paragraph_map["x"] = 1
+        assert "x" not in b.paragraph_map

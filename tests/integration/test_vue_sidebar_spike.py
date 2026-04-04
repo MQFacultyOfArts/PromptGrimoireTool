@@ -74,9 +74,9 @@ async def test_go2_props_set_on_element(nicegui_user: Any) -> None:
 
 @pytest.mark.asyncio
 async def test_go3_event_listener_registered_and_fires(nicegui_user: Any) -> None:
-    """GO3 (partial): test_event listener is registered and fires correctly.
+    """GO3 (partial): toggle_expand listener is registered and fires.
 
-    Validates that ``self.on("test_event", ...)`` registers a listener
+    Validates that ``self.on("toggle_expand", ...)`` registers a listener
     under the correct key and that the callback receives the payload.
     Full Vue ``$emit`` -> Python validation requires a browser.
     """
@@ -86,7 +86,7 @@ async def test_go3_event_listener_registered_and_fires(nicegui_user: Any) -> Non
     def _event_page() -> None:
         AnnotationSidebar(
             items=[{"id": "h1"}],
-            on_test_event=received.append,
+            on_toggle_expand=received.append,
         ).props('data-testid="spike-event-sidebar"')
 
     await nicegui_user.open("/spike-event-test")
@@ -96,16 +96,16 @@ async def test_go3_event_listener_registered_and_fires(nicegui_user: Any) -> Non
 
     # Verify listener exists with correct type
     has_listener = any(
-        ev.type == "test_event" and ev.element_id == el.id
+        ev.type == "toggle_expand" and ev.element_id == el.id
         for ev in el._event_listeners.values()
     )
-    assert has_listener, "no test_event listener registered on element"
+    assert has_listener, "no toggle_expand listener registered"
 
     # Fire the listener directly
     for listener in el._event_listeners.values():
         if listener.element_id != el.id:
             continue
-        if listener.type != "test_event":
+        if listener.type != "toggle_expand":
             continue
         event_args = events.GenericEventArguments(
             sender=el, client=el.client, args={"id": "h1"}
@@ -113,7 +113,7 @@ async def test_go3_event_listener_registered_and_fires(nicegui_user: Any) -> Non
         events.handle_event(listener.handler, event_args)
 
     assert len(received) == 1, f"Expected 1 event, got {len(received)}"
-    assert received[0] == {"id": "h1"}, f"Expected {{id: h1}}, got {received[0]}"
+    assert received[0] == {"id": "h1"}
 
 
 @pytest.mark.asyncio
@@ -176,7 +176,7 @@ async def test_go5_js_file_exists() -> None:
     content = _JS_PATH.read_text()
     assert "data-testid" in content, "JS template missing data-testid attributes"
     assert "data-highlight-id" in content, "JS template missing data-highlight-id"
-    assert "test_event" in content, "JS template missing test_event emit"
+    assert "toggle_expand" in content, "JS template missing toggle_expand emit"
 
 
 @pytest.mark.asyncio

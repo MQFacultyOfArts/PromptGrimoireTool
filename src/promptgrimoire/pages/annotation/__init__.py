@@ -11,7 +11,7 @@ Route: /annotation
 Package structure (26 authored modules):
     __init__                Core types, globals, route definition
     broadcast               Multi-client sync and remote presence
-    cards                   Annotation card UI components
+    sidebar                 Vue annotation sidebar component
     content_form            Document upload/paste form (orchestration)
     paste_handler           Paste submission processing
     paste_script            Client-side paste interception JavaScript
@@ -235,12 +235,10 @@ class PageState:
     save_status: ui.label | None = None
     user_count_badge: ui.label | None = None  # Shows connected user count
     crdt_doc: AnnotationDocument | None = None
-    # Annotation cards
+    # Annotation sidebar container (holds Vue AnnotationSidebar)
     annotations_container: ui.element | None = None
-    annotation_cards: dict[str, ui.card] | None = None
     # Per-document tab state (multi-document workspace)
     document_tabs: dict[UUID, DocumentTabState] = field(default_factory=dict)
-    card_snapshots: dict[str, dict[str, Any]] = field(default_factory=dict)
     # WARNING: expanded_cards is workspace-global, not per-document.
     # Works because highlight IDs are UUIDs (globally unique within a
     # workspace).  Do NOT change to integer or sequential IDs without
@@ -248,10 +246,7 @@ class PageState:
     expanded_cards: set[str] = field(
         default_factory=set
     )  # highlight IDs currently expanded
-    detail_built_cards: set[str] = field(
-        default_factory=set
-    )  # highlight IDs with detail section built
-    cards_epoch: int = 0  # Incremented on every container rebuild
+    cards_epoch: int = 0  # Incremented on every Vue prop push
     refresh_annotations: Any | None = None  # Callable to refresh cards
     broadcast_update: Any | None = None  # Callable to broadcast to other clients
     broadcast_cursor: Any | None = None  # Callable to broadcast cursor position
@@ -341,22 +336,15 @@ class PageState:
         return {ti.raw_key: ti.colour for ti in (self.tag_info_list or [])}
 
     def invalidate_card_cache(self) -> None:
-        """Force the next ``refresh_annotations()`` to do a full rebuild.
+        """Mark deferred tabs for rebuild on next visit.
 
         Call this when tag metadata changes (rename, recolour, create,
-        delete) — the per-highlight snapshot cannot detect those because
-        the highlight's ``tag`` field (a UUID) doesn't change when the
-        tag's display name or colour does.  Also invalidates per-document
-        tab caches so deferred tabs rebuild on next visit.
+        delete).  Callers are responsible for calling
+        ``refresh_annotations()`` separately to push fresh props to
+        the current tab's Vue sidebar.
         """
-        self.annotation_cards = None
-        self.card_snapshots = {}
-        self.detail_built_cards.clear()
         for doc_tab in self.document_tabs.values():
-            doc_tab.annotation_cards = {}
-            doc_tab.card_snapshots = {}
             if doc_tab.rendered:
-                # Mark rendered tabs for rebuild on next visit
                 doc_tab.rendered = False
 
 

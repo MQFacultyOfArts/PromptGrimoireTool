@@ -40,6 +40,7 @@ from promptgrimoire.pages.annotation.broadcast import (
 )
 from promptgrimoire.pages.annotation.css import _build_tag_toolbar
 from promptgrimoire.pages.annotation.header import (
+    _wrap_refresh_with_stale_download_clear,
     inject_copy_protection,
     render_workspace_header,
 )
@@ -362,9 +363,8 @@ async def _load_workspace_content(
             # (skeleton used generic "Annotation Workspace").
             _update_page_title(context.workspace.title)
 
-            first_doc_tab_name = str(documents[0].id) if documents else "Source"
-            state.initialised_tabs = {first_doc_tab_name}
-            state.active_tab = first_doc_tab_name
+            _first_tab = str(documents[0].id) if documents else "Source"
+            state.initialised_tabs, state.active_tab = {_first_tab}, _first_tab
 
             tabs = build_tabs(documents, state)
             state.footer = footer
@@ -392,13 +392,12 @@ async def _load_workspace_content(
             )
             _t_panels = time.monotonic()
 
+            _wrap_refresh_with_stale_download_clear(state)
             _replay_existing_cursors(str(workspace_id), state.client_id, state)
-
             if protect:
                 inject_copy_protection()
 
-            # Signal load complete: JS flag for E2E, marker element
-            # for NiceGUI integration tests.
+            # Signal load complete: JS flag for E2E + marker for NiceGUI tests.
             ui.run_javascript("window.__loadComplete = true")
             ui.element("div").props(
                 'data-testid="annotation-ready" style="display:none"'

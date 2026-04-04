@@ -22,11 +22,18 @@ import pytest
 from promptgrimoire.export.pdf import (
     LaTeXCompilationError,
     compile_latex,
+    reset_compile_semaphore,
 )
 
 if TYPE_CHECKING:
     from collections.abc import Coroutine
     from typing import Any
+
+
+@pytest.fixture(autouse=True)
+def _reset_semaphore() -> None:
+    """Ensure a fresh semaphore for each test — prevents cross-test leakage."""
+    reset_compile_semaphore()
 
 
 @pytest.mark.asyncio

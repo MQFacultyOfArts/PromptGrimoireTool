@@ -22,8 +22,16 @@ from unittest.mock import AsyncMock, patch
 import pytest
 import structlog
 
+from promptgrimoire.export.pdf import reset_compile_semaphore
+
 if TYPE_CHECKING:
     from pathlib import Path
+
+
+@pytest.fixture(autouse=True)
+def _reset_semaphore() -> None:
+    """Ensure a fresh semaphore — prevents cross-test leakage under xdist."""
+    reset_compile_semaphore()
 
 
 # ---------------------------------------------------------------------------

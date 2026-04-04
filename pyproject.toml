@@ -276,7 +276,7 @@ exclude = ["alembic/"]
 
 [tool.vulture]
 paths = ["src/promptgrimoire"]
-exclude = ["*/migrations/*"]
+exclude = ["*/migrations/*", "*/node_modules/*"]
 min_confidence = 80
 # QueryableAttribute: runtime import used in cast() string literal
 # (workspace_documents.py:112)

@@ -1,6 +1,6 @@
 # Dependency Rationale
 
-Last reviewed: 2026-03-20
+Last reviewed: 2026-04-04
 
 Each dependency lists: what it does, why it's here (not a stdlib/transitive alternative), and where the evidence is.
 
@@ -107,6 +107,8 @@ Removed 2026-03-18 from `pyproject.toml`. Superseded 2026-02-13 by pydantic-sett
 
 **Classification:** Hard core for the roleplay feature. Not used by annotation or export.
 
+**Last reviewed:** 2026-04-04 — upgraded 0.86.0 → 0.87.0. Bugfix release (error_type field, path sanitisation). No API changes affecting our usage.
+
 ### alembic >= 1.18.0
 
 **Claim:** Database schema migration tool. All schema changes go through Alembic migrations.
@@ -168,6 +170,8 @@ Removed 2026-02-10. Same replacement as pylatexenc above. The Lark lexer grammar
 **Evidence:** `src/promptgrimoire/wargame/agents.py` (turn_agent, summary_agent with TurnResult/StudentSummary output types). Called from `src/promptgrimoire/db/wargames.py` (start_game, run_preprocessing, publish_all). Will also be imported in `src/promptgrimoire/llm/playground_provider.py` (provider factory), `src/promptgrimoire/pages/playground.py` (streaming handler).
 **Why not alternatives:** The existing `ClaudeClient` (anthropic SDK) only supports Anthropic and lacks structured output validation. pydantic-ai abstracts multiple providers with a single streaming interface, validates model responses against Pydantic schemas with automatic retry on validation failure, and handles `message_history` serialization. LiteLLM was considered but adds a proxy server; pydantic-ai is a library.
 **Classification:** Hard core for playground and wargame features. The provider abstraction, structured output types, and message history serialisation are built around pydantic-ai's API.
+
+**Last reviewed:** 2026-04-04 — upgraded 1.70.0 → 1.75.0. New opt-in features (Capabilities, AgentSpec, Hooks, Thinking). Bugfixes for system message insertion. No breaking changes to our usage.
 
 ### ~~apscheduler >= 3.11, < 4~~ (REMOVED)
 
@@ -250,13 +254,15 @@ Removed 2026-02-10. Same replacement as pylatexenc above. The Lark lexer grammar
 
 **Evidence:** `tests/e2e/` directory. Provides `page`, `browser`, `context` fixtures.
 
-### junitparser >= 4.0.2
+### junitparser >= 5.0.0
 
 **Added:** 2026-02-20
 **Design plan:** docs/design-plans/2026-02-20-parallel-e2e-runner-95.md
 **Claim:** JUnit XML merging for parallel E2E test runner. Each worker subprocess produces its own JUnit XML file; junitparser merges them into a single aggregate report.
-**Evidence:** `src/promptgrimoire/cli.py` — used in `_run_parallel_e2e()` to merge per-file XML results.
+**Evidence:** `src/promptgrimoire/cli/e2e/_workers.py` — `from junitparser import JUnitXml` for merging per-file XML results.
 **Serves:** Developers (aggregate test results), CI (single JUnit XML for reporting).
+
+**Last reviewed:** 2026-04-04 — upgraded 4.0.2 → 5.0.0. Major version drops Python 3.9 (we're on 3.14), adds type annotations and TestCase Properties. Only JUnitXml used — no breaking changes for our usage.
 
 ### pytest-rerunfailures >= 16.1
 
@@ -478,3 +484,54 @@ Removed 2026-02-10. Same replacement as pylatexenc above. The Lark lexer grammar
 **Evidence:** `src/promptgrimoire/export/worker_main.py` imports `sdnotify.SystemdNotifier`.
 **Serves:** Production runtime (worker process monitoring).
 **Why not alternatives:** The `python-systemd` package requires the systemd C library at build time, adding a compile dependency. `sdnotify` is pure Python with no native dependencies — it reads `$NOTIFY_SOCKET` and writes to the Unix domain socket directly. Gracefully degrades on non-systemd systems (dev, CI).
+
+### pytest-timeout >= 2.4.0
+
+**Added:** 2026-04-04
+**Claim:** Per-test timeout enforcement. Prevents hanging tests from stalling the entire xdist test suite. Configured with `timeout = 30` (thread method) in pyproject.toml.
+**Evidence:** `pyproject.toml` [tool.pytest.ini_options] — `timeout = 30`, `timeout_method = "thread"`. Thread method required for xdist compatibility (signal-based timeouts don't work in non-main threads).
+**Serves:** Developers and CI (prevents infinite hangs).
+**Why not alternatives:** pytest-timeout is the standard pytest plugin for per-test timeouts. The built-in `faulthandler_timeout` only dumps tracebacks, it doesn't kill the test.
+**Classification:** Protective belt. Test infrastructure only.
+
+## npm Dependencies
+
+### happy-dom (devDependency, root)
+
+**Claim:** DOM implementation for vitest JS unit tests. Provides `window`, `document` etc. without a real browser.
+**Evidence:** `vitest.config.js` or `package.json` test config uses happy-dom environment.
+**Classification:** Protective belt. Test infrastructure.
+
+### vitest (devDependency, root)
+
+**Claim:** JavaScript unit test runner for annotation static JS files.
+**Evidence:** `package.json` scripts.test = "vitest run". Tests in `tests/js/`.
+**Classification:** Protective belt. Test infrastructure.
+
+### lockfile-lint (devDependency, root)
+
+**Added:** 2026-04-04
+**Claim:** Validates npm lockfile integrity — checks HTTPS, package name consistency, integrity hashes. Prevents lockfile injection attacks.
+**Evidence:** Pre-commit hooks for both `package-lock.json` files. `package.json` lint:lockfile scripts.
+**Ref:** https://github.com/lirantal/npm-security-best-practices
+**Classification:** Protective belt. Supply chain security.
+
+### npq (devDependency, root)
+
+**Added:** 2026-04-04
+**Claim:** Security-aware npm package installer. Checks packages against known vulnerabilities and quality signals before install.
+**Evidence:** `package.json` devDependency. Used as `npq install <pkg>` when adding new npm packages.
+**Ref:** https://github.com/lirantal/npm-security-best-practices
+**Classification:** Protective belt. Supply chain security.
+
+### @milkdown/crepe + @milkdown/plugin-collab (dependency, milkdown bundle)
+
+**Claim:** Milkdown WYSIWYG Markdown editor with collaborative editing (Yjs CRDT sync). Bundled via vite into `milkdown/dist/`.
+**Evidence:** `src/promptgrimoire/static/milkdown/package.json`, `src/promptgrimoire/static/milkdown/src/main.js`.
+**Classification:** Hard core for the Milkdown editor integration.
+
+### yjs + y-prosemirror (dependency, milkdown bundle)
+
+**Claim:** Yjs CRDT runtime and ProseMirror binding for collaborative editing. Required by @milkdown/plugin-collab.
+**Evidence:** Transitive via milkdown collab plugin. yjs interops with server-side pycrdt via binary sync protocol.
+**Classification:** Hard core for real-time collaboration.

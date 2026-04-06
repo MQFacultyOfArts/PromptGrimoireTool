@@ -27,7 +27,7 @@
 \RequirePackage{accsupp}          % PDF /ActualText for emoji accessibility (#274)
 \RequirePackage{fancyvrb}  % Verbatim/code blocks from Pandoc syntax highlighting
 \RequirePackage[a4paper,left=2.5cm,right=6cm,top=2.5cm,bottom=2.5cm]{geometry}
-\RequirePackage[framemethod=tikz]{mdframed}  % For speaker turn borders
+\RequirePackage[skins,breakable]{tcolorbox}  % For speaker turn borders (breakable for oversized turns)
 
 % =============================================================================
 % Fixed commands
@@ -79,46 +79,35 @@
 % Speaker turn environments
 % =============================================================================
 
-% Speaker turn environments with left border
-\newmdenv[
-  topline=false,
-  bottomline=false,
-  rightline=false,
-  linewidth=3pt,
-  linecolor=usercolor,
-  innerleftmargin=1em,
-  innerrightmargin=0pt,
-  innertopmargin=0pt,
-  innerbottommargin=0pt,
-  skipabove=0pt,
-  skipbelow=0pt
-]{userturn}
-\newmdenv[
-  topline=false,
-  bottomline=false,
-  rightline=false,
-  linewidth=3pt,
-  linecolor=assistantcolor,
-  innerleftmargin=1em,
-  innerrightmargin=0pt,
-  innertopmargin=0pt,
-  innerbottommargin=0pt,
-  skipabove=0pt,
-  skipbelow=0pt
-]{assistantturn}
-\newmdenv[
-  topline=false,
-  bottomline=false,
-  rightline=false,
-  linewidth=3pt,
-  linecolor=systemcolor,
-  innerleftmargin=1em,
-  innerrightmargin=0pt,
-  innertopmargin=0pt,
-  innerbottommargin=0pt,
-  skipabove=0pt,
-  skipbelow=0pt
-]{systemturn}
+% Speaker turn environments with left border.
+% Uses tcolorbox with breakable to handle arbitrarily long turns without
+% hitting TeX's \maxdimen limit (mdframed's framemethod=tikz measured the
+% full box height before splitting, causing "! Dimension too large" for
+% turns exceeding ~575cm rendered height).
+\newtcolorbox{userturn}{
+  enhanced, breakable=unlimited,
+  frame hidden, boxrule=0pt,
+  borderline west={3pt}{0pt}{usercolor},
+  left=1em, right=0pt, top=0pt, bottom=0pt,
+  before skip=0pt, after skip=0pt,
+  colback=white, sharp corners,
+}
+\newtcolorbox{assistantturn}{
+  enhanced, breakable=unlimited,
+  frame hidden, boxrule=0pt,
+  borderline west={3pt}{0pt}{assistantcolor},
+  left=1em, right=0pt, top=0pt, bottom=0pt,
+  before skip=0pt, after skip=0pt,
+  colback=white, sharp corners,
+}
+\newtcolorbox{systemturn}{
+  enhanced, breakable=unlimited,
+  frame hidden, boxrule=0pt,
+  borderline west={3pt}{0pt}{systemcolor},
+  left=1em, right=0pt, top=0pt, bottom=0pt,
+  before skip=0pt, after skip=0pt,
+  colback=white, sharp corners,
+}
 
 % =============================================================================
 % Annotation counter and macro

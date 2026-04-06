@@ -2,7 +2,7 @@
 
 Ensures that promptgrimoire-export.sty defines:
 1. \\definecolor{systemcolor}{HTML}{E65100} for system message turn markers
-2. \\newmdenv[...]{systemturn} mdframed environment for system message borders
+2. \\newtcolorbox{systemturn} tcolorbox environment for system message borders
 """
 
 from __future__ import annotations
@@ -37,24 +37,33 @@ class TestSystemTurnLatexDefinitions:
         )
 
     def test_systemturn_environment_defined(self, sty_content: str) -> None:
-        r"""The .sty must define a \newmdenv{systemturn} environment."""
+        r"""The .sty must define a \newtcolorbox{systemturn} environment."""
         assert r"{systemturn}" in sty_content, (
-            ".sty must define systemturn mdframed environment."
+            ".sty must define systemturn tcolorbox environment."
         )
 
     def test_systemturn_uses_systemcolor(self, sty_content: str) -> None:
         """The systemturn environment must use systemcolor for its border."""
-        # Find the systemturn block and verify it references systemcolor
-        system_env_start = sty_content.find(r"{systemturn}")
-        assert system_env_start != -1, "systemturn environment must exist"
+        block_start = sty_content.find(r"\newtcolorbox{systemturn}")
+        assert block_start != -1, "systemturn must be defined via \\newtcolorbox"
 
-        # Look backwards from {systemturn} to find the newmdenv block start
-        block_start = sty_content.rfind(r"\newmdenv[", 0, system_env_start)
-        assert block_start != -1, "systemturn must be defined via \\newmdenv["
-
-        block = sty_content[block_start : system_env_start + len("{systemturn}")]
-        assert "linecolor=systemcolor" in block, (
-            "systemturn environment must use linecolor=systemcolor."
+        # Find the options block by matching braces
+        # Skip the {systemturn} part first
+        options_start = sty_content.find(
+            "{", block_start + len(r"\newtcolorbox{systemturn}")
+        )
+        assert options_start != -1, "systemturn must have an options block"
+        depth = 1
+        pos = options_start + 1
+        while depth > 0 and pos < len(sty_content):
+            if sty_content[pos] == "{":
+                depth += 1
+            elif sty_content[pos] == "}":
+                depth -= 1
+            pos += 1
+        block = sty_content[block_start:pos]
+        assert "systemcolor" in block, (
+            "systemturn environment must reference systemcolor for its border."
         )
 
     def test_systemturn_after_assistantturn(self, sty_content: str) -> None:
@@ -66,3 +75,29 @@ class TestSystemTurnLatexDefinitions:
         assert system_pos > assistant_pos, (
             "systemturn must appear after assistantturn in the .sty file."
         )
+
+    def test_turn_environments_are_breakable(self, sty_content: str) -> None:
+        """All speaker turn environments must use tcolorbox with breakable."""
+        for env_name in ("userturn", "assistantturn", "systemturn"):
+            env_start = sty_content.find(f"\\newtcolorbox{{{env_name}}}")
+            assert env_start != -1, f"{env_name} must be defined via \\newtcolorbox"
+            # Find the options block
+            brace_start = sty_content.find(
+                "{", env_start + len(f"\\newtcolorbox{{{env_name}}}")
+            )
+            brace_end = sty_content.find("}", brace_start + 1)
+            options = sty_content[brace_start : brace_end + 1]
+            assert "breakable" in options, (
+                f"{env_name} must include 'breakable' option to handle oversized turns."
+            )
+
+    def test_no_mdframed_dependency(self, sty_content: str) -> None:
+        """The .sty must not load mdframed as a package (replaced by tcolorbox)."""
+        for line in sty_content.splitlines():
+            stripped = line.lstrip()
+            if stripped.startswith("%"):
+                continue
+            assert "mdframed" not in stripped, (
+                f".sty must not require mdframed — use tcolorbox instead. "
+                f"Found: {stripped!r}"
+            )

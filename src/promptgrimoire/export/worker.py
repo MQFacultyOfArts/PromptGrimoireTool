@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 import structlog
+from structlog.contextvars import bind_contextvars, clear_contextvars
 
 from promptgrimoire.db.export_jobs import (
     claim_next_job,
@@ -43,9 +44,14 @@ async def _process_job(job: ExportJob) -> None:
     Args:
         job: A claimed ExportJob with status='running'.
     """
-    log = logger.bind(
-        job_id=str(job.id), workspace_id=str(job.workspace_id), user_id=str(job.user_id)
+    # Bind context vars so ALL loggers in the call stack (including pdf.py)
+    # include workspace_id in their output — and therefore in Discord alerts.
+    bind_contextvars(
+        job_id=str(job.id),
+        workspace_id=str(job.workspace_id),
+        user_id=str(job.user_id),
     )
+    log = logger.bind()
     log.info("export_worker_processing_job")
 
     # Create the output dir here so we can clean it up on failure.
@@ -84,6 +90,9 @@ async def _process_job(job: ExportJob) -> None:
         # Clean up the temp dir — failed jobs have no pdf_path,
         # so cleanup_expired_jobs would never delete it.
         shutil.rmtree(output_dir, ignore_errors=True)
+
+    finally:
+        clear_contextvars()
 
 
 async def _run_cleanup() -> None:

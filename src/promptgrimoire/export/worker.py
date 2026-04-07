@@ -25,6 +25,7 @@ from promptgrimoire.db.export_jobs import (
     fail_job,
     fail_orphaned_jobs,
 )
+from promptgrimoire.export.pdf import LaTeXCompilationError
 from promptgrimoire.export.pdf_export import export_annotation_pdf
 
 if TYPE_CHECKING:
@@ -33,6 +34,24 @@ if TYPE_CHECKING:
     from promptgrimoire.db.models import ExportJob
 
 logger = structlog.get_logger()
+
+_LATEX_USER_MESSAGE = (
+    "PDF export failed due to a server configuration issue."
+    " Retrying will not help."
+    " Please email your workspace URL to your instructor"
+    " so they can forward it to the system administrator."
+)
+
+
+def user_facing_error(exc: Exception) -> str:
+    """Translate internal exceptions into student-friendly messages.
+
+    LaTeX compilation errors expose server file paths that are
+    meaningless to students.  Replace with actionable guidance.
+    """
+    if isinstance(exc, LaTeXCompilationError):
+        return _LATEX_USER_MESSAGE
+    return str(exc)
 
 
 async def _process_job(job: ExportJob) -> None:
@@ -86,7 +105,7 @@ async def _process_job(job: ExportJob) -> None:
         # CancelledError is not a subclass of Exception, so it propagates
         # to the outer loop for clean worker shutdown.
         log.exception("export_worker_job_failed")
-        await fail_job(job.id, str(exc))
+        await fail_job(job.id, user_facing_error(exc))
         # Clean up the temp dir — failed jobs have no pdf_path,
         # so cleanup_expired_jobs would never delete it.
         shutil.rmtree(output_dir, ignore_errors=True)

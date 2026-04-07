@@ -67,6 +67,7 @@ REQUIRED_PACKAGES = [
     # Speaker turns
     "tcolorbox",  # Breakable coloured boxes for speaker turns with left border
     "pdfcol",  # Colour stack management (tcolorbox breakable dependency)
+    "tikzfill",  # TikZ fill libraries (tcolorbox tcbskins dependency)
     # Unicode/CJK support (Issue #101)
     "emoji",  # Emoji rendering in LuaLaTeX
     "accsupp",  # PDF /ActualText annotations for emoji accessibility (#274)

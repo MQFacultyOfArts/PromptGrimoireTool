@@ -117,6 +117,51 @@ def get_latexmk_path() -> str:
     raise FileNotFoundError(msg)
 
 
+def has_marginalia_placement_warnings(log_file: Path) -> bool:
+    """Check LaTeX log for marginalia placement problem warnings.
+
+    Marginalia emits 'Package marginalia Warning: Problems in placement'
+    when annotations overflow the margin column (clashes, items pushed
+    beyond page boundaries).
+    """
+    if not log_file.exists():
+        return False
+    content = log_file.read_text(errors="replace")
+    return "Package marginalia Warning: Problems in placement" in content
+
+
+def inject_annot_force_endnotes(tex_path: Path) -> None:
+    r"""Insert ``\annotforceendnotestrue`` into a .tex file.
+
+    Placed immediately after ``\usepackage{promptgrimoire-export}`` so the
+    flag is set before any ``\annot`` commands execute.
+    """
+    content = tex_path.read_text()
+    if r"\annotforceendnotestrue" in content:
+        return  # Already injected
+    target = r"\usepackage{promptgrimoire-export}"
+    if target not in content:
+        logger.warning(
+            "annot_force_endnotes_injection_failed",
+            tex_path=str(tex_path),
+            reason="usepackage line not found",
+        )
+        return
+    content = content.replace(
+        target,
+        target + "\n\\annotforceendnotestrue  % margin overflow fallback",
+    )
+    tex_path.write_text(content)
+
+
+def clean_latexmk_aux(output_dir: Path, stem: str) -> None:
+    """Remove latexmk auxiliary files so a recompile starts fresh."""
+    for suffix in (".aux", ".log", ".fls", ".fdb_latexmk", ".endnotes"):
+        aux = output_dir / (stem + suffix)
+        if aux.exists():
+            aux.unlink()
+
+
 async def compile_latex(tex_path: Path, output_dir: Path | None = None) -> Path:
     """Compile LaTeX to PDF using latexmk with LuaLaTeX.
 
@@ -124,6 +169,10 @@ async def compile_latex(tex_path: Path, output_dir: Path | None = None) -> Path:
     LuaLaTeX provides:
     - fontspec for system fonts (Times New Roman, Arial)
     - lua-ul for robust underlining/highlighting
+
+    If marginalia reports placement problems (annotation overflow), the
+    .tex is patched with ``\\annotforceendnotestrue`` and recompiled so
+    all annotations appear as endnotes instead of invisible margin notes.
 
     Args:
         tex_path: Path to the .tex file.
@@ -143,7 +192,25 @@ async def compile_latex(tex_path: Path, output_dir: Path | None = None) -> Path:
         raise LaTeXCompileStageShortCircuit(tex_path)
 
     async with _get_compile_semaphore():
-        return await _run_latexmk(tex_path, output_dir)
+        pdf_path = await _run_latexmk(tex_path, output_dir)
+
+        # Check for marginalia placement warnings — annotations overflowed
+        # the margin column and are invisible in the PDF.  Recompile with
+        # all annotations routed to endnotes.
+        log_file = output_dir / (tex_path.stem + ".log")
+        if has_marginalia_placement_warnings(log_file):
+            logger.warning(
+                "marginalia_placement_overflow",
+                export_stage="latex_compile",
+                tex_path=str(tex_path),
+                action="recompile_with_endnotes",
+            )
+            inject_annot_force_endnotes(tex_path)
+            clean_latexmk_aux(output_dir, tex_path.stem)
+            pdf_path.unlink(missing_ok=True)
+            pdf_path = await _run_latexmk(tex_path, output_dir)
+
+        return pdf_path
 
 
 async def _run_latexmk(tex_path: Path, output_dir: Path) -> Path:

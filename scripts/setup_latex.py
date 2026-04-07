@@ -65,9 +65,8 @@ REQUIRED_PACKAGES = [
     # Code blocks
     "fancyvrb",  # Verbatim/code blocks from Pandoc syntax highlighting
     # Speaker turns
-    "mdframed",  # Framed environments for speaker turns with left border
-    "zref",  # Reference system (mdframed dependency)
-    "needspace",  # Space checking (mdframed dependency)
+    "tcolorbox",  # Breakable coloured boxes for speaker turns with left border
+    "pdfcol",  # Colour stack management (tcolorbox breakable dependency)
     # Unicode/CJK support (Issue #101)
     "emoji",  # Emoji rendering in LuaLaTeX
     "accsupp",  # PDF /ActualText annotations for emoji accessibility (#274)

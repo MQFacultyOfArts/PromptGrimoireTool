@@ -129,6 +129,67 @@ class TestProcessJob:
         assert "LaTeX compilation failed" in updated.error_message
 
 
+class TestContextVarPropagation:
+    """Verify workspace_id propagates via contextvars to downstream loggers."""
+
+    @pytest.mark.asyncio
+    async def test_workspace_id_in_contextvars_during_export(
+        self, tmp_path: Path
+    ) -> None:
+        """workspace_id must be in structlog contextvars during _process_job.
+
+        This ensures Discord alerts from pdf.py (which uses its own
+        module-level logger) include workspace_id.
+        """
+        from structlog.contextvars import get_contextvars
+
+        from promptgrimoire.db.export_jobs import create_export_job
+        from promptgrimoire.export.worker import _process_job
+        from tests.integration.conftest import claim_own_job
+
+        user_id, workspace_id = await _create_user_and_workspace()
+
+        payload = {
+            "html_content": "<p>Test</p>",
+            "highlights": [],
+            "tag_colours": {},
+            "general_notes": "",
+            "notes_latex": "",
+            "filename": "ctx_test",
+        }
+        created = await create_export_job(user_id, workspace_id, payload)
+        job = await claim_own_job({created.id})
+        assert job is not None
+
+        captured_ctx: dict = {}
+
+        async def _capture_ctx(**_kwargs):
+            """Mock that captures contextvars mid-export."""
+            captured_ctx.update(get_contextvars())
+            fake_pdf = tmp_path / "output.pdf"
+            fake_pdf.write_text("fake")
+            return fake_pdf
+
+        with patch(
+            "promptgrimoire.export.worker.export_annotation_pdf",
+            new_callable=AsyncMock,
+            side_effect=_capture_ctx,
+        ):
+            await _process_job(job)
+
+        assert captured_ctx.get("workspace_id") == str(workspace_id), (
+            f"workspace_id not in contextvars during export. Got: {captured_ctx}"
+        )
+        assert captured_ctx.get("job_id") == str(job.id)
+        assert captured_ctx.get("user_id") == str(user_id)
+
+        # Verify contextvars are cleared after _process_job
+        post_ctx = get_contextvars()
+        assert "workspace_id" not in post_ctx, (
+            "contextvars must be cleared after _process_job"
+        )
+
+
 class TestRunCleanup:
     """Tests for _run_cleanup."""
 

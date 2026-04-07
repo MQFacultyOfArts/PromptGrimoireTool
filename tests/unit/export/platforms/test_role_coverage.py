@@ -44,9 +44,9 @@ def _assert_role_has_styling(
     css_selector = f'[data-speaker="{role}"]'
     assert css_selector in css_text, f"CSS is missing a rule for {css_selector}"
 
-    sty_env = f"]{{{role}turn}}"
+    sty_env = f"{{{role}turn}}"
     assert sty_env in sty_text, (
-        f"LaTeX .sty is missing \\newmdenv definition ending with {sty_env}"
+        f"LaTeX .sty is missing environment definition for {sty_env}"
     )
 
     # Check that the env field value for this role exists in the Lua table.

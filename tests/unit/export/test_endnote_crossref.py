@@ -108,13 +108,13 @@ class TestAnnotMacroShortPath:
     r"""AC2.4: \annot short-annotation path does NOT have hyperref linking."""
 
     def test_short_path_no_label(self) -> None:
-        r"""The short path (\else branch) must NOT contain \label{annot-inline:...}."""
+        r"""Short path must NOT contain \label{annot-inline:...}."""
         sty = _read_sty()
         annot = _extract_macro(sty, "annot")
-        # Split at \else to isolate the short path
+        # The short path is the last \else branch (after \ifannotforceendnotes
+        # and \ifdim branches).  Extract everything after the last \else.
         parts = annot.split(r"\else")
-        assert len(parts) == 2, r"Expected exactly one \else in \annot"
-        short_path = parts[1]
+        short_path = parts[-1]
         assert r"\label{annot-inline:" not in short_path
         assert r"\hyperref[annot-endnote:" not in short_path
 
@@ -174,7 +174,9 @@ class TestLinkAffordance:
         """
         sty = _read_sty()
         annot = _extract_macro(sty, "annot")
-        long_path = annot.split(r"\else")[0]
+        # Skip the \ifannotforceendnotes branch to reach the \ifdim long path
+        after_force = annot.split(r"\else\ifdim", maxsplit=1)[-1]
+        long_path = after_force.split(r"\else")[0]
         assert "see endnotes" in long_path
         # Extract only the marginalia block (up to the next %}%)
         margin_start = long_path.find(r"\marginalia")

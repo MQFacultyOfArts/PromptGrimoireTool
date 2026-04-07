@@ -125,6 +125,10 @@
 % by \flushannotendnotes which \input{}s the file.
 \newwrite\annotendfile
 \newif\ifannothasendnotes
+% When true, ALL annotations go to endnotes (margin overflow fallback).
+% Set by the Python export pipeline on recompilation when marginalia
+% reports placement problems from the first pass.
+\newif\ifannotforceendnotes
 \AtBeginDocument{%
   \immediate\openout\annotendfile=\jobname.endnotes\relax
 }
@@ -132,7 +136,11 @@
   \immediate\closeout\annotendfile
   \ifannothasendnotes
     \clearpage
-    \section*{Long Annotations}
+    \ifannotforceendnotes
+      \section*{Annotations}
+    \else
+      \section*{Long Annotations}
+    \fi
     \input{\jobname.endnotes}%
   \fi
 }
@@ -147,7 +155,26 @@
   % tokens from multi-paragraph annotations — \savebox scans in
   % restricted horizontal mode which forbids \par.
   \setbox\annotbox=\vbox{\hsize=4.3cm\footnotesize\textbf{\theannotnum.} #2}%
-  \ifdim\ht\annotbox>\annotmaxht
+  \ifannotforceendnotes
+    % Margin overflow fallback: ALL annotations go to endnotes.
+    % Triggered by the Python pipeline when the first compilation pass
+    % produced marginalia placement warnings.
+    \phantomsection\label{annot-inline:\theannotnum}%
+    \hyperref[annot-endnote:\theannotnum]{%
+      \textsuperscript{\textcolor{#1}{\textbf{\theannotnum}}}\,\linkicon
+    }%
+    \global\annothasendnotestrue
+    \immediate\write\annotendfile{%
+      \noexpand\phantomsection
+      \noexpand\label{annot-endnote:\theannotnum}%
+      \noexpand\par\noexpand\noindent
+      \noexpand\hyperref[annot-inline:\theannotnum]{%
+        \noexpand\textcolor{#1}{\noexpand\textbf{\theannotnum.}}\noexpand\linkicon
+      }%
+      \unexpanded{#2}%
+      \noexpand\par\noexpand\medskip
+    }%
+  \else\ifdim\ht\annotbox>\annotmaxht
     % Long annotation → write to endnotes file, show stub in margin
     \phantomsection\label{annot-inline:\theannotnum}%
     \hyperref[annot-endnote:\theannotnum]{%
@@ -177,7 +204,7 @@
         \usebox{\annotbox}%
       }%
     }%
-  \fi
+  \fi\fi
 }
 
 % Table-safe annotation reference: superscript number only (no \par).

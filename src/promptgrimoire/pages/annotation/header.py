@@ -180,6 +180,11 @@ def _wrap_refresh_with_stale_download_clear(state: PageState) -> None:
         export_btn = getattr(state, "export_btn", None)
         if export_btn is not None:
             export_btn.enable()
+            # Reset error state — the document changed, so a previous
+            # failure may no longer apply.
+            export_btn.text = "Export PDF"
+            export_btn.props("color=primary")
+            state.export_error_msg = None
         # Call the original refresh
         original(trigger=trigger)
 
@@ -230,9 +235,12 @@ def _render_export_button(state: PageState, workspace_id: UUID) -> None:
                 ui.label("Export failed").classes("text-h6")
                 ui.label(state.export_error_msg)
                 with ui.row():
-                    ui.button(
-                        "Retry export", on_click=lambda: (dialog.close(), _do_export())
-                    ).props("color=primary")
+
+                    async def _retry() -> None:
+                        dialog.close()
+                        await _do_export()
+
+                    ui.button("Retry export", on_click=_retry).props("color=primary")
                     ui.button("Close", on_click=dialog.close).props("flat")
             dialog.open()
         else:

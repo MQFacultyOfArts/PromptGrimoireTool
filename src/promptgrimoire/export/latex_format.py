@@ -36,8 +36,8 @@ def format_annot_latex(
     Args:
         highlight: Highlight dict with ``tag``, ``author``, ``text``,
             ``comments``, ``created_at``.
-        para_ref: Paragraph reference string (e.g. ``"[45]"`` or
-            ``"[45]-[48]"``).
+        para_ref: User-authored paragraph reference (e.g. ``"[45]"``,
+            ``"fn 8 & fn 9, para [1130]."``) — LaTeX-escaped internally.
 
     Returns:
         LaTeX ``\annot{colour}{margin_content}`` command string.

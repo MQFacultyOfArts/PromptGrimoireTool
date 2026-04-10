@@ -315,6 +315,7 @@ class PageState:
     export_poll_timer: Any | None = None
     export_download_container: Any | None = None
     export_btn: Any | None = None
+    export_error_msg: str | None = None
 
     def __post_init__(self) -> None:
         """Derive capability booleans from effective_permission."""

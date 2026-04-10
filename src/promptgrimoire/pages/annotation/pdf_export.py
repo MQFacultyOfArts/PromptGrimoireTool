@@ -295,18 +295,18 @@ def _show_download_button(download_token: str, state: PageState) -> None:
         export_btn.enable()
 
 
-def _show_export_error(export_btn: ui.button, error_msg: str) -> None:
-    """Turn the export button red with error tooltip on failure.
+def _show_export_error(export_btn: ui.button, error_msg: str, state: PageState) -> None:
+    """Turn the export button red on failure and stash the error message.
 
     Persistent visual state so the user sees the failure even if they
-    stepped away during compilation. The button remains enabled so the
-    user can retry, but the red colour and tooltip make the error obvious.
+    stepped away during compilation. Clicking the red button shows a
+    dialog with the error and a retry option.
     """
-    export_btn.props(f'color=negative tooltip="{error_msg}"')
+    export_btn.props("color=negative")
     export_btn.text = "Export failed"
-    export_btn._props["icon"] = "error"
     export_btn.enable()
     export_btn.update()
+    state.export_error_msg = error_msg
 
 
 def _start_export_polling(
@@ -365,7 +365,7 @@ def _start_export_polling(
             # a transient notification the user may miss if away.
             export_btn = getattr(state, "export_btn", None)
             if export_btn is not None:
-                _show_export_error(export_btn, error_msg)
+                _show_export_error(export_btn, error_msg, state)
 
     timer = ui.timer(2, _poll_status)
     state.export_poll_timer = timer

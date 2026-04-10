@@ -206,6 +206,10 @@ def _render_export_button(state: PageState, workspace_id: UUID) -> None:
     state.export_btn = export_btn
 
     async def on_export_click() -> None:
+        # Reset from error state if retrying after failure
+        export_btn.text = "Export PDF"
+        export_btn._props["icon"] = "picture_as_pdf"
+        export_btn.props('color=primary tooltip=""')
         export_btn.disable()
         export_btn.props("loading")
         # Clear any previous download button

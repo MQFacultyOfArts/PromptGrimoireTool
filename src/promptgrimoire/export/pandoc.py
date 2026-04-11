@@ -129,13 +129,32 @@ def _strip_textquotesingle(latex: str) -> str:
 # processing pass moves any \annot at brace depth > 0 to depth 0.
 
 
+def _is_escaped_brace(latex: str, pos: int) -> bool:
+    r"""Return True if the brace at *pos* is LaTeX-escaped (``\{`` or ``\}``).
+
+    Counts consecutive backslashes before *pos*.  An odd count means the
+    brace is escaped (e.g. ``\}`` = literal brace); an even count (including
+    zero) means it is structural (e.g. ``\\}`` = line-break + structural ``}``).
+    """
+    backslashes = 0
+    i = pos - 1
+    while i >= 0 and latex[i] == "\\":
+        backslashes += 1
+        i -= 1
+    return backslashes % 2 == 1
+
+
 def _brace_depth_at(latex: str, pos: int) -> int:
-    """Calculate brace nesting depth at a position in a LaTeX string."""
+    r"""Calculate brace nesting depth at a position in a LaTeX string.
+
+    Skips LaTeX-escaped braces (``\{``, ``\}``) which produce literal
+    brace characters and do not affect structural nesting.
+    """
     depth = 0
     for j in range(pos):
-        if latex[j] == "{":
+        if latex[j] == "{" and not _is_escaped_brace(latex, j):
             depth += 1
-        elif latex[j] == "}":
+        elif latex[j] == "}" and not _is_escaped_brace(latex, j):
             depth -= 1
     return depth
 
@@ -143,12 +162,15 @@ def _brace_depth_at(latex: str, pos: int) -> int:
 def _find_closing_brace_at_depth(
     latex: str, start: int, start_depth: int, target_depth: int
 ) -> int:
-    """Find ``}`` reducing depth to *target_depth* from *start*."""
+    r"""Find ``}`` reducing depth to *target_depth* from *start*.
+
+    Skips LaTeX-escaped braces (``\{``, ``\}``).
+    """
     depth = start_depth
     for i in range(start, len(latex)):
-        if latex[i] == "{":
+        if latex[i] == "{" and not _is_escaped_brace(latex, i):
             depth += 1
-        elif latex[i] == "}":
+        elif latex[i] == "}" and not _is_escaped_brace(latex, i):
             depth -= 1
             if depth == target_depth:
                 return i
@@ -156,7 +178,9 @@ def _find_closing_brace_at_depth(
 
 
 def _find_matching_brace(latex: str, open_pos: int) -> int:
-    """Find the position of the matching closing brace.
+    r"""Find the position of the matching closing brace.
+
+    Skips LaTeX-escaped braces (``\{``, ``\}``).
 
     Args:
         latex: LaTeX string.
@@ -167,9 +191,9 @@ def _find_matching_brace(latex: str, open_pos: int) -> int:
     """
     depth = 0
     for i in range(open_pos, len(latex)):
-        if latex[i] == "{":
+        if latex[i] == "{" and not _is_escaped_brace(latex, i):
             depth += 1
-        elif latex[i] == "}":
+        elif latex[i] == "}" and not _is_escaped_brace(latex, i):
             depth -= 1
             if depth == 0:
                 return i

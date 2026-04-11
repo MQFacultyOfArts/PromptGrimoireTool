@@ -230,17 +230,13 @@ def _render_export_button(state: PageState, workspace_id: UUID) -> None:
 
     async def on_export_click() -> None:
         if state.export_error_msg:
-            # Show error dialog with retry option instead of silently retrying
+            # Show error dialog — no retry because LaTeX failures are
+            # deterministic (same content → same error).  The button
+            # resets automatically when the document changes.
             with ui.dialog() as dialog, ui.card():
                 ui.label("Export failed").classes("text-h6")
                 ui.label(state.export_error_msg)
                 with ui.row():
-
-                    async def _retry() -> None:
-                        dialog.close()
-                        await _do_export()
-
-                    ui.button("Retry export", on_click=_retry).props("color=primary")
                     ui.button("Close", on_click=dialog.close).props("flat")
             dialog.open()
         else:

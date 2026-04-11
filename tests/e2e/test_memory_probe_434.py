@@ -35,10 +35,8 @@ from uuid import uuid4
 import pytest
 
 from promptgrimoire.config import get_settings
-from tests.e2e.card_helpers import (
-    ensure_pabai_workspace,
-    test_db_conninfo,
-)
+from tests.e2e.card_helpers import ensure_pabai_workspace
+from tests.e2e.db_fixtures import grant_acl
 
 if TYPE_CHECKING:
     from playwright.sync_api import Browser, Page
@@ -112,25 +110,10 @@ def _authenticate_and_grant(
     email: str,
 ) -> None:
     """Authenticate via mock auth and grant owner ACL on the workspace."""
-    import psycopg
-
     page.goto(f"{app_server}/auth/callback?token=mock-token-{email}")
     page.wait_for_url(lambda url: "/auth/callback" not in url, timeout=10_000)
 
-    conninfo = test_db_conninfo()
-    with psycopg.connect(conninfo) as conn:
-        cur = conn.cursor()
-        cur.execute('SELECT id FROM "user" WHERE email = %s', (email,))
-        row = cur.fetchone()
-        assert row is not None, f"Mock auth didn't create user {email}"
-        cur.execute(
-            "INSERT INTO acl_entry"
-            " (id, workspace_id, user_id, permission, created_at)"
-            " VALUES (gen_random_uuid(), %s::uuid, %s, 'owner', now())"
-            " ON CONFLICT DO NOTHING",
-            (workspace_id, row[0]),
-        )
-        conn.commit()
+    grant_acl(email, workspace_id)
 
 
 def _probe_provenance() -> dict[str, str]:

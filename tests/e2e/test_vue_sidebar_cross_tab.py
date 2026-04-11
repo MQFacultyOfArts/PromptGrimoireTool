@@ -23,10 +23,8 @@ from playwright.sync_api import expect
 
 from promptgrimoire.config import get_settings
 from promptgrimoire.docs.helpers import wait_for_text_walker
-from tests.e2e.card_helpers import (
-    ensure_pabai_workspace,
-    test_db_conninfo,
-)
+from tests.e2e.card_helpers import ensure_pabai_workspace
+from tests.e2e.db_fixtures import grant_acl
 
 if TYPE_CHECKING:
     from collections.abc import Generator
@@ -58,11 +56,9 @@ def pabai_page(
     """Authenticated page with owner ACL on the Pabai workspace.
 
     Creates a fresh browser context, authenticates via mock auth,
-    grants owner ACL on the Pabai workspace via direct SQL, and
-    navigates to the annotation page. Yields the loaded page.
+    grants owner ACL on the Pabai workspace via the shared helper,
+    and navigates to the annotation page. Yields the loaded page.
     """
-    import psycopg
-
     context = browser.new_context()
     page = context.new_page()
 
@@ -71,24 +67,7 @@ def pabai_page(
     page.goto(f"{app_server}/auth/callback?token=mock-token-{email}")
     page.wait_for_url(lambda url: "/auth/callback" not in url, timeout=10_000)
 
-    conninfo = test_db_conninfo()
-    with psycopg.connect(conninfo) as conn:
-        cur = conn.cursor()
-        cur.execute(
-            'SELECT id FROM "user" WHERE email = %s',
-            (email,),
-        )
-        row = cur.fetchone()
-        assert row is not None, f"Mock auth didn't create user {email}"
-        user_id = row[0]
-        cur.execute(
-            "INSERT INTO acl_entry"
-            " (id, workspace_id, user_id, permission, created_at)"
-            " VALUES (gen_random_uuid(), %s::uuid, %s, 'owner', now())"
-            " ON CONFLICT DO NOTHING",
-            (pabai_workspace, user_id),
-        )
-        conn.commit()
+    grant_acl(email, pabai_workspace)
 
     ws_url = f"{app_server}/annotation?workspace_id={pabai_workspace}"
     page.goto("about:blank")

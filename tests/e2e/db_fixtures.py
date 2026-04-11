@@ -9,7 +9,52 @@ from __future__ import annotations
 import os
 import uuid
 
+from sqlalchemy import Engine, create_engine, text
+
 from tests.e2e.tag_helpers import _seed_tags_for_workspace
+
+
+def _get_sync_engine() -> Engine:
+    """Build a synchronous SQLAlchemy engine from DATABASE__URL.
+
+    Converts the asyncpg URL to psycopg for synchronous access.
+    All E2E database helpers should use this instead of raw psycopg.
+    """
+    db_url = os.environ.get("DATABASE__URL", "")
+    if not db_url:
+        msg = "DATABASE__URL not configured"
+        raise RuntimeError(msg)
+    sync_url = db_url.replace("postgresql+asyncpg://", "postgresql+psycopg://")
+    return create_engine(sync_url)
+
+
+def grant_acl(email: str, workspace_id: str, *, permission: str = "owner") -> None:
+    """Grant an ACL entry on a workspace to a user (looked up by email).
+
+    Uses SQLAlchemy with DATABASE__URL. Idempotent (ON CONFLICT DO NOTHING).
+    """
+    engine = _get_sync_engine()
+    try:
+        with engine.begin() as conn:
+            row = conn.execute(
+                text('SELECT id FROM "user" WHERE email = :email'),
+                {"email": email},
+            ).first()
+            if not row:
+                msg = f"User not found in DB: {email}"
+                raise RuntimeError(msg)
+            conn.execute(
+                text(
+                    "INSERT INTO acl_entry"
+                    " (id, workspace_id, user_id, permission, created_at)"
+                    " VALUES (gen_random_uuid(),"
+                    " CAST(:ws AS uuid), :uid, :perm, now())"
+                    " ON CONFLICT DO NOTHING"
+                ),
+                {"ws": workspace_id, "uid": row[0], "perm": permission},
+            )
+    finally:
+        engine.dispose()
 
 
 def _create_workspace_via_db(
@@ -43,69 +88,63 @@ def _create_workspace_via_db(
     Raises:
         RuntimeError: If DATABASE__URL is not configured or user not found.
     """
-    from sqlalchemy import create_engine, text
-
-    db_url = os.environ.get("DATABASE__URL", "")
-    if not db_url:
-        msg = "DATABASE__URL not configured"
-        raise RuntimeError(msg)
-    sync_url = db_url.replace("postgresql+asyncpg://", "postgresql+psycopg://")
-    engine = create_engine(sync_url)
+    engine = _get_sync_engine()
 
     workspace_id = str(uuid.uuid4())
     doc_id = str(uuid.uuid4())
 
-    with engine.begin() as conn:
-        # Look up user
-        row = conn.execute(
-            text('SELECT id FROM "user" WHERE email = :email'),
-            {"email": user_email},
-        ).first()
-        if not row:
-            msg = f"User not found in DB: {user_email}"
-            raise RuntimeError(msg)
-        user_id = row[0]
+    try:
+        with engine.begin() as conn:
+            # Look up user
+            row = conn.execute(
+                text('SELECT id FROM "user" WHERE email = :email'),
+                {"email": user_email},
+            ).first()
+            if not row:
+                msg = f"User not found in DB: {user_email}"
+                raise RuntimeError(msg)
+            user_id = row[0]
 
-        # Create workspace
-        conn.execute(
-            text(
-                "INSERT INTO workspace"
-                " (id, enable_save_as_draft, created_at, updated_at)"
-                " VALUES (CAST(:id AS uuid), false, now(), now())"
-            ),
-            {"id": workspace_id},
-        )
+            # Create workspace
+            conn.execute(
+                text(
+                    "INSERT INTO workspace"
+                    " (id, enable_save_as_draft, created_at, updated_at)"
+                    " VALUES (CAST(:id AS uuid), false, now(), now())"
+                ),
+                {"id": workspace_id},
+            )
 
-        # Create workspace document
-        conn.execute(
-            text(
-                "INSERT INTO workspace_document"
-                " (id, workspace_id, type, content,"
-                "  source_type, order_index, created_at)"
-                " VALUES (CAST(:id AS uuid), CAST(:ws AS uuid),"
-                " :type, :content, :source_type, 0, now())"
-            ),
-            {
-                "id": doc_id,
-                "ws": workspace_id,
-                "type": "source",
-                "content": html_content,
-                "source_type": source_type,
-            },
-        )
+            # Create workspace document
+            conn.execute(
+                text(
+                    "INSERT INTO workspace_document"
+                    " (id, workspace_id, type, content,"
+                    "  source_type, order_index, created_at)"
+                    " VALUES (CAST(:id AS uuid), CAST(:ws AS uuid),"
+                    " :type, :content, :source_type, 0, now())"
+                ),
+                {
+                    "id": doc_id,
+                    "ws": workspace_id,
+                    "type": "source",
+                    "content": html_content,
+                    "source_type": source_type,
+                },
+            )
 
-        # Create ACL entry (owner permission)
-        conn.execute(
-            text(
-                "INSERT INTO acl_entry"
-                " (id, workspace_id, user_id, permission, created_at)"
-                " VALUES (gen_random_uuid(),"
-                " CAST(:ws AS uuid), :uid, 'owner', now())"
-            ),
-            {"ws": workspace_id, "uid": user_id},
-        )
-
-    engine.dispose()
+            # Create ACL entry (owner permission)
+            conn.execute(
+                text(
+                    "INSERT INTO acl_entry"
+                    " (id, workspace_id, user_id, permission, created_at)"
+                    " VALUES (gen_random_uuid(),"
+                    " CAST(:ws AS uuid), :uid, 'owner', now())"
+                ),
+                {"ws": workspace_id, "uid": user_id},
+            )
+    finally:
+        engine.dispose()
 
     if seed_tags:
         _seed_tags_for_workspace(workspace_id)
@@ -129,14 +168,7 @@ def _create_multi_doc_workspace(
     Returns:
         workspace_id as string.
     """
-    from sqlalchemy import create_engine, text
-
-    db_url = os.environ.get("DATABASE__URL", "")
-    if not db_url:
-        msg = "DATABASE__URL not configured"
-        raise RuntimeError(msg)
-    sync_url = db_url.replace("postgresql+asyncpg://", "postgresql+psycopg://")
-    engine = create_engine(sync_url)
+    engine = _get_sync_engine()
 
     workspace_id = str(uuid.uuid4())
 
@@ -216,14 +248,7 @@ def _create_workspace_no_tag_permission(user_email: str) -> str:
     Returns:
         workspace_id as string.
     """
-    from sqlalchemy import create_engine, text
-
-    db_url = os.environ.get("DATABASE__URL", "")
-    if not db_url:
-        msg = "DATABASE__URL not configured"
-        raise RuntimeError(msg)
-    sync_url = db_url.replace("postgresql+asyncpg://", "postgresql+psycopg://")
-    engine = create_engine(sync_url)
+    engine = _get_sync_engine()
 
     course_id = str(uuid.uuid4())
     week_id = str(uuid.uuid4())
@@ -386,14 +411,7 @@ def _create_workspace_with_word_limits(
     Returns:
         workspace_id as string.
     """
-    from sqlalchemy import create_engine, text
-
-    db_url = os.environ.get("DATABASE__URL", "")
-    if not db_url:
-        msg = "DATABASE__URL not configured"
-        raise RuntimeError(msg)
-    sync_url = db_url.replace("postgresql+asyncpg://", "postgresql+psycopg://")
-    engine = create_engine(sync_url)
+    engine = _get_sync_engine()
 
     course_id = str(uuid.uuid4())
     week_id = str(uuid.uuid4())
@@ -561,14 +579,7 @@ def _create_workspace_for_filename_export(
     Raises:
         RuntimeError: If DATABASE__URL is not configured or user not found.
     """
-    from sqlalchemy import create_engine, text
-
-    db_url = os.environ.get("DATABASE__URL", "")
-    if not db_url:
-        msg = "DATABASE__URL not configured"
-        raise RuntimeError(msg)
-    sync_url = db_url.replace("postgresql+asyncpg://", "postgresql+psycopg://")
-    engine = create_engine(sync_url)
+    engine = _get_sync_engine()
 
     course_id = str(uuid.uuid4())
     week_id = str(uuid.uuid4())
@@ -723,14 +734,7 @@ def get_user_id_by_email(email: str) -> str:
     Raises:
         RuntimeError: If DATABASE__URL is missing or user is not found.
     """
-    from sqlalchemy import create_engine, text
-
-    db_url = os.environ.get("DATABASE__URL", "")
-    if not db_url:
-        msg = "DATABASE__URL not configured"
-        raise RuntimeError(msg)
-    sync_url = db_url.replace("postgresql+asyncpg://", "postgresql+psycopg://")
-    engine = create_engine(sync_url)
+    engine = _get_sync_engine()
 
     with engine.begin() as conn:
         row = conn.execute(

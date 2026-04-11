@@ -220,6 +220,56 @@ class TestFormatAnnot:
         assert "Carol" in result
         assert "I agree" in result
 
+    def test_para_ref_with_ampersand_is_escaped(self) -> None:
+        """para_ref containing & must be LaTeX-escaped (production incident 2026-04-11).
+
+        Student entered 'fn 8 & fn 9, para [1130].' as a para_ref,
+        producing fatal 'Misplaced alignment tab character &' in LaTeX.
+        """
+        highlight = {
+            "tag": "actionable_damage",
+            "tag_name": "Actionable Damage",
+            "author": "Student",
+            "text": "some text",
+            "comments": [],
+        }
+        result = format_annot_latex(highlight, para_ref="fn 8 & fn 9, para [1130].")
+        # Raw & must be escaped to \&
+        assert r"\&" in result
+        # No bare & outside of \& sequences
+        parts = result.split(r"\&")
+        for part in parts:
+            assert "&" not in part, (
+                f"Bare & found in output (not escaped): ...{part[:60]}..."
+            )
+
+    def test_para_ref_with_percent_is_escaped(self) -> None:
+        """para_ref containing % must be LaTeX-escaped."""
+        highlight = {
+            "tag": "tag",
+            "author": "User",
+            "text": "some text",
+            "comments": [],
+        }
+        result = format_annot_latex(highlight, para_ref="100% relevant")
+        assert r"\%" in result
+
+    def test_para_ref_with_all_latex_specials(self) -> None:
+        """All LaTeX special characters in para_ref must be escaped."""
+        highlight = {
+            "tag": "tag",
+            "author": "User",
+            "text": "some text",
+            "comments": [],
+        }
+        result = format_annot_latex(
+            highlight, para_ref="s 51(xxxi) & s 75(v), $0, #1, 100%"
+        )
+        assert r"\&" in result
+        assert r"\$" in result
+        assert r"\#" in result
+        assert r"\%" in result
+
     def test_escapes_special_characters_in_author(self) -> None:
         """Special characters in author should be escaped."""
         highlight = {

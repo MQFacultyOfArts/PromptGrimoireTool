@@ -244,7 +244,7 @@ async def _run_latexmk(tex_path: Path, output_dir: Path) -> Path:
     )
     try:
         stdout_bytes, stderr_bytes = await asyncio.wait_for(
-            proc.communicate(), timeout=120
+            proc.communicate(), timeout=60
         )
     except TimeoutError:
         logger.warning(
@@ -254,7 +254,7 @@ async def _run_latexmk(tex_path: Path, output_dir: Path) -> Path:
         )
         os.killpg(proc.pid, signal.SIGKILL)
         raise LaTeXCompilationError(
-            "LaTeX compilation timed out after 120s",
+            "LaTeX compilation timed out after 60s",
             tex_path=tex_path,
             log_path=output_dir / (tex_path.stem + ".log"),
         ) from None

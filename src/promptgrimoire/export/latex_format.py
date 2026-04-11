@@ -36,8 +36,8 @@ def format_annot_latex(
     Args:
         highlight: Highlight dict with ``tag``, ``author``, ``text``,
             ``comments``, ``created_at``.
-        para_ref: Paragraph reference string (e.g. ``"[45]"`` or
-            ``"[45]-[48]"``).
+        para_ref: User-authored paragraph reference (e.g. ``"[45]"``,
+            ``"fn 8 & fn 9, para [1130]."``) — LaTeX-escaped internally.
 
     Returns:
         LaTeX ``\annot{colour}{margin_content}`` command string.
@@ -63,11 +63,12 @@ def format_annot_latex(
     tag_esc = NoEscape(escape_unicode_latex(tag_display))
 
     # Line 1: **Tag** [para]
-    # para_ref is inserted raw — safe because callers pass only "[N]" or
-    # "[N]-[M]" paragraph references (no LaTeX specials in brackets/digits).
+    # para_ref is user-authored free text (e.g. "fn 8 & fn 9, para [1130].")
+    # and may contain LaTeX specials — escape it like any other user content.
     tag_bold = latex_cmd("textbf", tag_esc)
     if para_ref:
-        margin_parts: list[str] = [f"{tag_bold} {para_ref}"]
+        para_ref_esc = NoEscape(escape_unicode_latex(para_ref))
+        margin_parts: list[str] = [f"{tag_bold} {para_ref_esc}"]
     else:
         margin_parts = [str(tag_bold)]
 

@@ -180,6 +180,11 @@ def _wrap_refresh_with_stale_download_clear(state: PageState) -> None:
         export_btn = getattr(state, "export_btn", None)
         if export_btn is not None:
             export_btn.enable()
+            # Reset error state — the document changed, so a previous
+            # failure may no longer apply.
+            export_btn.text = "Export PDF"
+            export_btn.props("color=primary")
+            state.export_error_msg = None
         # Call the original refresh
         original(trigger=trigger)
 
@@ -205,10 +210,13 @@ def _render_export_button(state: PageState, workspace_id: UUID) -> None:
     state.export_download_container = download_container
     state.export_btn = export_btn
 
-    async def on_export_click() -> None:
+    async def _do_export() -> None:
+        """Reset button to normal state and submit export job."""
+        export_btn.text = "Export PDF"
+        export_btn.props("color=primary")
+        state.export_error_msg = None
         export_btn.disable()
         export_btn.props("loading")
-        # Clear any previous download button
         download_container.clear()
         try:
             job_submitted = await _handle_pdf_export(state, workspace_id)
@@ -218,8 +226,25 @@ def _render_export_button(state: PageState, workspace_id: UUID) -> None:
             raise
         export_btn.props(remove="loading")
         if not job_submitted:
-            # Early return (rejected, no document, etc.) — re-enable
             export_btn.enable()
+
+    async def on_export_click() -> None:
+        if state.export_error_msg:
+            # Show error dialog with retry option instead of silently retrying
+            with ui.dialog() as dialog, ui.card():
+                ui.label("Export failed").classes("text-h6")
+                ui.label(state.export_error_msg)
+                with ui.row():
+
+                    async def _retry() -> None:
+                        dialog.close()
+                        await _do_export()
+
+                    ui.button("Retry export", on_click=_retry).props("color=primary")
+                    ui.button("Close", on_click=dialog.close).props("flat")
+            dialog.open()
+        else:
+            await _do_export()
 
     export_btn.on_click(on_export_click)
 

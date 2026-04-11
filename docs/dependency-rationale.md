@@ -6,13 +6,13 @@ Each dependency lists: what it does, why it's here (not a stdlib/transitive alte
 
 ## Production Dependencies
 
-### nicegui == 3.9.0
+### nicegui == 3.10.0
 
 **Claim:** Web UI framework. The entire frontend is built on NiceGUI's component model, server-sent events, and WebSocket integration.
 
 **Evidence:** 13 files across `src/promptgrimoire/pages/` and `src/promptgrimoire/__init__.py` import from nicegui. Every page route, dialog, and UI component depends on it. Also provides the app server (`ui.run`), static file serving, client-side JS execution (`ui.run_javascript`), and the WebSocket-based client–server communication layer.
 
-**Pin rationale:** Pinned to 3.9.0 which includes GHSA-w5g8-5849-vj76 (media streaming memory exhaustion security fix) and all prior upstream fixes (#5805, #5806, #5749). No breaking changes from 3.8.0. **Last reviewed:** 2026-03-20.
+**Pin rationale:** Pinned to 3.10.0 which includes GHSA-w8wv-vfpc-hw2w (upload filename sanitization), timer callback leak fix on disconnect (#5931, relevant to memory leak #434), client.ip fix behind reverse proxies (#5906/#5920), and all prior fixes. No breaking changes from 3.9.0. **Last reviewed:** 2026-04-11.
 
 **Why not alternatives:** NiceGUI was chosen for Python-native UI without a JS frontend build step. The project is deeply coupled to NiceGUI's component API, page routing, and storage system.
 

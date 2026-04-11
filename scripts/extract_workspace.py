@@ -30,10 +30,10 @@ import sys
 import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
+from urllib.parse import quote_plus
 from uuid import UUID
 
-import psycopg
-import psycopg.rows
+from sqlalchemy import Engine, create_engine, text
 
 
 class _Encoder(json.JSONEncoder):
@@ -53,54 +53,70 @@ class _Encoder(json.JSONEncoder):
         return super().default(o)
 
 
-_DOC_QUERY = (
-    "SELECT * FROM workspace_document WHERE workspace_id = %s ORDER BY order_index"
-)
-_TAG_GROUP_QUERY = (
-    "SELECT * FROM tag_group WHERE workspace_id = %s ORDER BY order_index"
-)
-_TAG_QUERY = "SELECT * FROM tag WHERE workspace_id = %s ORDER BY order_index"
+def _build_engine() -> Engine:
+    """Build a synchronous SQLAlchemy engine from PGUSER/PGDATABASE/PGHOST env vars.
+
+    This script is designed to run on the production server with peer auth,
+    so it uses libpq-style env vars rather than DATABASE__URL.
+    """
+    user = os.environ.get("PGUSER", "promptgrimoire")
+    dbname = os.environ.get("PGDATABASE", "promptgrimoire")
+    host = os.environ.get("PGHOST", "/var/run/postgresql")
+    url = f"postgresql+psycopg://{quote_plus(user)}@/{quote_plus(dbname)}?host={quote_plus(host)}"
+    return create_engine(url)
 
 
-def _to_dicts(
-    cur: psycopg.Cursor[tuple],
-) -> list[dict]:
-    """Convert cursor results to list of dicts using column descriptions."""
-    cols = [desc.name for desc in (cur.description or [])]
-    return [dict(zip(cols, row, strict=True)) for row in cur.fetchall()]
-
-
-def _to_dict(
-    cur: psycopg.Cursor[tuple],
-) -> dict | None:
-    """Convert single cursor result to dict."""
-    cols = [desc.name for desc in (cur.description or [])]
-    row = cur.fetchone()
-    if row is None:
-        return None
-    return dict(zip(cols, row, strict=True))
-
-
-def extract(workspace_id: str, conninfo: str) -> dict:
+def extract(workspace_id: str, engine: Engine) -> dict:
     """Extract workspace and documents from the database."""
-    with psycopg.connect(conninfo) as conn:
-        workspace = _to_dict(
+    with engine.connect() as conn:
+        row = (
             conn.execute(
-                "SELECT * FROM workspace WHERE id = %s",
-                (workspace_id,),
+                text("SELECT * FROM workspace WHERE id = :ws"),
+                {"ws": workspace_id},
             )
+            .mappings()
+            .first()
         )
 
-        if workspace is None:
+        if row is None:
             print(
                 f"No workspace found with id {workspace_id}",
                 file=sys.stderr,
             )
             sys.exit(1)
 
-        documents = _to_dicts(conn.execute(_DOC_QUERY, (workspace_id,)))
-        tag_groups = _to_dicts(conn.execute(_TAG_GROUP_QUERY, (workspace_id,)))
-        tags = _to_dicts(conn.execute(_TAG_QUERY, (workspace_id,)))
+        workspace = dict(row)
+
+        documents = [
+            dict(r)
+            for r in conn.execute(
+                text(
+                    "SELECT * FROM workspace_document"
+                    " WHERE workspace_id = :ws ORDER BY order_index"
+                ),
+                {"ws": workspace_id},
+            ).mappings()
+        ]
+        tag_groups = [
+            dict(r)
+            for r in conn.execute(
+                text(
+                    "SELECT * FROM tag_group"
+                    " WHERE workspace_id = :ws ORDER BY order_index"
+                ),
+                {"ws": workspace_id},
+            ).mappings()
+        ]
+        tags = [
+            dict(r)
+            for r in conn.execute(
+                text("SELECT * FROM tag WHERE workspace_id = :ws ORDER BY order_index"),
+                {"ws": workspace_id},
+            ).mappings()
+        ]
+
+        # Get database name from engine URL
+        dbname = engine.url.database or "unknown"
 
         return {
             "workspace": workspace,
@@ -108,7 +124,7 @@ def extract(workspace_id: str, conninfo: str) -> dict:
             "tag_groups": tag_groups,
             "tags": tags,
             "extracted_at": datetime.now(UTC).isoformat(),
-            "source_db": conn.info.dbname,
+            "source_db": dbname,
         }
 
 
@@ -131,16 +147,16 @@ def main() -> None:
         print(f"Invalid UUID: {args.workspace_id}", file=sys.stderr)
         sys.exit(1)
 
-    user = os.environ.get("PGUSER", "promptgrimoire")
-    dbname = os.environ.get("PGDATABASE", "promptgrimoire")
-    host = os.environ.get("PGHOST", "/var/run/postgresql")
-    conninfo = f"user={user} dbname={dbname} host={host}"
+    engine = _build_engine()
 
     tmp = Path(tempfile.gettempdir())
     output = args.output or tmp / f"workspace_{args.workspace_id}.json"
 
     print(f"Extracting workspace {args.workspace_id}...")
-    data = extract(args.workspace_id, conninfo)
+    try:
+        data = extract(args.workspace_id, engine)
+    finally:
+        engine.dispose()
 
     output.write_text(json.dumps(data, cls=_Encoder, indent=2))
     print(f"  -> {output}")

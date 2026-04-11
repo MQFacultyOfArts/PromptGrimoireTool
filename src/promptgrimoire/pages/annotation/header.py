@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
+from urllib.parse import urlencode
 
 import structlog
 from nicegui import ui
@@ -230,17 +231,25 @@ def _render_export_button(state: PageState, workspace_id: UUID) -> None:
 
     async def on_export_click() -> None:
         if state.export_error_msg:
-            # Show error dialog with retry option instead of silently retrying
-            with ui.dialog() as dialog, ui.card():
-                ui.label("Export failed").classes("text-h6")
-                ui.label(state.export_error_msg)
-                with ui.row():
-
-                    async def _retry() -> None:
-                        dialog.close()
-                        await _do_export()
-
-                    ui.button("Retry export", on_click=_retry).props("color=primary")
+            # Show error dialog — no retry because LaTeX failures are
+            # deterministic (same content → same error).  The button
+            # resets automatically when the document changes.
+            ws_url = f"/annotation?{urlencode({'workspace_id': str(workspace_id)})}"
+            with ui.dialog() as dialog, ui.card().classes("w-96"):
+                ui.label("Export failed").classes("text-h6 text-red-800")
+                ui.label(
+                    "Your export failed. Please communicate this to your "
+                    "instructor, with your workspace URL and the message "
+                    "below. Export of this workspace has been disabled "
+                    "until the error is resolved by the developer."
+                ).classes("text-sm")
+                ui.label(f"Workspace: {ws_url}").classes(
+                    "text-xs font-mono bg-grey-2 pa-2 rounded"
+                )
+                ui.label(state.export_error_msg).classes(
+                    "text-xs font-mono bg-grey-2 pa-2 rounded"
+                )
+                with ui.row().classes("w-full justify-end mt-2"):
                     ui.button("Close", on_click=dialog.close).props("flat")
             dialog.open()
         else:

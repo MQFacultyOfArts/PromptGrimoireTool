@@ -67,6 +67,74 @@ def _load_fixture() -> tuple[str, list[dict], dict[str, str]]:
     return content, highlights, tag_colours
 
 
+class TestBraceDepthEscaping:
+    r"""_brace_depth_at must skip LaTeX-escaped braces (\{ and \}).
+
+    Production failure: student comment containing literal '}' is escaped to
+    '\}' by escape_unicode_latex. The naive brace counter treated '\}' as a
+    structural closing brace, throwing off depth for all subsequent content.
+    _move_annots_outside_restricted then saw the wrong depth and failed to
+    move \annot out of \textbf{}.
+    """
+
+    def test_escaped_close_brace_not_counted(self) -> None:
+        r"""\} inside a group does not reduce structural depth."""
+        # \textbf{ opens depth 1; \} is NOT structural; } closes to depth 0
+        latex = r"\textbf{hello\}world}"
+        # Position after the final '}' — depth should be 0
+        assert _brace_depth_at(latex, len(latex)) == 0
+        # Position just before the final '}' — depth should be 1 (still inside \textbf)
+        final_close = latex.rfind("}")
+        assert _brace_depth_at(latex, final_close) == 1
+
+    def test_escaped_open_brace_not_counted(self) -> None:
+        r"""\{ inside a group does not increase structural depth."""
+        latex = r"\textbf{hello\{world}"
+        assert _brace_depth_at(latex, len(latex)) == 0
+        final_close = latex.rfind("}")
+        assert _brace_depth_at(latex, final_close) == 1
+
+    def test_double_backslash_then_brace_is_structural(self) -> None:
+        r"""\\{ is escaped backslash + structural open brace."""
+        # \\{ = line break + structural {
+        latex = r"\\{hello}"
+        # After \\{ we're at depth 1, after } at depth 0
+        assert _brace_depth_at(latex, len(latex)) == 0
+        brace_pos = latex.index("{")
+        assert _brace_depth_at(latex, brace_pos + 1) == 1
+
+    def test_annot_with_escaped_brace_in_comment(self) -> None:
+        r"""Reproduces production bug: \annot comment text with literal '}'.
+
+        The annot at depth 0 contains \} in its content. The NEXT \annot
+        after it, which is inside \textbf{}, must be correctly detected
+        as depth 1 (not 0) so the post-processor moves it out.
+        """
+        latex = (
+            r"\annot{red}{comment [2\}}"  # depth 0 annot with escaped brace
+            r"\textbf{hello\annot{blue}{note\par}world}"  # depth 1 annot
+        )
+        # The second \annot should be at depth 1 (inside \textbf{})
+        second_annot = latex.find(r"\annot{blue}")
+        assert second_annot > 0
+        assert _brace_depth_at(latex, second_annot) == 1
+
+    def test_move_annots_with_escaped_brace_in_prior_annot(self) -> None:
+        r"""Post-processor must move \annot out despite escaped braces earlier.
+
+        This is the end-to-end regression test for the production failure.
+        """
+        latex = (
+            r"\annot{red}{comment [2\}}"
+            r"\textbf{hello\annot{blue}{note\par}world}"
+        )
+        result = _move_annots_outside_restricted(latex)
+        # The blue annot must now be at depth 0
+        blue_idx = result.find(r"\annot{blue}")
+        assert blue_idx >= 0
+        assert _brace_depth_at(result, blue_idx) == 0
+
+
 class TestMoveAnnotsOutsideRestricted:
     """Unit tests for the annot-extraction post-processor."""
 

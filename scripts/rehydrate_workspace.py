@@ -24,44 +24,32 @@ from __future__ import annotations
 import argparse
 import base64
 import json
-import os
 import sys
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse
 from uuid import UUID
 
-import psycopg
+from sqlalchemy import Connection, Engine, create_engine, text
 
 from promptgrimoire.config import get_settings
 
 
-def _resolve_conninfo() -> str:
-    """Build psycopg conninfo using the same worktree-aware settings as the app.
+def _resolve_engine() -> Engine:
+    """Build a synchronous SQLAlchemy engine using the app's worktree-aware settings.
 
     Reads DATABASE__URL from get_settings() (which auto-suffixes the database
-    name on feature branches), then converts the asyncpg URL to psycopg
-    connection parameters. Falls back to PGDATABASE/PGUSER/PGHOST env vars
-    if get_settings() fails.
+    name on feature branches), then converts the asyncpg URL to psycopg for
+    synchronous access.
     """
     url = get_settings().database.url
-    if url:
-        parsed = urlparse(url)
-        user = parsed.username or os.environ.get("PGUSER", "brian")
-        dbname = parsed.path.lstrip("/") or "promptgrimoire"
-        host = parsed.hostname or os.environ.get("PGHOST", "/var/run/postgresql")
-        # query params may contain host for unix socket
-        if "host=" in (parsed.query or ""):
-            for param in parsed.query.split("&"):
-                if param.startswith("host="):
-                    host = param.split("=", 1)[1]
-        return f"user={user} dbname={dbname} host={host}"
-
-    # Fallback: raw libpq env vars
-    user = os.environ.get("PGUSER", "brian")
-    dbname = os.environ.get("PGDATABASE", "promptgrimoire")
-    host = os.environ.get("PGHOST", "/var/run/postgresql")
-    return f"user={user} dbname={dbname} host={host}"
+    if not url:
+        msg = (
+            "DATABASE__URL not configured. Set it in the environment or "
+            "use PGDATABASE/PGUSER/PGHOST env vars with a plain postgresql:// URL."
+        )
+        raise RuntimeError(msg)
+    sync_url = url.replace("postgresql+asyncpg://", "postgresql+psycopg://")
+    return create_engine(sync_url)
 
 
 def _decode_binary(value: object) -> object:
@@ -75,26 +63,29 @@ def _decode_binary(value: object) -> object:
     return value
 
 
-def _clean_existing_rows(cur: Any, workspace_id: str) -> None:
+def _clean_existing_rows(conn: Connection, workspace_id: str) -> None:
     """Delete existing rows for workspace (idempotent). FK order matters."""
-    cur.execute("DELETE FROM tag WHERE workspace_id = %s", (workspace_id,))
-    cur.execute("DELETE FROM tag_group WHERE workspace_id = %s", (workspace_id,))
-    cur.execute(
-        "DELETE FROM workspace_document WHERE workspace_id = %s", (workspace_id,)
+    conn.execute(text("DELETE FROM tag WHERE workspace_id = :ws"), {"ws": workspace_id})
+    conn.execute(
+        text("DELETE FROM tag_group WHERE workspace_id = :ws"), {"ws": workspace_id}
     )
-    cur.execute("DELETE FROM workspace WHERE id = %s", (workspace_id,))
+    conn.execute(
+        text("DELETE FROM workspace_document WHERE workspace_id = :ws"),
+        {"ws": workspace_id},
+    )
+    conn.execute(text("DELETE FROM workspace WHERE id = :ws"), {"ws": workspace_id})
 
 
 def _insert_workspace_data(
-    cur: Any,
-    ws: dict,
-    docs: list[dict],
-    tag_groups: list[dict],
-    tags: list[dict],
+    conn: Connection,
+    ws: dict[str, Any],
+    docs: list[dict[str, Any]],
+    tag_groups: list[dict[str, Any]],
+    tags: list[dict[str, Any]],
 ) -> None:
     """Insert workspace, documents, tag groups, and tags."""
-    cur.execute(
-        """
+    conn.execute(
+        text("""
         INSERT INTO workspace (
             id, crdt_state, created_at, updated_at,
             activity_id, course_id,
@@ -102,13 +93,13 @@ def _insert_workspace_data(
             next_tag_order, next_group_order,
             search_text, search_dirty
         ) VALUES (
-            %(id)s, %(crdt_state)s, %(created_at)s, %(updated_at)s,
+            :id, :crdt_state, :created_at, :updated_at,
             NULL, NULL,
-            %(enable_save_as_draft)s, %(title)s, %(shared_with_class)s,
-            %(next_tag_order)s, %(next_group_order)s,
-            %(search_text)s, %(search_dirty)s
+            :enable_save_as_draft, :title, :shared_with_class,
+            :next_tag_order, :next_group_order,
+            :search_text, :search_dirty
         )
-        """,
+        """),
         ws,
     )
 
@@ -116,84 +107,101 @@ def _insert_workspace_data(
         if isinstance(doc.get("paragraph_map"), dict):
             doc["paragraph_map"] = json.dumps(doc["paragraph_map"])
         doc["source_document_id"] = None
-        cur.execute(
-            """
+        conn.execute(
+            text("""
             INSERT INTO workspace_document (
                 id, workspace_id, type, content, order_index, title,
                 created_at, source_type, auto_number_paragraphs,
                 paragraph_map, source_document_id
             ) VALUES (
-                %(id)s, %(workspace_id)s, %(type)s, %(content)s,
-                %(order_index)s, %(title)s, %(created_at)s,
-                %(source_type)s, %(auto_number_paragraphs)s,
-                %(paragraph_map)s, %(source_document_id)s
+                :id, :workspace_id, :type, :content,
+                :order_index, :title, :created_at,
+                :source_type, :auto_number_paragraphs,
+                :paragraph_map, :source_document_id
             )
-            """,
+            """),
             doc,
         )
 
     for group in tag_groups:
-        cur.execute(
-            """
+        conn.execute(
+            text("""
             INSERT INTO tag_group (
                 id, workspace_id, name, order_index,
                 created_at, color
             ) VALUES (
-                %(id)s, %(workspace_id)s, %(name)s, %(order_index)s,
-                %(created_at)s, %(color)s
+                :id, :workspace_id, :name, :order_index,
+                :created_at, :color
             )
-            """,
+            """),
             group,
         )
 
     for tag in tags:
-        cur.execute(
-            """
+        conn.execute(
+            text("""
             INSERT INTO tag (
                 id, workspace_id, group_id, name, description,
                 color, locked, order_index, created_at
             ) VALUES (
-                %(id)s, %(workspace_id)s, %(group_id)s, %(name)s,
-                %(description)s, %(color)s, %(locked)s,
-                %(order_index)s, %(created_at)s
+                :id, :workspace_id, :group_id, :name,
+                :description, :color, :locked,
+                :order_index, :created_at
             )
-            """,
+            """),
             tag,
         )
 
 
 def _grant_owner_acl(
-    cur: Any,
+    conn: Connection,
     workspace_id: str,
     owner_email: str,
 ) -> None:
     """Grant owner ACL if user exists."""
-    cur.execute(
-        'SELECT id FROM "user" WHERE email = %s',
-        (owner_email,),
-    )
-    owner_row = cur.fetchone()
-    if owner_row:
-        cur.execute(
-            """
+    row = conn.execute(
+        text('SELECT id FROM "user" WHERE email = :email'),
+        {"email": owner_email},
+    ).first()
+    if row:
+        conn.execute(
+            text("""
             INSERT INTO acl_entry (
                 id, workspace_id, user_id,
                 permission, created_at
             ) VALUES (
                 gen_random_uuid(),
-                %s, %s, 'owner', now()
+                :ws, :uid, 'owner', now()
             )
             ON CONFLICT DO NOTHING
-            """,
-            (workspace_id, owner_row[0]),
+            """),
+            {"ws": workspace_id, "uid": row[0]},
         )
 
 
-def rehydrate(path: Path, conninfo: str, *, owner_email: str | None = None) -> dict:
+def rehydrate(
+    path: Path, engine_or_url: Engine | str, *, owner_email: str | None = None
+) -> dict[str, Any]:
     """Load workspace JSON and insert into the database.
 
-    Returns summary dict with counts.
+    Args:
+        path: Path to workspace JSON file from extract_workspace.py.
+        engine_or_url: SQLAlchemy Engine or database URL string.
+        owner_email: Optional email of user to grant owner ACL.
+
+    Returns:
+        Summary dict with counts.
     """
+    if isinstance(engine_or_url, str):
+        sync_url = engine_or_url.replace(
+            "postgresql+asyncpg://", "postgresql+psycopg://"
+        )
+        engine = create_engine(sync_url)
+        owns_engine = True
+    else:
+        engine = engine_or_url
+        owns_engine = False
+
     data = json.loads(path.read_text())
     ws = data["workspace"]
     docs = data["documents"]
@@ -205,14 +213,15 @@ def rehydrate(path: Path, conninfo: str, *, owner_email: str | None = None) -> d
     for key, val in ws.items():
         ws[key] = _decode_binary(val)
 
-    with psycopg.connect(conninfo) as conn:
-        with conn.cursor() as cur:
-            _clean_existing_rows(cur, workspace_id)
-            _insert_workspace_data(cur, ws, docs, tag_groups, tags)
+    try:
+        with engine.begin() as conn:
+            _clean_existing_rows(conn, workspace_id)
+            _insert_workspace_data(conn, ws, docs, tag_groups, tags)
             if owner_email:
-                _grant_owner_acl(cur, workspace_id, owner_email)
-
-        conn.commit()
+                _grant_owner_acl(conn, workspace_id, owner_email)
+    finally:
+        if owns_engine:
+            engine.dispose()
 
     return {
         "workspace_id": workspace_id,
@@ -259,9 +268,11 @@ def main() -> None:
         print("Invalid or missing workspace id", file=sys.stderr)
         sys.exit(1)
 
-    conninfo = _resolve_conninfo()
-
-    result = rehydrate(args.json_file, conninfo, owner_email=args.owner)
+    engine = _resolve_engine()
+    try:
+        result = rehydrate(args.json_file, engine, owner_email=args.owner)
+    finally:
+        engine.dispose()
 
     print(f"Loaded workspace {result['workspace_id']}")
     print(f"  title: {result['title']}")

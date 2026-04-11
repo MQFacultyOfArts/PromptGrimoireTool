@@ -38,6 +38,7 @@ import pytest
 
 from promptgrimoire.config import get_settings
 from tests.e2e.card_helpers import ensure_pabai_workspace
+from tests.e2e.db_fixtures import grant_acl
 
 pytestmark = [
     pytest.mark.e2e,
@@ -53,48 +54,6 @@ pytestmark = [
 # the PABAI fixture while keeping resource usage manageable.
 N_SESSIONS = 10
 N_ROUNDS = 3
-
-
-def _test_db_conninfo() -> str:
-    """Build psycopg conninfo from settings (DATABASE__URL or DEV__TEST_DATABASE_URL).
-
-    The E2E parallel runner sets DATABASE__URL per-worker; pydantic-settings
-    picks it up automatically.
-    """
-    from psycopg.conninfo import make_conninfo
-
-    settings = get_settings()
-    url = settings.database.url or settings.dev.test_database_url
-    if not url:
-        msg = "Neither DATABASE__URL nor DEV__TEST_DATABASE_URL configured"
-        raise RuntimeError(msg)
-    # SQLAlchemy-style URLs use +asyncpg; psycopg needs plain postgresql://
-    url = url.replace("postgresql+asyncpg://", "postgresql://")
-    return make_conninfo(url)
-
-
-def _grant_acl(conninfo: str, email: str, workspace_id: str) -> None:
-    """Grant owner ACL on workspace to user (by email) via direct SQL."""
-    import psycopg
-
-    with psycopg.connect(conninfo) as conn:
-        cur = conn.cursor()
-        cur.execute(
-            'SELECT id FROM "user" WHERE email = %s',
-            (email,),
-        )
-        row = cur.fetchone()
-        if row is None:
-            msg = f"User not found: {email}"
-            raise RuntimeError(msg)
-        cur.execute(
-            "INSERT INTO acl_entry"
-            " (id, workspace_id, user_id, permission, created_at)"
-            " VALUES (gen_random_uuid(), %s::uuid, %s, 'owner', now())"
-            " ON CONFLICT DO NOTHING",
-            (workspace_id, row[0]),
-        )
-        conn.commit()
 
 
 @dataclass
@@ -116,7 +75,6 @@ class WorkerResult:
 
 def _run_session(
     app_server: str,
-    conninfo: str,
     workspace_id: str,
     barrier: threading.Barrier,
     result: WorkerResult,
@@ -149,7 +107,7 @@ def _run_session(
             )
 
             # Grant ACL on the shared PABAI workspace
-            _grant_acl(conninfo, email, workspace_id)
+            grant_acl(email, workspace_id)
 
             annotation_url = f"{app_server}/annotation?workspace_id={workspace_id}"
             identity_url = f"{app_server}/test/session-identity"
@@ -218,7 +176,6 @@ class TestSessionContamination:
         moment, loading the 150KB PABAI workspace with 190 highlights.
         After full render, each checks its session identity.
         """
-        conninfo = _test_db_conninfo()
         workspace_id = ensure_pabai_workspace()
 
         barrier = threading.Barrier(N_SESSIONS, timeout=120)
@@ -229,7 +186,6 @@ class TestSessionContamination:
                 target=_run_session,
                 args=(
                     app_server,
-                    conninfo,
                     workspace_id,
                     barrier,
                     results[i],

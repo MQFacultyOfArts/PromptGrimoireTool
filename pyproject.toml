@@ -17,7 +17,7 @@ classifiers = [
     "Topic :: Education",
 ]
 dependencies = [
-    "nicegui==3.9.0",  # pinned: 3.9.0 includes GHSA-w5g8-5849-vj76 media streaming security fix
+    "nicegui==3.10.0",  # pinned: 3.10.0 — timer leak fix #5931, GHSA-w8wv-vfpc-hw2w upload fix
     "sqlmodel>=0.0.22",
     "pycrdt>=0.10",
     "stytch>=11.0",

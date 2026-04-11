@@ -24,27 +24,6 @@ PABAI_FIXTURE_JSON = (
 )
 
 
-def test_db_conninfo() -> str:
-    """Build psycopg conninfo for the branch-specific test database."""
-    from urllib.parse import urlparse
-
-    from promptgrimoire.config import get_settings
-
-    url = get_settings().dev.test_database_url
-    if not url:
-        msg = "DEV__TEST_DATABASE_URL not configured"
-        raise RuntimeError(msg)
-    parsed = urlparse(url)
-    user = parsed.username or "brian"
-    dbname = parsed.path.lstrip("/")
-    host = parsed.hostname or "/var/run/postgresql"
-    if "host=" in (parsed.query or ""):
-        for param in parsed.query.split("&"):
-            if param.startswith("host="):
-                host = param.split("=", 1)[1]
-    return f"user={user} dbname={dbname} host={host}"
-
-
 def ensure_pabai_workspace() -> str:
     """Rehydrate the Pabai workspace into the test DB (idempotent).
 
@@ -63,8 +42,13 @@ def ensure_pabai_workspace() -> str:
 
     from scripts.rehydrate_workspace import rehydrate
 
-    conninfo = test_db_conninfo()
-    result = rehydrate(PABAI_FIXTURE_JSON, conninfo)
+    from promptgrimoire.config import get_settings
+
+    db_url = get_settings().database.url
+    if not db_url:
+        msg = "DATABASE__URL not configured"
+        raise RuntimeError(msg)
+    result = rehydrate(PABAI_FIXTURE_JSON, db_url)
     assert result["workspace_id"] == PABAI_WORKSPACE_ID
     return PABAI_WORKSPACE_ID
 

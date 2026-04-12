@@ -200,11 +200,14 @@ def _extract_crdt_highlights(
         if isinstance(val, dict):
             highlights.append(val)
 
-    # Enrich with display names (tag UUIDs -> human names)
+    # Filter to highlights whose tag still exists (dangling highlights
+    # reference deleted tags and have no colour defined in the preamble,
+    # causing xcolor "Undefined color" errors).  Matches the UI export
+    # path's filtering in pdf_export.py.
     tag_name_map = {str(t.id): t.name for t in tags}
+    valid = [hl for hl in highlights if str(hl.get("tag", "")) in tag_name_map]
     return [
-        {**hl, "tag_name": tag_name_map.get(str(hl.get("tag", "")))}
-        for hl in highlights
+        {**hl, "tag_name": tag_name_map.get(str(hl.get("tag", "")))} for hl in valid
     ]
 
 

@@ -97,6 +97,20 @@ function Underline(el)
   return result
 end
 
+--- Strikeout callback: override Pandoc's default <del>/<s> → \st{} (soul) emission.
+--- soul's \st tokenizes its argument and crashes with nested lua-ul commands
+--- (\underLine, \highLight) inside it — same conflict class as Underline above.
+--- We emit lua-ul's \underLine at strikethrough height (0.4ex above baseline)
+--- instead, which is robust across nested lua-ul commands.
+function Strikeout(el)
+  if FORMAT ~= "latex" then return el end
+  local result = pandoc.List({pandoc.RawInline("latex",
+    "\\underLine[height=0.4pt, bottom=-0.4ex]{")})
+  result:extend(el.content)
+  result:insert(pandoc.RawInline("latex", "}"))
+  return result
+end
+
 --- Span callback: transform highlighted spans into LaTeX commands.
 function Span(el)
   if FORMAT ~= "latex" then return el end

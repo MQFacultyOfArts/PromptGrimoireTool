@@ -323,6 +323,53 @@ class TestNoHlAttribute:
         assert "plain text" in latex
 
 
+class TestStrikeoutWithHighlight:
+    r"""Strikeout (<del>/<s>) wrapping highlighted content.
+
+    soul's \st{} tokenizes its argument and crashes when it contains
+    lua-ul commands (\underLine, \highLight). The Strikeout callback
+    must replace \st{} with lua-ul's \underLine at strikethrough height,
+    same pattern as the Underline callback replacing \ul{} (#372).
+    """
+
+    def test_strikeout_with_highlight_no_soul_st(self) -> None:
+        r"""Highlighted text inside <del> must not produce \st{}."""
+        html = (
+            "<p>"
+            '<del><span data-hl="0" data-colors="tag-jurisdiction-light">'
+            "deleted highlighted"
+            "</span></del>"
+            "</p>"
+        )
+        latex = _run_pandoc_with_filter(html)
+
+        assert r"\st{" not in latex, f"soul's \\st should not appear, got:\n{latex}"
+        assert r"\highLight[tag-jurisdiction-light]{" in latex
+        assert "deleted" in latex
+        assert "highlighted" in latex
+
+    def test_strikeout_without_highlight_still_renders(self) -> None:
+        """Plain strikethrough (no highlight) should still produce strikethrough."""
+        html = "<p><del>deleted text</del></p>"
+        latex = _run_pandoc_with_filter(html)
+
+        assert "deleted text" in latex
+        # Should use \underLine at strikethrough height, not \st
+        assert r"\st{" not in latex
+
+    def test_strikeout_content_preserved(self) -> None:
+        """Content inside strikeout is preserved."""
+        html = (
+            "<p>"
+            '<del><span data-hl="0" data-colors="tag-jurisdiction-light">'
+            ","
+            "</span></del>"
+            "</p>"
+        )
+        latex = _run_pandoc_with_filter(html)
+        assert "," in latex
+
+
 class TestEdgeCases:
     """Edge cases: empty colors, empty hl."""
 

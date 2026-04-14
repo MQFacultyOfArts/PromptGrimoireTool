@@ -1,8 +1,9 @@
 [Unit]
 Description=PromptGrimoire Export Worker
-After=network-online.target postgresql.service pgbouncer.service
+After=network-online.target postgresql.service pgbouncer.service promptgrimoire.service
 Wants=network-online.target
 Requires=postgresql.service
+PartOf=promptgrimoire.service
 
 [Service]
 Type=notify
@@ -18,8 +19,10 @@ ExecStart=/home/promptgrimoire/.local/bin/uv run python -m promptgrimoire.export
 
 # Watchdog: restart if no heartbeat within 5 minutes
 WatchdogSec=300
-Restart=on-failure
-# Covers both watchdog timeouts and unexpected crashes
+Restart=always
+# Covers watchdog timeouts, crashes, AND PartOf-triggered stops
+# (when the app service restarts, PartOf stops the worker cleanly;
+# Restart=always brings it back with fresh code)
 RestartSec=5
 
 # Shutdown: worker cancels in-flight job on SIGTERM. TimeoutStopSec gives

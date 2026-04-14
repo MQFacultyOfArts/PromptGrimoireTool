@@ -13,7 +13,7 @@ from typing import Annotated
 from uuid import UUID
 
 import typer
-from pycrdt import Doc, Map
+from pycrdt import Doc, Map, Text
 from rich.console import Console
 from rich.panel import Panel
 from rich.syntax import Syntax
@@ -42,6 +42,7 @@ from promptgrimoire.export.pdf import LaTeXCompilationError
 from promptgrimoire.export.pdf_export import (
     export_annotation_pdf,
     generate_tex_only,
+    markdown_to_latex_notes,
 )
 
 console = Console()
@@ -186,13 +187,18 @@ async def _build_export_stem(workspace_id: UUID) -> str:
     return f"{str(workspace_id)[:8]}_{stem}"
 
 
-def _extract_crdt_highlights(
-    crdt_state: bytes,
-    tags: list,
-) -> list[dict]:
-    """Load CRDT state and extract highlights with tag display names."""
+def _load_crdt(crdt_state: bytes) -> Doc:
+    """Load CRDT state into a pycrdt Doc."""
     crdt_doc = Doc()
     crdt_doc.apply_update(crdt_state)
+    return crdt_doc
+
+
+def _extract_crdt_highlights(
+    crdt_doc: Doc,
+    tags: list,
+) -> list[dict]:
+    """Extract highlights from a loaded CRDT doc with tag display names."""
     highlights_map = crdt_doc.get("highlights", type=Map)
     highlights: list[dict] = []
     for key in highlights_map:
@@ -209,6 +215,15 @@ def _extract_crdt_highlights(
     return [
         {**hl, "tag_name": tag_name_map.get(str(hl.get("tag", "")))} for hl in valid
     ]
+
+
+def _extract_response_markdown(crdt_doc: Doc) -> str:
+    """Extract response_draft_markdown from a loaded CRDT doc."""
+    try:
+        text = crdt_doc.get("response_draft_markdown", type=Text)
+        return str(text)
+    except Exception:
+        return ""
 
 
 def _copy_artifacts(
@@ -274,14 +289,40 @@ async def _export_single_workspace(
     tags = await list_tags_for_workspace(workspace_id)
     tag_colours = {str(t.id): t.color for t in tags if t.color}
 
-    highlights: list[dict] = []
-    if workspace.crdt_state:
-        highlights = _extract_crdt_highlights(workspace.crdt_state, tags)
+    crdt_doc = _load_crdt(workspace.crdt_state) if workspace.crdt_state else None
 
-    doc = content_docs[0]
-    doc_highlights = [h for h in highlights if h.get("document_id") == str(doc.id)]
-    if not doc_highlights:
+    highlights: list[dict] = []
+    if crdt_doc is not None:
+        highlights = _extract_crdt_highlights(crdt_doc, tags)
+
+    tag_name_map = {str(t.id): t.name for t in tags}
+    documents: list[dict] = []
+    for doc in content_docs:
+        doc_highlights = [h for h in highlights if h.get("document_id") == str(doc.id)]
+        valid = [hl for hl in doc_highlights if str(hl.get("tag", "")) in tag_name_map]
+        enriched = [
+            {**hl, "tag_name": tag_name_map.get(str(hl.get("tag", "")))} for hl in valid
+        ]
+        doc_para_map = doc.paragraph_map
+        legal_para_map: dict[int, int | None] | None = (
+            {int(k): v for k, v in doc_para_map.items()} if doc_para_map else None
+        )
+        documents.append(
+            {
+                "title": doc.title or f"Source {len(documents) + 1}",
+                "html_content": doc.content or "",
+                "highlights": enriched,
+                "word_to_legal_para": legal_para_map,
+            }
+        )
+
+    has_highlights = any(d["highlights"] for d in documents)
+    if not has_highlights:
         return safe_stem, _SKIP
+
+    # Convert response draft markdown to LaTeX notes
+    response_md = _extract_response_markdown(crdt_doc) if crdt_doc else ""
+    notes_latex = await markdown_to_latex_notes(response_md) if response_md else ""
 
     ws_export_dir = Path(
         tempfile.mkdtemp(
@@ -291,12 +332,14 @@ async def _export_single_workspace(
 
     try:
         pdf_path = await export_annotation_pdf(
-            html_content=doc.content or "",
-            highlights=doc_highlights,
+            html_content="",
+            highlights=[],
             tag_colours=tag_colours,
             output_dir=ws_export_dir,
             filename=safe_stem,
             workspace_id=str(workspace_id),
+            notes_latex=notes_latex,
+            documents=documents,
         )
         shutil.copy2(pdf_path, output_dir / pdf_path.name)
         _copy_artifacts(
@@ -340,9 +383,11 @@ async def _export_single_workspace_tex_only(
     tags = await list_tags_for_workspace(workspace_id)
     tag_colours = {str(t.id): t.color for t in tags if t.color}
 
+    crdt_doc = _load_crdt(workspace.crdt_state) if workspace.crdt_state else None
+
     highlights: list[dict] = []
-    if workspace.crdt_state:
-        highlights = _extract_crdt_highlights(workspace.crdt_state, tags)
+    if crdt_doc is not None:
+        highlights = _extract_crdt_highlights(crdt_doc, tags)
 
     doc = content_docs[0]
     doc_highlights = [h for h in highlights if h.get("document_id") == str(doc.id)]

@@ -82,6 +82,31 @@ class TestMarkdownToLatexNotes:
         assert "Second paragraph" in result
 
     @pytest.mark.asyncio
+    async def test_backslash_before_word_escaped(self) -> None:
+        r"""Backslash before a word is escaped, not passed as raw TeX.
+
+        Pandoc's markdown parser treats \word as a RawInline "tex" command.
+        Student text like "dies \before the contingency" would produce an
+        undefined control sequence in LaTeX.  The pre-processing step must
+        double the backslash so Pandoc emits \textbackslash{} instead.
+        """
+        result = await markdown_to_latex_notes(r"dies \before the contingency")
+        assert "\\before" not in result, (
+            r"Raw \before should not appear in LaTeX output"
+        )
+        assert "textbackslash" in result
+
+    @pytest.mark.asyncio
+    async def test_markdown_escapes_preserved(self) -> None:
+        r"""Backslash before punctuation is a markdown escape, not raw TeX.
+
+        Pandoc correctly handles \* \# \_ etc as escaped literals.
+        The backslash pre-processing must not mangle these.
+        """
+        result = await markdown_to_latex_notes(r"use \* for emphasis")
+        assert "*" in result  # The literal asterisk should appear
+
+    @pytest.mark.asyncio
     async def test_pandoc_failure_raises_error(self) -> None:
         """Pandoc failure is reported as CalledProcessError."""
         # Mock the subprocess to return non-zero exit code

@@ -88,6 +88,9 @@ class TestSkipClassification:
         mock_doc = AsyncMock()
         mock_doc.content = "<p>Some content</p>"
         mock_doc.id = uuid4()
+        mock_doc.paragraph_map = None
+        mock_doc.title = None
+        mock_doc.type = "source"
 
         with (
             patch(

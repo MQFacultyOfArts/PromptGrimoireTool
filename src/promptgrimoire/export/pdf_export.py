@@ -196,6 +196,17 @@ async def markdown_to_latex_notes(markdown_content: str | None) -> str:
         r"^\[[^\]]*\]:\s+\S+.*$", "", markdown_content, flags=re.MULTILINE
     )
 
+    # Escape lone backslashes before letters.  Pandoc's markdown parser
+    # treats \word as a RawInline "tex" command, passing it straight
+    # through to the LaTeX writer.  Student text containing accidental
+    # backslashes (e.g. "\before") would produce undefined control
+    # sequences.  Doubling the backslash makes Pandoc emit
+    # \textbackslash{} instead.  Backslash before ASCII punctuation is
+    # already a valid markdown escape and must not be changed.
+    markdown_content = re.sub(
+        r"\\([A-Za-z])", lambda m: "\\\\" + m.group(1), markdown_content
+    )
+
     proc = await asyncio.create_subprocess_exec(
         "pandoc",
         "-f",

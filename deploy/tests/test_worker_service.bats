@@ -63,6 +63,20 @@ UNIT_FILE="$BATS_TEST_DIRNAME/../promptgrimoire-worker.service"
 }
 
 # ---------------------------------------------------------------------------
+# Lifecycle coupling with app service
+# ---------------------------------------------------------------------------
+
+@test "PartOf=promptgrimoire.service (stops worker when app stops)" {
+    run grep -E '^PartOf=promptgrimoire\.service$' "$UNIT_FILE"
+    [ "$status" -eq 0 ]
+}
+
+@test "Restart=always (restarts after PartOf-triggered stop)" {
+    run grep -E '^Restart=always$' "$UNIT_FILE"
+    [ "$status" -eq 0 ]
+}
+
+# ---------------------------------------------------------------------------
 # Shutdown behaviour
 # ---------------------------------------------------------------------------
 

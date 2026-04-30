@@ -425,13 +425,12 @@ Removed 2026-02-10. Same replacement as pylatexenc above. The Lark lexer grammar
 **Evidence:** `src/promptgrimoire/input_pipeline/converters.py` — `import pymupdf.layout` must precede pymupdf4llm usage.
 **Serves:** Runtime users (improved PDF structure detection).
 
-### browserstack-sdk
+### ~~browserstack-sdk~~ (QUARANTINED)
 
 **Added:** 2026-03-12
+**Quarantined:** 2026-04-30
 **Design plan:** docs/design-plans/2026-03-12-cross-browser-e2e-261.md
-**Claim:** BrowserStack SDK for cross-browser E2E testing against real browsers. Wraps pytest invocation (`browserstack-sdk pytest ...`) and transparently intercepts Playwright's browser launch, routing it through a CDP WebSocket to BrowserStack's cloud. Also manages the BrowserStack Local tunnel for localhost testing.
-**Evidence:** `src/promptgrimoire/cli/e2e/__init__.py` — `browserstack` subcommand swaps subprocess prefix to `["browserstack-sdk", "pytest"]`. `browserstack/*.yml` — platform configs.
-**Serves:** Developers (local cross-browser testing), CI (PR gate against real Safari/Firefox).
+**Reason:** Vendor concern. Dependency removed from `pyproject.toml` and `uv.lock`; `BrowserstackConfig` removed from `config.py`; CI job deleted from `.github/workflows/ci.yml`. CLI command (`uv run grimoire e2e browserstack`) is preserved but short-circuits with a quarantine notice instead of invoking the SDK. `_browserstack.py`, `browserstack/*.yml` profiles, and tests are retained for revival. To restore: re-add the SDK pin, restore `BrowserstackConfig`, and recover `_browserstack.py` and the `browserstack` CLI handler from git history.
 
 ### openpyxl
 

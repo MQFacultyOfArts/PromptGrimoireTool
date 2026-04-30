@@ -591,39 +591,17 @@ def browserstack(
         False, "--ff", "--failed-first", help="Run previously failed tests first (--ff)"
     ),
 ) -> None:
-    """Run E2E tests against real browsers via BrowserStack.
+    """Run E2E tests against real browsers via BrowserStack (quarantined).
 
-    Requires BROWSERSTACK__USERNAME and BROWSERSTACK__ACCESS_KEY in .env
-    (or BROWSERSTACK_USERNAME / BROWSERSTACK_ACCESS_KEY as env vars).
+    The browserstack-sdk dependency was removed on 2026-04-30; this command
+    is preserved only for discoverability and will exit non-zero with a
+    quarantine notice.
     """
-    from promptgrimoire.cli.e2e._browserstack import (
-        resolve_browserstack_config,
-        run_browserstack_suite,
-    )
-    from promptgrimoire.config import get_settings
+    del profile, filter_expr, exit_first, failed_first, ctx
+    from promptgrimoire.cli.e2e._browserstack import QUARANTINE_MESSAGE
 
-    bs = get_settings().browserstack
-    if not bs.username or not bs.access_key.get_secret_value():
-        console.print(
-            "[red]BROWSERSTACK__USERNAME and BROWSERSTACK__ACCESS_KEY must be set[/]"
-        )
-        raise typer.Exit(1)
-
-    config_path = resolve_browserstack_config(profile)
-    marker_expr = (
-        "browser_gate" if profile == "unsupported" else "e2e and not skip_browserstack"
-    )
-
-    args = _prepend_filter(ctx.args, filter_expr)
-    args = _prepend_pytest_flags(args, exit_first=exit_first, failed_first=failed_first)
-
-    sys.exit(
-        run_browserstack_suite(
-            config_path=config_path,
-            user_args=args,
-            marker_expr=marker_expr,
-        )
-    )
+    console.print(f"[red]{QUARANTINE_MESSAGE}[/]")
+    raise typer.Exit(code=1)
 
 
 @e2e_app.command(

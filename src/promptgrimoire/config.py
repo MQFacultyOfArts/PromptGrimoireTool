@@ -147,13 +147,6 @@ class I18nConfig(BaseModel):
     unit_label: str = "Unit"
 
 
-class BrowserstackConfig(BaseModel):
-    """BrowserStack credentials for cross-browser E2E testing."""
-
-    username: str = ""
-    access_key: SecretStr = SecretStr("")
-
-
 class DevConfig(BaseModel):
     """Development and testing toggles."""
 
@@ -340,7 +333,6 @@ class Settings(BaseSettings):
     features: FeaturesConfig = FeaturesConfig()
     dev: DevConfig = DevConfig()
     i18n: I18nConfig = I18nConfig()
-    browserstack: BrowserstackConfig = BrowserstackConfig()
     help: HelpConfig = HelpConfig()
     admission: AdmissionConfig = AdmissionConfig()
     idle: IdleConfig = IdleConfig()

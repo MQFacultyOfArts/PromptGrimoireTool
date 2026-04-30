@@ -241,8 +241,6 @@ _ALLOWED_OS_ENVIRON = {
     # Strict-flaky mode: reads CI / GRIMOIRE_STRICT_FLAKY env vars
     _SRC_DIR / "cli" / "e2e" / "_parallel.py",
     _SRC_DIR / "cli" / "e2e" / "_retry.py",
-    # BrowserStack runner sets E2E_BROWSERSTACK before spawning server subprocess
-    _SRC_DIR / "cli" / "e2e" / "_browserstack.py",
     # Standalone subprocess script — sets env for isolated NiceGUI server
     _SRC_DIR / "cli" / "e2e" / "_server_script.py",
     # Test-harness guard: suppresses Discord alerts during test runs

@@ -1,13 +1,20 @@
-"""Tests for BrowserStack CLI integration."""
+"""Tests for BrowserStack CLI integration — quarantined 2026-04-30."""
 
 from __future__ import annotations
 
-import subprocess
-from typing import TYPE_CHECKING, Any
-
-import click
 import pytest
-import typer
+
+pytest.skip(
+    "BrowserStack support quarantined 2026-04-30: browserstack-sdk dependency "
+    "and BROWSERSTACK__* config removed. Tests preserved for revival.",
+    allow_module_level=True,
+)
+
+import subprocess  # noqa: E402
+from typing import TYPE_CHECKING, Any  # noqa: E402
+
+import click  # noqa: E402
+import typer  # noqa: E402
 
 if TYPE_CHECKING:
     from pathlib import Path

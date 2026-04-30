@@ -162,14 +162,8 @@ uv run grimoire e2e all-browsers
 # Run E2E tests with specific browser
 uv run grimoire e2e run --browser firefox
 
-# Run E2E tests against BrowserStack real browsers (requires BROWSERSTACK_USERNAME/ACCESS_KEY)
-uv run grimoire e2e browserstack
-
-# Run E2E tests against BrowserStack Safari only
-uv run grimoire e2e browserstack safari
-
-# Run E2E tests against BrowserStack unsupported browsers (gate tests only)
-uv run grimoire e2e browserstack unsupported
+# BrowserStack support is QUARANTINED (2026-04-30) — `uv run grimoire e2e browserstack`
+# exits with a quarantine notice. The browserstack-sdk dependency was removed.
 
 # Run card-specific E2E tests
 uv run grimoire e2e cards

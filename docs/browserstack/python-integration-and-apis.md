@@ -7,6 +7,15 @@ summary: BrowserStack integration patterns for Python pytest and Playwright suit
 
 # BrowserStack for Python Projects
 
+> **QUARANTINED 2026-04-30** — `browserstack-sdk` was removed from
+> `pyproject.toml`, the `BrowserstackConfig` sub-model was deleted from
+> `config.py`, and the BrowserStack CI job was deleted from
+> `.github/workflows/ci.yml`. The `uv run grimoire e2e browserstack`
+> command is preserved but short-circuits with a quarantine notice.
+> This reference is retained as cached documentation; do not act on it
+> without first reviving the SDK integration. See
+> `docs/dependency-rationale.md` for the revival path.
+
 BrowserStack exposes three distinct integration surfaces that matter for a Python project:
 
 1. **Pytest SDK integration** for Python suites, including Playwright-Pytest and Selenium-Pytest.

@@ -1,17 +1,20 @@
 """Diagnostic: verify Socket.IO connects through BrowserStack Local tunnel.
 
-Run via: uv run grimoire e2e browserstack safari -k "test_socketio_connects"
-
-This test navigates to a NiceGUI page and checks whether the Socket.IO
-WebSocket connection establishes -- the prerequisite for ALL NiceGUI
-server-initiated actions (ui.navigate.to, ui.notify, etc.).
+Quarantined 2026-04-30: ``browserstack-sdk`` removed from dependencies.
+Tests preserved here for revival; module skipped to keep collection clean.
 """
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
 import pytest
+
+pytest.skip(
+    "BrowserStack support quarantined 2026-04-30; "
+    "tunnel diagnostics retained for revival.",
+    allow_module_level=True,
+)
+
+from typing import TYPE_CHECKING  # noqa: E402
 
 if TYPE_CHECKING:
     from playwright.sync_api import Page

@@ -225,6 +225,10 @@ ignore = [
     "B008",     # typer.Option must be called in function defaults
     "TC003",    # Path used at runtime for file output
 ]
+"scripts/grimoire_exemplars.py" = [
+    "B008",     # typer.Option must be called in function defaults
+    "TC003",    # Path used at runtime for file output
+]
 
 [tool.ruff.lint.isort]
 known-first-party = ["promptgrimoire"]

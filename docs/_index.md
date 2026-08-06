@@ -64,6 +64,7 @@ library references during development.
 - [Investigation: Cross-User Session Contamination (#438) - Reassessment](investigations/2026-04-02-session-leak-reassessment.md)
 - [Spike Preregistration: Session Invalidation on Restart (#438 Re-investigation)](investigations/2026-04-05-session-invalidation-restart-438.md)
 - [Root Cause Analysis: httptools Pipelining Context Leak](investigations/2026-04-08-httptools-pipelining-leak-438.md)
+- [Causal Analysis: marginalia overflow-endnotes fallback never triggers](investigations/2026-08-06-marginalia-overflow-export.md)
 - [Phase1 Hypotheses](investigations/phase1-hypotheses.md)
 
 ## lark

@@ -103,3 +103,8 @@ log/
 luatex.*/
 node_modules/
 .tmp/
+
+# Codex supervision working space (untracked)
+codex-prompts/
+.env.bak*
+.env.*.bak

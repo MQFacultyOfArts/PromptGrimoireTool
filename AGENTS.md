@@ -39,7 +39,13 @@ PromptGrimoire is a collaborative "classroom grimoire" for prompt iteration, ann
 
 ## Key Commands
 
-Use these commands for verification and execution:
+Use these commands for verification and execution.
+
+**Never invoke `pytest` directly.** `uv run pytest ...` is guarded and exits 1
+with a notice pointing back at these commands. The lanes carry the marker
+selection, xdist configuration and database isolation that make a result
+meaningful; a direct invocation either fails or produces a run whose isolation
+guarantees do not hold.
 
 ```bash
 # Testing
@@ -127,7 +133,6 @@ Client-side idle tracking that pauses inactive browser tabs to free server resou
 ## Architecture References
 Before modifying core systems, reference the detailed documentation in the `docs/` folder:
 - Schema & Persistence: `docs/database.md`
-- Wargame Schema Design: `docs/design-plans/2026-03-06-wargame-schema-294.md`
 - Collaboration (CRDT): `docs/ARCHITECTURE.md`
 - Web UI & Routing: `docs/annotation-architecture.md`
 - Input Pipeline (HTML/DOCX/PDF): `docs/input-pipeline.md`
@@ -141,11 +146,9 @@ Before modifying core systems, reference the detailed documentation in the `docs
 
 15 SQLModel table classes. Activity uses a `type` discriminator (`"annotation"` | `"wargame"`) with composite FK enforcement. ACLEntry targets either a workspace or a wargame team (exactly one, CHECK-enforced). Wargame extension tables: WargameConfig (1:1 on Activity), WargameTeam (per-activity teams), WargameMessage (per-team message log ordered by `sequence_no`).
 
+**Wargame feature is shelved** (2026-08-06): the wargame was never given a UI, so its service layer, turn cycle engine, PydanticAI agents and deadline worker were removed. The code lives on the `shelf/wargame` branch. The three tables, their SQLModel classes, the `Activity.type` discriminator and `ACLEntry.team_id` are deliberately retained -- dropping them would require a migration altering `acl_entry`, which gates every workspace permission. Do not add wargame service code to `main` without reviving that branch.
+
 **Permission `can_edit` classifier**: `Permission.can_edit` (boolean) marks editorial capability. The zero-editor invariant queries this flag instead of hardcoding permission names.
-
-**Wargame team management API** (`db/wargames.py`): Full team CRUD, ACL (grant/revoke/update with upsert), and atomic CSV roster ingestion (named-team and auto-assign modes). `ZeroEditorError` prevents leaving a team with no editable member. Pure-domain helpers (codename generation, roster parsing, turn cycle state machine) live in `wargame/`.
-
-**Wargame turn cycle engine** (`db/wargames.py`): `start_game()`, `lock_round()`, `run_preprocessing()`, `publish_all()`, `on_deadline_fired()`. Teams cycle: drafting -> locked -> preprocessing -> published -> drafting (next round). PydanticAI agents (`wargame/agents.py`) produce structured TurnResult and StudentSummary. Background polling worker (`deadline_worker.py`) fires expired deadlines.
 
 **Business exception taxonomy** (`db/exceptions.py`): All domain exceptions derive from `BusinessLogicError`. This lets `get_session()` triage log levels -- expected rejections (WARNING) vs unexpected failures (ERROR+Discord). Subclasses: `SharePermissionError`, `OwnershipError`, `TagCreationDeniedError`, `DeletionBlockedError`, `ProtectedDocumentError`, `DuplicateNameError`, `TagLockedError`, `DuplicateCodenameError`, `ZeroEditorError`, `DuplicateEnrollmentError`, `StudentIdConflictError`, `HasChildTagsError`, `HasHighlightsError`, `HasAnnotationsError`. DB functions must raise these (not raw `PermissionError`/`ValueError`/`IntegrityError`) for business logic cases. UI catches specific subclasses to display user-friendly messages.
 

@@ -1,6 +1,6 @@
 # Dependency Rationale
 
-Last reviewed: 2026-04-04
+Last reviewed: 2026-08-06
 
 Each dependency lists: what it does, why it's here (not a stdlib/transitive alternative), and where the evidence is.
 
@@ -161,7 +161,10 @@ Removed 2026-02-10. Same replacement as pylatexenc above. The Lark lexer grammar
 
 **Classification:** Protective belt. Used in one module. Could potentially be replaced by selectolax, but lxml's HTML normalisation behaviour is well-understood and standards-compliant.
 
-### pydantic-ai >= 1.67.0
+### ~~pydantic-ai >= 1.67.0~~ (REMOVED)
+
+**Removed:** 2026-08-06
+**Reason:** Its only consumer was the wargame turn cycle, which never received a UI and was shelved to the `shelf/wargame` branch. The multi-provider justification below was already stale: `wargame/agents.py` named exactly one model (`anthropic:claude-sonnet-4-6`), and the playground provider factory it cited was never built. Removing it dropped 89 resolved packages (267 → 178) and 25 known vulnerabilities, including duplicate copies of `starlette` and `python-multipart` via `mcp`, and a third `aiohttp` via `xai-sdk`. Roleplay is unaffected — it uses the `anthropic` SDK directly through `llm/client.py`. To restore: revive `shelf/wargame` and prefer `pydantic-ai-slim[anthropic]` over the batteries-included metapackage.
 
 **Added:** 2026-02-10
 **Design plan:** docs/design-plans/2026-02-10-llm-playground.md
@@ -430,7 +433,8 @@ Removed 2026-02-10. Same replacement as pylatexenc above. The Lark lexer grammar
 **Added:** 2026-03-12
 **Quarantined:** 2026-04-30
 **Design plan:** docs/design-plans/2026-03-12-cross-browser-e2e-261.md
-**Reason:** Vendor concern. Dependency removed from `pyproject.toml` and `uv.lock`; `BrowserstackConfig` removed from `config.py`; CI job deleted from `.github/workflows/ci.yml`. CLI command (`uv run grimoire e2e browserstack`) is preserved but short-circuits with a quarantine notice instead of invoking the SDK. `_browserstack.py`, `browserstack/*.yml` profiles, and tests are retained for revival. To restore: re-add the SDK pin, restore `BrowserstackConfig`, and recover `_browserstack.py` and the `browserstack` CLI handler from git history.
+**Expunged:** 2026-08-06
+**Reason:** Vendor concern. Quarantined 2026-04-30 (SDK dropped from `pyproject.toml`/`uv.lock`, `BrowserstackConfig` removed from `config.py`, CI job deleted), then fully expunged 2026-08-06: `_browserstack.py`, the `browserstack` CLI handler, `browserstack/*.yml` profiles, the cached vendor docs and the remaining tests are all gone. Recover from git history at `3c87e87f` if ever revived.
 
 ### openpyxl
 

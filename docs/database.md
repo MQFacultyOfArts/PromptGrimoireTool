@@ -1,8 +1,15 @@
 # Database Schema
 
-**Last updated:** 2026-03-11
+**Last updated:** 2026-08-06
 
 PostgreSQL with SQLModel ORM. Schema managed via Alembic migrations.
+
+> **Wargame tables are retained but the feature is shelved (2026-08-06).**
+> `wargame_config`, `wargame_team` and `wargame_message`, the `Activity.type`
+> discriminator and `ACLEntry.team_id` all remain exactly as documented below —
+> only the Python service layer was removed (see `shelf/wargame`). They are kept
+> because dropping them would require a migration altering `acl_entry`, the table
+> that gates every workspace permission.
 
 ## Tables
 

@@ -38,7 +38,6 @@ Structured legal case brief generation and analysis. PRD forthcoming.
 - **mammoth** - DOCX to semantic HTML conversion (file upload)
 - **pymupdf4llm** - PDF to Markdown extraction with layout analysis (file upload)
 - **lxml** - HTML normalisation in export pipeline
-- **PydanticAI** - structured LLM output for wargame agents (turn_agent, summary_agent)
 - **structlog** - structured JSON logging (replaces stdlib logging across all modules)
 - **httpx** - async HTTP client for Discord webhook alerting
 
@@ -68,6 +67,8 @@ The test suite is organised into 8 lanes: 1 JS lane, 1 BATS lane for shell scrip
 **`noci` marker:** Tests marked `@pytest.mark.noci` are excluded from the default CI Playwright lane (`e2e run`, `e2e all`) but included in `e2e slow` and the nightly workflow. Use for heavy browser scenarios that would slow down regular CI.
 
 Playwright's event loop contaminates xdist workers, so E2E tests must never run in the unit/integration lanes. See [docs/testing.md](docs/testing.md).
+
+**Never invoke `pytest` directly.** `uv run pytest ...` is guarded: it exits 1 with a notice pointing at `grimoire test` / `grimoire e2e`. The lanes carry the marker selection, xdist configuration and database isolation that make results meaningful, so a direct invocation would either fail or produce a run whose isolation guarantees do not hold. Always go through `uv run grimoire test <lane>` or `uv run grimoire e2e <lane>`.
 
 Brian's FIRST LAW: "Flaky" and "Pre-existing" failures are not reasons to stop. They are ways to understand classes of bugs. It is your job to make the code better. When you are working and tests fail, it is your fault to 1) understand why they fail, 2) understand the patterns of failure, and 3) discuss how to fix them such that they more ably fufill the intention of the test. "Flaky" is not a stop word, is a component in a chain of explanation.
 
@@ -133,11 +134,13 @@ uv run grimoire test smoke
 # Post-deploy CJK+emoji PDF compilation smoke test
 uv run grimoire test smoke-export
 
-# List collected tests without running (works on test all, test smoke, e2e run)
+# List collected tests without running (test all and test smoke only --
+# the e2e subcommands do not accept --co)
 uv run grimoire test all --co
-uv run grimoire e2e run --co
+uv run grimoire test smoke --co
 
 # Stop on first failure (-x) and/or run failed tests first (--ff)
+# These DO work on the e2e subcommands.
 uv run grimoire test all -x --ff
 uv run grimoire e2e run -x --ff
 
@@ -161,9 +164,6 @@ uv run grimoire e2e all-browsers
 
 # Run E2E tests with specific browser
 uv run grimoire e2e run --browser firefox
-
-# BrowserStack support is QUARANTINED (2026-04-30) — `uv run grimoire e2e browserstack`
-# exits with a quarantine notice. The browserstack-sdk dependency was removed.
 
 # Run card-specific E2E tests
 uv run grimoire e2e cards
@@ -231,21 +231,14 @@ src/promptgrimoire/
 │   ├── navigator.py     # Navigator query (UNION ALL CTE), NavigatorRow, SearchHit, metadata FTS
 │   ├── roles.py         # Cached staff role queries
 │   ├── tags.py          # Tag/TagGroup CRUD, import (ImportResult), reorder, deletion guards, CRDT cleanup
-│   ├── wargames.py      # Wargame team CRUD, ACL, roster ingestion, turn cycle orchestration
 │   ├── workspace_documents.py  # Document CRUD (add, list, reorder, update content)
 │   └── workspaces.py    # Workspace CRUD (create, get), resolve_annotation_context (single-session page load)
-├── wargame/             # Pure-domain helpers for wargame scenarios
-│   ├── agents.py        # PydanticAI agent definitions (turn_agent, summary_agent)
-│   ├── codenames.py     # Unique codename generation (coolname slugs, collision avoidance)
-│   ├── roster.py        # CSV roster parsing, auto-assign round-robin (functional core)
-│   └── turn_cycle.py    # Turn cycle state machine, deadline calc, prompt assembly
 ├── admission.py         # AIMD admission gate (pure state, no NiceGUI)
 ├── queue_handlers.py    # Raw Starlette handlers for /queue and /api/queue/status
 ├── dev_endpoints.py     # Dev-only admission gate test endpoints (DEV__AUTH_MOCK only)
 ├── crdt/                # pycrdt collaboration logic
 ├── word_count.py        # Multilingual word count (Latin/CJK via uniseg/jieba/MeCab)
 ├── word_count_enforcement.py  # Export-time violation check (pure functions, no UI)
-├── deadline_worker.py   # Background polling worker for expired wargame deadlines
 ├── search_worker.py     # Background FTS extraction worker (polls search_dirty)
 ├── logging_config.py    # Shared logging setup (extracted from __init__.py for standalone worker)
 ├── logging_discord.py   # Discord webhook alerting processor (ERROR/CRITICAL -> Discord embed)
@@ -309,6 +302,8 @@ The `cache-docs` skill automatically saves fetched documentation to `docs/`. Eve
 PostgreSQL with SQLModel. Schema migrations via Alembic. Full schema, wargame tables, ACL polymorphism, FTS indexes, ban system, and exception taxonomy in [docs/database.md](docs/database.md).
 
 15 SQLModel classes: User, Course, CourseEnrollment, Week, Activity, Workspace, WorkspaceDocument, TagGroup, Tag, Permission, CourseRoleRef, ACLEntry, WargameConfig, WargameTeam, WargameMessage.
+
+**Wargame shelved (2026-08-06):** the feature never got a UI, so its service layer, turn cycle engine, PydanticAI agents and deadline worker were removed to `shelf/wargame`. The three tables and their model classes are deliberately retained — dropping them means a migration altering `acl_entry`, which gates every workspace permission.
 
 ### Key Rules
 

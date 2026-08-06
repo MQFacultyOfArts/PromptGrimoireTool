@@ -52,13 +52,20 @@ grimoire = "promptgrimoire.cli:app"
 load-test-data = "promptgrimoire.cli_loadtest:load_test_data"
 
 [tool.uv]
-# TEMPORARY (2026-08-06): pinned to an absolute date so NiceGUI 3.15.0
+# TEMPORARY (2026-08-06): pinned to an absolute instant so NiceGUI 3.15.0
 # (published 2026-07-23) clears the supply-chain cooldown. It was 13 days old
 # on 2026-08-06, one day short of the standing 14-day span.
+#
+# MUST be a timezone-explicit RFC 3339 timestamp, not a bare date. uv resolves
+# a bare date as end-of-day in LOCAL time, so `2026-07-24` meant
+# 2026-07-24T14:00:00Z on an AEST developer machine and 2026-07-25T00:00:00Z in
+# CI's UTC container -- two different cutoffs from one string, which makes
+# `uv sync --locked` fail in CI with "lockfile needs to be updated".
+#
 # REVERT TO `exclude-newer = "14 days"` ON 2026-08-07 and re-run `uv lock`;
 # the resolution must come out identical. If it does not, something other than
 # the NiceGUI timing changed and needs investigating before it ships.
-exclude-newer = "2026-07-24"
+exclude-newer = "2026-07-24T14:00:00Z"
 
 [build-system]
 requires = ["hatchling"]

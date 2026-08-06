@@ -138,9 +138,6 @@ def _register_db_lifecycle(app: object) -> None:
         init_db,
         verify_schema,
     )
-    from promptgrimoire.deadline_worker import (
-        start_deadline_worker,
-    )
     from promptgrimoire.diagnostics import (
         invalidate_sessions_on_disk,
         start_diagnostic_logger,
@@ -149,17 +146,12 @@ def _register_db_lifecycle(app: object) -> None:
     from promptgrimoire.search_worker import start_search_worker
 
     _search_worker_task: asyncio.Task[None] | None = None
-    _deadline_worker_task: asyncio.Task[None] | None = None
     _export_worker_task: asyncio.Task[None] | None = None
     _diagnostic_logger_task: asyncio.Task[None] | None = None
 
     @app.on_startup
     async def startup() -> None:
-        nonlocal \
-            _search_worker_task, \
-            _deadline_worker_task, \
-            _export_worker_task, \
-            _diagnostic_logger_task
+        nonlocal _search_worker_task, _export_worker_task, _diagnostic_logger_task
         # Clear stale sessions from disk before accepting connections.
         # Guarantees clean auth state regardless of how the previous
         # process died (SIGTERM, OOM, crash, bare systemctl restart).
@@ -170,9 +162,6 @@ def _register_db_lifecycle(app: object) -> None:
             _search_worker_task = asyncio.create_task(
                 start_search_worker(),
             )
-        _deadline_worker_task = asyncio.create_task(
-            start_deadline_worker(),
-        )
         _settings = get_settings()
         if _settings.features.worker_in_process:
             _export_worker_task = asyncio.create_task(start_export_worker())
@@ -202,19 +191,14 @@ def _register_db_lifecycle(app: object) -> None:
 
     @app.on_shutdown
     async def shutdown() -> None:
-        nonlocal \
-            _search_worker_task, \
-            _deadline_worker_task, \
-            _export_worker_task, \
-            _diagnostic_logger_task
+        nonlocal _search_worker_task, _export_worker_task, _diagnostic_logger_task
         # Cancel background workers and await completion before DB teardown
         all_tasks = [
             _search_worker_task,
-            _deadline_worker_task,
             _export_worker_task,
             _diagnostic_logger_task,
         ]
-        _search_worker_task = _deadline_worker_task = None
+        _search_worker_task = None
         _export_worker_task = _diagnostic_logger_task = None
         active = [t for t in all_tasks if t is not None]
         for t in active:

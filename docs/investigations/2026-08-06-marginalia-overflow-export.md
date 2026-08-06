@@ -399,3 +399,47 @@ without relying on this document's transcription, and confirmed it
 matches — its assessment was that the central technical diagnosis is sound
 and "can ship as-is," while the surrounding regression-window narrative
 needed the corrections applied here.
+
+## Post-commit reconciliation of the 14-vs-17 counts (2026-08-06)
+
+The section above left the two severity measurements — 14 annotations with no
+margin box, 17 comment strings absent from extracted text — explicitly
+unreconciled. A second reviewer (a different model, working from the
+pre-correction draft) completed that reconciliation. Its result was verified
+against the fixture before being recorded here.
+
+**The two counts are consistent, and 14 is the defensible figure.**
+
+- Of the 17 comments the PyMuPDF assertion reports missing, **13 belong to
+  genuinely absent margin boxes**. The remaining four belong to boxes that are
+  *visible* in the PDF, and are false negatives caused by line-break
+  hyphenation at extraction time — the extracted text contains `In- sufficient`,
+  `At- testation` and `Wit- ness`, which an exact-substring search does not
+  match.
+- The printed annotation number is **not** the fixture's highlight-list index,
+  because a single highlight carrying multiple comments produces several
+  numbered `\annot` calls. Any 0-index-to-1-index mapping between the two sets
+  is therefore invalid, including the one the first reviewer used to argue the
+  sets do not nest.
+
+**Defensible severity: 14 of 23 annotations absent from the visible PDF, 13 of
+them carrying comment text.** This is an output-integrity failure. The source
+annotations are not deleted from the application; the export path returns a
+non-empty PDF and reaches its normal `export_complete` path.
+
+### A test weakness this exposed
+
+`test_all_comments_present` searches the whole extracted document for each
+comment string, so a comment appearing on more than one annotation cannot
+distinguish which copy survived.
+
+The fixture contains exactly one such duplicate. Verified directly against
+`tests/fixtures/workspace_dogs_breakfast_overflow.json`: of 22 comments,
+`"Insufficient identification of property"` appears **twice**. One copy is on a
+visible annotation and one on an absent annotation, so a global search finds
+the visible copy and reports the absent one as present.
+
+The test can therefore pass while annotation content is missing. A reliable
+version must bind each comment to its printed annotation number or its margin
+box, and must dehyphenate extracted text before matching. Neither the original
+investigation nor the first peer review caught this.

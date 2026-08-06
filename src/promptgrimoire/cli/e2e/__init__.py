@@ -569,42 +569,6 @@ def all_browsers(
 
 
 @e2e_app.command(
-    "browserstack",
-    context_settings={
-        "allow_extra_args": True,
-        "allow_interspersed_args": False,
-    },
-)
-def browserstack(
-    ctx: typer.Context,
-    profile: str | None = typer.Argument(
-        None,
-        help="Browser profile: safari, firefox, unsupported (default: supported)",
-    ),
-    filter_expr: str | None = typer.Option(
-        None, "-k", "--filter", help="Pytest keyword filter expression"
-    ),
-    exit_first: bool = typer.Option(
-        False, "-x", "--exit-first", help="Stop on first failure (-x)"
-    ),
-    failed_first: bool = typer.Option(
-        False, "--ff", "--failed-first", help="Run previously failed tests first (--ff)"
-    ),
-) -> None:
-    """Run E2E tests against real browsers via BrowserStack (quarantined).
-
-    The browserstack-sdk dependency was removed on 2026-04-30; this command
-    is preserved only for discoverability and will exit non-zero with a
-    quarantine notice.
-    """
-    del profile, filter_expr, exit_first, failed_first, ctx
-    from promptgrimoire.cli.e2e._browserstack import QUARANTINE_MESSAGE
-
-    console.print(f"[red]{QUARANTINE_MESSAGE}[/]")
-    raise typer.Exit(code=1)
-
-
-@e2e_app.command(
     "perf",
     context_settings={
         "allow_extra_args": True,

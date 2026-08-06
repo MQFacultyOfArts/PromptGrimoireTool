@@ -59,7 +59,10 @@ async def _persist_title_change(
 ) -> None:
     """Save a workspace title change to DB and sync in-memory state."""
     try:
-        new_title = title_input.value.strip() or None
+        # NiceGUI 3.11+ types Input.value as `str | None`; normalise before
+        # stripping so a cleared input does not raise AttributeError into the
+        # except block below (which would silently discard the user's edit).
+        new_title = (title_input.value or "").strip() or None
         await update_workspace_title(workspace_id, new_title)
         title_input.value = new_title or fallback_title
         _update_row_title(page_state, workspace_id, new_title)

@@ -205,11 +205,11 @@ async def open_quick_create(state: PageState) -> None:
                     if not ok:
                         return
 
+                    # No success ui.notify here: a bottom q-notification
+                    # blocks the toolbar's tag-create-btn for ~6 s
+                    # (Quasar 5 s timeout + 1 s dismissal buffer).
+                    # Dialog close + toolbar update are the visible feedback.
                     dialog.close()
-                    ui.notify(
-                        f"Tag '{text}' created",
-                        type="positive",
-                    )
                 finally:
                     create_btn.props(remove="loading")
                     create_btn.enable()

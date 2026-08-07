@@ -84,12 +84,14 @@ Removed 2026-03-18 from `pyproject.toml`. Superseded 2026-02-13 by pydantic-sett
 
 > **Dated follow-up:** 49.0.0 leaves PYSEC-2026-3552 (a PKCS7 decryption oracle) open; the fix is 50.0.0. We have no PKCS7 import or decryption path, and CI's pip-audit gate treats the fix as inside its 14-day grace period until roughly **2026-08-14**, after which CI will fail on it. 50.0.0 is already reachable under the 3-day cooldown, so this is a deliberate deferral pending a changelog review of a fourth major, not a blocked upgrade.
 
-### pyasn1 >= 0.6.3
+### ~~pyasn1 >= 0.6.3~~ (REMOVED)
 
 **Added:** 2026-03-18 (version floor pin)
-**Claim:** Version floor pin to ensure CVE-2026-30922 patched version across transitive dependency chains.
-**Evidence:** No direct imports in `src/promptgrimoire/`. Required transitively via pydantic-ai → google-genai → google-auth → rsa → pyasn1.
-**Classification:** Protective belt. Version floor for supply-chain security.
+**Removed:** 2026-08-07
+**Original claim:** Version floor pin to ensure a CVE-2026-30922 patched version across transitive dependency chains.
+**Original evidence:** No direct imports in `src/promptgrimoire/`. Required transitively via pydantic-ai → google-genai → google-auth → rsa → pyasn1.
+**Why removed:** That chain is the whole justification, and it ended when pydantic-ai was dropped on 2026-08-06. `uv tree --invert --package pyasn1` then showed the root project as the only consumer, and two controlled import searches found no use (with typer as a positive control, so the empty result was not a search that saw nothing). A floor pin protecting a dependency nobody depends on protects nothing, so the declaration went rather than being bumped to 0.6.4.
+**Verified by:** `uv run grimoire e2e all` after removal — the falsification attempt that absence-searching cannot provide on its own.
 
 ### asyncpg >= 0.30
 

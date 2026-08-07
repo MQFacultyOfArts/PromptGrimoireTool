@@ -7135,7 +7135,6 @@ It catches any divergence that would cause highlights to render at wrong positio
 2. Get placement context, assert allow_sharing matches course default
 
 **Verifies:** Activity-placed workspaces inherit course sharing setting (AC4.3)
-||||||| parent of 37db489c (docs: update project context for incident-analysis-tools)
 
 ## Incident Analysis -- Ingest & Provenance
 

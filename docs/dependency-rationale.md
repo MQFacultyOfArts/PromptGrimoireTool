@@ -359,8 +359,9 @@ Removed 2026-02-10. Same replacement as pylatexenc above. The Lark lexer grammar
 **Added:** 2026-02-28
 **Design plan:** docs/design-plans/2026-02-28-docs-platform-208.md
 **Claim:** Image processing for whitespace trimming of screenshots captured during guide generation. `ImageChops.difference()` detects content bounds, `Image.crop()` removes empty margins.
-**Evidence:** `src/promptgrimoire/docs/screenshot.py` — `trim_whitespace()` function.
+**Evidence:** `src/promptgrimoire/docs/screenshot.py:21-22,39-81` — `trim_whitespace()`, plus LANCZOS thumbnail resizing. Covered by `tests/unit/test_docs_screenshot.py:74-110,248-273`, which opens generated PNGs, compares `ImageChops` crop results and checks thumbnail dimensions.
 **Serves:** Developers (guide authoring), end users (cleaner screenshots in documentation).
+**Last reviewed:** 2026-08-07 — security floor raised to 12.3.0, clearing 26 advisories. Of the APIs changed in 12.2/12.3 we use only `Image`, `ImageChops` and `Resampling`; the removed `ImageCms` modes, font loaders and rank filters are outside our surface.
 
 ### uniseg
 

@@ -67,11 +67,16 @@ documentation, and the pushback was correct.
 
 ## A trap worth naming
 
-`[tool.uv] exclude-newer` is **3 days**. This is *not* the 14 days in the CI
-`pip-audit` gate. They are different mechanisms: the cooldown delays
-*adopting* any new release, the grace period delays *failing the build* on a
-known fix. Conflating them on 2026-08-06 nearly tightened the cooldown
+`[tool.uv] exclude-newer` is a cooldown that delays *adopting* any new release.
+The 14 days in the CI `pip-audit` gate is a different mechanism that delays
+*failing the build* on a known fix. They are independent; change one without
+the other freely. Conflating them on 2026-08-06 nearly tightened the cooldown
 fivefold under the description of a "revert".
+
+**Amended 2026-08-07:** the cooldown was 3 days when this was written and is
+now 14, by operator ruling — three days is not a meaningful quarantine for a
+repository worked in bursts months apart. The two values now coincide, which
+makes the distinction above easier to lose, not less real.
 
 Related: `exclude-newer` must be a relative span or a timezone-explicit
 RFC 3339 instant. A bare date resolves as end-of-day in *local* time, so one

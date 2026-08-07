@@ -51,7 +51,7 @@ grimoire = "promptgrimoire.cli:app"
 load-test-data = "promptgrimoire.cli_loadtest:load_test_data"
 
 [tool.uv]
-# Supply-chain cooldown: ignore anything published in the last 3 days, so a
+# Supply-chain cooldown: ignore anything published in the last 14 days, so a
 # compromised release has time to be caught and yanked before we can resolve it.
 #
 # If this ever needs pinning to a fixed cutoff, use a timezone-explicit RFC 3339
@@ -61,11 +61,16 @@ load-test-data = "promptgrimoire.cli_loadtest:load_test_data"
 # one string, which makes `uv sync --locked` fail in CI with "lockfile needs to
 # be updated". Cost half an hour on 2026-08-06.
 #
-# This is 3 days because that is the standing policy, restored after the
-# 2026-08-06 pin. It is NOT the same 14 days as the CI pip-audit grace period
-# in .github/workflows/ci.yml -- that one delays *failing the build* on a known
-# fix, this one delays *adopting* any new release at all.
-exclude-newer = "3 days"
+# 14 days by operator ruling (2026-08-07), widened from the 3 days that had been
+# here since the project was young. Three days is not a meaningful cooldown for a
+# repository touched in bursts months apart: nobody is watching closely enough,
+# in that window, for a compromised release to be caught before we resolve it.
+#
+# This happens to match the 14 days in the CI pip-audit gate
+# (.github/workflows/ci.yml), but they are separate mechanisms and neither
+# follows the other: that one delays *failing the build* on a known fix, this one
+# delays *adopting* any new release at all. Change one without the other freely.
+exclude-newer = "14 days"
 
 [build-system]
 requires = ["hatchling"]

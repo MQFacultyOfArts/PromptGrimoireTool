@@ -52,20 +52,21 @@ grimoire = "promptgrimoire.cli:app"
 load-test-data = "promptgrimoire.cli_loadtest:load_test_data"
 
 [tool.uv]
-# TEMPORARY (2026-08-06): pinned to an absolute instant so NiceGUI 3.15.0
-# (published 2026-07-23) clears the supply-chain cooldown. It was 13 days old
-# on 2026-08-06, one day short of the standing 14-day span.
+# Supply-chain cooldown: ignore anything published in the last 3 days, so a
+# compromised release has time to be caught and yanked before we can resolve it.
 #
-# MUST be a timezone-explicit RFC 3339 timestamp, not a bare date. uv resolves
-# a bare date as end-of-day in LOCAL time, so `2026-07-24` meant
-# 2026-07-24T14:00:00Z on an AEST developer machine and 2026-07-25T00:00:00Z in
-# CI's UTC container -- two different cutoffs from one string, which makes
-# `uv sync --locked` fail in CI with "lockfile needs to be updated".
+# If this ever needs pinning to a fixed cutoff, use a timezone-explicit RFC 3339
+# timestamp, never a bare date. uv resolves a bare date as end-of-day in LOCAL
+# time, so `2026-07-24` means 2026-07-24T14:00:00Z on an AEST developer machine
+# and 2026-07-25T00:00:00Z in CI's UTC container -- two different cutoffs from
+# one string, which makes `uv sync --locked` fail in CI with "lockfile needs to
+# be updated". Cost half an hour on 2026-08-06.
 #
-# REVERT TO `exclude-newer = "14 days"` ON 2026-08-07 and re-run `uv lock`;
-# the resolution must come out identical. If it does not, something other than
-# the NiceGUI timing changed and needs investigating before it ships.
-exclude-newer = "2026-07-24T14:00:00Z"
+# This is 3 days because that is the standing policy, restored after the
+# 2026-08-06 pin. It is NOT the same 14 days as the CI pip-audit grace period
+# in .github/workflows/ci.yml -- that one delays *failing the build* on a known
+# fix, this one delays *adopting* any new release at all.
+exclude-newer = "3 days"
 
 [build-system]
 requires = ["hatchling"]

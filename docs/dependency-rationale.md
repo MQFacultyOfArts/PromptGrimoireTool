@@ -60,14 +60,15 @@ Each dependency lists: what it does, why it's here (not a stdlib/transitive alte
 
 **Revised:** 2026-02-13 — pydantic-settings migration adds direct usage of advanced pydantic features (BaseModel, SecretStr, model_validator) beyond SQLModel's Field re-export.
 
-### pydantic-settings >= 2.8
+### pydantic-settings >= 2.14.2
 
 **Added:** 2026-02-13
 **Design plan:** docs/design-plans/2026-02-13-pydantic-settings-130.md
 **Claim:** Typed configuration from environment variables and `.env` files. Replaces scattered `os.environ.get()` calls with a single validated `Settings(BaseSettings)` class.
-**Evidence:** `src/promptgrimoire/config.py` (Settings class, get_settings singleton). All 15 files that previously used `os.environ.get()` now import from config.
-**Why not alternatives:** pydantic-settings integrates natively with the existing Pydantic ecosystem (SQLModel, pydantic-ai). Provides type validation, SecretStr masking, and `.env` reading without manual `load_dotenv()`.
+**Evidence:** `src/promptgrimoire/config.py:18,303-365` (Settings class, `SettingsConfigDict` `.env` paths, get_settings singleton). All 15 files that previously used `os.environ.get()` now import from config. Covered by `tests/unit/test_settings.py`.
+**Why not alternatives:** pydantic-settings integrates natively with the existing Pydantic ecosystem (SQLModel). Provides type validation, SecretStr masking, and `.env` reading without manual `load_dotenv()`.
 **Classification:** Hard core. All application configuration flows through it.
+**Last reviewed:** 2026-08-07 — floor raised from 2.7 to 2.14.2 for GHSA-4xgf-cpjx-pc3j, where `NestedSecretsSettingsSource` followed symlinks out of `secrets_dir`. We do not configure that source, but the declared contract must not admit the vulnerable release. The old heading claimed 2.8 while pyproject declared 2.7; both are now 2.14.2.
 
 ### ~~python-dotenv >= 1.0~~ (REMOVED)
 

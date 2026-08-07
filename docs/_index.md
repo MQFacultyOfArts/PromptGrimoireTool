@@ -44,6 +44,7 @@ library references during development.
 
 - [0001 — Shelve the wargame feature, retain its tables](decisions/0001-shelve-wargame-retain-tables.md)
 - [0002 — Expunge BrowserStack rather than keep it quarantined](decisions/0002-expunge-browserstack.md)
+- [0003 — Upgrade dependencies one package at a time, transitives included](decisions/0003-controlled-dependency-upgrades.md)
 - [Architecture Decision Register](decisions/adr-register.md)
 
 ## design-notes

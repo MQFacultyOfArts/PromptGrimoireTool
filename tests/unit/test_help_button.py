@@ -4,6 +4,7 @@ Verifies:
 - AC5.1: Help button renders when help_enabled=True
 - AC5.2 (routing): Algolia path called when help_backend="algolia"
 - AC5.4: No UI calls when help_enabled=False
+- Lazy MkDocs dialog: dialog content not constructed until first click
 """
 
 from __future__ import annotations
@@ -11,7 +12,7 @@ from __future__ import annotations
 from unittest.mock import MagicMock, patch
 
 from promptgrimoire.config import HelpConfig
-from promptgrimoire.pages.layout import _render_help_button
+from promptgrimoire.pages.layout import _render_help_button, _render_mkdocs_help
 
 
 class TestHelpButtonDisabled:
@@ -79,3 +80,47 @@ class TestHelpButtonMkdocs:
         _render_help_button()
         mock_mkdocs.assert_called_once()
         mock_algolia.assert_not_called()
+
+
+class TestMkdocsHelpLazyConstruction:
+    """Lazy dialog construction: the dialog/card/iframe must NOT be built
+    at page render time. Only the top-level help button should be emitted
+    eagerly; the dialog tree is deferred until the button is clicked.
+
+    Prevents regression to the eager pattern that enqueued ~3600 UI update
+    messages on every annotation page load at 50-way concurrency.
+    """
+
+    @patch("promptgrimoire.pages.layout.ui")
+    @patch("promptgrimoire.pages.layout.get_settings")
+    def test_eager_render_creates_button_but_not_dialog(
+        self,
+        mock_settings: MagicMock,
+        mock_ui: MagicMock,
+    ) -> None:
+        """Page render creates the help button but does not build the dialog.
+
+        The dialog, card, row, label, open-in-new button, and iframe are
+        deferred to the on-click callback so they do not inflate
+        server-side update counts on every page load.
+        """
+        mock_settings.return_value.help.docs_url = "https://example.com/docs"
+
+        _render_mkdocs_help()
+
+        # The help button MUST be emitted eagerly (visible in header).
+        assert mock_ui.button.called, (
+            "help button itself should be constructed on page render"
+        )
+
+        # The dialog tree MUST NOT be emitted eagerly.
+        assert not mock_ui.dialog.called, (
+            "ui.dialog() must be deferred to the on-click handler, not run "
+            "on page render"
+        )
+        assert not mock_ui.card.called, (
+            "ui.card() must be deferred to the on-click handler"
+        )
+        assert not mock_ui.element.called, (
+            "ui.element('iframe') must be deferred to the on-click handler"
+        )

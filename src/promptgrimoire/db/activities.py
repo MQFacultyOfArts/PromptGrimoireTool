@@ -202,7 +202,7 @@ async def delete_activity(
             return False
 
         # Guard: check for student workspaces
-        count = await has_student_workspaces(activity_id)
+        count = await has_student_workspaces(activity_id, session=session)
         if count > 0 and not force:
             raise DeletionBlockedError(
                 student_workspace_count=count,

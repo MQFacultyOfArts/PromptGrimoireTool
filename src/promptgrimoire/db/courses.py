@@ -233,13 +233,12 @@ async def delete_course(
 
         weeks, activities = await _fetch_course_children(session, course_id)
 
-        # Guard: aggregate student workspace count
-        # TODO(perf): N+1 sessions — has_student_workspaces opens
-        # its own session per call. Replace with single GROUP BY
-        # query if activity counts grow.
+        # Guard: aggregate student workspace count.
+        # TODO(perf): This still performs one count query per activity.
+        # Replace with a single GROUP BY query if activity counts grow.
         total_students = 0
         for act in activities:
-            total_students += await has_student_workspaces(act.id)
+            total_students += await has_student_workspaces(act.id, session=session)
 
         if total_students > 0 and not force:
             raise DeletionBlockedError(

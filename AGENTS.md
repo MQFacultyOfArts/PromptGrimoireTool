@@ -163,6 +163,8 @@ Before modifying core systems, reference the detailed documentation in the `docs
 
 **Navigator FTS** (`db/navigator.py`): `search_navigator()` runs a three-leg UNION ALL: (1) document content, (2) CRDT search_text, (3) metadata (owner name, workspace/activity/week titles, course code/name). Uses prefix matching via `to_tsquery` with `:*` suffixes. Metadata snippets are labelled ("Title: ... | Author: ... | Unit: ...").
 
+**Nested-session avoidance** (`db/roles.py`, `db/workspaces.py`): `get_staff_roles()`, `get_all_roles()`, and `has_student_workspaces()` accept an optional `session=AsyncSession` kwarg. Callers inside an outer `async with get_session()` block MUST thread it through — opening a nested session under pool saturation deadlocks the entire wave (cold-cache page load pathology). `startup()` calls `warm_role_caches()` after `init_db()` to pre-populate both caches before any request arrives, so the cold precondition cannot occur in production. Regression test: `tests/integration/test_nested_session_deadlock.py`. Detail: [docs/investigations/2026-04-23-page-load-failure-modes.md § A](docs/investigations/2026-04-23-page-load-failure-modes.md).
+
 ### User Ban System
 
 **Schema:** `User.is_banned` (boolean, default false) and `User.banned_at` (timestamptz, nullable). Migration `7abc07630af3`.

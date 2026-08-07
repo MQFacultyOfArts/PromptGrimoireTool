@@ -299,7 +299,7 @@ Reference table replacing the `CourseRole` StrEnum. String PK.
 
 Seed data: `coordinator` (40, staff), `instructor` (30, staff), `tutor` (20, staff), `student` (10).
 
-**`is_staff`**: Binary capability classifier marking roles that derive instructor-level access (week visibility, ACL permission resolution). Queried once at startup and cached via `get_staff_roles()` in `db/roles.py`.
+**`is_staff`**: Binary capability classifier marking roles that derive instructor-level access (week visibility, ACL permission resolution). Queried once and cached via `get_staff_roles()` in `db/roles.py`. The cache is pre-warmed at app startup by `warm_role_caches()` (called from `startup()` after `init_db()`) to avoid a cold-cache nested-session deadlock on the first concurrent page loads. `get_staff_roles()`, `get_all_roles()` (both in `db/roles.py`), and `has_student_workspaces()` (in `db/workspaces.py`) accept an optional `session=AsyncSession` kwarg. **Callers already inside an `async with get_session()` block MUST pass `session=session`** through — otherwise the helper opens a nested session whose checkout blocks on a connection that the outer transaction holds, and under pool saturation this deadlocks for the full `pool_timeout` (~30 s). See [docs/investigations/2026-04-23-page-load-failure-modes.md § A](investigations/2026-04-23-page-load-failure-modes.md).
 
 **Note:** The SQLModel class is named `CourseRoleRef` to avoid collision with the existing `CourseRole` StrEnum. Table name is `course_role`. After Phase 2 deletes the StrEnum, the class can be renamed.
 

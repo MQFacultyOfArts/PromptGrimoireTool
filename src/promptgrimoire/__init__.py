@@ -138,6 +138,7 @@ def _register_db_lifecycle(app: object) -> None:
         init_db,
         verify_schema,
     )
+    from promptgrimoire.db.roles import warm_role_caches
     from promptgrimoire.diagnostics import (
         invalidate_sessions_on_disk,
         start_diagnostic_logger,
@@ -158,6 +159,10 @@ def _register_db_lifecycle(app: object) -> None:
         invalidate_sessions_on_disk()
         await init_db()
         await verify_schema(get_engine())
+        # Warm role caches before accepting traffic so the cold-cache
+        # precondition of the nested-session deadlock cannot occur under
+        # concurrent page loads. Shares one session; idempotent.
+        await warm_role_caches()
         if get_settings().features.enable_search_worker:
             _search_worker_task = asyncio.create_task(
                 start_search_worker(),

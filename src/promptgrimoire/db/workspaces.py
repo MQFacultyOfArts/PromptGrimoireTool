@@ -66,7 +66,11 @@ async def get_user_workspace_for_activity(
         return result.first()
 
 
-async def has_student_workspaces(activity_id: UUID) -> int:
+async def has_student_workspaces(
+    activity_id: UUID,
+    *,
+    session: AsyncSession | None = None,
+) -> int:
     """Count non-template workspaces for an activity.
 
     Returns the number of student (cloned) workspaces placed in this
@@ -75,24 +79,31 @@ async def has_student_workspaces(activity_id: UUID) -> int:
 
     Args:
         activity_id: The activity UUID.
+        session: Optional existing session to reuse.  Callers already
+            inside an ``async with get_session()`` block MUST pass
+            ``session=session`` to avoid a nested pool checkout that
+            can deadlock under saturation.
 
     Returns:
         Count of student workspaces (0 = safe to delete).
     """
-    async with get_session() as session:
-        activity = await session.get(Activity, activity_id)
-        if activity is None:
-            return 0
+    if session is None:
+        async with get_session() as db_session:
+            return await has_student_workspaces(activity_id, session=db_session)
 
-        result = await session.exec(
-            select(func.count())
-            .select_from(Workspace)
-            .where(
-                Workspace.activity_id == activity_id,
-                Workspace.id != activity.template_workspace_id,
-            )
+    activity = await session.get(Activity, activity_id)
+    if activity is None:
+        return 0
+
+    result = await session.exec(
+        select(func.count())
+        .select_from(Workspace)
+        .where(
+            Workspace.activity_id == activity_id,
+            Workspace.id != activity.template_workspace_id,
         )
-        return result.one()
+    )
+    return result.one()
 
 
 async def check_clone_eligibility(activity_id: UUID, user_id: UUID) -> str | None:
@@ -106,9 +117,9 @@ async def check_clone_eligibility(activity_id: UUID, user_id: UUID) -> str | Non
     Returns:
         None if eligible, or an error message string explaining why not.
     """
-    staff_roles = await get_staff_roles()
-
     async with get_session() as session:
+        staff_roles = await get_staff_roles(session=session)
+
         # 1. Activity must exist
         activity = await session.get(Activity, activity_id)
         if activity is None:
@@ -274,7 +285,7 @@ async def _resolve_enrollment_permission(
     if course is None:
         return None
 
-    staff_roles = await get_staff_roles()
+    staff_roles = await get_staff_roles(session=session)
     if enrollment.role in staff_roles:
         return course.default_instructor_permission
 
@@ -353,7 +364,7 @@ async def _resolve_privileged_user_ids(
     staff_ids: set[str] = set()
     priv_course_id = placement.course_id or workspace.course_id
     if priv_course_id is not None:
-        staff_roles = await get_staff_roles()
+        staff_roles = await get_staff_roles(session=session)
         staff_result = await session.exec(
             select(CourseEnrollment.user_id).where(
                 CourseEnrollment.course_id == priv_course_id,

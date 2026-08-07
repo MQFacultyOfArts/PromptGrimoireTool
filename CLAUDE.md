@@ -82,7 +82,7 @@ All interactable UI elements must have `data-testid` attributes. E2E tests must 
 
 ### E2E Race-Condition Patterns
 
-Six patterns prevent NiceGUI-specific race conditions:
+Seven patterns prevent NiceGUI-specific race conditions and page-render perf regressions:
 
 - **Fire-and-forget JS** (`run_javascript` without `await`): All `run_javascript()` calls in production code MUST be fire-and-forget (no `await`). `await run_javascript()` blocks the asyncio event loop for a full browser round-trip, serialising all clients. An AST guard test (`test_run_javascript_guard.py`) enforces this structurally -- it will fail if any production file contains `await ...run_javascript(...)`. Spike/demo pages can be added to the guard's allowlist. Data that was previously fetched via JS round-trips (e.g. Milkdown editor markdown) is now included in event payloads instead.
 - **Value-capture** (`ui_helpers.on_submit_with_value`): Reads the input DOM value client-side at click time, preventing `python-socketio` async task reordering from delivering stale values. All Python-rendered submit buttons bound to text inputs must use this helper. Vue components manage their own DOM state and do not require it.
@@ -90,8 +90,21 @@ Six patterns prevent NiceGUI-specific race conditions:
 - **Lightweight peer-left callback** (`_RemotePresence.on_peer_left`): CLIENT_DELETE events (peer disconnection) must NOT trigger a full `refresh_annotations()` rebuild. They change zero CRDT state, but a full rebuild races with in-flight user interactions (fill + click), destroying input values and button handlers mid-action. `_RemotePresence` carries a separate `on_peer_left` callback that only updates the user count display.
 - **Side-effects before rebuilds** (`tag_management._on_tag_deleted`): `ui.notify()` and other side-effects that access the current slot context must execute BEFORE `render_tag_list()` or any call that clears/rebuilds a container. Container rebuilds destroy dialog canary elements (via `weakref.finalize` in `nicegui/elements/dialog.py:30-34`), which invalidates the slot context held by NiceGUI's event dispatch wrapper (`events.py:457`). See [postmortem](docs/postmortems/2026-03-20-slot-deletion-investigation-369.md).
 - **is_deleted guard** (`highlights._delete_highlight`): Before calling `element.delete()` on a NiceGUI element, check `element.is_deleted` first. Concurrent container rebuilds can garbage-collect elements before explicit deletion runs, and calling `delete()` on an already-deleted element raises `ValueError` at `nicegui/element.py:504`. See [postmortem](docs/postmortems/2026-03-20-slot-deletion-investigation-369.md).
+- **Lazy heavy-dialog/modal construction** (`layout._render_mkdocs_help`): Dialog and modal payloads with non-trivial bodies (iframes, scrollable lists, many-field forms) must be constructed inside the on-click closure, not during page render. Eager construction staged ~3600 NiceGUI update-enqueue messages per 50-way page-load wave for users who never opened the help dialog. Cache the built dialog in a closure variable so reopens are cheap. Unit guard: `test_help_button.py::TestMkdocsHelpLazyConstruction`. See [docs/investigations/2026-04-23-page-load-failure-modes.md](docs/investigations/2026-04-23-page-load-failure-modes.md) § D.
 
 Details and examples in [docs/testing.md](docs/testing.md) § Common E2E Pitfalls.
+
+### Performance failure modes (page load)
+
+Six failure-mode classes surfaced by the April 2026 independent-workspace load investigation. Classes A and D are fixed; the rest are known-but-unfixed and listed here so future work does not re-discover them. Full detail in [docs/investigations/2026-04-23-page-load-failure-modes.md](docs/investigations/2026-04-23-page-load-failure-modes.md).
+
+- **A. Cold-cache nested `get_session()` deadlock** — helpers that open their own session from inside another session deadlock under pool saturation. Helpers in `db/roles.py` and `db/workspaces.py` take an optional `session=` kwarg; callers inside an outer `get_session()` block MUST pass it through. `warm_role_caches()` at startup removes the cold precondition. **Fixed.**
+- **B. Long transaction hold times amplify checkout queueing** — a single 1-2 s transaction starves other requests at a saturated pool even without any deadlock. Prefer single-round-trip queries (JOIN / `IN` / CTE) over sequential `await session.exec(...)` chains inside one transaction. **Not yet fixed.**
+- **C. Duplicate registry / cache passes on a single render path** — calling the same cache-populating helper twice on one page load (once cold, once hit) re-runs expensive consistency work on the hit. If you see two registry/cache calls per render, one of them is redundant. **Not yet fixed.**
+- **D. Eager heavy-dialog / modal construction** — see pattern 7 above. **Fixed for MkDocs help.**
+- **E. Per-item O(N) synchronous UI loops during initial render** — one NiceGUI element per tag / nav item / column cell, each staging several update enqueues, runs synchronously on the event loop. Prefer a single `ui.html(...)` bulk emission or interaction-deferred construction. **Not yet fixed.**
+- **F. Synchronous UI work amplifies event-loop lag** — a consequence of D and E. Fixing those shrinks the lag window; do not chase it as a separate mechanism. **Not separately fixed.**
+- **G. Co-located Playwright harness inflates E2E latency** — the 50-way probe co-locates browsers with server and DB, so browser-observed `elapsed_ms` is not a clean production-magnitude claim. Report server-side `page_load_profile.total_ms` separately, and cross-check magnitude with a lightweight-client probe before making production claims. **Harness artefact.**
 
 ### Code Quality Hooks
 

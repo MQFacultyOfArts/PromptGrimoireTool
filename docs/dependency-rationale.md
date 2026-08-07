@@ -74,12 +74,15 @@ Each dependency lists: what it does, why it's here (not a stdlib/transitive alte
 
 Removed 2026-03-18 from `pyproject.toml`. Superseded 2026-02-13 by pydantic-settings, which uses python-dotenv internally as a transitive dependency. No direct imports existed. See design plan `2026-02-13-pydantic-settings-130.md`.
 
-### cryptography >= 46.0.5
+### cryptography >= 49.0.0
 
 **Added:** pre-2026-03 (version floor pin)
 **Claim:** Version floor pin to ensure a minimum safe version across transitive dependency chains.
-**Evidence:** No direct imports in `src/promptgrimoire/`. Required transitively by authlib and google-auth. The explicit pin was added to address CVE-2026-26007 (commit `db48c343`).
+**Evidence:** No direct imports in `src/promptgrimoire/`. Reached through `stytch[crypto]` → `pyjwt[crypto]` → `cryptography`; we construct the Stytch client at `src/promptgrimoire/auth/client.py:73-77`. The explicit pin was added to address CVE-2026-26007 (commit `db48c343`).
 **Classification:** Protective belt. Version floor for supply-chain security.
+**Last reviewed:** 2026-08-07 — floor raised 46.0.5 → 49.0.0. The earlier evidence named authlib and google-auth; both chains are gone, authlib with the pydantic-ai removal, so the surviving justification is the Stytch chain above.
+
+> **Dated follow-up:** 49.0.0 leaves PYSEC-2026-3552 (a PKCS7 decryption oracle) open; the fix is 50.0.0. We have no PKCS7 import or decryption path, and CI's pip-audit gate treats the fix as inside its 14-day grace period until roughly **2026-08-14**, after which CI will fail on it. 50.0.0 is already reachable under the 3-day cooldown, so this is a deliberate deferral pending a changelog review of a fourth major, not a blocked upgrade.
 
 ### pyasn1 >= 0.6.3
 

@@ -1,7 +1,7 @@
 # Deployment Guide — PromptGrimoire
 
-*Last updated: 2026-03-28*
-*Target: DigitalOcean — Ubuntu 24.04 LTS, 16 vCPU / 32 GB RAM, 400 GB SSD, SYD1, grimoire.drbbs.org*
+*Last updated: 2026-08-15*
+*Target: DigitalOcean — Ubuntu 24.04 LTS, 8 vCPU / 32 GB RAM, 400 GB SSD, SYD1, grimoire.drbbs.org*
 *Previous: NCI Cloud VM — 4 vCPU / 8 GB RAM, 60 GB Cinder volume*
 
 ## Architecture Overview
@@ -13,15 +13,20 @@
 │ (HTTPS)  │◀────────────│  :443 TLS terminate │
 └─────────┘             └─────────┬───────────┘
                                   │
-                        ┌─────────▼───────────┐      ┌────────────┐
-                        │   promptgrimoire    │─────▶│ PostgreSQL │
-                        │   :8080 (uvicorn)   │◀─────│ :5432      │
-                        │                     │      └────────────┘
-                        │   search_worker     │
-                        │   (asyncio task)    │      ┌────────────┐
-                        └─────────────────────┘      │ External   │
+                        ┌─────────▼───────────┐
+                        │   promptgrimoire    │────────────┐
+                        │   :8080 (uvicorn)   │            │
+                        │   search_worker     │            │
+                        │   (asyncio task)    │            │
+                        └─────────────────────┘            │
+                                                         ▼
+                        ┌─────────────────────┐      ┌────────────┐      ┌────────────┐
+                        │ export worker       │─────▶│ PgBouncer  │─────▶│ PostgreSQL │
+                        │ (systemd service)   │      │   :6432    │      │   :5432    │
+                        └─────────────────────┘      └────────────┘      └────────────┘
+                                                     ┌────────────┐
+                                                     │ External   │
                                                      │ - Stytch   │
-                                                     │ - Claude   │
           ┌──────────────────────────────┐           └────────────┘
           │ fail2ban  │ UFW   │ certbot  │
           │ (IPS)     │ (fw)  │ (certs)  │
@@ -33,7 +38,7 @@
               └────────────────────┘
 ```
 
-Single process: NiceGUI runs on uvicorn, search worker runs as an internal asyncio task. No separate worker service needed.
+NiceGUI runs on uvicorn and the search worker remains an internal asyncio task. Production runs PDF compilation in the separate `promptgrimoire-worker.service` (`FEATURES__WORKER_IN_PROCESS=false`). Both processes share QueuePool configuration through PgBouncer; `DATABASE__USE_NULL_POOL=false` is intentional on this topology.
 
 **Recovery time objective:** ~1 day (rebuild VM from this guide + restore DB from SharePoint backup).
 
@@ -1059,6 +1064,8 @@ sudo systemctl enable promptgrimoire-worker
 sudo systemctl start promptgrimoire-worker
 ```
 
+After this one-time installation, every full deploy refreshes the installed unit from the tracked file and reloads systemd before restarting the worker. Hosts without an installed worker are left unchanged.
+
 ### Resource controls
 
 The worker unit file applies best-effort scheduling so exports never compete with the interactive app:
@@ -1792,7 +1799,7 @@ sudo /opt/promptgrimoire/deploy/restart.sh              # full: pull, sync, test
 sudo /opt/promptgrimoire/deploy/restart.sh --skip-tests  # skip unit tests (faster)
 ```
 
-The deploy script (`deploy/restart.sh`) runs: `git pull` → `uv sync` → prune stale NiceGUI storage files → unit tests (e-stop on failure) → update HAProxy 503 page → pre-restart flush (CRDT persist + session invalidation + parallel client disconnect) → HAProxy drain → wait for connections to drain → HAProxy maintenance (serves 503 page with healthz polling + login button) → `systemctl restart` → wait for `/healthz` → HAProxy back to ready.
+The deploy script (`deploy/restart.sh`) runs: `git pull` → `uv sync` → prune stale NiceGUI storage files → unit tests and PDF smoke test (e-stop on failure) → refresh the installed worker unit and reload systemd → update the HAProxy 503 page → pre-restart flush (CRDT persist + session invalidation + parallel client disconnect) → HAProxy drain → wait for connections to drain → stop the export worker → HAProxy maintenance (serves 503 page with healthz polling + login button) → restart the app → wait for `/healthz` → start the worker → HAProxy back to ready.
 
 Alembic migrations run automatically on app start.
 

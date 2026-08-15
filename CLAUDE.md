@@ -378,7 +378,7 @@ The export worker (PDF compilation) can run in two modes controlled by `FEATURES
 - `sd_notify.py` sends `READY=1`, `WATCHDOG=1` (each poll cycle), `STOPPING=1` to systemd
 - `WatchdogSec=300` in the service file; worker must heartbeat within 5 minutes
 - `SIGTERM` triggers graceful shutdown: cancels in-flight job, closes DB, exits 0
-- `deploy/restart.sh` stops worker before app restart, starts it after `/healthz` passes (steps 8 and 12)
+- `deploy/restart.sh` refreshes the installed worker unit, stops it before app restart, and starts it after `/healthz` passes
 
 **Config additions:**
 - `EXPORT__MAX_CONCURRENT_COMPILATIONS` (int, default 2): Semaphore limit for parallel LaTeX compilations

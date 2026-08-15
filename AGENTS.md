@@ -113,9 +113,9 @@ Structured JSON logging via structlog. Full details in `docs/logging.md`.
 The export worker (PDF compilation) runs in two modes controlled by `FEATURES__WORKER_IN_PROCESS` (default: `true`):
 
 - **In-process** (`true`): Worker runs as an `asyncio.Task` inside the NiceGUI process.
-- **Standalone** (`false`): Separate systemd service (`promptgrimoire-worker.service`), entry point `python -m promptgrimoire.export.worker_main`. Isolates CPU-heavy LaTeX compilation. Uses `NullPool` via `DATABASE__USE_NULL_POOL=true`.
+- **Standalone** (`false`): Separate systemd service (`promptgrimoire-worker.service`), entry point `python -m promptgrimoire.export.worker_main`. Isolates CPU-heavy LaTeX compilation. Production shares QueuePool configuration through PgBouncer (`DATABASE__USE_NULL_POOL=false`); NullPool is available for environments without PgBouncer.
 
-Key contracts: `sd_notify.py` sends `READY=1`/`WATCHDOG=1`/`STOPPING=1` to systemd. `SIGTERM` triggers graceful cancellation. `deploy/restart.sh` manages worker lifecycle (stop before app restart, start after `/healthz`).
+Key contracts: `sd_notify.py` sends `READY=1`/`WATCHDOG=1`/`STOPPING=1` to systemd. `SIGTERM` triggers graceful cancellation. `deploy/restart.sh` refreshes the installed worker unit, stops it before app restart, and starts it after `/healthz`.
 
 Config: `EXPORT__MAX_CONCURRENT_COMPILATIONS` (int, default 2), `FEATURES__WORKER_IN_PROCESS` (bool, default true), `DATABASE__USE_NULL_POOL` (bool, default false).
 

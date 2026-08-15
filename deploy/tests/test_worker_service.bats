@@ -23,6 +23,11 @@ UNIT_FILE="$BATS_TEST_DIRNAME/../promptgrimoire-worker.service"
     [ "$status" -eq 0 ]
 }
 
+@test "notifications from the uv child process are accepted" {
+    run grep -E '^NotifyAccess=all$' "$UNIT_FILE"
+    [ "$status" -eq 0 ]
+}
+
 @test "WatchdogSec is configured" {
     run grep -E '^WatchdogSec=' "$UNIT_FILE"
     [ "$status" -eq 0 ]

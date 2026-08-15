@@ -103,3 +103,11 @@ log/
 luatex.*/
 node_modules/
 .tmp/
+
+# Codex supervision working space (untracked)
+codex-prompts/
+.env.bak*
+.env.*.bak
+
+# Local durable notes (session state, preferences) — not for sharing
+.notes/

@@ -282,7 +282,7 @@ async def _derive_enrollment_permission(
         return None
 
     # Staff roles get derived instructor access
-    staff_roles = await get_staff_roles()
+    staff_roles = await get_staff_roles(session=session)
     if enrollment.role in staff_roles:
         return course.default_instructor_permission
 
@@ -693,7 +693,7 @@ async def get_privileged_user_ids_for_workspace(
         staff_ids: set[str] = set()
 
         if course_id is not None:
-            staff_roles = await get_staff_roles()
+            staff_roles = await get_staff_roles(session=session)
             result = await session.exec(
                 select(CourseEnrollment.user_id).where(
                     CourseEnrollment.course_id == course_id,

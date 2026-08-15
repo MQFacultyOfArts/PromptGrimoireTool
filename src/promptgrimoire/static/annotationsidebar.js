@@ -279,7 +279,7 @@ export default {
         // Reposition after DOM update (flush: 'post' ensures DOM is ready)
         requestAnimationFrame(positionCards);
       },
-      { deep: true, flush: 'post' }
+      { deep: true, flush: 'post', immediate: true }
     );
 
     return {

@@ -117,6 +117,27 @@ class TestHasStudentWorkspaces:
         count = await has_student_workspaces(activity_id)
         assert count == 2
 
+    @pytest.mark.asyncio
+    async def test_can_reuse_existing_session(self) -> None:
+        """has_student_workspaces() reuses an outer session without nesting.
+
+        Guards the deletion aggregation path in delete_course / delete_week /
+        delete_activity: those routines hold an outer transaction and iterate
+        activities; without session threading each inner call would checkout
+        a second connection and deadlock under pool saturation.
+        """
+        from promptgrimoire.db.engine import get_session
+        from promptgrimoire.db.workspaces import has_student_workspaces
+
+        _course_id, week_id = await _make_course_and_week("reuse-session")
+        activity_id = await _make_activity(week_id)
+        await _clone_for_student(activity_id)
+
+        async with get_session() as session:
+            count = await has_student_workspaces(activity_id, session=session)
+
+        assert count == 1
+
 
 class TestDeleteActivity:
     """Tests for delete_activity() with force parameter and guard logic."""

@@ -21,6 +21,10 @@ class TestHasMarginaliaPlacementWarnings:
     """Detection of marginalia placement problems in LaTeX logs."""
 
     def test_detects_placement_warning(self, tmp_path: Path) -> None:
+        """marginalia <= 0.83.20 warns via \\PackageWarning ("Package ...").
+
+        This is the form installed on production (revision 77235).
+        """
         log = tmp_path / "test.log"
         log.write_text(
             "Some preamble output\n"
@@ -30,6 +34,45 @@ class TestHasMarginaliaPlacementWarnings:
             "p1 (1) Clash: moveable items\n"
         )
         assert has_marginalia_placement_warnings(log) is True
+
+    def test_detects_module_prefixed_placement_warning(self, tmp_path: Path) -> None:
+        """marginalia >= 0.83.30 warns via the kernel's module_warning.
+
+        The expl3/Lua rewrite routes through luatexbase.module_warning, which
+        prints "Module marginalia Warning:" rather than "Package marginalia
+        Warning:". Matching only the "Package" form meant the endnotes
+        fallback never fired, so overflowing annotations were dropped from the
+        PDF silently -- export reported success and logged nothing.
+
+        Both forms must match. The prefix is marginalia's internal reporting
+        mechanism rather than a contract, and coupling a data-loss guard to it
+        is what let this break silently.
+
+        Real log line, captured from a compiled fixture (see
+        docs/investigations/2026-08-06-marginalia-overflow-export.md).
+        """
+        log = tmp_path / "test.log"
+        log.write_text(
+            "Some preamble output\n"
+            "Module marginalia Warning: Problems in placement."
+            " Here are the problems:\n"
+            "p1 (1) Moveable item < ysep page bottom\n"
+        )
+        assert has_marginalia_placement_warnings(log) is True
+
+    def test_unrelated_marginalia_warning_returns_false(self, tmp_path: Path) -> None:
+        """Only placement problems trigger the endnotes recompile.
+
+        Negative control: broadening the prefix match must not broaden it to
+        every marginalia warning, or an unrelated warning would force every
+        annotation to endnotes.
+        """
+        log = tmp_path / "test.log"
+        log.write_text(
+            "Module marginalia Warning: Unknown key 'wibble' ignored.\n"
+            "Package marginalia Warning: deprecated option.\n"
+        )
+        assert has_marginalia_placement_warnings(log) is False
 
     def test_no_warning_returns_false(self, tmp_path: Path) -> None:
         log = tmp_path / "test.log"

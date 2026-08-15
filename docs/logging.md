@@ -80,7 +80,7 @@ Each module sets an explicit log level appropriate to its role. The root logger 
 | CRDT sync (`crdt/`) | WARNING | High-frequency, only surface problems |
 | Auth (`auth/`) | INFO | Login events, access denials |
 | Pages/UI (`pages/`) | INFO | Page loads, user actions |
-| Database (`db/engine`, `db/wargames`, `db/tags`) | WARNING | Only surface connection/query problems |
+| Database (`db/engine`, `db/tags`) | WARNING | Only surface connection/query problems |
 | Configuration (`config`) | INFO | Settings resolution |
 
 **Do not** use per-module `logging.getLogger(__name__).setLevel()` calls. Level filtering is configured globally via structlog; per-module overrides suppress debug output and are redundant. A guard test (`tests/unit/test_setlevel_guard.py`) enforces this. To adjust log verbosity, change the global structlog level configuration.

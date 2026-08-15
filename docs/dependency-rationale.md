@@ -1,6 +1,6 @@
 # Dependency Rationale
 
-Last reviewed: 2026-04-04
+Last reviewed: 2026-08-06
 
 Each dependency lists: what it does, why it's here (not a stdlib/transitive alternative), and where the evidence is.
 
@@ -60,32 +60,36 @@ Each dependency lists: what it does, why it's here (not a stdlib/transitive alte
 
 **Revised:** 2026-02-13 — pydantic-settings migration adds direct usage of advanced pydantic features (BaseModel, SecretStr, model_validator) beyond SQLModel's Field re-export.
 
-### pydantic-settings >= 2.8
+### pydantic-settings >= 2.14.2
 
 **Added:** 2026-02-13
 **Design plan:** docs/design-plans/2026-02-13-pydantic-settings-130.md
 **Claim:** Typed configuration from environment variables and `.env` files. Replaces scattered `os.environ.get()` calls with a single validated `Settings(BaseSettings)` class.
-**Evidence:** `src/promptgrimoire/config.py` (Settings class, get_settings singleton). All 15 files that previously used `os.environ.get()` now import from config.
-**Why not alternatives:** pydantic-settings integrates natively with the existing Pydantic ecosystem (SQLModel, pydantic-ai). Provides type validation, SecretStr masking, and `.env` reading without manual `load_dotenv()`.
+**Evidence:** `src/promptgrimoire/config.py:18,303-365` (Settings class, `SettingsConfigDict` `.env` paths, get_settings singleton). All 15 files that previously used `os.environ.get()` now import from config. Covered by `tests/unit/test_settings.py`.
+**Why not alternatives:** pydantic-settings integrates natively with the existing Pydantic ecosystem (SQLModel). Provides type validation, SecretStr masking, and `.env` reading without manual `load_dotenv()`.
 **Classification:** Hard core. All application configuration flows through it.
+**Last reviewed:** 2026-08-07 — floor raised from 2.7 to 2.14.2 for GHSA-4xgf-cpjx-pc3j, where `NestedSecretsSettingsSource` followed symlinks out of `secrets_dir`. We do not configure that source, but the declared contract must not admit the vulnerable release. The old heading claimed 2.8 while pyproject declared 2.7; both are now 2.14.2.
 
 ### ~~python-dotenv >= 1.0~~ (REMOVED)
 
 Removed 2026-03-18 from `pyproject.toml`. Superseded 2026-02-13 by pydantic-settings, which uses python-dotenv internally as a transitive dependency. No direct imports existed. See design plan `2026-02-13-pydantic-settings-130.md`.
 
-### cryptography >= 46.0.5
+### cryptography >= 50.0.0
 
 **Added:** pre-2026-03 (version floor pin)
 **Claim:** Version floor pin to ensure a minimum safe version across transitive dependency chains.
-**Evidence:** No direct imports in `src/promptgrimoire/`. Required transitively by authlib and google-auth. The explicit pin was added to address CVE-2026-26007 (commit `db48c343`).
+**Evidence:** No direct imports in `src/promptgrimoire/`. Reached through `stytch[crypto]` → `pyjwt[crypto]` → `cryptography`; we construct the Stytch client at `src/promptgrimoire/auth/client.py:73-77`. The explicit pin was added to address CVE-2026-26007 (commit `db48c343`).
 **Classification:** Protective belt. Version floor for supply-chain security.
+**Last reviewed:** 2026-08-15 — floor raised 49.0.0 → 50.0.0 after the repository's 14-day supply-chain cooldown elapsed. Version 50.0.0 fixes PYSEC-2026-3552/CVE-2026-69247, a distinguishable-error and timing oracle in PKCS7 decryption. The application has no direct cryptography or PKCS7 calls; the active dependency path remains Stytch → PyJWT. The upstream 50.0.0 changelog adds the security correction and deprecates finite-field Diffie-Hellman without removing an API used by this project.
 
-### pyasn1 >= 0.6.3
+### ~~pyasn1 >= 0.6.3~~ (REMOVED)
 
 **Added:** 2026-03-18 (version floor pin)
-**Claim:** Version floor pin to ensure CVE-2026-30922 patched version across transitive dependency chains.
-**Evidence:** No direct imports in `src/promptgrimoire/`. Required transitively via pydantic-ai → google-genai → google-auth → rsa → pyasn1.
-**Classification:** Protective belt. Version floor for supply-chain security.
+**Removed:** 2026-08-07
+**Original claim:** Version floor pin to ensure a CVE-2026-30922 patched version across transitive dependency chains.
+**Original evidence:** No direct imports in `src/promptgrimoire/`. Required transitively via pydantic-ai → google-genai → google-auth → rsa → pyasn1.
+**Why removed:** That chain is the whole justification, and it ended when pydantic-ai was dropped on 2026-08-06. `uv tree --invert --package pyasn1` then showed the root project as the only consumer, and two controlled import searches found no use (with typer as a positive control, so the empty result was not a search that saw nothing). A floor pin protecting a dependency nobody depends on protects nothing, so the declaration went rather than being bumped to 0.6.4.
+**Verified by:** `uv run grimoire e2e all` after removal — the falsification attempt that absence-searching cannot provide on its own.
 
 ### asyncpg >= 0.30
 
@@ -161,7 +165,10 @@ Removed 2026-02-10. Same replacement as pylatexenc above. The Lark lexer grammar
 
 **Classification:** Protective belt. Used in one module. Could potentially be replaced by selectolax, but lxml's HTML normalisation behaviour is well-understood and standards-compliant.
 
-### pydantic-ai >= 1.67.0
+### ~~pydantic-ai >= 1.67.0~~ (REMOVED)
+
+**Removed:** 2026-08-06
+**Reason:** Its only consumer was the wargame turn cycle, which never received a UI and was shelved to the `shelf/wargame` branch. The multi-provider justification below was already stale: `wargame/agents.py` named exactly one model (`anthropic:claude-sonnet-4-6`), and the playground provider factory it cited was never built. Removing it dropped 89 resolved packages (267 → 178) and 25 known vulnerabilities, including duplicate copies of `starlette` and `python-multipart` via `mcp`, and a third `aiohttp` via `xai-sdk`. Roleplay is unaffected — it uses the `anthropic` SDK directly through `llm/client.py`. To restore: revive `shelf/wargame` and prefer `pydantic-ai-slim[anthropic]` over the batteries-included metapackage.
 
 **Added:** 2026-02-10
 **Design plan:** docs/design-plans/2026-02-10-llm-playground.md
@@ -356,8 +363,9 @@ Removed 2026-02-10. Same replacement as pylatexenc above. The Lark lexer grammar
 **Added:** 2026-02-28
 **Design plan:** docs/design-plans/2026-02-28-docs-platform-208.md
 **Claim:** Image processing for whitespace trimming of screenshots captured during guide generation. `ImageChops.difference()` detects content bounds, `Image.crop()` removes empty margins.
-**Evidence:** `src/promptgrimoire/docs/screenshot.py` — `trim_whitespace()` function.
+**Evidence:** `src/promptgrimoire/docs/screenshot.py:21-22,39-81` — `trim_whitespace()`, plus LANCZOS thumbnail resizing. Covered by `tests/unit/test_docs_screenshot.py:74-110,248-273`, which opens generated PNGs, compares `ImageChops` crop results and checks thumbnail dimensions.
 **Serves:** Developers (guide authoring), end users (cleaner screenshots in documentation).
+**Last reviewed:** 2026-08-07 — security floor raised to 12.3.0, clearing 26 advisories. Of the APIs changed in 12.2/12.3 we use only `Image`, `ImageChops` and `Resampling`; the removed `ImageCms` modes, font loaders and rank filters are outside our surface.
 
 ### uniseg
 
@@ -430,7 +438,8 @@ Removed 2026-02-10. Same replacement as pylatexenc above. The Lark lexer grammar
 **Added:** 2026-03-12
 **Quarantined:** 2026-04-30
 **Design plan:** docs/design-plans/2026-03-12-cross-browser-e2e-261.md
-**Reason:** Vendor concern. Dependency removed from `pyproject.toml` and `uv.lock`; `BrowserstackConfig` removed from `config.py`; CI job deleted from `.github/workflows/ci.yml`. CLI command (`uv run grimoire e2e browserstack`) is preserved but short-circuits with a quarantine notice instead of invoking the SDK. `_browserstack.py`, `browserstack/*.yml` profiles, and tests are retained for revival. To restore: re-add the SDK pin, restore `BrowserstackConfig`, and recover `_browserstack.py` and the `browserstack` CLI handler from git history.
+**Expunged:** 2026-08-06
+**Reason:** Vendor concern. Quarantined 2026-04-30 (SDK dropped from `pyproject.toml`/`uv.lock`, `BrowserstackConfig` removed from `config.py`, CI job deleted), then fully expunged 2026-08-06: `_browserstack.py`, the `browserstack` CLI handler, `browserstack/*.yml` profiles, the cached vendor docs and the remaining tests are all gone. Recover from git history at `3c87e87f` if ever revived.
 
 ### openpyxl
 

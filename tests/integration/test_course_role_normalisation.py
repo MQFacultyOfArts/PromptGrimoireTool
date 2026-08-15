@@ -233,6 +233,94 @@ class TestGetStaffRoles:
         second = await get_staff_roles()
         assert first is second  # Same object = cached
 
+    @pytest.mark.asyncio
+    async def test_can_reuse_existing_session(self) -> None:
+        """get_staff_roles() reuses an outer session without nesting checkout.
+
+        Guards against the cold-cache nested-session deadlock: an outer
+        transaction that also needs staff-role data must be able to thread
+        its session into the cache fill rather than opening a second pool
+        checkout from inside its own transaction scope.
+        """
+        from promptgrimoire.db.engine import get_session
+        from promptgrimoire.db.roles import _reset_staff_roles_cache, get_staff_roles
+
+        _reset_staff_roles_cache()
+        async with get_session() as session:
+            roles = await get_staff_roles(session=session)
+
+        assert roles == frozenset({"coordinator", "instructor", "tutor"})
+
+    @pytest.mark.asyncio
+    async def test_get_all_roles_can_reuse_existing_session(self) -> None:
+        """get_all_roles() reuses an outer session without nesting checkout."""
+        from promptgrimoire.db.engine import get_session
+        from promptgrimoire.db.roles import _reset_all_roles_cache, get_all_roles
+
+        _reset_all_roles_cache()
+        async with get_session() as session:
+            roles = await get_all_roles(session=session)
+
+        assert roles == ("student", "tutor", "instructor", "coordinator")
+
+
+class TestWarmRoleCaches:
+    """Verify startup-hook cache warmup makes the cold-path unreachable.
+
+    The nested-session deadlock needs two preconditions: a cold role
+    cache AND concurrent in-session callers. Warming both role caches
+    during startup, before traffic is accepted, removes the cold-cache
+    precondition entirely. Every production request after startup sees
+    populated caches and never triggers the cache-fill DB round trip.
+    """
+
+    @pytest.mark.asyncio
+    async def test_warm_role_caches_populates_both_caches(self) -> None:
+        """warm_role_caches() fills both staff and all-roles caches."""
+        from promptgrimoire.db import roles as roles_module
+
+        roles_module._reset_staff_roles_cache()
+        roles_module._reset_all_roles_cache()
+        assert roles_module._staff_roles_cache is None
+        assert roles_module._all_roles_cache is None
+
+        await roles_module.warm_role_caches()
+
+        assert roles_module._staff_roles_cache == frozenset(
+            {"coordinator", "instructor", "tutor"}
+        )
+        assert roles_module._all_roles_cache == (
+            "student",
+            "tutor",
+            "instructor",
+            "coordinator",
+        )
+
+    @pytest.mark.asyncio
+    async def test_warm_role_caches_does_not_touch_session_once_warm(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """A repeat warmup must return before touching ``get_session()``."""
+        from promptgrimoire.db import roles as roles_module
+
+        roles_module._reset_staff_roles_cache()
+        roles_module._reset_all_roles_cache()
+
+        await roles_module.warm_role_caches()
+        warm_staff_roles = roles_module._staff_roles_cache
+        warm_all_roles = roles_module._all_roles_cache
+
+        def unexpected_get_session() -> None:
+            pytest.fail("warm_role_caches() touched get_session() despite warm caches")
+
+        monkeypatch.setattr(roles_module, "get_session", unexpected_get_session)
+
+        await roles_module.warm_role_caches()
+
+        assert roles_module._staff_roles_cache is warm_staff_roles
+        assert roles_module._all_roles_cache is warm_all_roles
+
 
 class TestWeekVisibilityAfterNormalisation:
     """Verify week visibility works identically after normalisation.

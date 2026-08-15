@@ -17,13 +17,12 @@ classifiers = [
     "Topic :: Education",
 ]
 dependencies = [
-    "nicegui==3.10.0",  # pinned: 3.10.0 — timer leak fix #5931, GHSA-w8wv-vfpc-hw2w upload fix
+    "nicegui==3.15.0",  # pinned: 3.15.0 — raises starlette/socketio/engineio/multipart/aiohttp floors to fixed versions
     "sqlmodel>=0.0.22",
     "pycrdt>=0.10",
     "stytch>=11.0",
     "pydantic>=2.10",
-    "pydantic-ai>=1.67.0",
-    "pydantic-settings>=2.7",  # Required by pydantic-settings for .env file reading
+    "pydantic-settings>=2.14.2",  # Typed config; security floor for GHSA-4xgf-cpjx-pc3j
     "asyncpg>=0.30",
     "anthropic>=0.76.0",
     "alembic>=1.18.0",
@@ -36,7 +35,7 @@ dependencies = [
     "mecab-python3>=1.0.12",
     "unidic-lite>=1.0.8",
     "typer>=0.15.0",
-    "cryptography>=46.0.5",
+    "cryptography>=50.0.0",  # Security floor: PKCS7 oracle + prior fixes
     "python-slugify>=8.0.4",
     "pymupdf4llm>=0.3.4",
     "pymupdf-layout>=1.27.1",
@@ -44,7 +43,6 @@ dependencies = [
     "openpyxl>=3.1.5",
     "structlog>=25.0",
     "httpx>=0.27",
-    "pyasn1>=0.6.3",
 ]
 
 [project.scripts]
@@ -53,7 +51,26 @@ grimoire = "promptgrimoire.cli:app"
 load-test-data = "promptgrimoire.cli_loadtest:load_test_data"
 
 [tool.uv]
-exclude-newer = "3 days"
+# Supply-chain cooldown: ignore anything published in the last 14 days, so a
+# compromised release has time to be caught and yanked before we can resolve it.
+#
+# If this ever needs pinning to a fixed cutoff, use a timezone-explicit RFC 3339
+# timestamp, never a bare date. uv resolves a bare date as end-of-day in LOCAL
+# time, so `2026-07-24` means 2026-07-24T14:00:00Z on an AEST developer machine
+# and 2026-07-25T00:00:00Z in CI's UTC container -- two different cutoffs from
+# one string, which makes `uv sync --locked` fail in CI with "lockfile needs to
+# be updated". Cost half an hour on 2026-08-06.
+#
+# 14 days by operator ruling (2026-08-07), widened from the 3 days that had been
+# here since the project was young. Three days is not a meaningful cooldown for a
+# repository touched in bursts months apart: nobody is watching closely enough,
+# in that window, for a compromised release to be caught before we resolve it.
+#
+# This happens to match the 14 days in the CI pip-audit gate
+# (.github/workflows/ci.yml), but they are separate mechanisms and neither
+# follows the other: that one delays *failing the build* on a known fix, this one
+# delays *adopting* any new release at all. Change one without the other freely.
+exclude-newer = "14 days"
 
 [build-system]
 requires = ["hatchling"]
@@ -225,6 +242,10 @@ ignore = [
     "B008",     # typer.Option must be called in function defaults
     "TC003",    # Path used at runtime for file output
 ]
+"scripts/grimoire_exemplars.py" = [
+    "B008",     # typer.Option must be called in function defaults
+    "TC003",    # Path used at runtime for file output
+]
 
 [tool.ruff.lint.isort]
 known-first-party = ["promptgrimoire"]
@@ -308,7 +329,7 @@ dev = [
     "pytest-sugar>=1.1.1",
     "junitparser>=4.0.2",
     "pytest-rerunfailures>=16.1",
-    "Pillow>=11.0",
+    "Pillow>=12.3.0",  # Security floor: image parsing and allocation fixes
     "mkdocs-material>=9.7",
     "vulture>=2.14",
     "complexipy>=5.2.0",

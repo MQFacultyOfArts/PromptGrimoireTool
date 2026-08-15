@@ -120,14 +120,37 @@ def get_latexmk_path() -> str:
 def has_marginalia_placement_warnings(log_file: Path) -> bool:
     """Check LaTeX log for marginalia placement problem warnings.
 
-    Marginalia emits 'Package marginalia Warning: Problems in placement'
-    when annotations overflow the margin column (clashes, items pushed
-    beyond page boundaries).
+    Marginalia warns 'Problems in placement' when annotations overflow the
+    margin column (clashes, items pushed beyond page boundaries). Returning
+    False here silently skips the endnotes fallback, so overflowing
+    annotations are dropped from the PDF with no error and no log line --
+    match generously.
+
+    The warning prefix is marginalia's internal reporting mechanism, not a
+    contract, and it has already changed once:
+
+    - <= 0.83.20 uses ``\\PackageWarning``  -> "Package marginalia Warning:"
+    - >= 0.83.30 is an expl3/Lua rewrite routing through
+      ``luatexbase.module_warning`` -> "Module marginalia Warning:"
+
+    Matching only the "Package" form silently broke overflow detection when
+    the package was rewritten, so match on the prefix-independent part --
+    which is also the part that actually describes the condition we care
+    about. This deliberately does not match other marginalia warnings:
+    forcing every annotation to endnotes over an unrelated warning would be
+    its own bug.
+
+    This is not a licence to run different marginalia versions in different
+    environments. Environments should be aligned and the TeX toolchain
+    pinned; the prefix-independent match exists so that a package's internal
+    wording cannot silently disable a data-loss guard again.
+
+    See docs/investigations/2026-08-06-marginalia-overflow-export.md
     """
     if not log_file.exists():
         return False
     content = log_file.read_text(errors="replace")
-    return "Package marginalia Warning: Problems in placement" in content
+    return "marginalia Warning: Problems in placement" in content
 
 
 def inject_annot_force_endnotes(tex_path: Path) -> None:

@@ -96,6 +96,17 @@ _extract_drain_timeout() {
     grep -q 'list-unit-files.*promptgrimoire-worker' "$SCRIPT"
 }
 
+@test "restart.sh updates an installed worker unit before restarting it" {
+    install_line=$(grep -n 'install -m 0644.*promptgrimoire-worker\.service' "$SCRIPT" | head -1 | cut -d: -f1)
+    reload_line=$(grep -n '^    systemctl daemon-reload' "$SCRIPT" | head -1 | cut -d: -f1)
+    stop_line=$(grep -n 'systemctl stop promptgrimoire-worker' "$SCRIPT" | head -1 | cut -d: -f1)
+    [ -n "$install_line" ]
+    [ -n "$reload_line" ]
+    [ -n "$stop_line" ]
+    [ "$install_line" -lt "$reload_line" ]
+    [ "$reload_line" -lt "$stop_line" ]
+}
+
 @test "restart.sh stops worker before app restart" {
     # Worker stop must appear before 'systemctl restart promptgrimoire'
     # Use '^systemctl' to avoid matching comments in the header

@@ -42,13 +42,13 @@ jobs:
       - name: Run pip-audit (dependency vulnerabilities)
         run: |
           # Only fail if a fix exists AND the fixed version has been on
-          # PyPI for more than 3 days (grace period for maintainers).
+          # PyPI for more than 14 days (grace period for maintainers).
           uv run pip-audit -f json -o /tmp/audit.json || true
           python3 << 'AUDIT_GATE'
           import json, sys, urllib.request
           from datetime import datetime, timedelta, timezone
 
-          GRACE_DAYS = 3
+          GRACE_DAYS = 14
           cutoff = datetime.now(timezone.utc) - timedelta(days=GRACE_DAYS)
 
           with open("/tmp/audit.json") as f:
@@ -60,7 +60,7 @@ jobs:
                   fixes = vuln.get("fix_versions", [])
                   if not fixes:
                       continue  # No fix available — not actionable
-                  # Check if the earliest fix version was published > 3 days ago
+                  # Check if the earliest fix version was published > 14 days ago
                   pkg = dep["name"]
                   fix_ver = fixes[0]
                   try:

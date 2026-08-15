@@ -31,10 +31,6 @@ library references during development.
 - [Complete API reference for CSS.highlights, Highlight class, ::highlight() pseudo-element, StaticRange](browser/css-custom-highlight-api.md)
 - [Browser Selection API for text selection and annotation](browser/selection-api.md)
 
-## browserstack
-
-- [BrowserStack integration patterns for Python pytest and Playwright suites, Automate REST APIs, Local Testing, and MCP workflows](browserstack/python-integration-and-apis.md)
-
 ## claude-code
 
 - [How to create and configure Claude Code skills (markdown files that teach Claude specialized knowledge)](claude-code/skills.md)
@@ -43,6 +39,13 @@ library references during development.
 
 - [Dead End: Client-Side Char Span Synchronisation](dead-ends/2026-02-10-charspan-sync.md)
 - [Dead End: \annot with \par inside longtable + luatexja](dead-ends/2026-03-15-annot-par-in-longtable.md)
+
+## decisions
+
+- [0001 — Shelve the wargame feature, retain its tables](decisions/0001-shelve-wargame-retain-tables.md)
+- [0002 — Expunge BrowserStack rather than keep it quarantined](decisions/0002-expunge-browserstack.md)
+- [0003 — Upgrade dependencies one package at a time, transitives included](decisions/0003-controlled-dependency-upgrades.md)
+- [Architecture Decision Register](decisions/adr-register.md)
 
 ## design-notes
 
@@ -57,7 +60,15 @@ library references during development.
 - [Causal Analysis: Connection Pool Shrinkage Under CancelledError (#403)](investigations/2026-03-21-pool-shrinkage-403.md)
 - [Investigation: Unbounded Memory Growth (#434)](investigations/2026-03-27-memory-leak-434.md)
 - [Causal Analysis: Deferred Load E2E Test Failures (#377)](investigations/2026-03-28-deferred-load-e2e-failures.md)
+- [Investigation: Cross-User Session Contamination (#438)](investigations/2026-03-28-session-contamination-438.gemini.md)
 - [Investigation: Cross-User Session Contamination (#438)](investigations/2026-03-28-session-contamination-438.md)
+- [Investigation: Cross-User Session Contamination (#438) - Reassessment](investigations/2026-04-02-session-leak-reassessment.md)
+- [Spike Preregistration: Session Invalidation on Restart (#438 Re-investigation)](investigations/2026-04-05-session-invalidation-restart-438.md)
+- [Root Cause Analysis: httptools Pipelining Context Leak](investigations/2026-04-08-httptools-pipelining-leak-438.md)
+- [Page-Load Failure Modes (Annotation Page, 50-way Independent Loads)](investigations/2026-04-23-page-load-failure-modes.md)
+- [Vue sidebar `__annotationCardsEpoch` never fires on initial mount](investigations/2026-04-24-vue-sidebar-epoch-missing.md)
+- [Causal Analysis: marginalia overflow-endnotes fallback never triggers](investigations/2026-08-06-marginalia-overflow-export.md)
+- [Phase1 Hypotheses](investigations/phase1-hypotheses.md)
 
 ## lark
 
@@ -98,7 +109,6 @@ library references during development.
 
 - [Programmatic API key provisioning with per-key budgets, expiry, and lifecycle management](openrouter/key-management-api.md)
 - [List available models with pricing, capabilities, context length, and supported parameters](openrouter/models-api.md)
-- [Using pydantic-ai with OpenRouter via OpenAI-compatible interface](openrouter/pydantic-ai-integration.md)
 
 ## operation-solano-dawn
 
@@ -137,6 +147,7 @@ library references during development.
 - [WIP Handoff: #377 Workspace Performance — Epoch Analysis](postmortems/2026-03-24-377-wip-handoff.md)
 - [Clobber Scan Prompt — for Codex/Gemini](postmortems/2026-03-24-clobber-scan-prompt.md)
 - [Incident: PgBouncer Double-Pooling SIGABRT and LaTeX Export Failures](postmortems/2026-03-25-pgbouncer-crash-and-export-failures.md)
+- [Migration Review: NCI to DigitalOcean (overnight 2026-03-28/29)](postmortems/2026-03-29-do-migration-overnight.md)
 - [Post-Mortem: 2026-03-29 Search Worker Cascade Failure](postmortems/2026-03-29-search-worker-cascade.md)
 - [PromptGrimoire Incident Analysis Playbook](postmortems/incident-analysis-playbook.md)
 

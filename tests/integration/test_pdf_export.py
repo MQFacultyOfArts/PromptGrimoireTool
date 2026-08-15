@@ -21,6 +21,7 @@ from promptgrimoire.export.pdf_export import (
     markdown_to_latex_notes,
 )
 from tests.conftest import requires_latexmk, requires_pandoc
+from tests.integration.conftest import extract_pdf_text_pymupdf
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -63,6 +64,48 @@ class TestHtmlToLatexIntegration:
         assert "CASE NAME" in result
         assert r"\begin{enumerate}" in result
         assert "paragraph one" in result
+
+
+@requires_pandoc
+@requires_latexmk
+class TestBooktabsRuleDelimiters:
+    """Regression coverage for booktabs rules next to table content."""
+
+    @pytest.mark.parametrize(
+        "header",
+        [
+            "(a) Parenthesized header",
+            "(lr) Option-like header",
+        ],
+    )
+    @pytest.mark.asyncio
+    async def test_booktabs_rules_are_delimited_from_header_content(
+        self,
+        tmp_path: Path,
+        header: str,
+    ) -> None:
+        """Parenthesized headers remain content rather than booktabs options."""
+        html = f"""<table>
+            <thead><tr><th>{header}</th><th>Value</th></tr></thead>
+            <tbody><tr><td>Body</td><td>1</td></tr></tbody>
+        </table>"""
+
+        tex_path = await generate_tex_only(
+            html_content=html,
+            highlights=[],
+            tag_colours={},
+            output_dir=tmp_path,
+        )
+        pdf_path = await compile_latex(tex_path, output_dir=tmp_path)
+
+        assert pdf_path.exists()
+        assert pdf_path.stat().st_size > 0
+        pdf_text = " ".join(extract_pdf_text_pymupdf(pdf_path).split())
+        assert header in pdf_text
+
+        tex_content = tex_path.read_text()
+        for rule in ("toprule", "midrule", "bottomrule"):
+            assert f"\\{rule}\\relax" in tex_content
 
 
 @pytest.mark.order("first")

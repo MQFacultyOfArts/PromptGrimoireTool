@@ -212,11 +212,12 @@ function Table(tbl)
     table.insert(parts, string.format('\\begin{longtable}{@{}%s@{}}', content_col_spec))
 
     if #header_latex > 0 then
-      table.insert(parts, '\\toprule')
+      -- Stop booktabs from parsing leading header delimiters as rule options.
+      table.insert(parts, '\\toprule\\relax')
       for _, hrow in ipairs(header_latex) do
         table.insert(parts, hrow)
       end
-      table.insert(parts, '\\midrule')
+      table.insert(parts, '\\midrule\\relax')
       table.insert(parts, '\\endhead')
     end
 
@@ -224,7 +225,7 @@ function Table(tbl)
       table.insert(parts, brow)
     end
 
-    table.insert(parts, '\\bottomrule')
+    table.insert(parts, '\\bottomrule\\relax')
     table.insert(parts, '\\end{longtable}')
     table.insert(parts, '\\endgroup')
 

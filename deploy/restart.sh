@@ -7,18 +7,19 @@
 #
 # Steps:
 #   1. git pull (as promptgrimoire)
-#   2. uv sync --no-dev (as promptgrimoire)
+#   2. uv sync (as promptgrimoire)
 #   3. unit tests (optional, e-stop on failure)
-#   4. Update HAProxy 503 page
-#   5. Application-level pre-restart (flush CRDT, navigate clients to /restarting)
-#   6. HAProxy drain (stop new connections, let in-flight finish)
-#   7. Wait for application-level connections to drain
-#   8. Stop worker gracefully (overlaps with drain wait)
-#   9. HAProxy maintenance mode (serves friendly 503 with jittered reload)
-#  10. systemctl restart promptgrimoire
-#  11. Wait for /healthz
-#  12. Start worker (after app is healthy)
-#  13. HAProxy back to ready
+#   4. Update installed worker systemd unit
+#   5. Update HAProxy 503 page
+#   6. Application-level pre-restart (flush CRDT, navigate clients to /restarting)
+#   7. HAProxy drain (stop new connections, let in-flight finish)
+#   8. Wait for application-level connections to drain
+#   9. Stop worker gracefully
+#  10. HAProxy maintenance mode (serves friendly 503 with jittered reload)
+#  11. systemctl restart promptgrimoire
+#  12. Wait for /healthz
+#  13. Start worker (after app is healthy)
+#  14. HAProxy back to ready
 set -euo pipefail
 
 SOCK=/run/haproxy/admin.sock
@@ -49,7 +50,7 @@ step() { echo "==> $1"; }
 RECOVERY="echo 'set server be_promptgrimoire/app state ready' | socat stdio $SOCK"
 
 # After steps 1-3 fail: server is still running, nothing to recover.
-# After steps 4-11 fail: HAProxy may be in drain/maint. Print recovery.
+# After steps 5-12 fail: HAProxy may be in drain/maint. Print recovery.
 haproxy_touched=false
 cleanup() {
     if [[ "$haproxy_touched" == "true" ]]; then
@@ -100,11 +101,21 @@ else
     step "Skipping tests (--skip-tests)"
 fi
 
-# 4. Update HAProxy 503 page (picks up jittered reload, etc.)
+# 4. Update an existing worker installation from the tracked unit file.
+# This deliberately does not provision or enable a worker on a host without one.
+HAS_WORKER=false
+if systemctl list-unit-files promptgrimoire-worker.service | grep -q promptgrimoire-worker; then
+    HAS_WORKER=true
+    step "Updating export worker systemd unit"
+    install -m 0644 "$APP_DIR/deploy/promptgrimoire-worker.service" /etc/systemd/system/promptgrimoire-worker.service
+    systemctl daemon-reload
+fi
+
+# 5. Update HAProxy 503 page (picks up jittered reload, etc.)
 step "Updating HAProxy 503 page"
 cp "$APP_DIR/deploy/503.http" /etc/haproxy/errors/503.http
 
-# 5. Application-level pre-restart (flush CRDT state, navigate clients)
+# 6. Application-level pre-restart (flush CRDT state, navigate clients)
 step "Triggering application-level pre-restart"
 if [[ -z "$PRE_RESTART_TOKEN" ]]; then
     echo "  WARNING: ADMIN__PRE_RESTART_TOKEN not set in .env — skipping pre-restart" >&2
@@ -121,12 +132,12 @@ else
     echo "  Initial connected clients: $initial_count"
 fi
 
-# 6. Drain — stop sending new connections, let in-flight requests finish
+# 7. Drain — stop sending new connections, let in-flight requests finish
 haproxy_touched=true
 step "HAProxy → drain (new connections blocked, in-flight finishing)"
 echo "set server be_promptgrimoire/app state drain" | socat stdio "$SOCK"
 
-# 7. Wait for application-level connections to drain
+# 8. Wait for application-level connections to drain
 if [[ "$initial_count" -gt 0 ]] && [[ -n "$PRE_RESTART_TOKEN" ]]; then
     threshold=$(( (initial_count * 5 + 99) / 100 ))  # ceil(5%)
     step "Waiting for connections to drain (threshold: ≤${threshold}, timeout: ${DRAIN_TIMEOUT}s)"
@@ -151,23 +162,21 @@ if [[ "$initial_count" -gt 0 ]] && [[ -n "$PRE_RESTART_TOKEN" ]]; then
     fi
 fi
 
-# 8. Stop worker gracefully (overlaps with drain wait)
-HAS_WORKER=false
-if systemctl list-unit-files promptgrimoire-worker.service | grep -q promptgrimoire-worker; then
-    HAS_WORKER=true
+# 9. Stop worker gracefully
+if [[ "$HAS_WORKER" == "true" ]]; then
     step "Stopping export worker (graceful drain)"
     systemctl stop promptgrimoire-worker || true
 fi
 
-# 9. Maintenance mode (serves friendly 503 page)
+# 10. Maintenance mode (serves friendly 503 page)
 step "HAProxy → maintenance mode"
 echo "set server be_promptgrimoire/app state maint" | socat stdio "$SOCK"
 
-# 10. Restart
+# 11. Restart
 step "Restarting promptgrimoire"
 systemctl restart promptgrimoire
 
-# 11. Wait for healthy
+# 12. Wait for healthy
 step "Waiting for /healthz (max ${MAX_WAIT}s)"
 elapsed=0
 until curl -sf "$HEALTHZ" > /dev/null 2>&1; do
@@ -181,7 +190,7 @@ until curl -sf "$HEALTHZ" > /dev/null 2>&1; do
     fi
 done
 
-# 12. Start worker (app is healthy, worker can connect to DB)
+# 13. Start worker (app is healthy, worker can connect to DB)
 if [[ "$HAS_WORKER" == "true" ]]; then
     step "Starting export worker"
     systemctl start promptgrimoire-worker
@@ -190,7 +199,7 @@ if [[ "$HAS_WORKER" == "true" ]]; then
     fi
 fi
 
-# 13. Back to ready
+# 14. Back to ready
 step "HAProxy → ready"
 echo "set server be_promptgrimoire/app state ready" | socat stdio "$SOCK"
 haproxy_touched=false

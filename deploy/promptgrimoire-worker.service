@@ -7,6 +7,9 @@ PartOf=promptgrimoire.service
 
 [Service]
 Type=notify
+# uv run forks a child process; sd_notify comes from the Python child, not uv.
+# NotifyAccess=all lets systemd accept READY/WATCHDOG from any PID in the cgroup.
+NotifyAccess=all
 User=promptgrimoire
 Group=promptgrimoire
 WorkingDirectory=/opt/promptgrimoire

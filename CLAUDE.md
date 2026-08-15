@@ -38,7 +38,6 @@ Structured legal case brief generation and analysis. PRD forthcoming.
 - **mammoth** - DOCX to semantic HTML conversion (file upload)
 - **pymupdf4llm** - PDF to Markdown extraction with layout analysis (file upload)
 - **lxml** - HTML normalisation in export pipeline
-- **PydanticAI** - structured LLM output for wargame agents (turn_agent, summary_agent)
 - **structlog** - structured JSON logging (replaces stdlib logging across all modules)
 - **httpx** - async HTTP client for Discord webhook alerting
 
@@ -69,6 +68,8 @@ The test suite is organised into 8 lanes: 1 JS lane, 1 BATS lane for shell scrip
 
 Playwright's event loop contaminates xdist workers, so E2E tests must never run in the unit/integration lanes. See [docs/testing.md](docs/testing.md).
 
+**Never invoke `pytest` directly.** `uv run pytest ...` is guarded: it exits 1 with a notice pointing at `grimoire test` / `grimoire e2e`. The lanes carry the marker selection, xdist configuration and database isolation that make results meaningful, so a direct invocation would either fail or produce a run whose isolation guarantees do not hold. Always go through `uv run grimoire test <lane>` or `uv run grimoire e2e <lane>`.
+
 Brian's FIRST LAW: "Flaky" and "Pre-existing" failures are not reasons to stop. They are ways to understand classes of bugs. It is your job to make the code better. When you are working and tests fail, it is your fault to 1) understand why they fail, 2) understand the patterns of failure, and 3) discuss how to fix them such that they more ably fufill the intention of the test. "Flaky" is not a stop word, is a component in a chain of explanation.
 
 ### Smoke Marker Propagation
@@ -81,16 +82,29 @@ All interactable UI elements must have `data-testid` attributes. E2E tests must 
 
 ### E2E Race-Condition Patterns
 
-Six patterns prevent NiceGUI-specific race conditions:
+Seven patterns prevent NiceGUI-specific race conditions and page-render perf regressions:
 
 - **Fire-and-forget JS** (`run_javascript` without `await`): All `run_javascript()` calls in production code MUST be fire-and-forget (no `await`). `await run_javascript()` blocks the asyncio event loop for a full browser round-trip, serialising all clients. An AST guard test (`test_run_javascript_guard.py`) enforces this structurally -- it will fail if any production file contains `await ...run_javascript(...)`. Spike/demo pages can be added to the guard's allowlist. Data that was previously fetched via JS round-trips (e.g. Milkdown editor markdown) is now included in event payloads instead.
 - **Value-capture** (`ui_helpers.on_submit_with_value`): Reads the input DOM value client-side at click time, preventing `python-socketio` async task reordering from delivering stale values. All Python-rendered submit buttons bound to text inputs must use this helper. Vue components manage their own DOM state and do not require it.
-- **Rebuild epoch** (`window.__annotationCardsEpoch`): The Vue annotation sidebar increments `window.__annotationCardsEpoch` (and the per-document `window.__cardEpochs` map) whenever its `items` prop changes. Tests capture the old epoch, trigger the action, then `wait_for_function` until the epoch advances before reacquiring locators.
+- **Rebuild epoch** (`window.__annotationCardsEpoch`): The Vue annotation sidebar increments `window.__annotationCardsEpoch` (and the per-document `window.__cardEpochs` map) on initial mount and whenever its `items` prop changes thereafter. The `immediate: true` watch option at `src/promptgrimoire/static/annotationsidebar.js` is required — without it, the epoch stays `undefined` on cold load and any `epoch >= 1` wait times out (see [docs/investigations/2026-04-24-vue-sidebar-epoch-missing.md](docs/investigations/2026-04-24-vue-sidebar-epoch-missing.md)). Guards: `tests/js/annotationsidebar.test.js` (structural) and `tests/e2e/test_vue_sidebar_mount_contract.py` (behavioural). Tests capture the old epoch, trigger the action, then `wait_for_function` until the epoch advances before reacquiring locators.
 - **Lightweight peer-left callback** (`_RemotePresence.on_peer_left`): CLIENT_DELETE events (peer disconnection) must NOT trigger a full `refresh_annotations()` rebuild. They change zero CRDT state, but a full rebuild races with in-flight user interactions (fill + click), destroying input values and button handlers mid-action. `_RemotePresence` carries a separate `on_peer_left` callback that only updates the user count display.
 - **Side-effects before rebuilds** (`tag_management._on_tag_deleted`): `ui.notify()` and other side-effects that access the current slot context must execute BEFORE `render_tag_list()` or any call that clears/rebuilds a container. Container rebuilds destroy dialog canary elements (via `weakref.finalize` in `nicegui/elements/dialog.py:30-34`), which invalidates the slot context held by NiceGUI's event dispatch wrapper (`events.py:457`). See [postmortem](docs/postmortems/2026-03-20-slot-deletion-investigation-369.md).
 - **is_deleted guard** (`highlights._delete_highlight`): Before calling `element.delete()` on a NiceGUI element, check `element.is_deleted` first. Concurrent container rebuilds can garbage-collect elements before explicit deletion runs, and calling `delete()` on an already-deleted element raises `ValueError` at `nicegui/element.py:504`. See [postmortem](docs/postmortems/2026-03-20-slot-deletion-investigation-369.md).
+- **Lazy heavy-dialog/modal construction** (`layout._render_mkdocs_help`): Dialog and modal payloads with non-trivial bodies (iframes, scrollable lists, many-field forms) must be constructed inside the on-click closure, not during page render. Eager construction staged ~3600 NiceGUI update-enqueue messages per 50-way page-load wave for users who never opened the help dialog. Cache the built dialog in a closure variable so reopens are cheap. Unit guard: `test_help_button.py::TestMkdocsHelpLazyConstruction`. See [docs/investigations/2026-04-23-page-load-failure-modes.md](docs/investigations/2026-04-23-page-load-failure-modes.md) § D.
 
 Details and examples in [docs/testing.md](docs/testing.md) § Common E2E Pitfalls.
+
+### Performance failure modes (page load)
+
+Six failure-mode classes surfaced by the April 2026 independent-workspace load investigation. Classes A and D are fixed; the rest are known-but-unfixed and listed here so future work does not re-discover them. Full detail in [docs/investigations/2026-04-23-page-load-failure-modes.md](docs/investigations/2026-04-23-page-load-failure-modes.md).
+
+- **A. Cold-cache nested `get_session()` deadlock** — helpers that open their own session from inside another session deadlock under pool saturation. Helpers in `db/roles.py` and `db/workspaces.py` take an optional `session=` kwarg; callers inside an outer `get_session()` block MUST pass it through. `warm_role_caches()` at startup removes the cold precondition. **Fixed.**
+- **B. Long transaction hold times amplify checkout queueing** — a single 1-2 s transaction starves other requests at a saturated pool even without any deadlock. Prefer single-round-trip queries (JOIN / `IN` / CTE) over sequential `await session.exec(...)` chains inside one transaction. **Not yet fixed.**
+- **C. Duplicate registry / cache passes on a single render path** — calling the same cache-populating helper twice on one page load (once cold, once hit) re-runs expensive consistency work on the hit. If you see two registry/cache calls per render, one of them is redundant. **Not yet fixed.**
+- **D. Eager heavy-dialog / modal construction** — see pattern 7 above. **Fixed for MkDocs help.**
+- **E. Per-item O(N) synchronous UI loops during initial render** — one NiceGUI element per tag / nav item / column cell, each staging several update enqueues, runs synchronously on the event loop. Prefer a single `ui.html(...)` bulk emission or interaction-deferred construction. **Not yet fixed.**
+- **F. Synchronous UI work amplifies event-loop lag** — a consequence of D and E. Fixing those shrinks the lag window; do not chase it as a separate mechanism. **Not separately fixed.**
+- **G. Co-located Playwright harness inflates E2E latency** — the 50-way probe co-locates browsers with server and DB, so browser-observed `elapsed_ms` is not a clean production-magnitude claim. Report server-side `page_load_profile.total_ms` separately, and cross-check magnitude with a lightweight-client probe before making production claims. **Harness artefact.**
 
 ### Code Quality Hooks
 
@@ -133,11 +147,13 @@ uv run grimoire test smoke
 # Post-deploy CJK+emoji PDF compilation smoke test
 uv run grimoire test smoke-export
 
-# List collected tests without running (works on test all, test smoke, e2e run)
+# List collected tests without running (test all and test smoke only --
+# the e2e subcommands do not accept --co)
 uv run grimoire test all --co
-uv run grimoire e2e run --co
+uv run grimoire test smoke --co
 
 # Stop on first failure (-x) and/or run failed tests first (--ff)
+# These DO work on the e2e subcommands.
 uv run grimoire test all -x --ff
 uv run grimoire e2e run -x --ff
 
@@ -162,14 +178,15 @@ uv run grimoire e2e all-browsers
 # Run E2E tests with specific browser
 uv run grimoire e2e run --browser firefox
 
-# BrowserStack support is QUARANTINED (2026-04-30) — `uv run grimoire e2e browserstack`
-# exits with a quarantine notice. The browserstack-sdk dependency was removed.
-
 # Run card-specific E2E tests
 uv run grimoire e2e cards
 
 # Run standalone latexmk lane (real PDF compilation, 120s timeout)
 uv run grimoire e2e latexmk
+
+# Run performance baseline tests (perf marker)
+uv run grimoire e2e perf
+
 
 # Run linting
 uv run ruff check .
@@ -211,7 +228,7 @@ src/promptgrimoire/
 ├── models/              # Data models (Character, Session, Turn, LorebookEntry)
 ├── parsers/             # SillyTavern character card parser
 ├── llm/                 # Claude API client, lorebook activation, prompt assembly
-├── input_pipeline/      # HTML input processing (see docs/input-pipeline.md)
+├── input_pipeline/      # HTML input processing, paragraph numbering (see docs/input-pipeline.md)
 ├── pages/               # NiceGUI page routes
 │   ├── annotation/      # Main annotation page (see docs/annotation-architecture.md)
 │   ├── navigator/       # Workspace navigator (route: /, see docs/database.md § Navigator)
@@ -231,21 +248,14 @@ src/promptgrimoire/
 │   ├── navigator.py     # Navigator query (UNION ALL CTE), NavigatorRow, SearchHit, metadata FTS
 │   ├── roles.py         # Cached staff role queries
 │   ├── tags.py          # Tag/TagGroup CRUD, import (ImportResult), reorder, deletion guards, CRDT cleanup
-│   ├── wargames.py      # Wargame team CRUD, ACL, roster ingestion, turn cycle orchestration
 │   ├── workspace_documents.py  # Document CRUD (add, list, reorder, update content)
 │   └── workspaces.py    # Workspace CRUD (create, get), resolve_annotation_context (single-session page load)
-├── wargame/             # Pure-domain helpers for wargame scenarios
-│   ├── agents.py        # PydanticAI agent definitions (turn_agent, summary_agent)
-│   ├── codenames.py     # Unique codename generation (coolname slugs, collision avoidance)
-│   ├── roster.py        # CSV roster parsing, auto-assign round-robin (functional core)
-│   └── turn_cycle.py    # Turn cycle state machine, deadline calc, prompt assembly
 ├── admission.py         # AIMD admission gate (pure state, no NiceGUI)
 ├── queue_handlers.py    # Raw Starlette handlers for /queue and /api/queue/status
 ├── dev_endpoints.py     # Dev-only admission gate test endpoints (DEV__AUTH_MOCK only)
 ├── crdt/                # pycrdt collaboration logic
 ├── word_count.py        # Multilingual word count (Latin/CJK via uniseg/jieba/MeCab)
 ├── word_count_enforcement.py  # Export-time violation check (pure functions, no UI)
-├── deadline_worker.py   # Background polling worker for expired wargame deadlines
 ├── search_worker.py     # Background FTS extraction worker (polls search_dirty)
 ├── logging_config.py    # Shared logging setup (extracted from __init__.py for standalone worker)
 ├── logging_discord.py   # Discord webhook alerting processor (ERROR/CRITICAL -> Discord embed)
@@ -310,6 +320,8 @@ PostgreSQL with SQLModel. Schema migrations via Alembic. Full schema, wargame ta
 
 15 SQLModel classes: User, Course, CourseEnrollment, Week, Activity, Workspace, WorkspaceDocument, TagGroup, Tag, Permission, CourseRoleRef, ACLEntry, WargameConfig, WargameTeam, WargameMessage.
 
+**Wargame shelved (2026-08-06):** the feature never got a UI, so its service layer, turn cycle engine, PydanticAI agents and deadline worker were removed to `shelf/wargame`. The three tables and their model classes are deliberately retained — dropping them means a migration altering `acl_entry`, which gates every workspace permission.
+
 ### Key Rules
 
 1. **Alembic is the ONLY way to create/modify schema** - Never use `SQLModel.metadata.create_all()` except in Alembic migrations
@@ -366,7 +378,7 @@ The export worker (PDF compilation) can run in two modes controlled by `FEATURES
 - `sd_notify.py` sends `READY=1`, `WATCHDOG=1` (each poll cycle), `STOPPING=1` to systemd
 - `WatchdogSec=300` in the service file; worker must heartbeat within 5 minutes
 - `SIGTERM` triggers graceful shutdown: cancels in-flight job, closes DB, exits 0
-- `deploy/restart.sh` stops worker before app restart, starts it after `/healthz` passes (steps 8 and 12)
+- `deploy/restart.sh` refreshes the installed worker unit, stops it before app restart, and starts it after `/healthz` passes
 
 **Config additions:**
 - `EXPORT__MAX_CONCURRENT_COMPILATIONS` (int, default 2): Semaphore limit for parallel LaTeX compilations

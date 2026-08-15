@@ -263,13 +263,12 @@ async def delete_week(
         )
         activities = list(activity_rows.all())
 
-        # Aggregate student workspace count across all activities
-        # TODO(perf): N+1 sessions — has_student_workspaces
-        # opens its own session per call. Replace with single
-        # GROUP BY query if activity counts grow.
+        # Aggregate student workspace count across all activities.
+        # TODO(perf): This still performs one count query per activity.
+        # Replace with a single GROUP BY query if activity counts grow.
         total_students = 0
         for act in activities:
-            total_students += await has_student_workspaces(act.id)
+            total_students += await has_student_workspaces(act.id, session=session)
 
         if total_students > 0 and not force:
             raise DeletionBlockedError(
@@ -319,7 +318,7 @@ async def get_visible_weeks(
             return []
 
         # Instructors and above see all weeks
-        staff_roles = await get_staff_roles()
+        staff_roles = await get_staff_roles(session=session)
         if enrollment.role in staff_roles:
             result = await session.exec(
                 select(Week).where(Week.course_id == course_id).order_by("week_number")
@@ -372,7 +371,7 @@ async def can_access_week(
             return False
 
         # Instructors always have access
-        staff_roles = await get_staff_roles()
+        staff_roles = await get_staff_roles(session=session)
         if enrollment.role in staff_roles:
             return True
 

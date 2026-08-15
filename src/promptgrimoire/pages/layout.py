@@ -163,23 +163,39 @@ def _render_algolia_help(help_config: HelpConfig) -> None:
 
 
 def _render_mkdocs_help() -> None:
-    """Render help button that opens docs site in an iframe dialog."""
-    docs_url = get_settings().help.docs_url
+    """Render help button that opens docs site in an iframe dialog.
 
-    with ui.dialog() as help_dialog, ui.card().classes("w-full max-w-4xl h-[80vh]"):
-        with ui.row().classes("w-full justify-between items-center q-pb-sm"):
-            ui.label("Help").classes("text-h6")
-            ui.button(
-                icon="open_in_new",
-                on_click=lambda url=docs_url: ui.navigate.to(url, new_tab=True),
-            ).props("flat dense").tooltip("Open in new tab")
-        ui.element("iframe").props(f'src="{docs_url}" frameborder="0"').classes(
-            "w-full flex-grow"
-        ).style("height: calc(80vh - 60px)")
+    The dialog, card, row, labels, open-in-new button, and iframe are
+    constructed lazily on the first button click. On a 50-way page-load
+    wave the eager form staged ~3600 NiceGUI update messages per wave
+    that almost no user actually needed; the lazy closure defers them
+    until the help feature is used.
+    """
+    docs_url = get_settings().help.docs_url
+    dialog_ref: list[ui.dialog | None] = [None]
+
+    def _open_help() -> None:
+        if dialog_ref[0] is None:
+            with (
+                ui.dialog() as help_dialog,
+                ui.card().classes("w-full max-w-4xl h-[80vh]"),
+            ):
+                with ui.row().classes("w-full justify-between items-center q-pb-sm"):
+                    ui.label("Help").classes("text-h6")
+                    ui.button(
+                        icon="open_in_new",
+                        on_click=lambda url=docs_url: ui.navigate.to(url, new_tab=True),
+                    ).props("flat dense").tooltip("Open in new tab")
+                ui.element("iframe").props(f'src="{docs_url}" frameborder="0"').classes(
+                    "w-full flex-grow"
+                ).style("height: calc(80vh - 60px)")
+            dialog_ref[0] = help_dialog
+        assert dialog_ref[0] is not None  # noqa: S101 — type narrowing after lazy init
+        dialog_ref[0].open()
 
     ui.button(
         icon="help_outline",
-        on_click=help_dialog.open,
+        on_click=_open_help,
     ).props('flat color=white data-testid="help-btn"').tooltip("Help documentation")
 
 

@@ -397,3 +397,103 @@ architectural experiment now justified by evidence is to deliver the single
 large document HTML payload outside NiceGUI's element/outbox serialization,
 while leaving permissions, CRDT edits, presence, highlights, and sidebar
 interaction unchanged.
+
+## Phase 8: annotation-load round-trip collapse
+
+Three folds with one mechanism removed round-trips and pool checkouts from
+the cold annotation read path:
+
+1. `resolve_annotation_context` now fetches workspace, template flag, the
+   viewer's explicit ACL entry, and the Activity→Week→Course placement chain
+   in one LEFT-JOIN statement. The workspace entity still carries
+   `crdt_state` in that same read; no second checked-out read was introduced
+   (the constraint extracted from the falsified 2026-04-23 metadata/CRDT
+   split).
+2. The active-export-job read rides the same session and returns on
+   `AnnotationContext.active_export_job`; the header applies recovery from
+   the prefetched value with no DB await inside the client slot. This is the
+   "real fast path that avoids the DB work" named as the surviving option by
+   the falsified 2026-04-24 export-recovery deferral note.
+3. `list_documents_with_first_content` fetches the document headers and the
+   full first document in one session; `_build_tab_panels` consumes the
+   prefetched document instead of a `get_document` checkout inside the
+   client slot.
+
+For the single-document owner fixture the whole page load now executes 8 SQL
+statements over 3 checkouts (previously ~10 over 5). Regression gates:
+`test_annotation_context_query_count` ≤5, the new
+`TestFirstDocumentFetchEfficiency` pair, and the page-load ceiling tightened
+from 25 to 10.
+
+### Measurement: six runs, two pools, alternating arms
+
+All runs: 100 settled-authentication sessions, settle 16 s, server pinned to
+CPUs 0-7, QueuePool direct to PostgreSQL (no PgBouncer), harness load gate
+≤4. Baseline = HEAD with the change stashed; collapse = the change applied.
+Runs 3-6 form an alternating B-A-B-A sequence at the production 20+10 pool.
+
+| Pos | Arm | Pool | Page-build avg/p95 | Lag avg/p95 | Checkouts | Browser avg/p95 |
+| --- | --- | --- | --- | --- | ---: | --- |
+| 1 | baseline | 5+5 | 4610 / 7792 | 14 / 68 | 908 | 9019 / 12342 |
+| 2 | collapse | 5+5 | 3876 / 7013 | 17 / 67 | 709 | 9733 / 13065 |
+| 3 | baseline | 20+10 | 4154 / 7232 | 22 / 114 | 909 | 13647 / 16168 |
+| 4 | collapse | 20+10 | 2764 / 5778 | 28 / 129 | 711 | 17729 / 21892 |
+| 5 | baseline | 20+10 | 3685 / 6257 | 17 / 97 | 908 | 11425 / 13419 |
+| 6 | collapse | 20+10 | 2589 / 4767 | 19 / 108 | 709 | 12819 / 14849 |
+
+RSS during the wave was 1.09-1.18 GB in every run. Raw snapshots:
+`perf-results/collapse-baseline-100*.json` and
+`perf-results/round-trip-collapse-100*.json`.
+
+### Supported
+
+- **Server page construction improved robustly.** At 20+10 the collapse arm
+  is 2589-2764 ms mean against a baseline arm of 3685-4154 ms (−32%); the
+  between-arm gap is several times either arm's spread, and the direction
+  replicates at 5+5. Header and tab-panel phases fell to 2 ms and ~44 ms.
+- **Demand reduction is deterministic.** 709-711 checkouts per wave against
+  908-909, every run, matching the designed −2 checkouts per load.
+
+### Unresolved
+
+- **The student-visible boundary did not measurably move.** Collapse browser
+  means {17.7 s, 12.8 s} against baseline {13.6 s, 11.4 s}: the collapse
+  arm's within-arm spread (4.9 s) exceeds the between-arm difference
+  (2.7 s). Position 4's 17.7 s did not replicate. No improvement and no
+  regression is resolvable at n=2 per arm on co-located browser generators.
+- **Weak burst signal.** WebSocket-observed time is the one browser metric
+  where both collapse legs (1451/1621 ms mean) sit above both baseline legs
+  (990/1055 ms). A plausible mechanism: the baseline's serial DB awaits
+  staggered per-client page completion, and removing them lands more
+  serialization bursts on the event loop together. This is consistent with
+  the Phase 7 finding that the tail is aggregate single-loop serialization,
+  and is evidence for, not proof of, arrival sharpening.
+
+### Methodology rule extracted
+
+Browser-side numbers on this host vary by >2 s between identically
+configured runs even under the load gate, and drift is not monotonic.
+**Future performance claims require alternating or interleaved A/B legs
+(B-A-B-A at minimum), reported per leg with within-arm spread; a single-order
+pair is not evidence.** The Phase 7 same-process-HTTP conclusion should be
+treated as provisional until reproduced under an order-reversed control.
+
+### Housekeeping
+
+- The `47a07fa6` "conditional transplant" flag in the design-note salvage
+  ledger is closed: bab4218e is a line-for-line superset plus the owner
+  shortcut. Only the statement-profile instrumentation (245e6ce6) remains
+  untransplanted, deliberately.
+- The three falsified load-experiment notes (db narrowing, prefetch outside
+  client, export-recovery deferral) were branch-only in
+  `nicegui-perf-investigation` and are now copied into `docs/dead-ends/`.
+- Out of scope but surfaced for a human decision, ranked: `pool_pre_ping`
+  costs one extra round-trip per checkout; `get_session` COMMITs read-only
+  transactions; `is_user_banned` queries per page navigation with no cache;
+  `user(is_admin)` has no index on the privileged union path (0.33 ms at
+  2.2k users — likely never worth a migration).
+
+Retain the collapse for the demand reduction and the server-side headroom it
+returns to the event loop; do not cite it as a student-visible latency fix.
+The student boundary remains owned by the Phase 6/7 line of work: delivery
+of the large generated payload outside per-client element serialization.

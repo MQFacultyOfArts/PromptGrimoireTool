@@ -713,12 +713,16 @@ async def _build_tab_panels(
     on_manage_tags: TagCallback,
     can_create_tags: bool,
     footer: ui.element | None = None,
+    first_doc: Any | None = None,
 ) -> None:
     """Build tab panels for source documents, Organise, and Respond.
 
     When documents exist, the first source tab contains the CRDT load
     and document render (backward-compatible with the old "Annotate" panel).
     When no documents exist, defaults to the Organise tab.
+
+    ``first_doc`` is the first document with content, pre-fetched in the
+    page's DB-resolve phase; when absent it is fetched here.
 
     Stores ``state.tab_panels``, ``state.organise_panel``,
     and ``state.respond_panel`` for later use by broadcast callbacks.
@@ -737,10 +741,13 @@ async def _build_tab_panels(
         _t_crdt_done = time.monotonic()
 
         if documents:
-            # Fetch the full first document (with content) once for
-            # rendering.  Passed to _build_first_source_panel to avoid
-            # a redundant round-trip inside the @ui.refreshable closure.
-            first_doc = await get_document(documents[0].id)
+            # Use the first document (with content) pre-fetched in the
+            # DB-resolve phase; fall back to fetching it here for callers
+            # that did not supply it.  Passed to _build_first_source_panel
+            # to avoid a redundant round-trip inside the @ui.refreshable
+            # closure.
+            if first_doc is None:
+                first_doc = await get_document(documents[0].id)
             _t_doc_fetch = time.monotonic()
 
             # First document: eager render

@@ -13,6 +13,7 @@ from uuid import UUID
 
 import structlog
 from sqlalchemy import exists, func, text
+from sqlalchemy import select as sa_select
 from sqlmodel import select
 
 from promptgrimoire.db.engine import get_session
@@ -23,6 +24,7 @@ from promptgrimoire.db.models import (
     Course,
     CourseEnrollment,
     CourseRoleRef,
+    ExportJob,
     Permission,
     Tag,
     TagGroup,
@@ -258,6 +260,12 @@ class AnnotationContext:
     """
     tags: list[Tag]
     tag_groups: list[TagGroup]
+    active_export_job: ExportJob | None = None
+    """Most recent active/completed export job for the requesting user.
+
+    Resolved in the same session as the rest of the context so the header
+    render does not spend a separate pool checkout on it.
+    """
 
 
 async def _resolve_enrollment_permission(
@@ -316,22 +324,16 @@ async def _resolve_effective_permission(
     workspace: Workspace,
     placement: PlacementContext,
     user_id: UUID,
+    explicit: ACLEntry | None,
 ) -> str | None:
     """Resolve the effective permission for a user on a workspace.
 
-    Combines explicit ACL lookup with enrollment-derived access,
-    picking the highest permission level. Returns None if no access.
-    Extracted from resolve_annotation_context to keep branch/statement
-    counts within linter limits.
+    Combines the explicit ACL entry (pre-fetched by the caller's
+    workspace query) with enrollment-derived access, picking the highest
+    permission level. Returns None if no access. Extracted from
+    resolve_annotation_context to keep branch/statement counts within
+    linter limits.
     """
-    # Explicit ACL lookup
-    explicit_result = await session.exec(
-        select(ACLEntry).where(
-            ACLEntry.workspace_id == workspace.id,
-            ACLEntry.user_id == user_id,
-        )
-    )
-    explicit = explicit_result.one_or_none()
     if explicit is not None and explicit.permission == "owner":
         return "owner"
 
@@ -394,6 +396,34 @@ async def _resolve_privileged_user_ids(
     return frozenset(str(uid) for uid in admin_result.all())
 
 
+def _placement_from_joined_rows(
+    workspace: Workspace,
+    activity: Activity | None,
+    week: Week | None,
+    course: Course | None,
+    *,
+    is_template: bool,
+) -> PlacementContext:
+    """Build a PlacementContext from the annotation mega-join's rows.
+
+    Semantics match the query-based helpers: an activity-placed workspace
+    with a broken Activity->Week->Course chain is loose, and a course-placed
+    workspace with a dangling course_id is loose.
+    """
+    if workspace.activity_id is not None:
+        if activity is not None and week is not None and course is not None:
+            placement = _activity_placement(activity, week, course)
+        else:
+            placement = PlacementContext(placement_type="loose")
+    elif workspace.course_id is not None and course is not None:
+        placement = _course_placement(course)
+    else:
+        placement = PlacementContext(placement_type="loose")
+    if is_template:
+        placement = replace(placement, is_template=True)
+    return placement
+
+
 async def resolve_annotation_context(
     workspace_id: UUID,
     user_id: UUID,
@@ -405,39 +435,60 @@ async def resolve_annotation_context(
     Returns None if workspace does not exist.
     """
     async with get_session() as session:
-        # 1. Workspace + template flag in a single query
+        # 1. Workspace + template flag + explicit ACL + placement chain in a
+        # single round-trip. Every LEFT JOIN is at most one row: ACL is
+        # unique per (workspace, user); activity/week join on primary keys;
+        # course joins on the activity chain's course or, for course-placed
+        # workspaces, the workspace's own course.
         template_exists = exists(
             select(Activity.id).where(Activity.template_workspace_id == workspace_id)
         )
-        ws_result = await session.exec(
-            select(Workspace, template_exists.label("is_template")).where(
-                Workspace.id == workspace_id
+        ws_result = await session.execute(
+            sa_select(
+                Workspace,
+                template_exists.label("is_template"),
+                ACLEntry,
+                Activity,
+                Week,
+                Course,
             )
+            .outerjoin(
+                ACLEntry,
+                (ACLEntry.workspace_id == Workspace.id)  # type: ignore[arg-type]  -- Column == returns ColumnElement
+                & (ACLEntry.user_id == user_id),
+            )
+            .outerjoin(
+                Activity,
+                Activity.id == Workspace.activity_id,  # type: ignore[arg-type]  -- Column == returns ColumnElement
+            )
+            .outerjoin(
+                Week,
+                Week.id == Activity.week_id,  # type: ignore[arg-type]  -- Column == returns ColumnElement
+            )
+            .outerjoin(
+                Course,
+                Course.id  # type: ignore[arg-type]  -- Column == returns ColumnElement
+                == func.coalesce(Week.course_id, Workspace.course_id),
+            )
+            .where(Workspace.id == workspace_id)  # type: ignore[arg-type]  -- Column == returns ColumnElement
         )
         ws_row = ws_result.first()
         if ws_row is None:
             return None
 
-        workspace, is_template = ws_row
+        workspace, is_template, explicit_acl, activity, week, course = ws_row
 
-        # 2. Hierarchy resolution — reuse existing private helpers
-        if workspace.activity_id is not None:
-            placement = await _resolve_activity_placement(
-                session, workspace.activity_id
-            )
-        elif workspace.course_id is not None:
-            placement = await _resolve_course_placement(session, workspace.course_id)
-        else:
-            placement = PlacementContext(placement_type="loose")
-        if is_template:
-            placement = replace(placement, is_template=True)
+        # 2. Hierarchy resolution from the joined rows
+        placement = _placement_from_joined_rows(
+            workspace, activity, week, course, is_template=is_template
+        )
 
-        # 3. Permission resolution (inline to avoid double-fetch)
+        # 3. Permission resolution (ACL pre-fetched by the query above)
         if is_admin:
             permission: str | None = "owner"
         else:
             permission = await _resolve_effective_permission(
-                session, workspace, placement, user_id
+                session, workspace, placement, user_id, explicit_acl
             )
 
         # 4. Privileged user IDs (staff + admins)
@@ -460,7 +511,17 @@ async def resolve_annotation_context(
         )
         tag_groups = list(groups_result.all())
 
-        # 6. Return
+        # 6. Active export job for the header, riding the same session so
+        # the page render does not spend a separate pool checkout on it.
+        # Local import: export_jobs pulls in filesystem/export machinery
+        # this module otherwise never needs.
+        from promptgrimoire.db.export_jobs import get_active_job_for_user
+
+        active_export_job = await get_active_job_for_user(
+            user_id, workspace_id, session=session
+        )
+
+        # 7. Return
         return AnnotationContext(
             workspace=workspace,
             permission=permission,
@@ -468,6 +529,7 @@ async def resolve_annotation_context(
             privileged_user_ids=privileged_user_ids,
             tags=tags,
             tag_groups=tag_groups,
+            active_export_job=active_export_job,
         )
 
 
@@ -587,7 +649,13 @@ async def _resolve_activity_placement(
         return PlacementContext(placement_type="loose")
 
     activity, week, course = row
+    return _activity_placement(activity, week, course)
 
+
+def _activity_placement(
+    activity: Activity, week: Week, course: Course
+) -> PlacementContext:
+    """Build an activity PlacementContext from already-fetched rows."""
     return PlacementContext(
         placement_type="activity",
         activity_title=activity.title,
@@ -628,6 +696,11 @@ async def _resolve_course_placement(
     course = await session.get(Course, course_id)
     if course is None:
         return PlacementContext(placement_type="loose")
+    return _course_placement(course)
+
+
+def _course_placement(course: Course) -> PlacementContext:
+    """Build a course PlacementContext from an already-fetched row."""
     return PlacementContext(
         placement_type="course",
         course_code=course.code,

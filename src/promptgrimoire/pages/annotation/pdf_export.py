@@ -47,6 +47,7 @@ from promptgrimoire.word_count_enforcement import (
 )
 
 if TYPE_CHECKING:
+    from promptgrimoire.db.models import ExportJob
     from promptgrimoire.pages.annotation import PageState
 
 logger = structlog.get_logger()
@@ -395,7 +396,16 @@ async def check_existing_export(state: PageState) -> None:
         user_id=UUID(state.user_id),
         workspace_id=state.workspace_id,
     )
+    apply_export_recovery(state, job)
 
+
+def apply_export_recovery(state: PageState, job: ExportJob | None) -> None:
+    """Apply recovery UI state for an already-fetched export job.
+
+    Split from :func:`check_existing_export` so the annotation page can
+    pass the job pre-fetched by ``resolve_annotation_context`` instead of
+    spending a separate pool checkout during header render.
+    """
     if job is None:
         return
 

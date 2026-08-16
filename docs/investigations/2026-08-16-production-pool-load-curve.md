@@ -496,3 +496,39 @@ Retain the collapse for the demand reduction and the server-side headroom it
 returns to the event loop; do not cite it as a student-visible latency fix.
 The student boundary remains owned by the Phase 6/7 line of work: delivery
 of the large generated payload outside per-client element serialization.
+
+## Phase 9: provisional in-process HTTP delivery result
+
+A feature-gated experiment staged each already-authorized rendered document
+behind a one-use 60-second token and fetched it from a raw HTTP endpoint in the
+same NiceGUI process. The real one-session document/highlight/readiness boundary
+passed. WebSocket bytes fell from about 730 KB to 294 KB, the largest frame
+fell from 665 KB to 228 KB, and one-session readiness improved from 725 ms to
+638 ms.
+
+In one forward-order 100-session comparison, the candidate was substantially
+worse:
+
+| Metric | NiceGUI payload | Same-process HTTP |
+| --- | ---: | ---: |
+| Browser readiness mean | 13.73 s | 20.94 s |
+| Browser readiness p95 | 16.60 s | 22.87 s |
+| Server page-build mean | 3.77 s | 8.31 s |
+| Server page-build p95 | 6.52 s | 15.45 s |
+| Event-loop lag p95 | 75 ms | 224 ms |
+| Event-loop lag max | 244 ms | 693 ms |
+| RSS during wave | 1.18 GB | 1.11 GB |
+
+All 100 clients still reached presence, and payload/memory reductions were
+real. The timing comparison is order-confounded by the host variation described
+in Phase 8 and must not be treated as a confirmed regression until an
+order-reversed control reproduces it. The feature implementation was removed
+because it did not satisfy the architectural goal of moving work off the
+NiceGUI event loop; only its raw evidence is retained.
+
+Any successor must prepare and serve the bundled initial snapshot from a
+separate process (or native static/object service). The NiceGUI process may
+issue a short-lived authorization token, but it must not build or transmit the
+document, highlight, tag, and sidebar snapshot itself. One bundle is preferred
+to several lazy requests; NiceGUI/WebSocket should carry only incremental CRDT,
+presence, cursor, and interaction deltas after the initial mount.

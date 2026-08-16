@@ -14,18 +14,23 @@ import typer
 
 def test_perf_host_load_guard_waits_until_quiet(
     monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
 ) -> None:
-    """A busy perf run queues in place until one-minute load is safe."""
-    from promptgrimoire.cli.e2e import _wait_for_idle_perf_host
+    """A perf run holds the host slot and requires four quiet samples."""
+    from promptgrimoire.cli import e2e
 
-    loads = iter((18.0, 3.9))
+    loads = iter((18.0, 3.9, 3.8, 3.7, 3.6))
     sleeps: list[int] = []
     monkeypatch.setattr(os, "getloadavg", lambda: (next(loads), 0.0, 0.0))
     monkeypatch.setattr("promptgrimoire.cli.e2e.time.sleep", sleeps.append)
+    monkeypatch.setenv("E2E_PERF_LOCK_PATH", str(tmp_path / "perf.lock"))
+    monkeypatch.setattr(e2e, "_perf_lock_files", [])
 
-    _wait_for_idle_perf_host()
+    e2e._wait_for_idle_perf_host()
 
-    assert sleeps == [15]
+    assert sleeps == [15, 15, 15, 15]
+    assert len(e2e._perf_lock_files) == 1
+    e2e._perf_lock_files[0].close()
 
 
 def test_perf_queue_pool_removes_test_nullpool_override(

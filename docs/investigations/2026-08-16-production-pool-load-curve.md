@@ -32,6 +32,22 @@ configured pooling, and `E2E_PERF_DATABASE_URL` repoints only the managed app
 server after direct test-database migration and cleanup. This avoids running
 schema and cloning operations through a transaction pool.
 
+### Methodology correction
+
+Sequential 100-browser waves on this shared host showed substantial
+run-position variation even when each run began below the original load
+threshold. A low load sample prevents overlap; it does not prove the host has
+recovered from the preceding Chromium wave. Cross-run browser deltas below are
+therefore provisional unless reproduced with order control. Structural counts,
+payload sizes, and within-run server instrumentation remain valid.
+
+The perf command now holds a host-wide file lock and requires four consecutive
+15-second samples at load 4 or below before starting. Comparative runs must use
+an ABBA order (baseline, candidate, candidate, baseline), record their run
+position, and report server-side and browser-side verdicts separately. A
+separate browser-generator host is still required before treating browser
+timings as a production client latency curve.
+
 ## Results
 
 | Sessions | Median ready | Mean ready | Max ready | During RSS | Boundary |

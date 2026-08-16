@@ -49,6 +49,18 @@ def _playwright_worker_count() -> int:
     return max(1, min(4, available // 2))
 
 
+def _require_idle_perf_host() -> None:
+    """Refuse to add a performance wave to an already-busy host."""
+    load_1m = os.getloadavg()[0]
+    default_limit = max(1.0, (os.cpu_count() or 1) / 2)
+    limit = float(os.environ.get("E2E_PERF_MAX_LOAD", default_limit))
+    if load_1m > limit:
+        raise typer.BadParameter(
+            f"host 1-minute load is {load_1m:.1f}, above the perf limit {limit:.1f}; "
+            "wait for it to settle or set E2E_PERF_MAX_LOAD explicitly"
+        )
+
+
 def _configure_perf_server(*, queue_pool: bool) -> None:
     """Apply production-shaped settings to the managed perf server."""
     os.environ["E2E_RECONNECT_TIMEOUT"] = "15"
@@ -647,6 +659,7 @@ def perf(
 
     from promptgrimoire.config import get_settings
 
+    _require_idle_perf_host()
     get_settings()
     _pre_test_db_cleanup()
     _configure_perf_server(queue_pool=queue_pool)

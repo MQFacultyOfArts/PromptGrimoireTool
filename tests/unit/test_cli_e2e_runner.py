@@ -12,6 +12,19 @@ import pytest
 import typer
 
 
+def test_perf_host_load_guard(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Perf waves start below the limit and refuse an already-busy host."""
+    from promptgrimoire.cli.e2e import _require_idle_perf_host
+
+    monkeypatch.setattr(os, "getloadavg", lambda: (7.9, 0.0, 0.0))
+    monkeypatch.setattr(os, "cpu_count", lambda: 16)
+    _require_idle_perf_host()
+
+    monkeypatch.setattr(os, "getloadavg", lambda: (8.1, 0.0, 0.0))
+    with pytest.raises(typer.BadParameter, match=r"above the perf limit 8\.0"):
+        _require_idle_perf_host()
+
+
 def test_perf_queue_pool_removes_test_nullpool_override(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

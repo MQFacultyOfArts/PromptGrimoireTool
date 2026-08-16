@@ -247,8 +247,11 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: e2e-playwright-artifacts
-          path: output/test_output/e2e/playwright/**
-          if-no-files-found: ignore
+          path: |
+            output/test_output/e2e/playwright/**
+            test-e2e.log
+            test-e2e-server.log
+          if-no-files-found: error
 
   nicegui-ui:
     runs-on: ubuntu-latest

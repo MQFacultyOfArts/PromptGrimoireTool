@@ -432,6 +432,103 @@ def test_shared_playwright_marks_concurrent_workers(
     assert "E2E_SHARED_SERVER" not in os.environ
 
 
+def test_parallel_playwright_reserves_cpu_for_shared_services(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Four available CPUs yield two clients, leaving capacity for shared I/O."""
+    from promptgrimoire.cli.e2e import run_playwright_lane
+
+    captured: dict[str, int] = {}
+
+    monkeypatch.setattr(
+        "promptgrimoire.cli.e2e.os.sched_getaffinity",
+        lambda _pid: set(range(4)),
+    )
+    monkeypatch.setattr(
+        "promptgrimoire.config.get_settings",
+        object,
+    )
+
+    def _capture_worker_count(
+        _args: list[str],
+        *,
+        use_pyspy: bool,
+        worker_count: int,
+        fail_fast: bool,
+        browser: str | None,
+    ) -> int:
+        assert use_pyspy is False
+        assert fail_fast is False
+        assert browser == "chromium"
+        captured["worker_count"] = worker_count
+        return 0
+
+    monkeypatch.setattr(
+        "promptgrimoire.cli.e2e._run_shared_playwright_e2e",
+        _capture_worker_count,
+    )
+
+    exit_code = run_playwright_lane(
+        [],
+        parallel=True,
+        fail_fast=False,
+        py_spy=False,
+        browser="chromium",
+    )
+
+    assert exit_code == 0
+    assert captured["worker_count"] == 2
+
+
+@pytest.mark.parametrize(
+    ("available_cpus", "expected_workers"),
+    [(1, 1), (4, 2), (32, 4)],
+)
+def test_playwright_worker_budget_has_floor_and_cap(
+    monkeypatch: pytest.MonkeyPatch,
+    available_cpus: int,
+    expected_workers: int,
+) -> None:
+    """The shared-service budget scales from one client to a cap of four."""
+    from promptgrimoire.cli.e2e import _playwright_worker_count
+
+    monkeypatch.delenv("GRIMOIRE_TEST_WORKERS", raising=False)
+    monkeypatch.setattr(
+        "promptgrimoire.cli.e2e.os.sched_getaffinity",
+        lambda _pid: set(range(available_cpus)),
+    )
+
+    assert _playwright_worker_count() == expected_workers
+
+
+def test_playwright_worker_budget_uses_cpu_count_fallback(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Platforms without affinity support still reserve half their CPUs."""
+    from promptgrimoire.cli.e2e import _playwright_worker_count
+
+    monkeypatch.delenv("GRIMOIRE_TEST_WORKERS", raising=False)
+    monkeypatch.delattr("promptgrimoire.cli.e2e.os.sched_getaffinity")
+    monkeypatch.setattr("promptgrimoire.cli.e2e.os.cpu_count", lambda: 6)
+
+    assert _playwright_worker_count() == 3
+
+
+def test_playwright_worker_budget_honours_operator_override(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An explicit worker count remains authoritative."""
+    from promptgrimoire.cli.e2e import _playwright_worker_count
+
+    monkeypatch.setenv("GRIMOIRE_TEST_WORKERS", "3")
+    monkeypatch.setattr(
+        "promptgrimoire.cli.e2e.os.sched_getaffinity",
+        lambda _pid: {0},
+    )
+
+    assert _playwright_worker_count() == 3
+
+
 def test_run_playwright_changed_lane_selects_only_playwright_path(
     monkeypatch: pytest.MonkeyPatch,
     patch_serial_playwright_infra: None,  # noqa: ARG001 - fixture side effects

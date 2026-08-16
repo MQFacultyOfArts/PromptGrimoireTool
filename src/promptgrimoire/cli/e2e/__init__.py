@@ -32,10 +32,21 @@ from promptgrimoire.cli.e2e._server import (
     _stop_pyspy,
 )
 from promptgrimoire.cli.e2e._workers import _allocate_ports as _allocate_ports
-from promptgrimoire.cli.testing import _run_pytest, _xdist_worker_count
+from promptgrimoire.cli.testing import _run_pytest
 
 e2e_app = typer.Typer(help="End-to-end test commands.")
 _PLAYWRIGHT_TEST_PATH = str(PLAYWRIGHT_LANE.test_paths[0])
+
+
+def _playwright_worker_count() -> int:
+    """Return a bounded client count that leaves CPUs for shared services."""
+    if override := os.environ.get("GRIMOIRE_TEST_WORKERS"):
+        return int(override)
+    try:
+        available = len(os.sched_getaffinity(0))
+    except AttributeError:
+        available = os.cpu_count() or 1
+    return max(1, min(4, available // 2))
 
 
 def _configure_slow_run_resources() -> None:
@@ -134,7 +145,7 @@ def run_playwright_lane(
         return _run_shared_playwright_e2e(
             user_args,
             use_pyspy=py_spy,
-            worker_count=int(_xdist_worker_count()),
+            worker_count=_playwright_worker_count(),
             fail_fast=fail_fast,
             browser=browser,
         )

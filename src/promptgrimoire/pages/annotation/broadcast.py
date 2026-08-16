@@ -333,19 +333,20 @@ async def _handle_client_delete(
 async def _handle_remote_update(state: PageState) -> None:
     """Process a CRDT update received from another client.
 
-    Rebuilds tag state, CSS, toolbar, annotations, and any
-    tab-specific views that are currently active.
+    Rebuilds tag-dependent UI only when tag metadata changed, then refreshes
+    annotations and any tab-specific views that are currently active.
     """
     old_tag_info = state.tag_info_list
     _rebuild_tag_state_from_crdt(state)
+    tag_info_changed = state.tag_info_list != old_tag_info
     _update_highlight_css(state)
-    if state.refresh_toolbar:
+    if tag_info_changed and state.refresh_toolbar:
         await state.refresh_toolbar()
     _update_user_count(state)
     # Only invalidate card cache when tag metadata actually changed
     # (rename, recolour, create, delete). Highlight-only changes are
     # handled by the diff algorithm's per-highlight snapshots.
-    if state.tag_info_list != old_tag_info:
+    if tag_info_changed:
         state.invalidate_card_cache()
     if state.refresh_annotations:
         state.refresh_annotations(trigger="crdt_broadcast")

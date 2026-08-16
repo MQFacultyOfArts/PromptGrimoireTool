@@ -18,14 +18,13 @@ Environment=PATH=/home/promptgrimoire/.local/bin:/home/promptgrimoire/.TinyTeX/b
 Environment=HOME=/home/promptgrimoire
 Environment=OSFONTDIR=/usr/share/fonts:/usr/share/texmf/fonts
 
-ExecStart=/home/promptgrimoire/.local/bin/uv run python -m promptgrimoire.export.worker_main
+ExecStart=/home/promptgrimoire/.local/bin/uv run --locked --no-sync python -m promptgrimoire.export.worker_main
 
 # Watchdog: restart if no heartbeat within 5 minutes
 WatchdogSec=300
 Restart=always
-# Covers watchdog timeouts, crashes, AND PartOf-triggered stops
-# (when the app service restarts, PartOf stops the worker cleanly;
-# Restart=always brings it back with fresh code)
+# Covers watchdog timeouts and crashes. PartOf-triggered stops are
+# systemd-initiated and restart.sh explicitly starts the worker afterward.
 RestartSec=5
 
 # Shutdown: worker cancels in-flight job on SIGTERM. TimeoutStopSec gives

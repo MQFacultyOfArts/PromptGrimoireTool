@@ -42,15 +42,6 @@ if TYPE_CHECKING:
 logger = structlog.get_logger()
 
 
-def _strict_flaky_enabled() -> bool:
-    """Return True when flaky tests should be treated as failures.
-
-    Enabled by default on CI (``CI`` env var set by GitHub Actions).
-    Locally, opt in with ``--strict-flaky`` or ``GRIMOIRE_STRICT_FLAKY=1``.
-    """
-    return bool(os.environ.get("CI") or os.environ.get("GRIMOIRE_STRICT_FLAKY"))
-
-
 def _drop_database_with_debug(db_url: str, *, context: str) -> None:
     """Drop *db_url* and log cleanup failures at debug level."""
     try:
@@ -466,15 +457,7 @@ async def _finalise_parallel_results(
                 user_args,
                 browser=browser,
             )
-            # Flaky tests are failures when strict mode is active.
-            # CI sets this by default; locally use --strict-flaky.
-            # Brian's FIRST LAW: flakiness is a signal, not a stop word.
-            strict_flaky = _strict_flaky_enabled()
-            all_passed = (
-                not genuine_failures
-                and (not strict_flaky or not flaky_files)
-                and not any(result.exit_code == -1 for result in results)
-            )
+            # Retries are diagnostic only; preserve the initial failing result.
 
     try:
         _merge_junit_xml(run_dir)
@@ -494,7 +477,7 @@ async def _finalise_parallel_results(
 
 def _default_worker_count(file_count: int) -> int:
     """Return the bounded worker count for lane execution."""
-    return max(1, min(file_count, max(1, (os.cpu_count() or 4) // 2)))
+    return max(1, min(file_count, 4, max(1, (os.cpu_count() or 4) // 2)))
 
 
 async def run_lane_files(

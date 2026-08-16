@@ -68,6 +68,7 @@ library references during development.
 - [Page-Load Failure Modes (Annotation Page, 50-way Independent Loads)](investigations/2026-04-23-page-load-failure-modes.md)
 - [Vue sidebar `__annotationCardsEpoch` never fires on initial mount](investigations/2026-04-24-vue-sidebar-epoch-missing.md)
 - [Causal Analysis: marginalia overflow-endnotes fallback never triggers](investigations/2026-08-06-marginalia-overflow-export.md)
+- [Causal analysis: production deploy JS-runner availability](investigations/2026-08-15-deploy-js-runner-availability.md)
 - [Phase1 Hypotheses](investigations/phase1-hypotheses.md)
 
 ## lark

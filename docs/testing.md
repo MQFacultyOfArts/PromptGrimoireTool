@@ -241,16 +241,34 @@ Default addopts: `-ra -q -m 'not blns and not slow and not perf and not smoke'`
 
 The test suite is organised into 6 lanes. Each lane is a separate `_run_pytest()` invocation producing a `LaneResult`.
 
+`grimoire test all` also runs the BATS and JavaScript lanes before the Python
+unit lane. Both are mandatory: an absent `bats` executable, absent BATS tests,
+or absent/non-executable `node_modules/.bin/vitest` returns a failed lane. Run
+`npm ci --include=dev` before the command; the runner never falls back to a
+global `npx` or downloads a temporary Vitest. Lockfile validation and clean
+dependency installation belong to `npm ci`; the test runner only requires and
+executes the resulting repository-local Vitest.
+
 ### Lane Definitions
 
 | Lane | Path Filter | Marker Filter | Workers | Purpose |
 |------|-------------|---------------|---------|---------|
-| unit | `tests/unit/` | `not e2e and not nicegui_ui and not latexmk_full and not smoke` | xdist auto | Fast unit tests |
-| integration | `tests/integration/` | `not e2e and not nicegui_ui and not smoke` | xdist auto | DB integration tests |
-| playwright | `tests/e2e/` | `e2e` | parallel (per-file) | Browser E2E tests |
+| unit | `tests/unit/` | `not e2e and not nicegui_ui and not latexmk_full and not smoke` | xdist, max 4 | Fast unit tests |
+| integration | `tests/integration/` | `not e2e and not nicegui_ui and not smoke` | xdist, max 4 | DB integration tests |
+| playwright | `tests/e2e/` | `e2e` | max 4 clients, one server/database | Browser E2E tests |
 | nicegui | NiceGUI UI files | `nicegui_ui` | serial | In-process NiceGUI tests |
 | smoke | all paths | `smoke` | serial | External toolchain tests |
 | blns+slow | all paths | `(blns or slow) and not smoke` | serial | Naughty strings and slow tests |
+
+Unit and integration lanes use at most four xdist workers to avoid amplifying
+PostgreSQL load on large hosts. Set `GRIMOIRE_TEST_WORKERS` to a measured local
+or CI value when deliberately tuning a runner.
+
+The Playwright workers intentionally share one application server and database.
+Tests isolate their records with unique identifiers; the shared infrastructure
+exercises the same contention boundaries as production without provisioning a
+server and database clone per file. Per-file infrastructure remains available
+only for diagnostic retries and tests that cannot satisfy that isolation rule.
 
 ### Command-to-Lane Matrix
 
@@ -261,8 +279,17 @@ The test suite is organised into 6 lanes. Each lane is a separate `_run_pytest()
 | `test run <path>` | auto-detected | auto-detected | auto-detected | auto-detected | | |
 | `test changed` | X | X | | | | |
 | `e2e run` | | | X | | | |
-| `e2e slow` | | | X (slow) | | | |
+| `e2e slow` | X | X | X (slow + `noci`) | X | X | X |
 | `e2e all` | X | X | X | X | X | X |
+
+On Linux, `e2e slow` automatically lowers its process tree to nice level 19,
+uses idle I/O scheduling when `ionice` is available, and reserves one CPU from
+the command's current affinity mask. For example, a 32-CPU workstation runs the
+suite on 31 CPUs. This preserves an interactive CPU and lets foreground work
+win scheduler contention; it does not artificially lower the load-average
+number. Single-CPU and non-Linux hosts remain runnable without CPU reservation.
+After the standard six lanes, it also runs the serial compiled-PDF Playwright
+suite. Retries are diagnostic only: an initial failure always fails the command.
 
 ### Smoke Marker Propagation
 

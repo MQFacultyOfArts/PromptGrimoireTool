@@ -291,15 +291,14 @@ def _stream_with_progress(
 
 
 def _xdist_worker_count() -> str:
-    """Return xdist worker count string.
-
-    Returns ``"auto"`` to let pytest-xdist use all available CPUs.
-    The previous cap at ``cpu_count // 2`` (max 16) was a workaround
-    for ``test_db_cloning.py`` calling ``pg_terminate_backend()`` on the
-    shared test database.  That root cause is now fixed (private
-    clone-source DB provisioned by ``_pre_test_db_cleanup()``).
-    """
-    return "auto"
+    """Return the operator override or a conservative xdist worker count."""
+    if override := os.environ.get("GRIMOIRE_TEST_WORKERS"):
+        return override
+    try:
+        available = len(os.sched_getaffinity(0))
+    except AttributeError:
+        available = os.cpu_count() or 1
+    return str(min(4, available))
 
 
 def _run_collect_only(
@@ -603,15 +602,15 @@ def changed_tests(
 def _run_js(*, verbose: bool = False) -> int:
     """Run JS unit tests (vitest) and return exit code.
 
-    Skips gracefully when npx is not available (e.g. production server).
+    Fails when repository-local JS dependencies are not installed. A missing
+    mandatory lane is not a successful test result.
     """
-    import shutil
+    vitest = Path("node_modules/.bin/vitest")
+    if not vitest.is_file() or not os.access(vitest, os.X_OK):
+        console.print("[red]required local Vitest is not installed; run `npm ci`[/]")
+        return 1
 
-    if not shutil.which("npx"):
-        console.print("[yellow]npx not installed, skipping JS tests[/]")
-        return 0
-
-    cmd = ["npx", "vitest", "run"]
+    cmd = [str(vitest), "run"]
     if verbose:
         cmd.append("--reporter=verbose")
     return subprocess.run(cmd, check=False).returncode
@@ -622,18 +621,20 @@ def _run_bats() -> int:
     import shutil
 
     if not shutil.which("bats"):
-        console.print("[yellow]bats not installed, skipping (sudo apt install bats)[/]")
-        return 0
+        console.print(
+            "[red]required BATS runner is not installed; run `sudo apt install bats`[/]"
+        )
+        return 1
 
     bats_dir = Path("deploy/tests")
     if not bats_dir.exists():
-        console.print("[yellow]No BATS test directory found, skipping[/]")
-        return 0
+        console.print("[red]required BATS test directory is missing: deploy/tests[/]")
+        return 1
 
     bats_files = sorted(bats_dir.glob("*.bats"))
     if not bats_files:
-        console.print("[yellow]No .bats files found, skipping[/]")
-        return 0
+        console.print("[red]required BATS lane has no .bats files[/]")
+        return 1
 
     result = subprocess.run(
         ["bats", *[str(f) for f in bats_files]],

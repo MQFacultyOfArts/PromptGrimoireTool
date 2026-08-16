@@ -143,7 +143,8 @@ async def start_export_worker(
         before sleeping. Used by the standalone worker to send
         systemd watchdog heartbeats.
     """
-    # Fail any jobs orphaned by a previous server shutdown.
+    # Fail jobs claimed by the previous worker. Unclaimed queued jobs remain
+    # processable, including work submitted during intentional maintenance.
     orphaned = await fail_orphaned_jobs()
     if orphaned:
         logger.warning("export_worker_orphaned_jobs_failed", count=orphaned)

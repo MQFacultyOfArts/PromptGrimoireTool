@@ -43,6 +43,15 @@ def test_lane_specs_define_playwright_and_nicegui_contracts() -> None:
     assert result.artifact_dir.name == "test_example"
 
 
+def test_default_lane_workers_are_capped(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Large hosts do not amplify browser, server, and database workers."""
+    from promptgrimoire.cli.e2e import _parallel
+
+    monkeypatch.setattr(_parallel.os, "cpu_count", lambda: 32)
+
+    assert _parallel._default_worker_count(100) == 4
+
+
 def test_allocate_ports_returns_distinct_ports() -> None:
     """_allocate_ports(5) returns 5 distinct ports, all > 0."""
     ports = _allocate_ports(5)
@@ -213,68 +222,13 @@ def test_discover_nicegui_files_handles_missing_allowlist_entries(
 
 
 @pytest.mark.asyncio
-async def test_finalise_parallel_results_treats_flaky_retries_as_pass(
+async def test_finalise_parallel_results_keeps_initial_failure_red(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    """Locally (no CI env), a flaky retry is forgiven and all_passed is True."""
+    """A passing diagnostic retry never rescues the initial failure."""
     from promptgrimoire.cli.e2e import _parallel
     from promptgrimoire.cli.e2e._lanes import PLAYWRIGHT_LANE, WorkerResult
-
-    # Ensure non-CI context so flaky tests are forgiven
-    monkeypatch.delenv("CI", raising=False)
-    monkeypatch.delenv("GRIMOIRE_STRICT_FLAKY", raising=False)
-
-    run_dir = tmp_path / "run"
-    run_dir.mkdir()
-    failed_result = WorkerResult(
-        file=Path("tests/e2e/test_flaky.py"),
-        exit_code=1,
-        duration_s=0.4,
-        artifact_dir=tmp_path / "worker-flaky",
-    )
-
-    async def _fake_retry_parallel_failures(
-        *_args, **_kwargs
-    ) -> tuple[list[Path], list[Path]]:
-        return [], [failed_result.file]
-
-    async def _unused_worker(*_args, **_kwargs) -> WorkerResult:
-        raise AssertionError("worker should not be invoked by this test")
-
-    monkeypatch.setattr(
-        _parallel, "_retry_parallel_failures", _fake_retry_parallel_failures
-    )
-    monkeypatch.setattr(
-        _parallel, "_merge_junit_xml", lambda _run_dir: _run_dir / "combined.xml"
-    )
-
-    all_passed, had_flaky = await _parallel._finalise_parallel_results(
-        PLAYWRIGHT_LANE,
-        _unused_worker,
-        [failed_result],
-        0.0,
-        "postgresql+asyncpg://user:pass@localhost/test_db",
-        "test_db",
-        run_dir,
-        [],
-    )
-
-    assert all_passed is True
-    assert had_flaky is True
-
-
-@pytest.mark.asyncio
-async def test_finalise_parallel_results_strict_flaky_fails_on_ci(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    """On CI (or with GRIMOIRE_STRICT_FLAKY), flaky tests fail the run."""
-    from promptgrimoire.cli.e2e import _parallel
-    from promptgrimoire.cli.e2e._lanes import PLAYWRIGHT_LANE, WorkerResult
-
-    monkeypatch.setenv("CI", "true")
-    monkeypatch.delenv("GRIMOIRE_STRICT_FLAKY", raising=False)
 
     run_dir = tmp_path / "run"
     run_dir.mkdir()

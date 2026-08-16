@@ -54,6 +54,12 @@ def _e2e_post_test_cleanup() -> Generator[None]:
     """
     yield
 
+    # Concurrent tests share the application process. Their browser-context
+    # teardown owns cleanup; the global endpoint would delete other tests'
+    # live clients.
+    if os.environ.get("E2E_SHARED_SERVER") == "1":
+        return
+
     import time
 
     base_url = os.environ.get("E2E_BASE_URL", "")

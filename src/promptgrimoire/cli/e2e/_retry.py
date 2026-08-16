@@ -135,11 +135,9 @@ def _retry_e2e_tests_in_isolation(
 ) -> int:
     """Re-run failed E2E tests individually to distinguish flaky from genuine failures.
 
-    Reads the pytest lastfailed cache for test node IDs, re-runs each one
-    in its own pytest invocation (without ``--reruns``), and reports which
-    passed (flaky due to test interaction) vs which still failed (genuine).
-
-    Returns 0 if all failures were flaky, 1 if any genuinely failed.
+    Reads the pytest lastfailed cache, re-runs each node in its own pytest
+    invocation, and reports whether the failure reproduces. The original
+    failure always remains the command result.
     """
     failed_tests = _get_last_failed()
     if not failed_tests:
@@ -178,13 +176,8 @@ def _retry_e2e_tests_in_isolation(
 
     _print_retry_outcome(flaky, genuine_failures)
 
-    # Flaky tests are failures when strict mode is active (CI default).
-    strict = bool(os.environ.get("CI") or os.environ.get("GRIMOIRE_STRICT_FLAKY"))
-    if genuine_failures:
-        return 1
-    if flaky and strict:
-        return 1
-    return 0
+    # Retries diagnose isolation sensitivity; they never rescue the initial failure.
+    return 1
 
 
 async def retry_failed_files_in_isolation(

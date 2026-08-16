@@ -7,7 +7,9 @@ import os
 from pathlib import Path
 from typing import Any
 
+import click
 import pytest
+import typer
 
 
 class _DummyWriter:
@@ -397,7 +399,6 @@ def test_run_serial_playwright_e2e_selects_only_playwright_path(
         exit_code = _run_serial_playwright_e2e(
             ["-k", "test_annotation_nav_home_navigates_to_navigator"],
             use_pyspy=False,
-            reruns=True,
         )
     finally:
         os.environ.pop("E2E_BASE_URL", None)
@@ -406,7 +407,29 @@ def test_run_serial_playwright_e2e_selects_only_playwright_path(
     assert captured["default_args"][0] == "tests/e2e"
     assert captured["default_args"][1:3] == ["-m", "e2e and not perf and not noci"]
     assert "nicegui_ui" not in captured["default_args"]
+    assert "--reruns" not in captured["default_args"]
     assert "Playwright" in captured["title"]
+
+
+def test_shared_playwright_marks_concurrent_workers(
+    monkeypatch: pytest.MonkeyPatch,
+    patch_serial_playwright_infra: None,  # noqa: ARG001 - fixture side effects
+) -> None:
+    """Concurrent workers must not run the destructive global cleanup fixture."""
+    from promptgrimoire.cli.e2e import _run_shared_playwright_e2e
+
+    observed: list[str | None] = []
+
+    def _fake_run_pytest(**_kwargs: Any) -> int:
+        observed.append(os.environ["E2E_SHARED_SERVER"])
+        return 0
+
+    monkeypatch.setattr("promptgrimoire.cli.e2e._run_pytest", _fake_run_pytest)
+
+    _run_shared_playwright_e2e([], use_pyspy=False, worker_count=4)
+
+    assert observed == ["1"]
+    assert "E2E_SHARED_SERVER" not in os.environ
 
 
 def test_run_playwright_changed_lane_selects_only_playwright_path(
@@ -615,16 +638,12 @@ def test_run_slow_lanes_runs_all_lanes_then_latexmk(
         extra_args: list[str],
         *,
         use_pyspy: bool,
-        reruns: bool,
-        clear_cache: bool = False,
         marker_expr: str,
         test_timeout: int | None = None,
         log_file: Path | None = None,
     ) -> int:
         captured["playwright_args"] = extra_args
         captured["playwright_use_pyspy"] = use_pyspy
-        captured["playwright_reruns"] = reruns
-        captured["playwright_clear_cache"] = clear_cache
         captured["playwright_test_timeout"] = test_timeout
         captured["playwright_marker_expr"] = marker_expr
         captured["playwright_log_file"] = log_file
@@ -661,8 +680,6 @@ def test_run_slow_lanes_runs_all_lanes_then_latexmk(
     assert captured["all_lanes_args"] == ["-k", "combined_filter"]
     assert captured["playwright_args"] == ["-k", "combined_filter"]
     assert captured["playwright_use_pyspy"] is False
-    assert captured["playwright_reruns"] is True
-    assert captured["playwright_clear_cache"] is True
     assert captured["playwright_marker_expr"] == "e2e and not perf"
     assert captured["playwright_test_timeout"] == 120
     assert captured["playwright_log_file"] == Path("test-playwright-latexmk.log")
@@ -671,6 +688,113 @@ def test_run_slow_lanes_runs_all_lanes_then_latexmk(
     assert captured["latex_extra_args"] == ["-k", "combined_filter"]
     assert captured["latex_extra_env"] is None
     assert "E2E_SKIP_LATEXMK" not in os.environ
+
+
+def test_passing_isolation_retry_keeps_initial_failure_red(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """A successful diagnostic retry never changes the failed exit status."""
+    import subprocess
+
+    from promptgrimoire.cli.e2e import _retry
+
+    node_id = "tests/e2e/test_flaky.py::test_flaky"
+    monkeypatch.setattr(_retry, "_get_last_failed", lambda: [node_id])
+    monkeypatch.setattr(
+        _retry,
+        "_run_retry_node",
+        lambda _: subprocess.CompletedProcess(["pytest", node_id], 0, "passed"),
+    )
+
+    assert _retry._retry_e2e_tests_in_isolation(tmp_path / "retry.log") == 1
+
+
+def test_slow_resource_policy_reserves_one_cpu_and_lowers_priority(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The Linux slow-run policy leaves one CPU free and is inherited by children."""
+    from promptgrimoire.cli.e2e import _configure_slow_run_resources
+
+    calls: dict[str, object] = {}
+
+    monkeypatch.setattr("promptgrimoire.cli.e2e.sys.platform", "linux")
+    monkeypatch.setattr(
+        "promptgrimoire.cli.e2e.os.sched_getaffinity", lambda _pid: {0, 1, 2, 3}
+    )
+    monkeypatch.setattr(
+        "promptgrimoire.cli.e2e.os.sched_setaffinity",
+        lambda pid, cpus: calls.update(affinity=(pid, cpus)),
+    )
+    monkeypatch.setattr(
+        "promptgrimoire.cli.e2e.os.setpriority",
+        lambda which, who, priority: calls.update(priority=(which, who, priority)),
+    )
+    monkeypatch.setattr("promptgrimoire.cli.e2e.os.getpid", lambda: 4321)
+    monkeypatch.setattr(
+        "promptgrimoire.cli.e2e.shutil.which",
+        lambda command: "/usr/bin/ionice" if command == "ionice" else None,
+    )
+
+    def _fake_run(command: list[str], *, check: bool) -> None:
+        calls["ionice"] = (command, check)
+
+    monkeypatch.setattr("promptgrimoire.cli.e2e.subprocess.run", _fake_run)
+
+    _configure_slow_run_resources()
+
+    assert calls["affinity"] == (0, {1, 2, 3})
+    assert calls["priority"] == (os.PRIO_PROCESS, 0, 19)
+    assert calls["ionice"] == (
+        ["/usr/bin/ionice", "-c", "3", "-p", "4321"],
+        True,
+    )
+
+
+def test_slow_resource_policy_keeps_the_only_available_cpu(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A single-CPU environment remains runnable instead of reserving its sole CPU."""
+    from promptgrimoire.cli.e2e import _configure_slow_run_resources
+
+    affinity_calls: list[tuple[int, set[int]]] = []
+    monkeypatch.setattr("promptgrimoire.cli.e2e.sys.platform", "linux")
+    monkeypatch.setattr("promptgrimoire.cli.e2e.os.sched_getaffinity", lambda _pid: {7})
+    monkeypatch.setattr(
+        "promptgrimoire.cli.e2e.os.sched_setaffinity",
+        lambda pid, cpus: affinity_calls.append((pid, cpus)),
+    )
+    monkeypatch.setattr("promptgrimoire.cli.e2e.os.setpriority", lambda *_: None)
+    monkeypatch.setattr("promptgrimoire.cli.e2e.shutil.which", lambda _command: None)
+
+    _configure_slow_run_resources()
+
+    assert affinity_calls == []
+
+
+def test_slow_command_applies_resource_policy_before_running_lanes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The public slow command applies the policy before dispatching the lanes."""
+    from promptgrimoire.cli.e2e import slow
+
+    events: list[str] = []
+    context = typer.Context(click.Command("slow"))
+
+    monkeypatch.setattr(
+        "promptgrimoire.cli.e2e._configure_slow_run_resources",
+        lambda: events.append("resources"),
+    )
+    monkeypatch.setattr(
+        "promptgrimoire.cli.e2e.run_slow_lanes",
+        lambda _args: events.append("lanes") or 0,
+    )
+
+    with pytest.raises(SystemExit) as exc_info:
+        slow(context, None)
+
+    assert exc_info.value.code == 0
+    assert events == ["resources", "lanes"]
 
 
 def test_run_slow_lanes_skips_latexmk_suite_for_explicit_test_paths(
@@ -858,7 +982,7 @@ def test_serial_playwright_includes_browser_flag(
     monkeypatch.setattr("promptgrimoire.cli.e2e._run_pytest", _fake_run_pytest)
 
     try:
-        _run_serial_playwright_e2e([], use_pyspy=False, reruns=False, browser="firefox")
+        _run_serial_playwright_e2e([], use_pyspy=False, browser="firefox")
     finally:
         os.environ.pop("E2E_BASE_URL", None)
 
@@ -890,7 +1014,7 @@ def test_serial_playwright_omits_browser_flag_by_default(
     monkeypatch.setattr("promptgrimoire.cli.e2e._run_pytest", _fake_run_pytest)
 
     try:
-        _run_serial_playwright_e2e([], use_pyspy=False, reruns=False)
+        _run_serial_playwright_e2e([], use_pyspy=False)
     finally:
         os.environ.pop("E2E_BASE_URL", None)
 

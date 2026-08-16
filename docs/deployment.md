@@ -2000,10 +2000,11 @@ Before touching production:
 - for a release after a long quiet period, run `uv run grimoire e2e slow` (or
   the equivalent nightly workflow) against the exact candidate; this command
   is a strict gate: isolation retry-passes fail the run and the serial
-  compiled-PDF lane does not retry. On Linux it also reserves one available
-  CPU and lowers its process tree to nice level 19 (plus idle I/O scheduling
-  when `ionice` is installed), so no external `taskset`/`nice` wrapper is
-  required;
+  compiled-PDF lane does not retry. Like every `grimoire test` and `grimoire
+  e2e` command on Linux, it queues behind any test run from another worktree,
+  waits for host load to settle, reserves one available CPU, and lowers its
+  process tree to nice level 19 (plus idle I/O scheduling when `ionice` is
+  installed), so no external `taskset`/`nice` wrapper is required;
 - review the commit range for Alembic migrations and write a compatible
   rollback plan for every schema change; and
 - keep application, TeX, and wider infrastructure changes in separate stages.

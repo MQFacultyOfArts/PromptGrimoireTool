@@ -5,8 +5,12 @@ from __future__ import annotations
 import contextlib
 import os
 import re
+import shutil
 import subprocess
 import sys
+import tempfile
+import time
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -17,6 +21,105 @@ if TYPE_CHECKING:
     from datetime import datetime
 
 console = Console()
+
+_TEST_RESOURCE_POLICY_ENV = "_PROMPTGRIMOIRE_TEST_RESOURCES_CONFIGURED"
+
+
+@dataclass
+class _TestRunLock:
+    """Process-owned descriptor that keeps this user's test slot reserved."""
+
+    fd: int | None = None
+
+
+_test_run_lock = _TestRunLock()
+
+
+def _lock_test_run_fd(fd: int, *, blocking: bool) -> None:
+    """Take the process-wide test-run lock on platforms that provide ``flock``."""
+    import fcntl
+
+    operation = fcntl.LOCK_EX
+    if not blocking:
+        operation |= fcntl.LOCK_NB
+    fcntl.flock(fd, operation)
+
+
+def _acquire_test_run_slot() -> None:
+    """Serialise top-level PromptGrimoire test commands across worktrees."""
+    if _test_run_lock.fd is not None:
+        return
+
+    lock_path = Path(tempfile.gettempdir()) / (
+        f"promptgrimoire-test-run-{os.getuid()}.lock"
+    )
+    fd = os.open(
+        lock_path,
+        os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW,
+        0o600,
+    )
+    try:
+        _lock_test_run_fd(fd, blocking=False)
+    except BlockingIOError:
+        console.print("[yellow]Another PromptGrimoire test run is active; queued...[/]")
+        _lock_test_run_fd(fd, blocking=True)
+    _test_run_lock.fd = fd
+
+
+def _wait_for_idle_test_host() -> None:
+    """Wait to start the queued test wave until one-minute host load is safe."""
+    limit = float(os.environ.get("GRIMOIRE_TEST_MAX_LOAD", "4"))
+    while (load_1m := os.getloadavg()[0]) > limit:
+        console.print(
+            f"[yellow]Host load {load_1m:.1f} exceeds test limit {limit:.1f}; "
+            "waiting 15s...[/]"
+        )
+        time.sleep(15)
+
+
+def _configure_test_run_resources() -> None:
+    """Bound and deprioritise every test process tree on Linux.
+
+    The environment marker makes the policy idempotent across nested CLI
+    dispatch and is inherited by every subprocess. The lowest-numbered CPU is
+    reserved for interactive work; all test children inherit the remaining
+    affinity, lowest CPU priority, and idle I/O scheduling.
+    """
+    if os.environ.get(_TEST_RESOURCE_POLICY_ENV) == "1":
+        return
+
+    if sys.platform != "linux":
+        os.environ[_TEST_RESOURCE_POLICY_ENV] = "1"
+        return
+
+    _acquire_test_run_slot()
+    _wait_for_idle_test_host()
+
+    available_cpus = os.sched_getaffinity(0)
+    test_cpus = (
+        available_cpus - {min(available_cpus)}
+        if len(available_cpus) > 1
+        else available_cpus
+    )
+    if test_cpus != available_cpus:
+        os.sched_setaffinity(0, test_cpus)
+
+    os.setpriority(os.PRIO_PROCESS, 0, 19)
+
+    io_policy = "default"
+    if ionice := shutil.which("ionice"):
+        subprocess.run(
+            [ionice, "-c", "3", "-p", str(os.getpid())],
+            check=True,
+        )
+        io_policy = "idle"
+
+    os.environ[_TEST_RESOURCE_POLICY_ENV] = "1"
+    console.print(
+        "[dim]Test resources: "
+        f"{len(test_cpus)}/{len(available_cpus)} CPUs, nice=19, I/O={io_policy}[/]"
+    )
+
 
 # ---------------------------------------------------------------------------
 # Pytest output parsing regexes (used by testing.py and e2e.py)

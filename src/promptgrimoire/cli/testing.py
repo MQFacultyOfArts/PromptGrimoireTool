@@ -29,6 +29,7 @@ from promptgrimoire.cli._shared import (
     _SEPARATOR_RE,
     _XDIST_ITEMS_RE,
     _build_test_header,
+    _configure_test_run_resources,
     _pre_test_db_cleanup,
     _prepend_pytest_flags,
     console,
@@ -76,6 +77,14 @@ test_app = typer.Typer(
         "set GRIMOIRE_TEST_HARNESS=1."
     ),
 )
+
+
+@test_app.callback()
+def _apply_test_resource_policy() -> None:
+    """Apply the inherited resource policy before any test subcommand."""
+    _configure_test_run_resources()
+
+
 _NON_UI_MARKER_EXPRESSION = "not e2e and not nicegui_ui"
 _TEST_ALL_MARKER_EXPRESSION = (
     f"{_NON_UI_MARKER_EXPRESSION} and not latexmk_full and not smoke"

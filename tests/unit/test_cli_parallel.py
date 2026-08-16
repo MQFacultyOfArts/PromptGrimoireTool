@@ -52,6 +52,85 @@ def test_default_lane_workers_are_capped(monkeypatch: pytest.MonkeyPatch) -> Non
     assert _parallel._default_worker_count(100) == 4
 
 
+@pytest.mark.parametrize("suffix", ["w", "retry"])
+def test_worker_database_names_preserve_indices_at_postgres_limit(
+    monkeypatch: pytest.MonkeyPatch,
+    suffix: str,
+) -> None:
+    """Long branch DB names must not collapse worker 10 onto worker 1."""
+    from promptgrimoire.cli.e2e import _parallel
+
+    source_name = "promptgrimoire_test_chore_controlled_dependency_upg_b76a612c"
+    test_db_url = f"postgresql+asyncpg://user:pass@localhost/{source_name}"
+    dropped_names: list[str] = []
+    cloned_names: list[str] = []
+
+    def fake_drop(db_url: str, *, context: str) -> None:
+        assert context == "stale worker database cleanup"
+        dropped_names.append(db_url.rsplit("/", 1)[1])
+
+    def fake_clone(source_url: str, target_name: str) -> str:
+        assert source_url == test_db_url
+        cloned_names.append(target_name)
+        return f"postgresql+asyncpg://user:pass@localhost/{target_name}"
+
+    monkeypatch.setattr(_parallel, "_drop_database_with_debug", fake_drop)
+    monkeypatch.setattr(_parallel, "clone_database", fake_clone)
+
+    worker_dbs = _parallel._create_worker_databases(
+        test_db_url,
+        source_name,
+        11,
+        suffix=suffix,
+    )
+
+    assert len(set(cloned_names)) == 11
+    assert all(len(name.encode("utf-8")) <= 63 for name in cloned_names)
+    assert cloned_names[1].endswith(f"_{suffix}1")
+    assert cloned_names[10].endswith(f"_{suffix}10")
+    assert dropped_names == cloned_names
+    assert [name for _, name in worker_dbs] == cloned_names
+
+
+def test_short_worker_database_names_remain_readable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Names below PostgreSQL's limit retain the established shape."""
+    from promptgrimoire.cli.e2e import _parallel
+
+    dropped_names: list[str] = []
+    cloned_names: list[str] = []
+
+    def fake_drop(db_url: str, *, context: str) -> None:
+        assert context == "stale worker database cleanup"
+        dropped_names.append(db_url.rsplit("/", 1)[1])
+
+    def fake_clone(source_url: str, target_name: str) -> str:
+        assert source_url == "postgresql+asyncpg://localhost/test_db"
+        cloned_names.append(target_name)
+        return f"postgresql+asyncpg://localhost/{target_name}"
+
+    monkeypatch.setattr(
+        _parallel,
+        "_drop_database_with_debug",
+        fake_drop,
+    )
+    monkeypatch.setattr(
+        _parallel,
+        "clone_database",
+        fake_clone,
+    )
+
+    _parallel._create_worker_databases(
+        "postgresql+asyncpg://localhost/test_db",
+        "test_db",
+        2,
+    )
+
+    assert dropped_names == ["test_db_w0", "test_db_w1"]
+    assert cloned_names == dropped_names
+
+
 def test_allocate_ports_returns_distinct_ports() -> None:
     """_allocate_ports(5) returns 5 distinct ports, all > 0."""
     ports = _allocate_ports(5)

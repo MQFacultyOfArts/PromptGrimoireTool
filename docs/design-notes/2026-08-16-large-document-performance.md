@@ -389,6 +389,7 @@ useful evidence, not sufficient reason to ship architectural complexity.
 
 ## Primary local evidence
 
+- `docs/investigations/2026-08-16-production-pool-load-curve.md`
 - `docs/postmortems/2026-03-22-workspace-performance-377.md`
 - `docs/postmortems/2026-03-24-377-wip-handoff.md`
 - `docs/investigations/2026-04-23-page-load-failure-modes.md`

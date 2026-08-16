@@ -70,6 +70,7 @@ library references during development.
 - [Vue sidebar `__annotationCardsEpoch` never fires on initial mount](investigations/2026-04-24-vue-sidebar-epoch-missing.md)
 - [Causal Analysis: marginalia overflow-endnotes fallback never triggers](investigations/2026-08-06-marginalia-overflow-export.md)
 - [Causal analysis: production deploy JS-runner availability](investigations/2026-08-15-deploy-js-runner-availability.md)
+- [Production-Pool Large-Document Load Curve](investigations/2026-08-16-production-pool-load-curve.md)
 - [Phase1 Hypotheses](investigations/phase1-hypotheses.md)
 
 ## lark

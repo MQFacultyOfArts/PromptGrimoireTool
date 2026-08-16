@@ -180,8 +180,8 @@ class TestPlacementQueryEfficiency:
         """resolve_annotation_context() stays within query budget.
 
         Verifies the full page-load query path: workspace+template (1),
-        placement JOIN (1), ACL (1), enrollment (1), staff roles (1),
-        staff enrollment (1), admin users (1), tags (1), tag groups (1).
+        placement JOIN (1), owner ACL (1), combined privileged-user read (1),
+        tags (1), tag groups (1).
         """
         from uuid import uuid4
 
@@ -227,9 +227,9 @@ class TestPlacementQueryEfficiency:
             ctx = await resolve_annotation_context(ws.id, user.id)
 
         assert ctx is not None
-        # Budget: 9 queries for full activity-placed, non-admin path.
-        # Before optimisation this was 11 (3 sequential gets + separate
-        # template check). Regression guard: alert if queries creep up.
-        assert len(counter) <= 9, (
-            f"resolve_annotation_context() should need ≤9 queries, got {len(counter)}"
+        # Budget: workspace+template, placement, owner ACL, combined
+        # privileged-user lookup, tags, and tag groups. Owner is the maximum
+        # permission, so enrollment cannot change the result.
+        assert len(counter) <= 6, (
+            f"resolve_annotation_context() should need ≤6 queries, got {len(counter)}"
         )

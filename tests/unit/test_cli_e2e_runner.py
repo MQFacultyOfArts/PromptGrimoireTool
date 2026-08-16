@@ -16,15 +16,16 @@ def test_perf_queue_pool_removes_test_nullpool_override(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Production-pool perf runs cross from forced NullPool to configured pooling."""
-    from promptgrimoire.cli.e2e import _configure_perf_pool
+    from promptgrimoire.cli.e2e import _configure_perf_server
 
     monkeypatch.setenv("_PROMPTGRIMOIRE_USE_NULL_POOL", "1")
     monkeypatch.setenv(
         "E2E_PERF_DATABASE_URL", "postgresql+asyncpg://localhost:6432/test"
     )
-    _configure_perf_pool(queue_pool=True)
+    _configure_perf_server(queue_pool=True)
     assert "_PROMPTGRIMOIRE_USE_NULL_POOL" not in os.environ
     assert os.environ["DATABASE__URL"] == os.environ["E2E_PERF_DATABASE_URL"]
+    assert os.environ["E2E_RECONNECT_TIMEOUT"] == "15"
 
 
 def test_e2e_server_can_use_dedicated_cpus(monkeypatch: pytest.MonkeyPatch) -> None:

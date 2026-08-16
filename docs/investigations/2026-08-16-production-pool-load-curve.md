@@ -203,3 +203,78 @@ and reason after successful presence registration. It should also A/B NiceGUI
 3.15 against 3.16 in a separate dependency-only change: 3.16 contains upstream
 client-disconnect and deleted-client lifecycle fixes, but mixing that upgrade
 into this application A/B would destroy attribution.
+
+## Phase 3: production reconnect grace
+
+The managed E2E server used NiceGUI's `reconnect_timeout=0.5`, while production
+uses 15 seconds. At 100-way load, brief Socket.IO disconnects therefore became
+permanent test-client deletions 30 times faster than production. This explains
+the intermittent 97/100 and 87/100 presence snapshots; they are not valid
+production-lifecycle results.
+
+The perf command now sets `E2E_RECONNECT_TIMEOUT=15`; ordinary E2E retains the
+0.5-second cleanup setting. With production grace, the 100-way probe retained
+100/100 presence clients, but performance remained unacceptable:
+
+- browser mean/p95/max: 9.53/12.35/12.62 seconds;
+- server page mean/p95: 3.80/6.76 seconds;
+- event-loop lag p95/max: 109/378 ms; and
+- RSS during the wave: 1.27 GB.
+
+The snapshot contained 269 NiceGUI `Client` objects for 100 annotation
+presence clients, and still contained 200 immediately after the browsers
+navigated away. These include earlier authentication/navigation clients kept
+alive for the 15-second reconnect grace. This is expected lifecycle retention,
+not yet proof of a leak, but it amplifies memory and per-client server state
+during a cold-login wave.
+
+The current probe is therefore specifically a **cold login followed by a
+simultaneous cold document load**. Add an already-authenticated-session control
+before generalising the 269-client multiplier to ordinary classroom navigation.
+The annotation architecture remains suspect independently: even after removing
+duplicate CRDT work, 100 active annotation pages retain about 1.2 GB and push
+event-loop lag past 100 ms p95.
+
+Architectural candidates, in order of reversibility:
+
+1. move tag/group consistency from page reads to clone/import/mutation paths,
+   retaining an explicit repair operation for exceptional drift;
+2. collapse remaining context/header/document reads into fewer, shorter
+   transactions rather than wrapping async DB work in threads;
+3. serve the initial document/tags/permissions snapshot through a REST endpoint
+   and render the large read surface in the browser, while keeping CRDT edits,
+   presence, cursors, and broadcasts on WebSocket; and
+4. distribute clients across app processes only after defining workspace
+   affinity or shared collaboration state.
+
+NiceGUI slot-bound UI construction cannot safely be moved to a worker thread.
+The architectural way to remove it from the Python event loop is to stop
+constructing that initial surface as a per-client server-side element tree.
+
+## Phase 4: permission-query easy wins
+
+Two existing permission paths did avoidable work on every annotation load:
+
+- enrollment resolution loaded the cached staff-role set separately from the
+  user's enrollment; and
+- privileged-user resolution queried staff enrollments and administrators
+  separately.
+
+Both now use the persisted `course_role_ref.is_staff` classifier directly, and
+privileged users are selected by one union query. An explicit owner ACL also
+short-circuits the remaining enrollment lookup because no derived permission
+can exceed owner. The annotation-context query budget for the owner fixture
+fell from nine to six statements.
+
+At 100 sessions with production reconnect grace, the combined changes moved
+browser mean/p95/max from 9.53/12.27/12.62 seconds to
+9.02/11.02/11.14 seconds. All 100 clients reached and retained presence.
+Server page mean remained effectively flat (3.80 to 3.79 seconds), event-loop
+lag p95 remained 108 ms, DB connection uses remained 905, and RSS remained
+about 1.27 GB.
+
+Retain this bounded improvement: it removes redundant permission queries and
+improves the observed student boundary by about 0.5 seconds mean and 1.25
+seconds p95. It does not change the architectural scaling limit. The next
+low-risk experiment is an already-authenticated cold-document wave; moving the
+initial read surface out of NiceGUI remains a separate architectural change.

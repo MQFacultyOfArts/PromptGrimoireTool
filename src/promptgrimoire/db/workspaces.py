@@ -22,6 +22,7 @@ from promptgrimoire.db.models import (
     Activity,
     Course,
     CourseEnrollment,
+    CourseRoleRef,
     Permission,
     Tag,
     TagGroup,
@@ -272,7 +273,12 @@ async def _resolve_enrollment_permission(
     to keep branch/statement counts within linter limits.
     """
     enrollment_result = await session.exec(
-        select(CourseEnrollment).where(
+        select(CourseEnrollment.role, CourseRoleRef.is_staff)
+        .join(
+            CourseRoleRef,
+            CourseEnrollment.role == CourseRoleRef.name,  # type: ignore[arg-type] -- SQLAlchemy column comparison
+        )
+        .where(
             CourseEnrollment.course_id == course_id,
             CourseEnrollment.user_id == user_id,
         )
@@ -281,12 +287,15 @@ async def _resolve_enrollment_permission(
     if enrollment is None:
         return None
 
+    _enrollment_role, is_staff = enrollment
+    if not is_staff and not workspace.shared_with_class:
+        return None
+
     course = await session.get(Course, course_id)
     if course is None:
         return None
 
-    staff_roles = await get_staff_roles(session=session)
-    if enrollment.role in staff_roles:
+    if is_staff:
         return course.default_instructor_permission
 
     if not workspace.shared_with_class:
@@ -323,6 +332,8 @@ async def _resolve_effective_permission(
         )
     )
     explicit = explicit_result.one_or_none()
+    if explicit is not None and explicit.permission == "owner":
+        return "owner"
 
     # Enrollment-derived access
     course_id = placement.course_id
@@ -361,23 +372,26 @@ async def _resolve_privileged_user_ids(
     Staff are resolved from course enrollment; admins from the User table.
     Returns a frozenset suitable for AnnotationContext.privileged_user_ids.
     """
-    staff_ids: set[str] = set()
     priv_course_id = placement.course_id or workspace.course_id
     if priv_course_id is not None:
-        staff_roles = await get_staff_roles(session=session)
-        staff_result = await session.exec(
-            select(CourseEnrollment.user_id).where(
-                CourseEnrollment.course_id == priv_course_id,
-                CourseEnrollment.role.in_(staff_roles),  # type: ignore[unresolved-attribute]  -- Column has in_ at runtime
+        privileged_result = await session.execute(
+            select(CourseEnrollment.user_id)
+            .join(
+                CourseRoleRef,
+                CourseEnrollment.role == CourseRoleRef.name,  # type: ignore[arg-type] -- SQLAlchemy column comparison
             )
+            .where(
+                CourseEnrollment.course_id == priv_course_id,
+                CourseRoleRef.is_staff == True,  # noqa: E712
+            )
+            .union(select(User.id).where(User.is_admin == True))  # noqa: E712
         )
-        staff_ids = {str(uid) for uid in staff_result.all()}
+        return frozenset(str(row[0]) for row in privileged_result.all())
 
     admin_result = await session.exec(
         select(User.id).where(User.is_admin == True)  # noqa: E712
     )
-    admin_ids = {str(uid) for uid in admin_result.all()}
-    return frozenset(staff_ids | admin_ids)
+    return frozenset(str(uid) for uid in admin_result.all())
 
 
 async def resolve_annotation_context(

@@ -49,8 +49,9 @@ def _playwright_worker_count() -> int:
     return max(1, min(4, available // 2))
 
 
-def _configure_perf_pool(*, queue_pool: bool) -> None:
-    """Let the perf server use configured pooling after test DB cleanup."""
+def _configure_perf_server(*, queue_pool: bool) -> None:
+    """Apply production-shaped settings to the managed perf server."""
+    os.environ["E2E_RECONNECT_TIMEOUT"] = "15"
     if queue_pool:
         os.environ.pop("_PROMPTGRIMOIRE_USE_NULL_POOL", None)
         if database_url := os.environ.get("E2E_PERF_DATABASE_URL"):
@@ -648,7 +649,7 @@ def perf(
 
     get_settings()
     _pre_test_db_cleanup()
-    _configure_perf_pool(queue_pool=queue_pool)
+    _configure_perf_server(queue_pool=queue_pool)
 
     port = _allocate_ports(1)[0]
     url = f"http://localhost:{port}"

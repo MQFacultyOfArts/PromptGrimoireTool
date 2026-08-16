@@ -609,5 +609,5 @@ ui.run(
     reload=False,
     show=False,
     storage_secret="test-secret-for-e2e",
-    reconnect_timeout=0.5,
+    reconnect_timeout=float(os.environ.get("E2E_RECONNECT_TIMEOUT", "0.5")),
 )

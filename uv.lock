@@ -6,6 +6,9 @@ requires-python = ">=3.14"
 exclude-newer = "0001-01-01T00:00:00Z" # This has no effect and is included for backwards compatibility when using relative exclude-newer values.
 exclude-newer-span = "P14D"
 
+[options.exclude-newer-package]
+nicegui = "2026-08-12T15:18:33Z"
+
 [[package]]
 name = "aiofiles"
 version = "25.1.0"
@@ -863,18 +866,6 @@ wheels = [
 ]
 
 [[package]]
-name = "lxml-html-clean"
-version = "0.4.5"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "lxml" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/0a/63/195dfdde380a84df309e3bccf4384b034b745dba43426886f7ae623b4fba/lxml_html_clean-0.4.5.tar.gz", hash = "sha256:e2a4c7d5beedd17cd7b484d848a0571e54baa239a4f9df5546e3acba7f990560", size = 24142, upload-time = "2026-05-20T12:17:53.574Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/6a/bd/6e2b76a6c5dee10397db9c929f0c5066766ec1036046f0335b7ca7ca08b8/lxml_html_clean-0.4.5-py3-none-any.whl", hash = "sha256:c76fcadd1e5bfb9b8bafc2200d51e4e78eb0dad67f56881c21dfb6484c7e7746", size = 14573, upload-time = "2026-05-20T12:17:52.215Z" },
-]
-
-[[package]]
 name = "mako"
 version = "1.3.12"
 source = { registry = "https://pypi.org/simple" }
@@ -1169,7 +1160,7 @@ wheels = [
 
 [[package]]
 name = "nicegui"
-version = "3.15.0"
+version = "3.16.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "aiofiles" },
@@ -1183,8 +1174,6 @@ dependencies = [
     { name = "ifaddr" },
     { name = "itsdangerous" },
     { name = "jinja2" },
-    { name = "lxml" },
-    { name = "lxml-html-clean" },
     { name = "markdown2" },
     { name = "orjson", marker = "platform_machine != 'i386' and platform_machine != 'i686' and platform_python_implementation != 'PyPy'" },
     { name = "pydantic-core" },
@@ -1199,9 +1188,9 @@ dependencies = [
     { name = "uvicorn", extra = ["standard"] },
     { name = "watchfiles" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/d8/ee/0100f3cd2b2af218db1cb695b9ea5c88862df56356e3a2d47744b2b58bf5/nicegui-3.15.0.tar.gz", hash = "sha256:9472841e9635bce7cf608f10e515549517284c0d5dddf69c47bf176a44c82623", size = 19701841, upload-time = "2026-07-23T16:00:44.05Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/df/09/c610d775f9a28c9d2962f185ff592376bace368b5ef0fe0b91f1205f3a26/nicegui-3.16.0.tar.gz", hash = "sha256:602c9c67b5063d14c47f88fd025b82a4e797e9a9b233113f6bbabbc6cdf196a2", size = 19886000, upload-time = "2026-08-12T15:18:32.543Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/b2/66/b8c19171fa2297079e4547f2cad46ba320151d61d48b1eef19f788b46c2d/nicegui-3.15.0-py3-none-any.whl", hash = "sha256:5d6b66d3fd3854f7ecb8f2195feae8b66bdbb1c1d392a8df2d15a04695204a70", size = 20286425, upload-time = "2026-07-23T16:00:40.438Z" },
+    { url = "https://files.pythonhosted.org/packages/16/da/2234c7c9c42caac9e20c61704461c4020bd350c618896e148d147f0e15ee/nicegui-3.16.0-py3-none-any.whl", hash = "sha256:5cff8b534e58404b8228d0ef9e41fc610d106bb146844de09abbfc1f24fb5163", size = 8588168, upload-time = "2026-08-12T15:18:28.781Z" },
 ]
 
 [[package]]
@@ -1569,7 +1558,7 @@ requires-dist = [
     { name = "lxml", specifier = ">=6.0" },
     { name = "mammoth", specifier = ">=1.11.0" },
     { name = "mecab-python3", specifier = ">=1.0.12" },
-    { name = "nicegui", specifier = "==3.15.0" },
+    { name = "nicegui", specifier = "==3.16.0" },
     { name = "openpyxl", specifier = ">=3.1.5" },
     { name = "pycrdt", specifier = ">=0.10" },
     { name = "pydantic", specifier = ">=2.10" },

@@ -12,17 +12,20 @@ import pytest
 import typer
 
 
-def test_perf_host_load_guard(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Perf waves start below the limit and refuse an already-busy host."""
-    from promptgrimoire.cli.e2e import _require_idle_perf_host
+def test_perf_host_load_guard_waits_until_quiet(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A busy perf run queues in place until one-minute load is safe."""
+    from promptgrimoire.cli.e2e import _wait_for_idle_perf_host
 
-    monkeypatch.setattr(os, "getloadavg", lambda: (7.9, 0.0, 0.0))
-    monkeypatch.setattr(os, "cpu_count", lambda: 16)
-    _require_idle_perf_host()
+    loads = iter((18.0, 3.9))
+    sleeps: list[int] = []
+    monkeypatch.setattr(os, "getloadavg", lambda: (next(loads), 0.0, 0.0))
+    monkeypatch.setattr("promptgrimoire.cli.e2e.time.sleep", sleeps.append)
 
-    monkeypatch.setattr(os, "getloadavg", lambda: (8.1, 0.0, 0.0))
-    with pytest.raises(typer.BadParameter, match=r"above the perf limit 8\.0"):
-        _require_idle_perf_host()
+    _wait_for_idle_perf_host()
+
+    assert sleeps == [15]
 
 
 def test_perf_queue_pool_removes_test_nullpool_override(
@@ -39,6 +42,7 @@ def test_perf_queue_pool_removes_test_nullpool_override(
     assert "_PROMPTGRIMOIRE_USE_NULL_POOL" not in os.environ
     assert os.environ["DATABASE__URL"] == os.environ["E2E_PERF_DATABASE_URL"]
     assert os.environ["E2E_RECONNECT_TIMEOUT"] == "15"
+    assert os.environ["E2E_INSTRUMENT_OUTBOX"] == "1"
 
 
 def test_e2e_server_can_use_dedicated_cpus(monkeypatch: pytest.MonkeyPatch) -> None:

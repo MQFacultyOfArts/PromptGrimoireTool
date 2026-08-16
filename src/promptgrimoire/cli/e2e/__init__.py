@@ -7,6 +7,7 @@ import os
 import shutil
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import typer
@@ -49,21 +50,21 @@ def _playwright_worker_count() -> int:
     return max(1, min(4, available // 2))
 
 
-def _require_idle_perf_host() -> None:
-    """Refuse to add a performance wave to an already-busy host."""
-    load_1m = os.getloadavg()[0]
-    default_limit = max(1.0, (os.cpu_count() or 1) / 2)
-    limit = float(os.environ.get("E2E_PERF_MAX_LOAD", default_limit))
-    if load_1m > limit:
-        raise typer.BadParameter(
-            f"host 1-minute load is {load_1m:.1f}, above the perf limit {limit:.1f}; "
-            "wait for it to settle or set E2E_PERF_MAX_LOAD explicitly"
+def _wait_for_idle_perf_host() -> None:
+    """Wait to add a performance wave until the host is quiet."""
+    limit = float(os.environ.get("E2E_PERF_MAX_LOAD", "4"))
+    while (load_1m := os.getloadavg()[0]) > limit:
+        console.print(
+            f"[yellow]Host load {load_1m:.1f} exceeds perf limit {limit:.1f}; "
+            "waiting 15s...[/]"
         )
+        time.sleep(15)
 
 
 def _configure_perf_server(*, queue_pool: bool) -> None:
     """Apply production-shaped settings to the managed perf server."""
     os.environ["E2E_RECONNECT_TIMEOUT"] = "15"
+    os.environ["E2E_INSTRUMENT_OUTBOX"] = "1"
     if queue_pool:
         os.environ.pop("_PROMPTGRIMOIRE_USE_NULL_POOL", None)
         if database_url := os.environ.get("E2E_PERF_DATABASE_URL"):
@@ -659,7 +660,7 @@ def perf(
 
     from promptgrimoire.config import get_settings
 
-    _require_idle_perf_host()
+    _wait_for_idle_perf_host()
     get_settings()
     _pre_test_db_cleanup()
     _configure_perf_server(queue_pool=queue_pool)

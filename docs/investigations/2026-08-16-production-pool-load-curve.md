@@ -355,3 +355,45 @@ is still unacceptable: at 100 sessions the final-frame p95 was about 13.83
 seconds while server page-build p95 was 6.49 seconds. Next investigate the
 server event-loop/outbox interval and socket backpressure; use distributed
 browser generators before asserting a production browser-mount curve.
+
+## Phase 7: NiceGUI outbox timing
+
+Perf-server-only instrumentation measured the boundary around NiceGUI update
+preparation and `socketio.emit`. At 100 settled-authentication sessions there
+were 267 update batches (about 2.7 per annotation page):
+
+- time from the final element enqueue through update preparation: 215 ms mean,
+  623 ms p95, 1.19 seconds max;
+- `socketio.emit` duration: 134 ms mean, 282 ms p95, 451 ms max; and
+- update batch size: 38 elements mean, 82 elements p95, 98 max.
+
+Final-frame p95 remained 13.62 seconds while page-build p95 was 6.48 seconds.
+Update preparation is material, but neither it nor `socketio.emit` blocks for
+the multi-second tail. Engine.IO's `send` merely places packets on its
+per-client queue; the Socket.IO timing does not measure the subsequent ASGI
+WebSocket writer or downstream backpressure.
+
+The next perf-only timer wraps the Engine.IO ASGI WebSocket send and separately
+records frames at least 100 KB. This is the last useful in-process transport
+boundary before the browser/load-generator split.
+
+The queued 100-session run began only after one-minute host load fell below 4.
+Engine.IO recorded 1,976 WebSocket sends at 0.97 ms mean and 15.7 ms p95. The
+100 large document frames averaged 662 KB and their actual ASGI WebSocket send
+took 17.2 ms mean, 20.2 ms p95, and 31.6 ms max. Server-side socket backpressure
+is therefore not the multi-second mechanism.
+
+In the same run, page construction was 3.77 seconds mean (6.52 seconds p95),
+outbox preparation was 241 ms mean (737 ms p95, 2.63 seconds max), and
+`socketio.emit` was 137 ms mean (301 ms p95). Final-frame arrival was 10.25
+seconds mean and 16.28 seconds p95. The remaining server-side tail is the
+aggregate single-event-loop work before the ASGI writer: concurrent page
+construction, NiceGUI element serialization, Socket.IO packet encoding, and
+per-client outbox scheduling. The post-receipt mount interval remains partly a
+shared-browser-generator artifact.
+
+Further transport instrumentation has diminishing value. The smallest
+architectural experiment now justified by evidence is to deliver the single
+large document HTML payload outside NiceGUI's element/outbox serialization,
+while leaving permissions, CRDT edits, presence, highlights, and sidebar
+interaction unchanged.

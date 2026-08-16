@@ -983,7 +983,12 @@ class AnnotationDocumentRegistry:
         return self._documents[doc_id]
 
     async def get_or_create_for_workspace(
-        self, workspace_id: UUID, *, workspace: Workspace | None = None
+        self,
+        workspace_id: UUID,
+        *,
+        workspace: Workspace | None = None,
+        tags: list[Tag] | None = None,
+        tag_groups: list[TagGroup] | None = None,
     ) -> AnnotationDocument:
         """Get existing document for workspace, load from DB, or create new.
 
@@ -993,6 +998,8 @@ class AnnotationDocumentRegistry:
             workspace_id: The workspace UUID.
             workspace: Pre-fetched Workspace object. When provided and has
                 crdt_state, the DB fetch is skipped (saving a query).
+            tags: Pre-fetched workspace tags for the consistency check.
+            tag_groups: Pre-fetched workspace tag groups for the consistency check.
 
         Returns:
             The AnnotationDocument instance, restored from DB if available.
@@ -1003,7 +1010,9 @@ class AnnotationDocumentRegistry:
         if doc_id in self._documents:
             doc = self._documents[doc_id]
             # Re-sync with DB to pick up out-of-band updates (e.g. test seeds)
-            await _ensure_crdt_tag_consistency(doc, workspace_id)
+            await _ensure_crdt_tag_consistency(
+                doc, workspace_id, tags=tags, tag_groups=tag_groups
+            )
             return doc
 
         # Try to load from Workspace
@@ -1024,7 +1033,9 @@ class AnnotationDocumentRegistry:
             logger.exception("Failed to load workspace %s from database", workspace_id)
 
         # Ensure CRDT tag maps are consistent with DB
-        await _ensure_crdt_tag_consistency(doc, workspace_id)
+        await _ensure_crdt_tag_consistency(
+            doc, workspace_id, tags=tags, tag_groups=tag_groups
+        )
 
         self._documents[doc_id] = doc
 

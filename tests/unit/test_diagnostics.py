@@ -160,6 +160,22 @@ class TestLoadMetrics:
         }
         assert drain_load_metrics() == {}
 
+    def test_page_profile_contributes_wave_phase_metrics(self) -> None:
+        """The perf snapshot retains page phases, not only structlog lines."""
+        from uuid import uuid4
+
+        from promptgrimoire.diagnostics import drain_load_metrics
+        from promptgrimoire.pages.annotation.workspace import _log_page_load_profile
+
+        drain_load_metrics()
+        _log_page_load_profile(uuid4(), 0.0, 1.0, 1.0, 2.0, 3.0, 4.0, 5.0)
+
+        metrics = drain_load_metrics()
+        assert metrics["page_total_ms_count"] == 1
+        assert metrics["page_total_ms_max"] == 5000.0
+        assert metrics["page_db_resolve_ms_max"] == 1000.0
+        assert metrics["page_tab_panels_ms_max"] == 1000.0
+
     async def test_sampler_records_scheduling_drift(self) -> None:
         """The continuous sampler contributes lag distribution samples."""
         import asyncio

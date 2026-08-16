@@ -357,7 +357,7 @@ async def _diagnostics():
 
     pool = _state.engine.sync_engine.pool if _state.engine else None
     pm = get_persistence_manager()
-    from promptgrimoire.diagnostics import _collect_memory
+    from promptgrimoire.diagnostics import _collect_memory, drain_load_metrics
 
     mem = _collect_memory()
     all_tasks = asyncio.all_tasks()
@@ -378,6 +378,7 @@ async def _diagnostics():
         "ws_registry": len(_workspace_registry._documents),
         "asyncio_tasks": len(all_tasks),
         "asyncio_task_names": _task_summary(all_tasks),
+        "load_metrics": drain_load_metrics(),
     }
 
 

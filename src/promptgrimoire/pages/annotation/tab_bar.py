@@ -587,7 +587,9 @@ async def _load_crdt_for_workspace(
     Shared by both document-present and zero-document workspace paths.
     """
     _t_crdt = time.monotonic()
-    crdt_doc = await _workspace_registry.get_or_create_for_workspace(workspace_id)
+    crdt_doc = _workspace_registry.get(f"ws-{workspace_id}")
+    if crdt_doc is None:
+        crdt_doc = await _workspace_registry.get_or_create_for_workspace(workspace_id)
     state.crdt_doc = crdt_doc
     state.tag_info_list = workspace_tags_from_crdt(crdt_doc)
     logger.debug(

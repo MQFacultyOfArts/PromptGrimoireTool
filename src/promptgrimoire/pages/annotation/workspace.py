@@ -18,9 +18,6 @@ import structlog
 from nicegui import app, ui
 
 from promptgrimoire.auth import is_privileged_user
-from promptgrimoire.crdt.annotation_doc import (
-    _ensure_crdt_tag_consistency,
-)
 from promptgrimoire.db.acl import (
     grant_permission,
 )
@@ -245,13 +242,9 @@ async def _resolve_db_context(
         return None
 
     # Hydrate CRDT with pre-fetched workspace (avoids redundant DB fetch)
-    crdt_doc = await _workspace_registry.get_or_create_for_workspace(
+    await _workspace_registry.get_or_create_for_workspace(
         workspace_id,
         workspace=context.workspace,
-    )
-    await _ensure_crdt_tag_consistency(
-        crdt_doc,
-        workspace_id,
         tags=context.tags,
         tag_groups=context.tag_groups,
     )
@@ -271,19 +264,33 @@ def _log_page_load_profile(
 ) -> None:
     """Log per-phase timing breakdown for a page load."""
 
+    from promptgrimoire.diagnostics import record_load_metric  # noqa: PLC0415
+
     def _ms(a: float, b: float) -> float:
         return round((b - a) * 1000, 1)
+
+    phases = {
+        "page_db_resolve_ms": _ms(t_total, t_db),
+        "page_ui_setup_ms": _ms(t_ui, t_setup),
+        "page_header_ms": _ms(t_setup, t_header),
+        "page_tab_panels_ms": _ms(t_header, t_panels),
+        "page_finish_ms": _ms(t_panels, t_done),
+        "page_total_ui_ms": _ms(t_ui, t_done),
+        "page_total_ms": _ms(t_total, t_done),
+    }
+    for name, elapsed_ms in phases.items():
+        record_load_metric(name, elapsed_ms)
 
     logger.info(
         "page_load_profile",
         workspace_id=str(workspace_id),
-        db_resolve_ms=_ms(t_total, t_db),
-        ui_setup_ms=_ms(t_ui, t_setup),
-        header_ms=_ms(t_setup, t_header),
-        tab_panels_ms=_ms(t_header, t_panels),
-        finish_ms=_ms(t_panels, t_done),
-        total_ui_ms=_ms(t_ui, t_done),
-        total_ms=_ms(t_total, t_done),
+        db_resolve_ms=phases["page_db_resolve_ms"],
+        ui_setup_ms=phases["page_ui_setup_ms"],
+        header_ms=phases["page_header_ms"],
+        tab_panels_ms=phases["page_tab_panels_ms"],
+        finish_ms=phases["page_finish_ms"],
+        total_ui_ms=phases["page_total_ui_ms"],
+        total_ms=phases["page_total_ms"],
     )
 
 

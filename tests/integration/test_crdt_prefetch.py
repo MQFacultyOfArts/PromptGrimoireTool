@@ -7,6 +7,8 @@ Workspace isolation: Each test creates its own workspace via UUID.
 
 from __future__ import annotations
 
+from unittest.mock import AsyncMock, MagicMock
+
 import pytest
 
 from promptgrimoire.config import get_settings
@@ -95,6 +97,49 @@ class TestRegistryPreFetchedWorkspace:
         highlights = doc.get_all_highlights()
         assert len(highlights) == 1
         assert highlights[0]["text"] == "world"
+
+    @pytest.mark.asyncio
+    async def test_threads_prefetched_tags_into_single_consistency_check(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Initial registry hydration does not re-query already-resolved tags."""
+        from promptgrimoire.crdt import annotation_doc
+
+        ensure = AsyncMock()
+        monkeypatch.setattr(annotation_doc, "_ensure_crdt_tag_consistency", ensure)
+        workspace = MagicMock(crdt_state=None)
+        tags: list = []
+        tag_groups: list = []
+
+        registry = annotation_doc.AnnotationDocumentRegistry()
+        await registry.get_or_create_for_workspace(
+            MagicMock(), workspace=workspace, tags=tags, tag_groups=tag_groups
+        )
+
+        ensure.assert_awaited_once()
+        assert ensure.await_args is not None
+        assert ensure.await_args.kwargs == {"tags": tags, "tag_groups": tag_groups}
+
+
+@pytest.mark.asyncio
+async def test_tab_crdt_load_reuses_registry_document(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The tab builder does not repeat consistency work done during DB resolution."""
+    from promptgrimoire.pages.annotation import tab_bar
+
+    document = MagicMock()
+    registry = MagicMock()
+    registry.get.return_value = document
+    registry.get_or_create_for_workspace = AsyncMock()
+    monkeypatch.setattr(tab_bar, "_workspace_registry", registry)
+    monkeypatch.setattr(tab_bar, "workspace_tags_from_crdt", lambda _doc: [])
+    state = MagicMock()
+
+    await tab_bar._load_crdt_for_workspace(state, MagicMock())
+
+    assert state.crdt_doc is document
+    registry.get_or_create_for_workspace.assert_not_awaited()
 
 
 class TestTagConsistencyPreFetched:

@@ -447,6 +447,9 @@ def _setup_client_sync(
         viewer_is_privileged=state.viewer_is_privileged,
         is_owner=state.is_owner,
     )
+    from promptgrimoire.diagnostics import record_load_metric  # noqa: PLC0415
+
+    record_load_metric("collaboration_presence_registered", 1)
     logger.debug(
         "CLIENT_REGISTERED: ws=%s client=%s total=%d",
         workspace_key,

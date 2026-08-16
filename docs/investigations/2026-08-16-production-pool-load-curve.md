@@ -1,7 +1,7 @@
 # Production-Pool Large-Document Load Curve
 
 Date: 2026-08-16
-Status: Reproduced; collaboration-readiness boundary unresolved
+Status: Reproduced; unacceptable latency growth and readiness failure unresolved
 Branch: `large-document-performance-notes`
 Harness commit: `c7589f56`
 
@@ -72,6 +72,12 @@ Raw snapshots are retained in `perf-results/prod-pool-*.json`.
 
 ## Interpretation
 
+The primary failure is the nonlinear student-visible latency: 5.67-second
+median readiness at 50 sessions and 11.44 seconds at 100 are unacceptable even
+if every client eventually becomes collaboration-ready. The 97/100 presence
+result is a second correctness failure, not the sole reason the 100-way point
+failed.
+
 ### Supported
 
 1. The student-visible cold-load curve bends substantially between 25 and 100
@@ -124,3 +130,76 @@ take a second snapshot.
 Only after this boundary is understood should the scenario add human-speed
 typing, scrolling, seeking, annotation creation, tab switching, and sustained
 10/50/100-user activity.
+
+For the next run, treat p95 full collaboration readiness below 3 seconds at 100
+sessions on an 8-core app allocation as the provisional performance target.
+Revise that target only from production user-experience evidence, not to make
+the current curve pass.
+
+## Phase 2: per-wave attribution and duplicate CRDT work
+
+The diagnostic endpoint was extended to drain the existing bounded load
+metrics at the before/during/after snapshots. Page phases and presence
+registration now contribute to the same wave. This avoids relying on the
+30-second production diagnostic interval for a load wave shorter than 30
+seconds.
+
+### Baseline attribution
+
+At 75 sessions, browser mean/p95 readiness was 6.37/8.29 seconds. Server-side
+page construction averaged 3.45 seconds (p95 5.61):
+
+- context/DB resolution: 1.50 seconds average, 3.99 seconds p95;
+- tab panels: 1.54 seconds average, 2.93 seconds p95;
+- DB connection holds: 979 samples, 100 ms average, 291 ms p95; and
+- event-loop lag: 18.5 ms average, 100 ms p95, 146 ms max.
+
+At 100 sessions, browser mean/p95 readiness was 8.56/11.26 seconds. Server page
+construction averaged 4.89 seconds (p95 7.66), context/DB resolution averaged
+2.24 seconds, and tab panels averaged 2.09 seconds. Event-loop lag reached
+107 ms p95 and 232 ms max.
+
+The existing `tab_panels_profile` logs split that apparent UI cost at 100 into
+1.48 seconds of CRDT loading, 579 ms of document fetch, and only 33 ms of first
+panel rendering. The measured growth is overwhelmingly asynchronous DB/CRDT
+work delayed under load, not document-render CPU.
+
+### Duplicate CRDT consistency removal
+
+The initial path performed tag/group consistency three times:
+
+1. registry hydration queried tags and groups itself;
+2. the caller immediately repeated consistency with already-prefetched tags;
+3. the tab builder hit the registry and repeated consistency again.
+
+The registry now accepts the prefetched tags/groups, and the tab builder reuses
+the document hydrated earlier in the same page load.
+
+At 100 sessions this reduced:
+
+- DB connection uses from 1305 to 905;
+- server page mean from 4.89 to 3.84 seconds;
+- server page p95 from 7.66 to 6.55 seconds;
+- context/DB mean from 2.24 to 1.82 seconds; and
+- tab/CRDT mean from 2.09 to 1.01 seconds.
+
+It did **not** improve the student boundary: browser p95 remained 11.27 seconds
+and mean worsened from 8.56 to 9.21 seconds in the single A/B run. Event-loop
+lag p95 also rose from 107 to 132 ms. Retain the change because it removes 400
+real DB connection uses and duplicate authoritative-state reconciliation, but
+do not claim it fixes the load curve.
+
+### Lifecycle boundary refined
+
+The attributed 100-way baseline happened to retain 100/100 presence clients.
+The post-dedup 100-way run retained only 87/100. In the latter run the wave
+metric recorded all 100 presence registrations before the snapshot. Therefore
+the missing clients registered successfully and were then removed from
+NiceGUI, CRDT, presence, and application registries while their browser workers
+still reported the annotation-ready boundary.
+
+The next lifecycle experiment must instrument client disconnect/delete time
+and reason after successful presence registration. It should also A/B NiceGUI
+3.15 against 3.16 in a separate dependency-only change: 3.16 contains upstream
+client-disconnect and deleted-client lifecycle fixes, but mixing that upgrade
+into this application A/B would destroy attribution.

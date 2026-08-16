@@ -18,13 +18,10 @@ import structlog
 from nicegui import app, ui
 
 from promptgrimoire.auth import is_privileged_user
-from promptgrimoire.crdt.annotation_doc import (
-    _ensure_crdt_tag_consistency,
-)
 from promptgrimoire.db.acl import (
     grant_permission,
 )
-from promptgrimoire.db.workspace_documents import list_document_headers
+from promptgrimoire.db.workspace_documents import list_documents_with_first_content
 from promptgrimoire.db.workspaces import (
     AnnotationContext,
     PlacementContext,
@@ -200,12 +197,15 @@ async def _resolve_db_context(
     workspace_id: UUID,
     client: Client,
     content_container: ui.element,
-) -> tuple[AnnotationContext, list[Any]] | None:
+) -> tuple[AnnotationContext, list[Any], Any | None] | None:
     """Resolve all DB state for annotation page load.
 
-    Returns ``(context, documents)`` or ``None`` if loading should
-    stop (unauthenticated, not found, no permission, or client
+    Returns ``(context, documents, first_doc)`` or ``None`` if loading
+    should stop (unauthenticated, not found, no permission, or client
     disconnected).  Error UI is rendered before returning ``None``.
+    ``first_doc`` carries the first document with content loaded, fetched
+    in the same session as the headers so the tab-panel build does not
+    spend a further pool checkout inside the client context.
     """
     from promptgrimoire.pages.annotation import (  # noqa: PLC0415 — circular
         _workspace_registry,
@@ -240,23 +240,19 @@ async def _resolve_db_context(
         )
         return None
 
-    documents = await list_document_headers(workspace_id)
+    documents, first_doc = await list_documents_with_first_content(workspace_id)
     if client._deleted:
         return None
 
     # Hydrate CRDT with pre-fetched workspace (avoids redundant DB fetch)
-    crdt_doc = await _workspace_registry.get_or_create_for_workspace(
+    await _workspace_registry.get_or_create_for_workspace(
         workspace_id,
         workspace=context.workspace,
-    )
-    await _ensure_crdt_tag_consistency(
-        crdt_doc,
-        workspace_id,
         tags=context.tags,
         tag_groups=context.tag_groups,
     )
 
-    return None if client._deleted else (context, documents)
+    return None if client._deleted else (context, documents, first_doc)
 
 
 def _log_page_load_profile(
@@ -271,19 +267,33 @@ def _log_page_load_profile(
 ) -> None:
     """Log per-phase timing breakdown for a page load."""
 
+    from promptgrimoire.diagnostics import record_load_metric  # noqa: PLC0415
+
     def _ms(a: float, b: float) -> float:
         return round((b - a) * 1000, 1)
+
+    phases = {
+        "page_db_resolve_ms": _ms(t_total, t_db),
+        "page_ui_setup_ms": _ms(t_ui, t_setup),
+        "page_header_ms": _ms(t_setup, t_header),
+        "page_tab_panels_ms": _ms(t_header, t_panels),
+        "page_finish_ms": _ms(t_panels, t_done),
+        "page_total_ui_ms": _ms(t_ui, t_done),
+        "page_total_ms": _ms(t_total, t_done),
+    }
+    for name, elapsed_ms in phases.items():
+        record_load_metric(name, elapsed_ms)
 
     logger.info(
         "page_load_profile",
         workspace_id=str(workspace_id),
-        db_resolve_ms=_ms(t_total, t_db),
-        ui_setup_ms=_ms(t_ui, t_setup),
-        header_ms=_ms(t_setup, t_header),
-        tab_panels_ms=_ms(t_header, t_panels),
-        finish_ms=_ms(t_panels, t_done),
-        total_ui_ms=_ms(t_ui, t_done),
-        total_ms=_ms(t_total, t_done),
+        db_resolve_ms=phases["page_db_resolve_ms"],
+        ui_setup_ms=phases["page_ui_setup_ms"],
+        header_ms=phases["page_header_ms"],
+        tab_panels_ms=phases["page_tab_panels_ms"],
+        finish_ms=phases["page_finish_ms"],
+        total_ui_ms=phases["page_total_ui_ms"],
+        total_ms=phases["page_total_ms"],
     )
 
 
@@ -310,7 +320,7 @@ async def _load_workspace_content(
             return
         _t_db = time.monotonic()
 
-        context, documents = result
+        context, documents, first_doc = result
         auth_user = app.storage.user.get("auth_user")
         assert auth_user is not None
 
@@ -358,6 +368,7 @@ async def _load_workspace_content(
                 user_id=_get_current_user_id(),
                 document=documents[0] if documents else None,
                 placement_context=ctx,
+                active_export_job=context.active_export_job,
             )
             _t_header = time.monotonic()
 
@@ -387,6 +398,7 @@ async def _load_workspace_content(
                 on_manage_tags=on_manage_tags,
                 can_create_tags=can_create_tags,
                 footer=footer,
+                first_doc=first_doc,
             )
             _t_panels = time.monotonic()
 

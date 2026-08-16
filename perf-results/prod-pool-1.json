@@ -1,0 +1,91 @@
+{
+  "before": {
+    "pool": "size=20 checked_in=1 checked_out=0 overflow=-19/10",
+    "engine_id": 133217071381392,
+    "engine_is_none": false,
+    "rss_bytes": 269979648,
+    "nicegui_clients": 0,
+    "nicegui_delete_tasks": 0,
+    "crdt_docs": 0,
+    "crdt_dirty": 0,
+    "crdt_pending_saves": 0,
+    "presence_workspaces": 0,
+    "presence_total_clients": 0,
+    "ws_registry": 0,
+    "asyncio_tasks": 14,
+    "asyncio_task_names": {
+      "Timer._run_in_loop": 4,
+      "<locals>.coro": 3,
+      "sample_event_loop_lag": 1,
+      "Server.serve": 1,
+      "refresh_loop": 1,
+      "LifespanOn.main": 1,
+      "RequestResponseCycle.run_asgi": 1,
+      "start_diagnostic_logger": 1,
+      "start_export_worker": 1
+    }
+  },
+  "during": {
+    "pool": "size=20 checked_in=1 checked_out=0 overflow=-19/10",
+    "engine_id": 133217071381392,
+    "engine_is_none": false,
+    "rss_bytes": 290394112,
+    "nicegui_clients": 2,
+    "nicegui_delete_tasks": 1,
+    "crdt_docs": 1,
+    "crdt_dirty": 0,
+    "crdt_pending_saves": 0,
+    "presence_workspaces": 1,
+    "presence_total_clients": 1,
+    "ws_registry": 1,
+    "asyncio_tasks": 25,
+    "asyncio_task_names": {
+      "Timer._run_in_loop": 4,
+      "Outbox.loop": 3,
+      "<locals>.coro": 3,
+      "AsyncSocket._send_ping": 3,
+      "sample_event_loop_lag": 1,
+      "Server.serve": 1,
+      "<locals>.writer": 1,
+      "WSProtocol.run_asgi": 1,
+      "LifespanOn.main": 1,
+      "<locals>.websocket_wait": 1
+    }
+  },
+  "after": {
+    "pool": "size=20 checked_in=1 checked_out=0 overflow=-19/10",
+    "engine_id": 133217071381392,
+    "engine_is_none": false,
+    "rss_bytes": 290394112,
+    "nicegui_clients": 1,
+    "nicegui_delete_tasks": 1,
+    "crdt_docs": 1,
+    "crdt_dirty": 0,
+    "crdt_pending_saves": 0,
+    "presence_workspaces": 1,
+    "presence_total_clients": 1,
+    "ws_registry": 1,
+    "asyncio_tasks": 20,
+    "asyncio_task_names": {
+      "Timer._run_in_loop": 4,
+      "<locals>.coro": 3,
+      "AsyncSocket._send_ping": 3,
+      "sample_event_loop_lag": 1,
+      "Server.serve": 1,
+      "LifespanOn.main": 1,
+      "RequestResponseCycle.run_asgi": 1,
+      "<locals>.delete_content": 1,
+      "start_diagnostic_logger": 1,
+      "AsyncServer._service_task": 1
+    }
+  },
+  "results": [
+    {
+      "email": "iw-caeab7b3@test.example.edu.au",
+      "workspace_id": "536f1914-369e-405e-ad94-48c740b85261",
+      "annotation_loaded": true,
+      "elapsed_ms": 435,
+      "error": null
+    }
+  ]
+}

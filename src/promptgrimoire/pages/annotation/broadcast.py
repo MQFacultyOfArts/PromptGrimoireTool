@@ -101,11 +101,17 @@ def _broadcast_js_to_others(
     Skips clients without a ``nicegui_client`` reference and suppresses
     individual send failures so one broken connection cannot block others.
     """
+    fanout = 0
     for cid, presence in list(_workspace_presence.get(workspace_key, {}).items()):
         if cid == exclude_client_id or presence.nicegui_client is None:
             continue
         with contextlib.suppress(Exception):
             presence.nicegui_client.run_javascript(js, timeout=2.0)
+            fanout += 1
+    if fanout:
+        from promptgrimoire.diagnostics import record_load_metric  # noqa: PLC0415
+
+        record_load_metric("presence_broadcast_bytes", len(js) * fanout, count=fanout)
 
 
 def _notify_other_clients(workspace_key: str, exclude_client_id: str) -> None:
@@ -375,10 +381,21 @@ def _setup_client_sync(
 
     # Create broadcast function for annotation updates
     async def broadcast_update() -> None:
+        started = _time.monotonic()
+        fanout = 0
         for cid, cstate in list(_workspace_presence.get(workspace_key, {}).items()):
             if cid != client_id and cstate.callback:
                 with contextlib.suppress(Exception):
                     await cstate.invoke_callback()
+                    fanout += 1
+        from promptgrimoire.diagnostics import record_load_metric  # noqa: PLC0415
+
+        if fanout:
+            record_load_metric(
+                "crdt_broadcast_ms",
+                (_time.monotonic() - started) * 1000,
+                count=fanout,
+            )
 
     state.broadcast_update = broadcast_update
 
@@ -430,6 +447,9 @@ def _setup_client_sync(
         viewer_is_privileged=state.viewer_is_privileged,
         is_owner=state.is_owner,
     )
+    from promptgrimoire.diagnostics import record_load_metric  # noqa: PLC0415
+
+    record_load_metric("collaboration_presence_registered", 1)
     logger.debug(
         "CLIENT_REGISTERED: ws=%s client=%s total=%d",
         workspace_key,

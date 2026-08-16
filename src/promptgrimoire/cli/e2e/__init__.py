@@ -7,6 +7,7 @@ import os
 import shutil
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import typer
@@ -47,6 +48,27 @@ def _playwright_worker_count() -> int:
     except AttributeError:
         available = os.cpu_count() or 1
     return max(1, min(4, available // 2))
+
+
+def _wait_for_idle_perf_host() -> None:
+    """Wait to add a performance wave until the host is quiet."""
+    limit = float(os.environ.get("E2E_PERF_MAX_LOAD", "4"))
+    while (load_1m := os.getloadavg()[0]) > limit:
+        console.print(
+            f"[yellow]Host load {load_1m:.1f} exceeds perf limit {limit:.1f}; "
+            "waiting 15s...[/]"
+        )
+        time.sleep(15)
+
+
+def _configure_perf_server(*, queue_pool: bool) -> None:
+    """Apply production-shaped settings to the managed perf server."""
+    os.environ["E2E_RECONNECT_TIMEOUT"] = "15"
+    os.environ["E2E_INSTRUMENT_OUTBOX"] = "1"
+    if queue_pool:
+        os.environ.pop("_PROMPTGRIMOIRE_USE_NULL_POOL", None)
+        if database_url := os.environ.get("E2E_PERF_DATABASE_URL"):
+            os.environ["DATABASE__URL"] = database_url
 
 
 def _configure_slow_run_resources() -> None:
@@ -620,6 +642,11 @@ def perf(
     collect_only: bool = typer.Option(
         False, "--co", "--collect-only", help="Only collect tests, don't run them"
     ),
+    queue_pool: bool = typer.Option(
+        False,
+        "--queue-pool",
+        help="Use configured QueuePool settings (and E2E_PERF_DATABASE_URL)",
+    ),
 ) -> None:
     """Run performance baseline tests (perf marker) with managed E2E server."""
     args = _prepend_filter(ctx.args, filter_expr)
@@ -633,8 +660,10 @@ def perf(
 
     from promptgrimoire.config import get_settings
 
+    _wait_for_idle_perf_host()
     get_settings()
     _pre_test_db_cleanup()
+    _configure_perf_server(queue_pool=queue_pool)
 
     port = _allocate_ports(1)[0]
     url = f"http://localhost:{port}"

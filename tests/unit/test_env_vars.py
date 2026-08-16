@@ -243,6 +243,8 @@ _ALLOWED_OS_ENVIRON = {
     # E2E worker and retry subprocess environment coordination
     _SRC_DIR / "cli" / "e2e" / "_parallel.py",
     _SRC_DIR / "cli" / "e2e" / "_retry.py",
+    # E2E server launcher — reads E2E_SERVER_CPU_LIST for taskset pinning
+    _SRC_DIR / "cli" / "e2e" / "_server.py",
     # Standalone subprocess script — sets env for isolated NiceGUI server
     _SRC_DIR / "cli" / "e2e" / "_server_script.py",
     # Test-harness guard: suppresses Discord alerts during test runs

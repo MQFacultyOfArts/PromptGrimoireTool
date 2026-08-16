@@ -1,0 +1,154 @@
+{
+  "before": {
+    "pool": "size=20 checked_in=1 checked_out=0 overflow=-19/10",
+    "engine_id": 131545325485584,
+    "engine_is_none": false,
+    "rss_bytes": 270020608,
+    "nicegui_clients": 0,
+    "nicegui_delete_tasks": 0,
+    "crdt_docs": 0,
+    "crdt_dirty": 0,
+    "crdt_pending_saves": 0,
+    "presence_workspaces": 0,
+    "presence_total_clients": 0,
+    "ws_registry": 0,
+    "asyncio_tasks": 14,
+    "asyncio_task_names": {
+      "Timer._run_in_loop": 4,
+      "<locals>.coro": 3,
+      "sample_event_loop_lag": 1,
+      "Server.serve": 1,
+      "refresh_loop": 1,
+      "LifespanOn.main": 1,
+      "RequestResponseCycle.run_asgi": 1,
+      "start_diagnostic_logger": 1,
+      "start_export_worker": 1
+    }
+  },
+  "during": {
+    "pool": "size=20 checked_in=10 checked_out=0 overflow=-10/10",
+    "engine_id": 131545325485584,
+    "engine_is_none": false,
+    "rss_bytes": 399020032,
+    "nicegui_clients": 10,
+    "nicegui_delete_tasks": 0,
+    "crdt_docs": 10,
+    "crdt_dirty": 0,
+    "crdt_pending_saves": 0,
+    "presence_workspaces": 10,
+    "presence_total_clients": 10,
+    "ws_registry": 10,
+    "asyncio_tasks": 85,
+    "asyncio_task_names": {
+      "AsyncSocket._send_ping": 30,
+      "<locals>.websocket_wait": 10,
+      "Outbox.loop": 10,
+      "<locals>.writer": 10,
+      "WSProtocol.run_asgi": 10,
+      "Timer._run_in_loop": 4,
+      "<locals>.coro": 3,
+      "refresh_loop": 1,
+      "RequestResponseCycle.run_asgi": 1,
+      "sample_event_loop_lag": 1
+    }
+  },
+  "after": {
+    "pool": "size=20 checked_in=10 checked_out=0 overflow=-10/10",
+    "engine_id": 131545325485584,
+    "engine_is_none": false,
+    "rss_bytes": 399020032,
+    "nicegui_clients": 10,
+    "nicegui_delete_tasks": 10,
+    "crdt_docs": 10,
+    "crdt_dirty": 0,
+    "crdt_pending_saves": 0,
+    "presence_workspaces": 10,
+    "presence_total_clients": 10,
+    "ws_registry": 10,
+    "asyncio_tasks": 65,
+    "asyncio_task_names": {
+      "AsyncSocket._send_ping": 30,
+      "Outbox.loop": 10,
+      "<locals>.delete_content": 10,
+      "Timer._run_in_loop": 4,
+      "<locals>.coro": 3,
+      "sample_event_loop_lag": 1,
+      "Server.serve": 1,
+      "LifespanOn.main": 1,
+      "start_diagnostic_logger": 1,
+      "AsyncServer._service_task": 1
+    }
+  },
+  "results": [
+    {
+      "email": "iw-8fe7bc8d@test.example.edu.au",
+      "workspace_id": "ab36b03f-4472-49d5-9677-fbf0d8895262",
+      "annotation_loaded": true,
+      "elapsed_ms": 1267,
+      "error": null
+    },
+    {
+      "email": "iw-f3221daf@test.example.edu.au",
+      "workspace_id": "58462edd-c56e-44fa-9b2e-947679c424da",
+      "annotation_loaded": true,
+      "elapsed_ms": 1152,
+      "error": null
+    },
+    {
+      "email": "iw-e2b99896@test.example.edu.au",
+      "workspace_id": "0d389346-8010-46df-a079-1b6bbc0eb4c0",
+      "annotation_loaded": true,
+      "elapsed_ms": 1265,
+      "error": null
+    },
+    {
+      "email": "iw-893d5a0d@test.example.edu.au",
+      "workspace_id": "3beffe30-8d76-4a15-96e1-db4cefc0b779",
+      "annotation_loaded": true,
+      "elapsed_ms": 1210,
+      "error": null
+    },
+    {
+      "email": "iw-4bdf74af@test.example.edu.au",
+      "workspace_id": "3981dff0-0f9a-46a7-9bdf-8a746bd95a76",
+      "annotation_loaded": true,
+      "elapsed_ms": 1196,
+      "error": null
+    },
+    {
+      "email": "iw-8297b666@test.example.edu.au",
+      "workspace_id": "9a314439-15e9-4d07-9631-1b3f180bc3d1",
+      "annotation_loaded": true,
+      "elapsed_ms": 1172,
+      "error": null
+    },
+    {
+      "email": "iw-02634813@test.example.edu.au",
+      "workspace_id": "815437db-85f5-4c86-af0b-e7883ae345af",
+      "annotation_loaded": true,
+      "elapsed_ms": 1264,
+      "error": null
+    },
+    {
+      "email": "iw-1336e628@test.example.edu.au",
+      "workspace_id": "b4c6e4aa-0db4-4f2a-8299-6aeadbb52ff3",
+      "annotation_loaded": true,
+      "elapsed_ms": 1215,
+      "error": null
+    },
+    {
+      "email": "iw-b37d39c9@test.example.edu.au",
+      "workspace_id": "95a4b197-b8cc-44c2-b3d3-003096f5b651",
+      "annotation_loaded": true,
+      "elapsed_ms": 1194,
+      "error": null
+    },
+    {
+      "email": "iw-002394e2@test.example.edu.au",
+      "workspace_id": "c667475c-91a0-42db-b448-80e4dbd802f3",
+      "annotation_loaded": true,
+      "elapsed_ms": 1305,
+      "error": null
+    }
+  ]
+}

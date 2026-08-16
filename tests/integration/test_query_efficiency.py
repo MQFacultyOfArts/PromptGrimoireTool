@@ -180,8 +180,8 @@ class TestPlacementQueryEfficiency:
         """resolve_annotation_context() stays within query budget.
 
         Verifies the full page-load query path: workspace+template (1),
-        placement JOIN (1), ACL (1), enrollment (1), staff roles (1),
-        staff enrollment (1), admin users (1), tags (1), tag groups (1).
+        placement JOIN (1), owner ACL (1), combined privileged-user read (1),
+        tags (1), tag groups (1).
         """
         from uuid import uuid4
 
@@ -227,9 +227,68 @@ class TestPlacementQueryEfficiency:
             ctx = await resolve_annotation_context(ws.id, user.id)
 
         assert ctx is not None
-        # Budget: 9 queries for full activity-placed, non-admin path.
-        # Before optimisation this was 11 (3 sequential gets + separate
-        # template check). Regression guard: alert if queries creep up.
-        assert len(counter) <= 9, (
-            f"resolve_annotation_context() should need ≤9 queries, got {len(counter)}"
+        # Budget: workspace+template+ACL+placement mega-join (1), combined
+        # privileged-user lookup (1), tags (1), tag groups (1), active export
+        # job (1). Owner is the maximum permission, so enrollment cannot
+        # change the result.
+        assert len(counter) <= 5, (
+            f"resolve_annotation_context() should need ≤5 queries, got {len(counter)}"
         )
+        # The export-job read rides the same session; no job exists here.
+        assert ctx.active_export_job is None
+
+
+class TestFirstDocumentFetchEfficiency:
+    """Verify the combined headers + first-document read."""
+
+    @pytest.mark.asyncio
+    async def test_headers_with_first_content_two_statements(self) -> None:
+        """Headers plus full first document execute 2 statements, 1 session."""
+        from sqlalchemy.orm.exc import DetachedInstanceError
+
+        from promptgrimoire.db.engine import _state
+        from promptgrimoire.db.workspace_documents import (
+            add_document,
+            list_documents_with_first_content,
+        )
+        from promptgrimoire.db.workspaces import create_workspace
+
+        workspace = await create_workspace()
+        for i in range(3):
+            await add_document(
+                workspace_id=workspace.id,
+                type="source",
+                content=f"<p>Content {i}</p>",
+                source_type="html",
+                title=f"Doc {i}",
+            )
+
+        assert _state.engine is not None
+        sync_engine = _state.engine.sync_engine
+
+        with count_queries(sync_engine) as counter:
+            headers, first = await list_documents_with_first_content(workspace.id)
+
+        assert len(counter) == 2, (
+            f"headers + first content should be 2 statements, got {len(counter)}"
+        )
+        assert len(headers) == 3
+        assert first is not None
+        assert first.id == headers[0].id
+        # First document carries content; later headers stay deferred.
+        assert first.content == "<p>Content 0</p>"
+        with pytest.raises(DetachedInstanceError):
+            _ = headers[1].content
+
+    @pytest.mark.asyncio
+    async def test_headers_with_first_content_empty_workspace(self) -> None:
+        """Zero-document workspace returns ([], None)."""
+        from promptgrimoire.db.workspace_documents import (
+            list_documents_with_first_content,
+        )
+        from promptgrimoire.db.workspaces import create_workspace
+
+        workspace = await create_workspace()
+        headers, first = await list_documents_with_first_content(workspace.id)
+        assert headers == []
+        assert first is None

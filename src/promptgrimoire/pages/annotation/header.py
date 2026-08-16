@@ -23,13 +23,13 @@ from promptgrimoire.pages.annotation.word_count_badge import format_word_count_b
 if TYPE_CHECKING:
     from uuid import UUID
 
-    from promptgrimoire.db.models import WorkspaceDocument
+    from promptgrimoire.db.models import ExportJob, WorkspaceDocument
     from promptgrimoire.db.workspaces import PlacementContext
     from promptgrimoire.pages.annotation import PageState
 
 from promptgrimoire.pages.annotation.pdf_export import (
     _handle_pdf_export,
-    check_existing_export,
+    apply_export_recovery,
 )
 from promptgrimoire.pages.annotation.placement import show_placement_dialog
 from promptgrimoire.pages.annotation.sharing import render_sharing_controls
@@ -325,6 +325,7 @@ async def render_workspace_header(
     user_id: UUID | None = None,
     document: WorkspaceDocument | None = None,
     placement_context: PlacementContext | None = None,
+    active_export_job: ExportJob | None = None,
 ) -> None:
     """Render the header row with save status, user count, and export button.
 
@@ -337,6 +338,8 @@ async def render_workspace_header(
         can_manage_sharing: Whether the user can toggle sharing (owner or privileged).
         user_id: The local User UUID for the current session, or None.
         document: First WorkspaceDocument, used for paragraph numbering toggle.
+        active_export_job: Export job pre-fetched by resolve_annotation_context;
+            recovery UI is applied without a further DB read.
     """
     logger.debug("[HEADER] START workspace=%s", workspace_id)
     with ui.row().classes("gap-4 items-center"):
@@ -368,8 +371,9 @@ async def render_workspace_header(
 
         _render_export_button(state, workspace_id)
 
-        # Recover any in-progress or completed export jobs (Phase 5, #402)
-        await check_existing_export(state)
+        # Recover any in-progress or completed export jobs (Phase 5, #402).
+        # The job was fetched with the annotation context; no DB read here.
+        apply_export_recovery(state, active_export_job)
 
         # NOTE: stale download cleanup is wired up in workspace.py
         # AFTER state.refresh_annotations is set by document.py.

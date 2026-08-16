@@ -113,16 +113,15 @@ class TestPageLoadQueryCeiling:
         If this test fails, a new redundant query was introduced.
 
         Current expected queries (single-doc workspace):
-        1. get_workspace (entry point)
-        2. check_workspace_access (ACL)
-        3. get_placement_context
-        4. get_privileged_user_ids_for_workspace
-        5. list_document_headers
-        6. CRDT load (get_or_create_for_workspace)
-        7. list_tags_for_workspace (CRDT consistency)
-        8. list_tag_groups_for_workspace (CRDT consistency)
-        9. get_document (first doc, for rendering)
-        10. check_existing_export (header)
+        1. is_user_banned (page_route)
+        2. resolve_annotation_context mega-join
+           (workspace + template + ACL + placement chain)
+        3. privileged-user union
+        4. tags
+        5. tag groups
+        6. active export job (same session as 2-5)
+        7. document headers
+        8. first document content (same session as 7)
         """
         from promptgrimoire.db.engine import _state
 
@@ -140,21 +139,16 @@ class TestPageLoadQueryCeiling:
             await wait_for_annotation_load(nicegui_user)
             await _should_see_testid(nicegui_user, "doc-container")
 
-        # Baseline measured at 32 SQL statements (2026-03-27).
-        # Includes implicit session management, multi-step placement
-        # context (5 sequential GETs), CRDT load, tag consistency, etc.
+        # Measured at 8 SQL statements (2026-08-16) after the round-trip
+        # collapse: ban check (1), annotation context mega-join +
+        # privileged union + tags + groups + export job (5), document
+        # headers + first content (2). Original 2026-03-27 baseline: 32.
         #
-        # Three redundant calls identified:
-        # - list_document_headers() called twice (~1 SQL each)
-        # - get_document(first) called twice (~1 SQL each)
-        # - get_placement_context() called twice (~5 SQL each)
-        # Removing these should save ~7 SQL statements: 32 → ~25.
-        #
-        # Ceiling set at 25 to catch reintroduction.
+        # Ceiling set at 10 to catch reintroduction.
         # If this fails HIGH, a new redundant query was added.
         # If this fails LOW, the ceiling can be tightened.
         query_count = len(counter)
-        assert query_count <= 25, (
-            f"Page load should execute ≤25 DB queries, got {query_count}. "
+        assert query_count <= 10, (
+            f"Page load should execute ≤10 DB queries, got {query_count}. "
             f"Check for redundant fetches in the annotation page-load path."
         )

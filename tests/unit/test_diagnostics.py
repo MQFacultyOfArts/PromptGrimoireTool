@@ -68,6 +68,10 @@ class TestCollectSnapshot:
             "clients_connected",
             "clients_authenticated",
             "users_authenticated",
+            "outbox_updates_total",
+            "outbox_updates_max",
+            "outbox_messages_total",
+            "outbox_messages_max",
             "asyncio_tasks_total",
             "app_ws_registry",
             "app_ws_presence_workspaces",
@@ -135,6 +139,63 @@ class TestEventLoopLag:
         assert isinstance(lag, float)
         # On an idle event loop, lag should be under 100ms
         assert 0.0 <= lag < 100.0
+
+
+class TestLoadMetrics:
+    """Tests for bounded interval aggregation used by load diagnostics."""
+
+    def test_drain_reports_distribution_and_resets(self) -> None:
+        """Samples become compact count/average/p95/max fields once."""
+        from promptgrimoire.diagnostics import drain_load_metrics, record_load_metric
+
+        drain_load_metrics()
+        for value in (1.0, 2.0, 3.0, 100.0):
+            record_load_metric("example_ms", value)
+
+        assert drain_load_metrics() == {
+            "example_ms_count": 4,
+            "example_ms_avg": 26.5,
+            "example_ms_p95": 100.0,
+            "example_ms_max": 100.0,
+        }
+        assert drain_load_metrics() == {}
+
+    def test_page_profile_contributes_wave_phase_metrics(self) -> None:
+        """The perf snapshot retains page phases, not only structlog lines."""
+        from uuid import uuid4
+
+        from promptgrimoire.diagnostics import drain_load_metrics
+        from promptgrimoire.pages.annotation.workspace import _log_page_load_profile
+
+        drain_load_metrics()
+        _log_page_load_profile(uuid4(), 0.0, 1.0, 1.0, 2.0, 3.0, 4.0, 5.0)
+
+        metrics = drain_load_metrics()
+        assert metrics["page_total_ms_count"] == 1
+        assert metrics["page_total_ms_max"] == 5000.0
+        assert metrics["page_db_resolve_ms_max"] == 1000.0
+        assert metrics["page_tab_panels_ms_max"] == 1000.0
+
+    async def test_sampler_records_scheduling_drift(self) -> None:
+        """The continuous sampler contributes lag distribution samples."""
+        import asyncio
+        import contextlib
+
+        from promptgrimoire.diagnostics import (
+            drain_load_metrics,
+            sample_event_loop_lag,
+        )
+
+        drain_load_metrics()
+        task = asyncio.create_task(sample_event_loop_lag(0.001))
+        await asyncio.sleep(0.005)
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
+
+        metrics = drain_load_metrics()
+        assert metrics["event_loop_lag_ms_count"] >= 1
+        assert metrics["event_loop_lag_ms_max"] >= 0
 
 
 class TestMemoryThresholdRestart:

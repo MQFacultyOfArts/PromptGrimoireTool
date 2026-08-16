@@ -116,6 +116,41 @@ async def list_document_headers(workspace_id: UUID) -> list[WorkspaceDocument]:
         return list(result.all())
 
 
+async def list_documents_with_first_content(
+    workspace_id: UUID,
+) -> tuple[list[WorkspaceDocument], WorkspaceDocument | None]:
+    """List document headers plus the full first document, in one session.
+
+    The annotation page needs every document's metadata (for tabs) and the
+    first document's content (for the eager first panel). Fetching both in
+    one session spends one pool checkout instead of two.
+
+    Returns ``(headers, first)`` where ``first`` is the same identity-mapped
+    object as ``headers[0]`` with ``content`` loaded, or ``None`` when the
+    workspace has no documents.
+    """
+    async with get_session() as session:
+        result = await session.exec(
+            select(WorkspaceDocument)
+            .where(WorkspaceDocument.workspace_id == workspace_id)
+            .options(
+                defer(cast("QueryableAttribute[Any]", WorkspaceDocument.content))
+            )  # SQLModel exposes str; cast for ty
+            .order_by("order_index")
+        )
+        headers = list(result.all())
+        if not headers:
+            return headers, None
+        # populate_existing refreshes the identity-mapped header instance so
+        # its deferred ``content`` column is actually loaded by this SELECT.
+        full_result = await session.exec(
+            select(WorkspaceDocument)
+            .where(WorkspaceDocument.id == headers[0].id)
+            .execution_options(populate_existing=True)
+        )
+        return headers, full_result.first()
+
+
 async def list_documents(workspace_id: UUID) -> list[WorkspaceDocument]:
     """List all documents in a workspace, ordered by order_index.
 

@@ -7,6 +7,7 @@ Usage: python _server_script.py <port>
 import os
 import sys
 from pathlib import Path
+from typing import Any
 
 for key in list(os.environ.keys()):
     if "PYTEST" in key or "NICEGUI" in key:
@@ -159,6 +160,59 @@ if os.environ.get("E2E_SKIP_LATEXMK", "1") == "1":
 from nicegui import app, ui
 import promptgrimoire.pages  # noqa: F401
 import promptgrimoire.export.download  # noqa: F401 — registers /export/{token}/download route
+
+if os.environ.get("E2E_INSTRUMENT_OUTBOX") == "1":
+    import time as _time
+
+    from engineio.async_drivers.asgi import WebSocket as _EngineIOWebSocket
+    from nicegui.outbox import Outbox as _Outbox
+
+    from promptgrimoire.diagnostics import record_load_metric as _record_load_metric
+
+    _original_enqueue_update = _Outbox.enqueue_update
+    _original_emit = _Outbox._emit
+    _original_websocket_send = _EngineIOWebSocket.send
+
+    def _instrumented_enqueue_update(self: Any, element: Any) -> None:
+        self._perf_last_update_enqueue = _time.monotonic()
+        _original_enqueue_update(self, element)
+
+    async def _instrumented_emit(self: Any, message: Any) -> None:
+        _client_id, message_type, data = message
+        if message_type != "update":
+            await _original_emit(self, message)
+            return
+
+        if enqueued_at := getattr(self, "_perf_last_update_enqueue", None):
+            _record_load_metric(
+                "outbox_update_prepare_ms",
+                round((_time.monotonic() - enqueued_at) * 1000, 1),
+            )
+        _record_load_metric("outbox_update_elements", len(data))
+        started = _time.monotonic()
+        try:
+            await _original_emit(self, message)
+        finally:
+            _record_load_metric(
+                "outbox_update_emit_ms",
+                round((_time.monotonic() - started) * 1000, 1),
+            )
+
+    async def _instrumented_websocket_send(self: Any, message: Any) -> None:
+        size = len(message.encode()) if isinstance(message, str) else len(message)
+        started = _time.monotonic()
+        try:
+            await _original_websocket_send(self, message)
+        finally:
+            elapsed_ms = round((_time.monotonic() - started) * 1000, 1)
+            _record_load_metric("engineio_websocket_send_ms", elapsed_ms)
+            if size >= 100_000:
+                _record_load_metric("engineio_large_send_ms", elapsed_ms)
+                _record_load_metric("engineio_large_send_bytes", size)
+
+    _Outbox.enqueue_update = _instrumented_enqueue_update  # type: ignore[assignment] -- perf-only NiceGUI instrumentation
+    _Outbox._emit = _instrumented_emit  # type: ignore[assignment] -- perf-only NiceGUI instrumentation
+    _EngineIOWebSocket.send = _instrumented_websocket_send  # type: ignore[assignment] -- perf-only Engine.IO instrumentation
 
 from promptgrimoire import __file__ as _pg_init
 
@@ -357,7 +411,7 @@ async def _diagnostics():
 
     pool = _state.engine.sync_engine.pool if _state.engine else None
     pm = get_persistence_manager()
-    from promptgrimoire.diagnostics import _collect_memory
+    from promptgrimoire.diagnostics import _collect_memory, drain_load_metrics
 
     mem = _collect_memory()
     all_tasks = asyncio.all_tasks()
@@ -378,6 +432,7 @@ async def _diagnostics():
         "ws_registry": len(_workspace_registry._documents),
         "asyncio_tasks": len(all_tasks),
         "asyncio_task_names": _task_summary(all_tasks),
+        "load_metrics": drain_load_metrics(),
     }
 
 
@@ -526,6 +581,7 @@ async def _gc():
 from promptgrimoire.export.worker import start_export_worker
 
 _export_worker_task: asyncio.Task[None] | None = None
+_diagnostic_logger_task: asyncio.Task[None] | None = None
 
 
 @app.on_startup
@@ -534,9 +590,28 @@ async def _start_export_worker() -> None:
     _export_worker_task = asyncio.create_task(start_export_worker())
 
 
+@app.on_startup
+async def _start_diagnostic_logger() -> None:
+    """Run production diagnostics during performance probes."""
+    global _diagnostic_logger_task
+    from promptgrimoire.diagnostics import start_diagnostic_logger
+
+    interval = get_settings().app.diagnostic_interval_seconds
+    _diagnostic_logger_task = asyncio.create_task(
+        start_diagnostic_logger(
+            interval_seconds=interval,
+            memory_restart_threshold_mb=0,
+        )
+    )
+
+
 @app.on_shutdown
 async def _stop_export_worker() -> None:
-    global _export_worker_task
+    global _diagnostic_logger_task, _export_worker_task
+    if _diagnostic_logger_task is not None:
+        _diagnostic_logger_task.cancel()
+        await asyncio.gather(_diagnostic_logger_task, return_exceptions=True)
+        _diagnostic_logger_task = None
     if _export_worker_task is not None:
         _export_worker_task.cancel()
         await asyncio.gather(_export_worker_task, return_exceptions=True)
@@ -588,5 +663,5 @@ ui.run(
     reload=False,
     show=False,
     storage_secret="test-secret-for-e2e",
-    reconnect_timeout=0.5,
+    reconnect_timeout=float(os.environ.get("E2E_RECONNECT_TIMEOUT", "0.5")),
 )

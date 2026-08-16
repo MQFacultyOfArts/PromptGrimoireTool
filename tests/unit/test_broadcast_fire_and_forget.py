@@ -150,9 +150,18 @@ class TestClientDeleteFireAndForget:
         state.export_poll_timer = timer
         client = MagicMock()
 
-        with patch("promptgrimoire.pages.annotation.broadcast.app") as mock_app:
+        with (
+            patch("promptgrimoire.pages.annotation.broadcast.app") as mock_app,
+            patch(
+                "promptgrimoire.diagnostics.record_load_metric"
+            ) as record_load_metric,
+        ):
             mock_app.storage.user.get.return_value = None
             _setup_client_sync(_TEST_UUID, client, state)
+
+        record_load_metric.assert_called_once_with(
+            "collaboration_presence_registered", 1
+        )
 
         callbacks = [call.args[0] for call in client.on_delete.call_args_list]
         synchronous_callbacks = [

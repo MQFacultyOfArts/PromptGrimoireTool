@@ -12,6 +12,47 @@ import pytest
 import typer
 
 
+def test_perf_host_load_guard_waits_until_quiet(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A busy perf run queues in place until one-minute load is safe."""
+    from promptgrimoire.cli.e2e import _wait_for_idle_perf_host
+
+    loads = iter((18.0, 3.9))
+    sleeps: list[int] = []
+    monkeypatch.setattr(os, "getloadavg", lambda: (next(loads), 0.0, 0.0))
+    monkeypatch.setattr("promptgrimoire.cli.e2e.time.sleep", sleeps.append)
+
+    _wait_for_idle_perf_host()
+
+    assert sleeps == [15]
+
+
+def test_perf_queue_pool_removes_test_nullpool_override(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Production-pool perf runs cross from forced NullPool to configured pooling."""
+    from promptgrimoire.cli.e2e import _configure_perf_server
+
+    monkeypatch.setenv("_PROMPTGRIMOIRE_USE_NULL_POOL", "1")
+    monkeypatch.setenv(
+        "E2E_PERF_DATABASE_URL", "postgresql+asyncpg://localhost:6432/test"
+    )
+    _configure_perf_server(queue_pool=True)
+    assert "_PROMPTGRIMOIRE_USE_NULL_POOL" not in os.environ
+    assert os.environ["DATABASE__URL"] == os.environ["E2E_PERF_DATABASE_URL"]
+    assert os.environ["E2E_RECONNECT_TIMEOUT"] == "15"
+    assert os.environ["E2E_INSTRUMENT_OUTBOX"] == "1"
+
+
+def test_e2e_server_can_use_dedicated_cpus(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Load-generator affinity does not leak into a production-shaped server."""
+    from promptgrimoire.cli.e2e._server import _server_command
+
+    monkeypatch.setenv("E2E_SERVER_CPU_LIST", "0-7")
+    assert _server_command(4312)[:3] == ["taskset", "--cpu-list", "0-7"]
+
+
 class _DummyWriter:
     """Minimal asyncio stream writer for server readiness checks."""
 

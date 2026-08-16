@@ -42,7 +42,7 @@ from tests.e2e.card_helpers import PABAI_WORKSPACE_ID, ensure_pabai_workspace
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
-    from playwright.sync_api import Page
+    from playwright.sync_api import Page, WebSocket
 
 pytestmark = [
     pytest.mark.e2e,
@@ -56,6 +56,9 @@ pytestmark = [
 N_INDEPENDENT_WORKSPACES = int(
     os.environ.get("E2E_INDEPENDENT_WORKSPACES_SESSIONS", "10")
 )
+AUTH_CLIENT_SETTLE_SECONDS = float(
+    os.environ.get("E2E_AUTH_CLIENT_SETTLE_SECONDS", "0")
+)
 
 
 @dataclass
@@ -65,6 +68,14 @@ class IndependentWorkspaceObservation:
     email: str = ""
     workspace_id: str = ""
     annotation_loaded: bool = False
+    domcontentloaded_ms: int = -1
+    websocket_ms: int = -1
+    websocket_frames: int = 0
+    websocket_bytes: int = 0
+    largest_websocket_frame_bytes: int = 0
+    last_websocket_frame_ms: int = -1
+    document_mounted_ms: int = -1
+    highlights_ready_ms: int = -1
     elapsed_ms: int = -1
     error: str | None = None
 
@@ -88,6 +99,50 @@ def _wait_for_annotation_ready(page: Page) -> None:
         "}",
         timeout=120_000,
     )
+
+
+def _measure_annotation_load(
+    page: Page,
+    url: str,
+    observation: IndependentWorkspaceObservation,
+) -> None:
+    """Load an annotation page and record browser-visible milestones."""
+    t0 = time.perf_counter()
+
+    def record_websocket(websocket: WebSocket) -> None:
+        if observation.websocket_ms < 0:
+            observation.websocket_ms = round((time.perf_counter() - t0) * 1000)
+
+        def record_frame(payload: str | bytes) -> None:
+            if observation.annotation_loaded:
+                return
+            observation.websocket_frames += 1
+            frame_bytes = (
+                len(payload.encode()) if isinstance(payload, str) else len(payload)
+            )
+            observation.websocket_bytes += frame_bytes
+            observation.largest_websocket_frame_bytes = max(
+                observation.largest_websocket_frame_bytes,
+                frame_bytes,
+            )
+            observation.last_websocket_frame_ms = round(
+                (time.perf_counter() - t0) * 1000
+            )
+
+        websocket.on("framereceived", record_frame)
+
+    page.on("websocket", record_websocket)
+    page.goto(url, wait_until="domcontentloaded", timeout=120_000)
+    observation.domcontentloaded_ms = round((time.perf_counter() - t0) * 1000)
+    page.get_by_test_id("doc-container").wait_for(timeout=120_000)
+    observation.document_mounted_ms = round((time.perf_counter() - t0) * 1000)
+    page.wait_for_function(
+        "() => window._highlightsReady === true",
+        timeout=120_000,
+    )
+    observation.highlights_ready_ms = round((time.perf_counter() - t0) * 1000)
+    _wait_for_annotation_ready(page)
+    observation.elapsed_ms = round((time.perf_counter() - t0) * 1000)
 
 
 async def _create_pabai_template_activity() -> tuple[str, str]:
@@ -175,6 +230,7 @@ def _maybe_write_independent_load_diag(
         return
 
     payload = {
+        "auth_client_settle_seconds": AUTH_CLIENT_SETTLE_SECONDS,
         "before": diag_before,
         "during": diag_during,
         "after": diag_after,
@@ -206,17 +262,17 @@ def _run_independent_workspace_session(
                 lambda url: "/auth/callback" not in url,
                 timeout=15_000,
             )
+            if AUTH_CLIENT_SETTLE_SECONDS:
+                page.goto("about:blank")
+                time.sleep(AUTH_CLIENT_SETTLE_SECONDS)
 
             try:
                 start_barrier.wait(timeout=240)
-                t0 = time.perf_counter()
-                page.goto(
+                _measure_annotation_load(
+                    page,
                     f"{app_server}/annotation?workspace_id={observation.workspace_id}",
-                    wait_until="domcontentloaded",
-                    timeout=120_000,
+                    observation,
                 )
-                _wait_for_annotation_ready(page)
-                observation.elapsed_ms = round((time.perf_counter() - t0) * 1000)
                 observation.annotation_loaded = True
                 loaded_barrier.wait(timeout=240)
                 release_event.wait(timeout=120)

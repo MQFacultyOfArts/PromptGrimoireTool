@@ -39,6 +39,9 @@ library references during development.
 
 - [Dead End: Client-Side Char Span Synchronisation](dead-ends/2026-02-10-charspan-sync.md)
 - [Dead End: \annot with \par inside longtable + luatexja](dead-ends/2026-03-15-annot-par-in-longtable.md)
+- [Dead End: Independent Load DB Narrowing Falsifiers](dead-ends/2026-04-23-independent-load-db-narrowing.md)
+- [Dead End: Moving First `get_document(...)` Outside `with client:`](dead-ends/2026-04-23-independent-load-prefetch-outside-client.md)
+- [Dead End: Export-Recovery Timer Deferral](dead-ends/2026-04-24-independent-load-export-recovery-deferral.md)
 
 ## decisions
 
@@ -49,6 +52,7 @@ library references during development.
 
 ## design-notes
 
+- [Large-document loading and annotation performance](design-notes/2026-08-16-large-document-performance.md)
 - [Design Notes: Bottom-Anchored Tag Bar](design-notes/bottom-tag-bar.md)
 
 ## guides
@@ -69,6 +73,7 @@ library references during development.
 - [Vue sidebar `__annotationCardsEpoch` never fires on initial mount](investigations/2026-04-24-vue-sidebar-epoch-missing.md)
 - [Causal Analysis: marginalia overflow-endnotes fallback never triggers](investigations/2026-08-06-marginalia-overflow-export.md)
 - [Causal analysis: production deploy JS-runner availability](investigations/2026-08-15-deploy-js-runner-availability.md)
+- [Production-Pool Large-Document Load Curve](investigations/2026-08-16-production-pool-load-curve.md)
 - [Phase1 Hypotheses](investigations/phase1-hypotheses.md)
 
 ## lark

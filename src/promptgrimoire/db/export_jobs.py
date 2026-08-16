@@ -24,6 +24,8 @@ from promptgrimoire.db.models import ExportJob
 if TYPE_CHECKING:
     from uuid import UUID
 
+    from sqlmodel.ext.asyncio.session import AsyncSession
+
 logger = structlog.get_logger()
 
 
@@ -170,33 +172,42 @@ async def get_job(job_id: UUID) -> ExportJob | None:
 async def get_active_job_for_user(
     user_id: UUID,
     workspace_id: UUID,
+    *,
+    session: AsyncSession | None = None,
 ) -> ExportJob | None:
     """Find the most recent active job for a user+workspace.
 
     Returns the most recent queued, running, or completed (with valid token)
     job for this user+workspace combination.
+
+    When an ``AsyncSession`` is supplied, the query reuses the caller's
+    existing transaction instead of opening a nested session. Callers
+    already inside an ``async with get_session()`` block MUST pass
+    ``session=session`` to avoid a pool deadlock under saturation.
     """
     now = datetime.now(UTC)
-    async with get_session() as session:
-        # Build the OR condition: active status OR (completed + valid token)
-        active_filter = sa.or_(
-            col(ExportJob.status).in_(["queued", "running"]),
-            sa.and_(
-                col(ExportJob.status) == "completed",
-                col(ExportJob.token_expires_at) > now,
-            ),
+    # Build the OR condition: active status OR (completed + valid token)
+    active_filter = sa.or_(
+        col(ExportJob.status).in_(["queued", "running"]),
+        sa.and_(
+            col(ExportJob.status) == "completed",
+            col(ExportJob.token_expires_at) > now,
+        ),
+    )
+    stmt = (
+        select(ExportJob)
+        .where(
+            ExportJob.user_id == user_id,
+            ExportJob.workspace_id == workspace_id,
         )
-        stmt = (
-            select(ExportJob)
-            .where(
-                ExportJob.user_id == user_id,
-                ExportJob.workspace_id == workspace_id,
-            )
-            .where(active_filter)
-            .order_by(col(ExportJob.created_at).desc())
-            .limit(1)
-        )
+        .where(active_filter)
+        .order_by(col(ExportJob.created_at).desc())
+        .limit(1)
+    )
+    if session is not None:
         return (await session.exec(stmt)).first()
+    async with get_session() as db_session:
+        return (await db_session.exec(stmt)).first()
 
 
 async def get_job_by_token(token: str) -> ExportJob | None:

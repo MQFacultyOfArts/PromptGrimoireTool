@@ -444,6 +444,12 @@ def _setup_client_sync(
     # sets state.doc_container_id.  Call replay_existing_cursors()
     # from the workspace view after _build_tab_panels completes.
 
+    def stop_export_polling() -> None:
+        poll_timer = state.export_poll_timer
+        if poll_timer is not None:
+            poll_timer.cancel(with_current_invocation=True)
+            state.export_poll_timer = None
+
     async def on_client_delete() -> None:
         await _handle_client_delete(
             workspace_key,
@@ -451,6 +457,7 @@ def _setup_client_sync(
             workspace_id,
         )
 
+    client.on_delete(stop_export_polling)
     client.on_delete(on_client_delete)
 
 

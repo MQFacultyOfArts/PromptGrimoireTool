@@ -48,8 +48,8 @@ def _expected_stem() -> str:
     return f"LAWS5000_Lovelace_Ada_Final_Essay_Week_3_Response_{today}"
 
 
-def _export_response_filename(page: Page) -> str:
-    """Return the completed export's HTTP filename."""
+def _export_response_filename(page: Page) -> tuple[str, str]:
+    """Return the completed export's HTTP filename and download URL."""
     _wait_for_download_button(page)
     href = page.get_by_test_id("export-download-btn").get_attribute("href")
     assert href is not None
@@ -59,7 +59,7 @@ def _export_response_filename(page: Page) -> str:
     message["content-disposition"] = response.headers["content-disposition"]
     filename = message.get_filename()
     assert filename is not None
-    return filename
+    return filename, href
 
 
 @pytest.mark.e2e
@@ -173,7 +173,7 @@ class TestPdfExportFilename:
             wait_for_text_walker(page, timeout=15000)
 
             # Export from Annotate tab (default)
-            filename_annotate = _export_response_filename(page)
+            filename_annotate, href_annotate = _export_response_filename(page)
 
             # Export the same workspace from Respond in a second browser tab.
             respond_page.goto(f"{app_server}/annotation?workspace_id={workspace_id}")
@@ -184,7 +184,11 @@ class TestPdfExportFilename:
                 state="visible", timeout=10000
             )
 
-            filename_respond = _export_response_filename(respond_page)
+            filename_respond, href_respond = _export_response_filename(respond_page)
+
+            assert href_annotate != href_respond, (
+                "Respond export reused the Annotate tab's completed export job"
+            )
 
             assert filename_annotate == filename_respond, (
                 f"Annotate tab served {filename_annotate!r} "

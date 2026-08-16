@@ -86,12 +86,26 @@ def _wait_for_download_button(page: Page, timeout: int = 120000) -> None:
 
     The export is now queue-based (#402): clicking "Export PDF" submits a job,
     a background worker compiles the PDF, and a "Download your PDF" button
-    appears when done. This helper waits for that button.
+    appears when done. A completed export can already be visible on page load,
+    so this helper waits for a different download URL after the click.
     """
-    page.get_by_test_id("export-pdf-btn").click()
-    page.get_by_test_id("export-download-btn").wait_for(
-        state="visible", timeout=timeout
+    download_button = page.get_by_test_id("export-download-btn")
+    previous_href = (
+        download_button.get_attribute("href") if download_button.count() else None
     )
+
+    page.get_by_test_id("export-pdf-btn").click()
+    page.wait_for_function(
+        """previousHref => {
+            const button = document.querySelector(
+                '[data-testid="export-download-btn"]'
+            );
+            return button !== null && button.getAttribute('href') !== previousHref;
+        }""",
+        arg=previous_href,
+        timeout=timeout,
+    )
+    download_button.wait_for(state="visible", timeout=timeout)
 
 
 def export_pdf_text(page: Page) -> str:

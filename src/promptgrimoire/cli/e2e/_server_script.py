@@ -526,6 +526,7 @@ async def _gc():
 from promptgrimoire.export.worker import start_export_worker
 
 _export_worker_task: asyncio.Task[None] | None = None
+_diagnostic_logger_task: asyncio.Task[None] | None = None
 
 
 @app.on_startup
@@ -534,9 +535,28 @@ async def _start_export_worker() -> None:
     _export_worker_task = asyncio.create_task(start_export_worker())
 
 
+@app.on_startup
+async def _start_diagnostic_logger() -> None:
+    """Run production diagnostics during performance probes."""
+    global _diagnostic_logger_task
+    from promptgrimoire.diagnostics import start_diagnostic_logger
+
+    interval = get_settings().app.diagnostic_interval_seconds
+    _diagnostic_logger_task = asyncio.create_task(
+        start_diagnostic_logger(
+            interval_seconds=interval,
+            memory_restart_threshold_mb=0,
+        )
+    )
+
+
 @app.on_shutdown
 async def _stop_export_worker() -> None:
-    global _export_worker_task
+    global _diagnostic_logger_task, _export_worker_task
+    if _diagnostic_logger_task is not None:
+        _diagnostic_logger_task.cancel()
+        await asyncio.gather(_diagnostic_logger_task, return_exceptions=True)
+        _diagnostic_logger_task = None
     if _export_worker_task is not None:
         _export_worker_task.cancel()
         await asyncio.gather(_export_worker_task, return_exceptions=True)

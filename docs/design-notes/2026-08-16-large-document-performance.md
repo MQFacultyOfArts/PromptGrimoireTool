@@ -149,6 +149,32 @@ The samples are bounded to 10,000 values per metric per interval, preventing
 the observer from growing without limit. Do not add per-scroll or per-keystroke
 server logs; the seeded load driver owns those counts.
 
+### Initial cold-load curve (2026-08-16)
+
+One managed application server and co-located Chromium clients, independent
+cloned Pabai workspaces, admission disabled for routing but still observed,
+test-environment NullPool:
+
+| Clients | Browser readiness | Peak sampled lag | Peak connection hold | RSS during |
+|---:|---:|---:|---:|---:|
+| 1 | 414 ms | 6 ms | 22.6 ms | 294 MB |
+| 10 | 1.06-1.24 s | 115 ms | 145 ms | 401 MB |
+| 25 | 2.97-3.86 s (avg 3.46 s) | 224 ms | 753 ms | 572 MB |
+| 50 | 6.40-9.99 s (avg 8.21 s) | 587 ms | 1.75 s | 825 MB |
+
+All clients completed at every width. The curve is already nonlinear between
+10 and 25 simultaneous cold loads, and every multi-client width crosses the
+admission gate's 50 ms decrease threshold. At 25 clients the outbox reached 280
+queued updates in aggregate and 82 for one client.
+
+Limitations: the current test-environment guard forced NullPool even when the
+probe requested QueuePool, so this is not yet a production pool curve. The 50
+Chromium instances also shared the server host, inflating absolute latency.
+Before increasing past 50, fix the explicit performance-probe QueuePool mode
+and separate or constrain load-generator CPU. The event-loop lag signal remains
+real for this host-level workload, but attribution between browser contention
+and application work is not yet complete.
+
 Absolute browser times from many co-located Chromium instances are contaminated
 by browser CPU contention. Prefer load generators on another host while keeping
 one application server under test. When co-location is unavoidable, report

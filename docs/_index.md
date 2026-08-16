@@ -49,6 +49,7 @@ library references during development.
 
 ## design-notes
 
+- [Large-document loading and annotation performance](design-notes/2026-08-16-large-document-performance.md)
 - [Design Notes: Bottom-Anchored Tag Bar](design-notes/bottom-tag-bar.md)
 
 ## guides

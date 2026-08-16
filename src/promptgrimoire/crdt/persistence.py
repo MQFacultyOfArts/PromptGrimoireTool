@@ -7,6 +7,7 @@ to avoid overwhelming the database during rapid edits.
 from __future__ import annotations
 
 import asyncio
+import time
 from typing import TYPE_CHECKING
 
 import structlog
@@ -127,11 +128,15 @@ class PersistenceManager:
             )
             return
 
+        started = time.monotonic()
         try:
             from promptgrimoire.db.workspaces import save_workspace_crdt_state
+            from promptgrimoire.diagnostics import record_load_metric
 
             crdt_state = doc.get_full_state()
             success = await save_workspace_crdt_state(workspace_id, crdt_state)
+            record_load_metric("crdt_persist_ms", (time.monotonic() - started) * 1000)
+            record_load_metric("crdt_persist_bytes", len(crdt_state))
 
             if success:
                 self._workspace_dirty.pop(workspace_id, None)

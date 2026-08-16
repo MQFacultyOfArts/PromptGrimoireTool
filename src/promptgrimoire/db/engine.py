@@ -20,6 +20,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from promptgrimoire.config import get_settings
 from promptgrimoire.db.exceptions import BusinessLogicError
+from promptgrimoire.diagnostics import record_load_metric
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
@@ -52,6 +53,24 @@ def _pool_status(pool: object) -> str:
     )
 
 
+def pool_snapshot() -> dict[str, object]:
+    """Return numeric QueuePool state for structured diagnostics."""
+    if _state.engine is None:
+        return {}
+    pool = _state.engine.sync_engine.pool
+
+    def _get(name: str) -> object:
+        value = getattr(pool, name, None)
+        return value() if callable(value) else value
+
+    return {
+        "db_pool_size": _get("size"),
+        "db_pool_checked_in": _get("checkedin"),
+        "db_pool_checked_out": _get("checkedout"),
+        "db_pool_overflow": _get("overflow"),
+    }
+
+
 def _install_pool_listeners(engine: AsyncEngine) -> None:
     """Attach event listeners to the connection pool for diagnostics.
 
@@ -64,10 +83,16 @@ def _install_pool_listeners(engine: AsyncEngine) -> None:
     def _on_checkout(
         _dbapi_conn: object, _rec: _ConnectionRecord, _proxy: object
     ) -> None:
+        _rec.info["promptgrimoire_checkout_started"] = _time.monotonic()
         _pool_logger.debug("CHECKOUT %s", _pool_status(pool))
 
     @event.listens_for(pool, "checkin")
     def _on_checkin(_dbapi_conn: object, _rec: _ConnectionRecord) -> None:
+        started = _rec.info.pop("promptgrimoire_checkout_started", None)
+        if started is not None:
+            record_load_metric(
+                "db_connection_hold_ms", (_time.monotonic() - started) * 1000
+            )
         _pool_logger.debug("CHECKIN  %s", _pool_status(pool))
 
     @event.listens_for(pool, "connect")

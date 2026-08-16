@@ -11,7 +11,10 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import math
 import sys
+import threading
+from collections import defaultdict, deque
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -26,6 +29,55 @@ with contextlib.suppress(ImportError):
     import resource as _resource
 
 logger = structlog.get_logger()
+
+_LOAD_SAMPLE_LIMIT = 10_000
+_load_samples: dict[str, deque[float]] = defaultdict(
+    lambda: deque(maxlen=_LOAD_SAMPLE_LIMIT)
+)
+_load_counts: dict[str, int] = defaultdict(int)
+_load_lock = threading.Lock()
+
+
+def record_load_metric(name: str, value: float = 0.0, *, count: int = 1) -> None:
+    """Record a bounded performance sample for the next diagnostic event."""
+    with _load_lock:
+        _load_samples[name].append(value)
+        _load_counts[name] += count
+
+
+def _percentile(values: list[float], percentile: float) -> float:
+    """Return a nearest-rank percentile for a non-empty sample."""
+    ordered = sorted(values)
+    index = max(0, math.ceil(percentile * len(ordered)) - 1)
+    return ordered[index]
+
+
+def drain_load_metrics() -> dict[str, float | int]:
+    """Return aggregate load metrics and reset the current interval."""
+    result: dict[str, float | int] = {}
+    with _load_lock:
+        for name, samples in _load_samples.items():
+            values = list(samples)
+            if not values:
+                continue
+            result[f"{name}_count"] = _load_counts[name]
+            result[f"{name}_avg"] = round(sum(values) / len(values), 3)
+            result[f"{name}_p95"] = round(_percentile(values, 0.95), 3)
+            result[f"{name}_max"] = round(max(values), 3)
+        _load_samples.clear()
+        _load_counts.clear()
+    return result
+
+
+async def sample_event_loop_lag(interval_seconds: float = 0.1) -> None:
+    """Continuously sample event-loop scheduling drift for aggregation."""
+    loop = asyncio.get_running_loop()
+    expected = loop.time() + interval_seconds
+    while True:
+        await asyncio.sleep(interval_seconds)
+        now = loop.time()
+        record_load_metric("event_loop_lag_ms", max(0.0, now - expected) * 1000)
+        expected = now + interval_seconds
 
 
 async def measure_event_loop_lag() -> float:
@@ -104,6 +156,14 @@ def collect_snapshot() -> dict[str, Any]:
     # deregistration is on Client.on_delete, not on socket disconnect)
     authed_users = sum(1 for clients in auth_registry.values() if clients)
     authed_clients = sum(len(clients) for clients in auth_registry.values())
+    outbox_updates = [
+        len(client.outbox.updates) for client in Client.instances.values()
+    ]
+    outbox_messages = [
+        len(client.outbox.messages) for client in Client.instances.values()
+    ]
+
+    from promptgrimoire.db.engine import pool_snapshot  # noqa: PLC0415
 
     return {
         # Memory
@@ -116,6 +176,10 @@ def collect_snapshot() -> dict[str, Any]:
         ),
         "clients_authenticated": authed_clients,
         "users_authenticated": authed_users,
+        "outbox_updates_total": sum(outbox_updates),
+        "outbox_updates_max": max(outbox_updates, default=0),
+        "outbox_messages_total": sum(outbox_messages),
+        "outbox_messages_max": max(outbox_messages, default=0),
         # Asyncio tasks
         "asyncio_tasks_total": len(asyncio.all_tasks()),
         # PromptGrimoire application state
@@ -124,6 +188,7 @@ def collect_snapshot() -> dict[str, Any]:
         "app_ws_presence_clients": ws_presence_clients,
         # Event loop responsiveness (filled by async caller)
         "event_loop_lag_ms": None,
+        **pool_snapshot(),
     }
 
 
@@ -333,31 +398,40 @@ async def start_diagnostic_logger(
     from promptgrimoire.admission import get_admission_state  # noqa: PLC0415
     from promptgrimoire.auth import client_registry  # noqa: PLC0415
 
-    while True:
-        try:
-            snapshot = collect_snapshot()
-            snapshot["event_loop_lag_ms"] = await measure_event_loop_lag()
+    lag_sampler = asyncio.create_task(
+        sample_event_loop_lag(), name="diagnostic-event-loop-lag"
+    )
+    try:
+        while True:
+            try:
+                snapshot = collect_snapshot()
+                snapshot["event_loop_lag_ms"] = await measure_event_loop_lag()
 
-            # Includes ALL connected clients (including privileged) —
-            # the cap protects total server resources, not just gated users.
-            admitted_count = len(client_registry._registry)
-            _enrich_snapshot_with_admission(
-                snapshot,
-                get_admission_state(),
-                admitted_count,
-            )
-
-            logger.info("memory_diagnostic", **snapshot)
-            if _check_memory_threshold(
-                snapshot, threshold_mb=memory_restart_threshold_mb
-            ):
-                rss_bytes = snapshot["current_rss_bytes"]
-                await graceful_memory_shutdown(
-                    rss_mb=rss_bytes // (1024 * 1024),
-                    threshold_mb=memory_restart_threshold_mb,
+                # Includes ALL connected clients (including privileged) —
+                # the cap protects total server resources, not just gated users.
+                admitted_count = len(client_registry._registry)
+                _enrich_snapshot_with_admission(
+                    snapshot,
+                    get_admission_state(),
+                    admitted_count,
                 )
-        except SystemExit:
-            raise
-        except Exception:
-            logger.exception("diagnostic_snapshot_failed")
-        await asyncio.sleep(interval_seconds)
+
+                logger.info("memory_diagnostic", **snapshot)
+                logger.info("load_diagnostic", **drain_load_metrics())
+                if _check_memory_threshold(
+                    snapshot, threshold_mb=memory_restart_threshold_mb
+                ):
+                    rss_bytes = snapshot["current_rss_bytes"]
+                    await graceful_memory_shutdown(
+                        rss_mb=rss_bytes // (1024 * 1024),
+                        threshold_mb=memory_restart_threshold_mb,
+                    )
+            except SystemExit:
+                raise
+            except Exception:
+                logger.exception("diagnostic_snapshot_failed")
+            await asyncio.sleep(interval_seconds)
+    finally:
+        lag_sampler.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await lag_sampler

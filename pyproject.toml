@@ -17,7 +17,7 @@ classifiers = [
     "Topic :: Education",
 ]
 dependencies = [
-    "nicegui==3.15.0",  # pinned: 3.15.0 — raises starlette/socketio/engineio/multipart/aiohttp floors to fixed versions
+    "nicegui==3.16.0",  # pinned security exception: disconnected-client leak and color-input XSS fixes
     "sqlmodel>=0.0.22",
     "pycrdt>=0.10",
     "stytch>=11.0",
@@ -71,6 +71,11 @@ load-test-data = "promptgrimoire.cli_loadtest:load_test_data"
 # follows the other: that one delays *failing the build* on a known fix, this one
 # delays *adopting* any new release at all. Change one without the other freely.
 exclude-newer = "14 days"
+# Deliberate exception approved 2026-08-16: NiceGUI 3.16.0 fixes an
+# unauthenticated disconnected-client memory leak and color-input XSS on
+# production paths. Bound the exception immediately after that release so it
+# cannot admit a later NiceGUI build accidentally.
+exclude-newer-package = { nicegui = "2026-08-12T15:18:33Z" }
 
 [build-system]
 requires = ["hatchling"]

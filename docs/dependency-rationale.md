@@ -1,18 +1,34 @@
 # Dependency Rationale
 
-Last reviewed: 2026-08-06
+Last reviewed: 2026-08-16
 
 Each dependency lists: what it does, why it's here (not a stdlib/transitive alternative), and where the evidence is.
 
 ## Production Dependencies
 
-### nicegui == 3.10.0
+### nicegui == 3.16.0
 
 **Claim:** Web UI framework. The entire frontend is built on NiceGUI's component model, server-sent events, and WebSocket integration.
 
-**Evidence:** 13 files across `src/promptgrimoire/pages/` and `src/promptgrimoire/__init__.py` import from nicegui. Every page route, dialog, and UI component depends on it. Also provides the app server (`ui.run`), static file serving, client-side JS execution (`ui.run_javascript`), and the WebSocket-based client–server communication layer.
+**Evidence:** Production modules across `src/promptgrimoire/pages/`, the client
+registry, and `src/promptgrimoire/__init__.py` import from NiceGUI. Every page
+route, dialog, and UI component depends on it. NiceGUI also provides the app
+server (`ui.run`), static file serving, client-side JS execution
+(`ui.run_javascript`), and the WebSocket-based client–server communication
+layer.
 
-**Pin rationale:** Pinned to 3.10.0 which includes GHSA-w8wv-vfpc-hw2w (upload filename sanitization), timer callback leak fix on disconnect (#5931, relevant to memory leak #434), client.ip fix behind reverse proxies (#5906/#5920), and all prior fixes. No breaking changes from 3.9.0. **Last reviewed:** 2026-04-11.
+**Pin rationale:** Pinned to 3.16.0. This release fixes cleanup of unauthenticated
+clients after socket disconnect, colour-input XSS, and timers attached to
+deleted clients. Those paths are material here: production has previously
+exhibited client-lifecycle memory growth, and tag management uses
+`ui.color_input`. The documented 3.16 removals concern the deprecated
+`ui.scene` API, which this project does not use.
+
+3.16.0 was approved as a deliberate exception to the 14-day supply-chain
+cooldown on 2026-08-16. `[tool.uv].exclude-newer-package` is bounded to one
+second after the 3.16.0 source release, so it does not exempt a later NiceGUI
+release. NiceGUI 3.16 no longer depends on `lxml-html-clean`; the application's
+direct `lxml` dependency remains. **Last reviewed:** 2026-08-16.
 
 **Why not alternatives:** NiceGUI was chosen for Python-native UI without a JS frontend build step. The project is deeply coupled to NiceGUI's component API, page routing, and storage system.
 
@@ -488,6 +504,30 @@ Removed 2026-02-10. Same replacement as pylatexenc above. The Lark lexer grammar
 **Classification:** Protective belt. Test infrastructure only.
 
 ## npm Dependencies
+
+### Controlled transitive security upgrades (2026-08-16)
+
+The root test-tool graph and the Milkdown build graph were resolved separately
+against a fixed `2026-08-02T00:00:00Z` ceiling, with narrower ceilings where a
+later eligible release existed beyond the first security fix. Only named
+security targets and their required dependency graph moved.
+
+- Root tooling: `@sigstore/core` 3.2.1, `@sigstore/verify` 3.1.1,
+  `brace-expansion` 5.0.9, `ip-address` 10.3.1, `js-yaml` 4.3.1 and 3.15.1,
+  `nanoid` 3.3.16, `postcss` 8.5.23, `sigstore` 4.1.1, `vite` 8.0.16, and
+  `ws` 8.21.0. Vite 8.0.16 necessarily moves its pinned Rolldown graph from
+  1.0.0-rc.12 to 1.0.3, including the matching platform bindings.
+- Milkdown bundle: `dompurify` 3.4.12, `nanoid` 5.1.16 and 3.3.16,
+  `postcss` 8.5.25, and `vite` 6.4.3. The committed production bundle is
+  rebuilt from that lock.
+
+Two fixed advisories remain deliberately quarantined rather than being treated
+as passing audits. DOMPurify's remaining advisory requires 3.4.13, published
+2026-08-03T14:16:00Z and eligible after 2026-08-17 00:16 AEST. The remaining
+Nano ID advisory requires 3.3.18, published 2026-08-07T16:41:05Z and eligible
+after 2026-08-22 02:41 AEST. DOMPurify is present in the shipped Milkdown
+runtime; Nano ID 3.x is build/test tooling through PostCSS. Both `npm audit`
+results remain non-zero until those dates.
 
 ### happy-dom (devDependency, root)
 

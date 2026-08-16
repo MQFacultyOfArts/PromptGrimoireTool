@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import hashlib
 import os
 import shutil
 import time
@@ -41,6 +42,8 @@ if TYPE_CHECKING:
 
 logger = structlog.get_logger()
 
+_POSTGRES_IDENTIFIER_MAX_BYTES = 63
+
 
 def _drop_database_with_debug(db_url: str, *, context: str) -> None:
     """Drop *db_url* and log cleanup failures at debug level."""
@@ -53,6 +56,23 @@ def _drop_database_with_debug(db_url: str, *, context: str) -> None:
             db_url,
             exc_info=True,
         )
+
+
+def _worker_database_name(source_db_name: str, suffix: str, index: int) -> str:
+    """Return a worker DB name without losing its suffix to PG truncation."""
+    worker_suffix = f"_{suffix}{index}"
+    candidate = f"{source_db_name}{worker_suffix}"
+    if len(candidate.encode()) <= _POSTGRES_IDENTIFIER_MAX_BYTES:
+        return candidate
+
+    source_hash = hashlib.sha256(source_db_name.encode()).hexdigest()[:8]
+    prefix_bytes = (
+        _POSTGRES_IDENTIFIER_MAX_BYTES
+        - len(worker_suffix.encode())
+        - len(source_hash)
+        - 1
+    )
+    return f"{source_db_name[:prefix_bytes]}_{source_hash}{worker_suffix}"
 
 
 def _report_worker_progress(
@@ -402,14 +422,15 @@ def _create_worker_databases(
 
     # Drop stale databases from interrupted previous runs
     for i in range(count):
-        stale_url = f"{base_url}/{source_db_name}_{suffix}{i}{query}"
+        target_name = _worker_database_name(source_db_name, suffix, i)
+        stale_url = f"{base_url}/{target_name}{query}"
         _drop_database_with_debug(stale_url, context="stale worker database cleanup")
 
     # Clone fresh databases
     worker_dbs: list[tuple[str, str]] = []
     try:
         for i in range(count):
-            target_name = f"{source_db_name}_{suffix}{i}"
+            target_name = _worker_database_name(source_db_name, suffix, i)
             db_url = clone_database(test_db_url, target_name)
             worker_dbs.append((db_url, target_name))
     except Exception:

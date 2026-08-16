@@ -7,9 +7,8 @@ import os
 from pathlib import Path
 from typing import Any
 
-import click
 import pytest
-import typer
+from typer.testing import CliRunner
 
 
 def test_perf_host_load_guard_waits_until_quiet(
@@ -66,6 +65,99 @@ class _DummyWriter:
 
     async def wait_closed(self) -> None:
         """Wait for the fake writer to close."""
+
+
+def test_e2e_commands_apply_resource_policy_at_group_boundary(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Every `grimoire e2e` subcommand is wrapped before lane dispatch."""
+    from promptgrimoire.cli import app, e2e
+
+    events: list[str] = []
+    monkeypatch.setattr(
+        e2e,
+        "_configure_test_run_resources",
+        lambda: events.append("resources"),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        e2e,
+        "run_nicegui_lane",
+        lambda _args: events.append("lane") or 0,
+    )
+
+    result = CliRunner().invoke(app, ["e2e", "nicegui"])
+
+    assert result.exit_code == 0
+    assert events == ["resources", "lane"]
+
+
+def test_test_run_queue_waits_for_the_current_owner(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A second top-level test command blocks on the shared run lock."""
+    from promptgrimoire.cli import _shared
+
+    calls: list[tuple[int, bool]] = []
+
+    def _fake_lock(fd: int, *, blocking: bool) -> None:
+        calls.append((fd, blocking))
+        if not blocking:
+            raise BlockingIOError
+
+    monkeypatch.setattr(_shared._test_run_lock, "fd", None)
+    monkeypatch.setattr(_shared.os, "open", lambda *_args: 42)
+    monkeypatch.setattr(_shared, "_lock_test_run_fd", _fake_lock)
+
+    _shared._acquire_test_run_slot()
+
+    assert calls == [
+        (42, False),
+        (42, True),
+    ]
+    assert _shared._test_run_lock.fd == 42
+
+
+def test_test_run_slot_holds_the_native_host_lock(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """The acquired descriptor excludes a second real ``flock`` contender."""
+    from promptgrimoire.cli import _shared
+
+    monkeypatch.setattr(_shared._test_run_lock, "fd", None)
+    monkeypatch.setattr(_shared.tempfile, "gettempdir", lambda: str(tmp_path))
+
+    _shared._acquire_test_run_slot()
+
+    held_fd = _shared._test_run_lock.fd
+    assert held_fd is not None
+    lock_path = tmp_path / f"promptgrimoire-test-run-{os.getuid()}.lock"
+    contender_fd = os.open(lock_path, os.O_RDWR | os.O_NOFOLLOW)
+    try:
+        with pytest.raises(BlockingIOError):
+            _shared._lock_test_run_fd(contender_fd, blocking=False)
+    finally:
+        os.close(contender_fd)
+        os.close(held_fd)
+        _shared._test_run_lock.fd = None
+
+
+def test_test_run_queue_waits_for_host_load_to_settle(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The queued run starts only after one-minute host load is safe."""
+    from promptgrimoire.cli import _shared
+
+    loads = iter((18.0, 3.9))
+    sleeps: list[int] = []
+    monkeypatch.setattr(_shared.os, "getloadavg", lambda: (next(loads), 0.0, 0.0))
+    monkeypatch.setattr(_shared.time, "sleep", sleeps.append)
+    monkeypatch.delenv("GRIMOIRE_TEST_MAX_LOAD", raising=False)
+
+    _shared._wait_for_idle_test_host()
+
+    assert sleeps == [15]
 
 
 class _FakeAsyncProcess:
@@ -853,91 +945,113 @@ def test_passing_isolation_retry_keeps_initial_failure_red(
     assert _retry._retry_e2e_tests_in_isolation(tmp_path / "retry.log") == 1
 
 
-def test_slow_resource_policy_reserves_one_cpu_and_lowers_priority(
+def test_test_resource_policy_reserves_one_cpu_and_lowers_priority(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The Linux slow-run policy leaves one CPU free and is inherited by children."""
-    from promptgrimoire.cli.e2e import _configure_slow_run_resources
+    """The Linux test policy leaves one CPU free and is inherited by children."""
+    from promptgrimoire.cli._shared import (
+        _TEST_RESOURCE_POLICY_ENV,
+        _configure_test_run_resources,
+    )
 
     calls: dict[str, object] = {}
 
-    monkeypatch.setattr("promptgrimoire.cli.e2e.sys.platform", "linux")
+    monkeypatch.delenv(_TEST_RESOURCE_POLICY_ENV, raising=False)
+    monkeypatch.setattr("promptgrimoire.cli._shared.sys.platform", "linux")
     monkeypatch.setattr(
-        "promptgrimoire.cli.e2e.os.sched_getaffinity", lambda _pid: {0, 1, 2, 3}
+        "promptgrimoire.cli._shared._acquire_test_run_slot",
+        lambda: calls.update(queue=True),
     )
     monkeypatch.setattr(
-        "promptgrimoire.cli.e2e.os.sched_setaffinity",
+        "promptgrimoire.cli._shared._wait_for_idle_test_host",
+        lambda: calls.update(idle=True),
+    )
+    monkeypatch.setattr(
+        "promptgrimoire.cli._shared.os.sched_getaffinity", lambda _pid: {0, 1, 2, 3}
+    )
+    monkeypatch.setattr(
+        "promptgrimoire.cli._shared.os.sched_setaffinity",
         lambda pid, cpus: calls.update(affinity=(pid, cpus)),
     )
     monkeypatch.setattr(
-        "promptgrimoire.cli.e2e.os.setpriority",
+        "promptgrimoire.cli._shared.os.setpriority",
         lambda which, who, priority: calls.update(priority=(which, who, priority)),
     )
-    monkeypatch.setattr("promptgrimoire.cli.e2e.os.getpid", lambda: 4321)
+    monkeypatch.setattr("promptgrimoire.cli._shared.os.getpid", lambda: 4321)
     monkeypatch.setattr(
-        "promptgrimoire.cli.e2e.shutil.which",
+        "promptgrimoire.cli._shared.shutil.which",
         lambda command: "/usr/bin/ionice" if command == "ionice" else None,
     )
 
     def _fake_run(command: list[str], *, check: bool) -> None:
         calls["ionice"] = (command, check)
 
-    monkeypatch.setattr("promptgrimoire.cli.e2e.subprocess.run", _fake_run)
+    monkeypatch.setattr("promptgrimoire.cli._shared.subprocess.run", _fake_run)
 
-    _configure_slow_run_resources()
+    _configure_test_run_resources()
 
     assert calls["affinity"] == (0, {1, 2, 3})
     assert calls["priority"] == (os.PRIO_PROCESS, 0, 19)
+    assert calls["queue"] is True
+    assert calls["idle"] is True
     assert calls["ionice"] == (
         ["/usr/bin/ionice", "-c", "3", "-p", "4321"],
         True,
     )
+    assert os.environ[_TEST_RESOURCE_POLICY_ENV] == "1"
 
 
-def test_slow_resource_policy_keeps_the_only_available_cpu(
+def test_test_resource_policy_keeps_the_only_available_cpu(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A single-CPU environment remains runnable instead of reserving its sole CPU."""
-    from promptgrimoire.cli.e2e import _configure_slow_run_resources
+    from promptgrimoire.cli._shared import (
+        _TEST_RESOURCE_POLICY_ENV,
+        _configure_test_run_resources,
+    )
 
     affinity_calls: list[tuple[int, set[int]]] = []
-    monkeypatch.setattr("promptgrimoire.cli.e2e.sys.platform", "linux")
-    monkeypatch.setattr("promptgrimoire.cli.e2e.os.sched_getaffinity", lambda _pid: {7})
+    monkeypatch.delenv(_TEST_RESOURCE_POLICY_ENV, raising=False)
+    monkeypatch.setattr("promptgrimoire.cli._shared.sys.platform", "linux")
     monkeypatch.setattr(
-        "promptgrimoire.cli.e2e.os.sched_setaffinity",
+        "promptgrimoire.cli._shared._acquire_test_run_slot", lambda: None
+    )
+    monkeypatch.setattr(
+        "promptgrimoire.cli._shared._wait_for_idle_test_host", lambda: None
+    )
+    monkeypatch.setattr(
+        "promptgrimoire.cli._shared.os.sched_getaffinity", lambda _pid: {7}
+    )
+    monkeypatch.setattr(
+        "promptgrimoire.cli._shared.os.sched_setaffinity",
         lambda pid, cpus: affinity_calls.append((pid, cpus)),
     )
-    monkeypatch.setattr("promptgrimoire.cli.e2e.os.setpriority", lambda *_: None)
-    monkeypatch.setattr("promptgrimoire.cli.e2e.shutil.which", lambda _command: None)
+    monkeypatch.setattr("promptgrimoire.cli._shared.os.setpriority", lambda *_: None)
+    monkeypatch.setattr(
+        "promptgrimoire.cli._shared.shutil.which", lambda _command: None
+    )
 
-    _configure_slow_run_resources()
+    _configure_test_run_resources()
 
     assert affinity_calls == []
 
 
-def test_slow_command_applies_resource_policy_before_running_lanes(
+def test_inherited_test_resource_policy_is_not_applied_twice(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The public slow command applies the policy before dispatching the lanes."""
-    from promptgrimoire.cli.e2e import slow
-
-    events: list[str] = []
-    context = typer.Context(click.Command("slow"))
-
-    monkeypatch.setattr(
-        "promptgrimoire.cli.e2e._configure_slow_run_resources",
-        lambda: events.append("resources"),
-    )
-    monkeypatch.setattr(
-        "promptgrimoire.cli.e2e.run_slow_lanes",
-        lambda _args: events.append("lanes") or 0,
+    """Nested test CLI processes inherit the parent policy without shrinking again."""
+    from promptgrimoire.cli._shared import (
+        _TEST_RESOURCE_POLICY_ENV,
+        _configure_test_run_resources,
     )
 
-    with pytest.raises(SystemExit) as exc_info:
-        slow(context, None)
+    monkeypatch.setenv(_TEST_RESOURCE_POLICY_ENV, "1")
+    monkeypatch.setattr(
+        "promptgrimoire.cli._shared.os.sched_getaffinity",
+        lambda _pid: pytest.fail("inherited policy must not be reapplied"),
+    )
 
-    assert exc_info.value.code == 0
-    assert events == ["resources", "lanes"]
+    _configure_test_run_resources()
 
 
 def test_run_slow_lanes_skips_latexmk_suite_for_explicit_test_paths(

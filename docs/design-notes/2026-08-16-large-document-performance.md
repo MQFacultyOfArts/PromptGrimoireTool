@@ -1,7 +1,7 @@
 # Large-document loading and annotation performance
 
 Date: 2026-08-16
-Status: design note; deliberately outside the deployment/testing hotfix
+Status: active investigation; initial-load demand reduction retained, student-visible latency unresolved
 
 ## User problem
 
@@ -39,6 +39,11 @@ minimum realistic boundary; tiny documents do not reproduce the problem.
 - Duplicate CRDT tag/group consistency work was removed. Hydrating the CRDT
   state itself was cheap (about 0.5 ms in the investigation); repeated database
   consistency reads were the material part.
+- The retained annotation-load round-trip collapse reduced a single-document
+  owner load from about 10 statements over 5 checkouts to 8 statements over 3
+  checkouts. At 100 sessions it reduced mean server page-build time by about
+  32% and checkouts by 22%, but did not establish a student-visible browser
+  improvement. Do not describe it as a latency fix.
 - Loading Milkdown on every Annotation page was the largest demonstrated
   browser-readiness bottleneck. Deferring it until the Respond tab cut the
   independent 50-browser average from roughly 11.7 seconds to 5.8 seconds in
@@ -63,6 +68,11 @@ purpose is to reproduce the load that forced admission queues, attribute event-
 loop lag to a specific phase, and compare controlled fixes. Once a cause is
 demonstrated, retain only the smallest cheap and deterministic regression
 boundary in routine CI.
+
+Comparisons on the shared host must alternate arms (ABBA at minimum) and
+report each leg. The host load gate prevents adding a wave while already busy;
+it does not make a single-order A/B trustworthy or turn co-located Chromium
+timings into production client measurements.
 
 Do not begin with one mixed end-to-end storm. Establish three curves first:
 

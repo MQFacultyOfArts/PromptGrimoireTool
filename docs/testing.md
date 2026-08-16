@@ -31,6 +31,31 @@ Artifacts from lane runs are written under:
   - `e2e-playwright-artifacts`
   - `nicegui-ui-artifacts`
 
+### Manual Performance Lane
+
+`uv run grimoire e2e perf` runs the `perf`-marked investigation tests against
+one managed server. It is intentionally absent from PR CI, `e2e all`,
+`e2e slow`, and the nightly workflow: these probes create production-shaped
+browser waves and produce evidence rather than a release gate.
+
+The command waits until the host's one-minute load average is at or below 4
+before provisioning the server. `E2E_PERF_MAX_LOAD` overrides that threshold.
+Use `--queue-pool` to exercise configured QueuePool settings;
+`E2E_PERF_DATABASE_URL` may then point the managed app server through a local
+transaction pool after migrations and cleanup have run directly. The
+independent-workspace probe accepts:
+
+- `E2E_INDEPENDENT_WORKSPACES_SESSIONS` for the browser count;
+- `E2E_AUTH_CLIENT_SETTLE_SECONDS` for the authenticated-client settling
+  interval;
+- `E2E_INDEPENDENT_WORKSPACES_DIAG_PATH` for the JSON evidence path; and
+- `E2E_SERVER_CPU_LIST` for the managed server's Linux CPU affinity.
+
+Comparative performance claims require alternating or interleaved arms (ABBA
+at minimum), per-leg results, and within-arm spread. Report server-side and
+browser-side boundaries separately; browser timings from co-located load
+generators are not production client latency measurements.
+
 ### JavaScript in E2E Tests
 
 Use Playwright's native APIs for user interactions (clicks, typing, drag). `page.evaluate()` is acceptable for:

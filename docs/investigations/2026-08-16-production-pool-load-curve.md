@@ -2,8 +2,7 @@
 
 Date: 2026-08-16
 Status: Reproduced; unacceptable latency growth and readiness failure unresolved
-Branch: `large-document-performance-notes`
-Harness commit: `c7589f56`
+Harness: `tests/e2e/test_independent_workspace_load.py`
 
 ## Question
 

@@ -305,3 +305,53 @@ with browser-visible milestones for initial response, NiceGUI connection,
 outbox application, document/sidebar mount, and collaboration readiness. Do
 not attempt another server query optimisation on the assumption that the full
 remaining delay is in the database.
+
+## Phase 6: browser readiness milestones
+
+The independent-workspace probe now records browser-visible milestones without
+adding production logging. In a 100-session settled-authentication wave, mean
+times from navigation start were:
+
+- DOM content loaded: 0.92 seconds;
+- annotation WebSocket observed: 0.93 seconds;
+- document container mounted: 12.76 seconds;
+- highlights ready: 12.92 seconds; and
+- final annotation readiness: 12.93 seconds.
+
+The server page-build mean was 3.82 seconds (p95 6.53 seconds). Highlight
+application added about 157 ms after the document appeared, and the final
+readiness boundary added about 16 ms. The dominant interval is therefore after
+the WebSocket connects and before the generated document UI mounts. It is not
+authentication, initial HTTP/WebSocket establishment, highlight range
+construction, or the final collaboration-ready signal.
+
+The next probe records WebSocket frame count and payload bytes through document
+readiness. Use that result to distinguish a large generated-UI payload from
+outbox/event-loop scheduling delay; do not begin a client-render rewrite until
+that distinction is measured.
+
+That probe measured about 730 KB per client across 12--16 received WebSocket
+frames, or 73 MB fanned out for the 100-session wave. The final frame was
+observed an average 4.40 seconds before the document mount (median 5.36 seconds,
+p95 8.59 seconds). Server page construction remained 3.68 seconds mean and
+highlight application remained about 171 ms. Because all 100 Chromium clients
+share the load-generator CPUs, this post-frame interval combines real browser
+DOM/application cost with synthetic client CPU and Playwright scheduling
+contention. It is not directly a production student-latency measurement.
+
+The document renderer currently sends the full paragraph-injected source as a
+NiceGUI `ui.html` element property; no existing authenticated document-content
+endpoint can replace that path. A one-session frame-size follow-up will show
+whether one document frame dominates the 730 KB. The host-load guard correctly
+refused that follow-up at load 20.6 after the 100-session wave. Do not override
+the guard merely to complete this measurement.
+
+After load fell naturally, the one-session follow-up showed that one 665 KB
+frame accounts for 91% of the 730 KB total. With no browser-generator
+contention, the final frame arrived at 169 ms, the document mounted at 691 ms,
+and annotation readiness completed at 725 ms. The 100-session browser curve
+therefore overstates production client-side degradation. The server boundary
+is still unacceptable: at 100 sessions the final-frame p95 was about 13.83
+seconds while server page-build p95 was 6.49 seconds. Next investigate the
+server event-loop/outbox interval and socket backpressure; use distributed
+browser generators before asserting a production browser-mount curve.

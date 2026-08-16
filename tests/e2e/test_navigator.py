@@ -1200,7 +1200,9 @@ class TestNavigator:
             page.close()
             context.close()
 
-    @pytest.mark.skip(reason="Intermittent failure, needs investigation. See #235.")
+    @pytest.mark.skip(
+        reason="Intermittent failure; requires a dedicated root-cause fix."
+    )
     def test_pagination_disabled_during_search(
         self,
         browser: Browser,

@@ -66,6 +66,9 @@ class _StubExportJob:
 # ---------------------------------------------------------------------------
 # Import the functions under test
 # ---------------------------------------------------------------------------
+from promptgrimoire.pages.annotation.header import (  # noqa: E402
+    _wrap_refresh_with_stale_download_clear,
+)
 from promptgrimoire.pages.annotation.pdf_export import (  # noqa: E402
     _handle_pdf_export,
     _show_download_button,
@@ -363,6 +366,24 @@ class TestPollingCallback:
 
             notification.dismiss.assert_called_once()
             timer.deactivate.assert_called_once()
+
+
+class TestPollingLifecycle:
+    """Export polling tasks are cancelled when their UI becomes stale."""
+
+    def test_document_change_cancels_polling_before_dropping_reference(self) -> None:
+        """A document mutation cancels the timer and its active callback."""
+        state = _stub()
+        state.refresh_annotations = MagicMock()
+        timer = MagicMock()
+        state.export_poll_timer = timer
+
+        _wrap_refresh_with_stale_download_clear(state)
+        state.refresh_annotations(trigger="document_change")
+
+        timer.cancel.assert_called_once_with(with_current_invocation=True)
+        timer.deactivate.assert_not_called()
+        assert state.export_poll_timer is None
 
 
 # ---------------------------------------------------------------------------

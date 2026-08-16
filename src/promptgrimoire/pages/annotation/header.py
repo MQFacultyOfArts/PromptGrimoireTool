@@ -172,7 +172,7 @@ def _wrap_refresh_with_stale_download_clear(state: PageState) -> None:
         # is now stale due to the document change.
         poll_timer = getattr(state, "export_poll_timer", None)
         if poll_timer is not None:
-            poll_timer.deactivate()
+            poll_timer.cancel(with_current_invocation=True)
             state.export_poll_timer = None
         # Clear stale download button
         container = getattr(state, "export_download_container", None)

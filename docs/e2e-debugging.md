@@ -395,12 +395,6 @@ and exits with instructions if not set.
 **Python 3.14 note:** py-spy 0.4.1 officially supports up to Python 3.13.
 It may or may not work on 3.14 — untested as of this writing.
 
-### PySnooper (Available)
-
-`pysnooper` is installed as a dev dependency. Useful for line-by-line
-execution tracing of specific functions. Apply `@pysnooper.snoop()` to
-targeted functions when needed.
-
 ### Server Log
 
 Server subprocess stdout/stderr now redirected to `test-e2e-server.log`

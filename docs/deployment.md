@@ -44,20 +44,33 @@ NiceGUI runs on uvicorn and the search worker remains an internal asyncio task. 
 
 ---
 
-## 0. NCI Cloud VM Setup
+## 0. DigitalOcean Droplet Setup
 
-Provision a new instance via the NCI Cloud dashboard (OpenStack).
+Provision the production host in the DigitalOcean control panel.
 
 - **Image:** Ubuntu 24.04 LTS
-- **Flavour:** 4 vCPU / 8GB RAM / 60GB boot disk
-- **Security groups:** Allow inbound TCP 22 (SSH), 80 (HTTP), 443 (HTTPS)
-- **Key pair:** Your SSH key
-- **Floating IP:** Assign a public IP, then point `grimoire.drbbs.org` A record to it
-- **Customisation script:** Leave empty — manual setup from this guide
+- **Region:** Sydney (`SYD1`)
+- **Current capacity:** 8 vCPU, 32 GB RAM, 400 GB local SSD
+- **Authentication:** SSH key; do not enable password login
+- **Tag:** attach a production tag and use it to target the Cloud Firewall
+- **Cloud Firewall:** allow inbound TCP 22 from administrative source addresses
+  where practical, plus public TCP 80 and 443; allow required outbound traffic
+- **Backups:** enable DigitalOcean backups as a host-level recovery layer; the
+  application-aware nightly backup in Step 14 remains mandatory
 
-**Disk layout:** Single 60GB Cinder boot volume at `/dev/vda`, mounted at `/`. Everything lives on root. Instance termination loses disk — restore from SharePoint backup (Step 14).
+Do not assume a Linux device name from this document. Verify the provisioned
+machine and root filesystem before installing data services:
 
-**Swap:** The VM has no swap by default. A 2 GB swapfile prevents the OOM killer from taking down sshd during memory spikes (see [2026-03-15 post-mortem](postmortems/2026-03-15-production-oom.md)).
+```bash
+nproc
+free -h
+findmnt -no SOURCE,SIZE,FSTYPE,TARGET /
+lsblk -o NAME,SIZE,FSTYPE,MOUNTPOINTS
+```
+
+**Swap:** Keep a 2 GB swapfile as an emergency buffer so a memory spike is less
+likely to make SSH unavailable (see the
+[2026-03-15 post-mortem](postmortems/2026-03-15-production-oom.md)).
 
 ```bash
 sudo fallocate -l 2G /swapfile
@@ -68,21 +81,27 @@ echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
 ```
 
 ```bash
-ssh ubuntu@<floating-ip>
+ssh root@<droplet-ip>
 ```
 
-**DNS:** Set the `grimoire.drbbs.org` A record to the floating IP now. Certbot (Step 12) requires DNS to resolve. Propagation can take minutes to hours.
+Create a non-root sudo operator before disabling root SSH. The remaining
+commands assume that operator account. Point the `grimoire.drbbs.org` A record
+to the Droplet's public or reserved IP. Certbot (Step 12) requires DNS to
+resolve first.
 
 **Terminal:** If using Ghostty, copy the terminfo to the server before doing anything else. The remote won't have the `xterm-ghostty` entry, and byobu/tmux/ncurses tools will break without it.
 
 ```bash
 # From your LOCAL machine (not the server)
-infocmp -x xterm-ghostty | ssh ubuntu@<floating-ip> 'tic -x -'
+infocmp -x xterm-ghostty | ssh <operator>@grimoire.drbbs.org 'tic -x -'
 ```
 
 Verify after SSH-ing in: `echo $TERM` should show `xterm-ghostty` and `tput colors` should return `256`.
 
-> **Ref:** [NCI Cloud User Guide](https://opus.nci.org.au/display/Help/Cloud+User+Guide), [Ghostty terminfo](https://ghostty.org/docs/help/terminfo)
+> **Ref:** [DigitalOcean recommended Droplet
+> setup](https://docs.digitalocean.com/products/droplets/getting-started/recommended-droplet-setup/),
+> [DigitalOcean backups](https://docs.digitalocean.com/products/backups/),
+> [Ghostty terminfo](https://ghostty.org/docs/help/terminfo)
 
 ---
 
@@ -103,8 +122,27 @@ sudo apt install -y \
   poppler-utils \
   pngquant \
   curl \
+  fio \
+  ioping \
+  jq \
+  socat \
+  bats \
   fontconfig \
   mecab libmecab-dev
+```
+
+Install the current Node.js 22 LTS line and an npm release new enough to enforce
+the repository's `min-release-age` policy. Node and npm are deployment/test
+tools; the application does not run on Node:
+
+```bash
+curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
+sudo apt install -y nodejs
+sudo npm install --global npm@11.10.0
+node --version
+npm --version
+bats --version
+```
 
 ### MeCab (word count)
 
@@ -117,6 +155,7 @@ sudo apt install -y \
 
 Both errors appear in `journalctl -u promptgrimoire` at startup and prevent the app from loading.
 
+```bash
 # rclone — install from upstream (apt version lags badly)
 curl https://rclone.org/install.sh | sudo bash
 rclone version
@@ -164,7 +203,8 @@ sudo ufw enable
 sudo ufw status verbose
 ```
 
-NCI security groups provide an outer firewall; UFW provides host-level defence in depth.
+The DigitalOcean Cloud Firewall provides the outer policy; UFW provides
+host-level defence in depth.
 
 > **Ref:** [UFW manual](https://manpages.ubuntu.com/manpages/noble/en/man8/ufw.8.html), [DigitalOcean UFW Essentials](https://www.digitalocean.com/community/tutorials/ufw-essentials-common-firewall-rules-and-commands)
 
@@ -215,7 +255,9 @@ uv python list | grep 3.14
 
 ## 6. Benchmark Disk I/O
 
-All data lives on the 60GB Cinder boot volume (`/dev/vda1` mounted at `/`). Benchmark before configuring PostgreSQL — results inform buffer tuning.
+All current production data lives on the Droplet's 400 GB root SSD. Benchmark
+the filesystem mounted at `/` before configuring PostgreSQL; do not assume its
+device name.
 
 ```bash
 # Sequential write (pg_dump, LaTeX output)
@@ -235,7 +277,7 @@ rm -f /tmp/seqwrite.0.0 /tmp/randmix.*.0
 
 Record these numbers — they feed into PostgreSQL tuning in Step 7.
 
-| Metric | NCI Cinder (4 vCPU / 8 GB) | DO SSD (16 vCPU / 32 GB) |
+| Metric | NCI Cinder (4 vCPU / 8 GB) | DO SSD (8 vCPU / 32 GB) |
 |--------|---------------------------|--------------------------|
 | Sequential write | ~100–200 MB/s | not benchmarked |
 | Random 4K IOPS | ~5k–10k | ~19.5k |
@@ -273,7 +315,7 @@ These settings are reload-settable — `pg_reload_conf()` activates them immedia
 
 ### Performance tuning
 
-The default PostgreSQL configuration is tuned for compatibility, not performance. These settings are critical for an SSD-backed OLTP workload serving 500+ concurrent users. Values below are for the **DO deployment (16 vCPU / 32 GB RAM)**; NCI values (4 vCPU / 8 GB) are shown for reference.
+The default PostgreSQL configuration is tuned for compatibility, not performance. These settings are critical for an SSD-backed OLTP workload serving 500+ concurrent users. Values below are for the **DO deployment (8 vCPU / 32 GB RAM)**; NCI values (4 vCPU / 8 GB) are shown for reference.
 
 ```bash
 sudo -u postgres psql <<'SQL'
@@ -731,12 +773,24 @@ cd /opt/promptgrimoire
 sudo -u promptgrimoire bash -c \
   'curl -LsSf https://astral.sh/uv/install.sh | sh'
 
-# Install dependencies (no dev/test deps in production)
-sudo -u promptgrimoire /home/promptgrimoire/.local/bin/uv sync --no-dev
+# Install the exact initial environment at a stable commit-keyed path. Virtual
+# environment entry points embed this path, while .venv is the selected-release
+# symlink used by uv and systemd.
+initial_commit=$(sudo -u promptgrimoire git rev-parse HEAD)
+sudo -u promptgrimoire mkdir -p .venvs
+sudo -u promptgrimoire env UV_PROJECT_ENVIRONMENT=".venvs/$initial_commit" \
+  /home/promptgrimoire/.local/bin/uv sync --locked
+sudo -u promptgrimoire ln -s ".venvs/$initial_commit" .venv
 
 # Create .env from template
 sudo -u promptgrimoire cp .env.example .env
 ```
+
+The supply-chain cooldown is project-owned: `pyproject.toml` configures uv's
+`exclude-newer = "14 days"`, and `.npmrc` carries the corresponding npm
+policy. Nothing is copied into a host-level uv configuration. The cooldown
+governs dependency resolution; production normally installs the committed
+`uv.lock` produced and reviewed off-server.
 
 ### Configure `.env`
 
@@ -765,15 +819,38 @@ STYTCH__SSO_CONNECTION_ID=saml-connection-live-...
 APP__BASE_URL=https://grimoire.drbbs.org
 APP__PORT=8080
 APP__STORAGE_SECRET=  # generate: python3.14 -c "import secrets; print(secrets.token_urlsafe(32))"
+APP__LOG_DIR=logs/sessions
+APP__DIAGNOSTIC_INTERVAL_SECONDS=300
+APP__MEMORY_RESTART_THRESHOLD_MB=3072
 
 # Claude API
 LLM__API_KEY=sk-ant-...
+
+# Standalone export worker
+FEATURES__WORKER_IN_PROCESS=false
+EXPORT__MAX_CONCURRENT_COMPILATIONS=1
+
+# Load controls
+ADMISSION__ENABLED=true
+ADMISSION__INITIAL_CAP=10
+IDLE__ENABLED=true
+IDLE__TIMEOUT_SECONDS=1800
+IDLE__WARNING_SECONDS=60
+
+# Operations — generate distinct random values for both secrets
+ALERTING__DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/...
+ADMIN__ADMIN_API_SECRET=
+ADMIN__PRE_RESTART_TOKEN=
 
 # Production settings
 DEV__AUTH_MOCK=false
 DEV__ENABLE_DEMO_PAGES=false
 DEV__BRANCH_DB_SUFFIX=false
 ```
+
+Production is a single NiceGUI app instance. It does not currently use Valkey
+or Redis, and `NICEGUI_REDIS_URL`/`INSTANCE_ID` are not application settings on
+this release. Do not install a cache service for this topology.
 
 ### Authentication Services
 
@@ -890,7 +967,7 @@ Create `/usr/local/bin/grimoire-run`:
 cd /opt/promptgrimoire
 exec sudo -u promptgrimoire \
   env PATH="/home/promptgrimoire/.TinyTeX/bin/x86_64-linux:/home/promptgrimoire/.local/bin:/usr/local/bin:/usr/bin:/bin" \
-  /home/promptgrimoire/.local/bin/uv run "$@"
+  /home/promptgrimoire/.local/bin/uv run --locked --no-sync "$@"
 ```
 
 ```bash
@@ -962,7 +1039,87 @@ sudo -u promptgrimoire env \
   luaotfload-tool --diagnose=environment
 ```
 
-> **Ref:** [TinyTeX installation](https://yihui.org/tinytex/)
+### Update TinyTeX after an application release
+
+TinyTeX maintenance is a separate release stage, not part of
+`deploy/restart.sh`. Deploy and verify the application first, complete the human
+UAT contract, and only then change TeX packages. This keeps an application
+rollback independent from a toolchain rollback.
+
+Run the checked maintenance script rather than pasting a strict-mode block into
+an interactive shell:
+
+```bash
+sudo /opt/promptgrimoire/deploy/update-texlive.sh
+```
+
+The script pins its working directory to `/opt/promptgrimoire` before changing
+to the service user. This is required because `sudo -H -u` changes `HOME` but
+preserves the caller's current directory; `tlmgr` fails when that directory is
+an operator home that `promptgrimoire` cannot traverse.
+
+The script takes an exclusive maintenance lock, positively verifies an idle
+export queue and active worker, stops the worker, takes an exact `.TinyTeX`
+filesystem snapshot, validates its archive structure and SHA-256 checksum, records the
+repository and complete installed package inventory, enables five persistent
+package backups, updates `tlmgr` before all other packages, records the final
+inventory, and runs `grimoire test smoke-export` before returning the worker to
+service. Audit artifacts are written under
+`/var/backups/promptgrimoire/texlive/`.
+
+Jobs submitted after the worker stops remain queued and are processed when it
+returns. Worker startup fails only jobs that the previous process had already
+claimed as `running`; it does not discard unclaimed queued work.
+
+If a failure occurs before package mutation, the script restarts the worker. If
+a failure occurs after `tlmgr update --self` begins, it deliberately leaves the
+worker stopped and prints the exact snapshot path; do not serve exports from an
+unverified partial update.
+
+After a successful script run, re-export the release's affected production
+workspace. A successful command is not sufficient: open the PDF and inspect
+the affected table/header boundary, annotations, CJK text, and emoji.
+
+If the TeX update introduces a regression, keep the worker stopped and restore
+the exact pre-update tree snapshot. Do not use `tlmgr restore --all` as a stage
+rollback: it can select backups created by earlier maintenance and does not
+guarantee the exact pre-update package set. The failed tree is retained for
+forensics and the snapshot archive remains intact:
+
+```bash
+(
+  set -Eeuo pipefail
+  cd /opt/promptgrimoire
+  tex_audit_dir=/var/backups/promptgrimoire/texlive
+  tex_snapshot=$(sudo readlink -f \
+    "$tex_audit_dir/latest-tree-snapshot.tar.gz")
+  case "$tex_snapshot" in
+    "$tex_audit_dir"/tree-before-*.tar.gz) ;;
+    *) echo "ABORT: unexpected snapshot path: $tex_snapshot" >&2; exit 1 ;;
+  esac
+  failed_stamp=$(date +%Y%m%d-%H%M%S)
+  failed_tree="/home/promptgrimoire/.TinyTeX.failed-$failed_stamp"
+  sudo test -s "$tex_snapshot"
+  sudo test -s "$tex_snapshot.sha256"
+  sudo sha256sum -c "$tex_snapshot.sha256"
+  sudo tar -tzf "$tex_snapshot" >/dev/null
+  sudo test ! -e "$failed_tree"
+  sudo systemctl stop promptgrimoire-worker.service
+  ! sudo systemctl is-active --quiet promptgrimoire-worker.service
+  sudo mv /home/promptgrimoire/.TinyTeX "$failed_tree"
+  sudo tar -C /home/promptgrimoire -xzf "$tex_snapshot"
+  grimoire-run grimoire test smoke-export
+  sudo systemctl start promptgrimoire-worker.service
+  sudo systemctl is-active --quiet promptgrimoire-worker.service
+)
+```
+
+Any failed assertion exits only the subshell and leaves the worker stopped after
+maintenance begins. Do not restart it until the restored tree passes the smoke
+export.
+
+> **Ref:** [TinyTeX installation](https://yihui.org/tinytex/),
+> [TeX Live Manager](https://tug.org/texlive/doc/tlmgr.html)
 
 ## 10. systemd Service
 
@@ -971,18 +1128,20 @@ Create `/etc/systemd/system/promptgrimoire.service`:
 ```ini
 [Unit]
 Description=PromptGrimoire — collaborative annotation platform
-After=network.target postgresql.service
-Requires=postgresql.service
+After=network-online.target postgresql.service pgbouncer.service
+Wants=network-online.target
+Requires=postgresql.service pgbouncer.service
 
 [Service]
 Type=simple
 User=promptgrimoire
 Group=promptgrimoire
 WorkingDirectory=/opt/promptgrimoire
+EnvironmentFile=/opt/promptgrimoire/.env
 Environment=PATH=/home/promptgrimoire/.local/bin:/home/promptgrimoire/.TinyTeX/bin/x86_64-linux:/usr/local/bin:/usr/bin:/bin
 Environment=HOME=/home/promptgrimoire
 Environment=OSFONTDIR=/usr/share/fonts:/usr/share/texmf/fonts
-ExecStart=/home/promptgrimoire/.local/bin/uv run python run_prod.py
+ExecStart=/home/promptgrimoire/.local/bin/uv run --locked --no-sync python run_prod.py
 Restart=on-failure
 RestartSec=5
 SuccessExitStatus=143
@@ -1003,6 +1162,31 @@ PrivateTmp=true
 WantedBy=multi-user.target
 ```
 
+The main application unit is host-managed: unlike the worker unit below, it is
+not stored in this repository and `deploy/restart.sh` does not reconcile it.
+Treat changes to this unit or its drop-ins as a separate infrastructure stage.
+Before a release after a long quiet period, compare the installed unit with
+this section instead of assuming an application pull updated it. The checks run
+in a subshell so an abort cannot terminate the operator's interactive shell:
+
+```bash
+(
+  set -euo pipefail
+  sudo systemctl cat promptgrimoire.service
+  sudo systemctl show promptgrimoire.service \
+    --property=FragmentPath,DropInPaths,ExecStart,MemoryHigh,MemoryMax,OOMScoreAdjust
+  app_exec=$(sudo systemctl show promptgrimoire.service --property=ExecStart --value)
+  if [[ "$app_exec" != *"/uv run --locked --no-sync python run_prod.py"* ]]; then
+    echo 'ABORT: app unit can mutate the accepted environment at startup' >&2
+    exit 1
+  fi
+  if ! sudo grep -Fq '/uv run --locked --no-sync "$@"' /usr/local/bin/grimoire-run; then
+    echo 'ABORT: grimoire-run can mutate the accepted environment' >&2
+    exit 1
+  fi
+)
+```
+
 Create the systemd override for resource limits and NiceGUI storage:
 
 ```bash
@@ -1013,13 +1197,17 @@ Add between the markers:
 
 ```ini
 [Service]
-MemoryMax=6G
-OOMScoreAdjust=500
+MemoryHigh=20G
+MemoryMax=24G
+OOMScoreAdjust=0
 ReadWritePaths=/opt/promptgrimoire/logs /opt/promptgrimoire/.venv /home/promptgrimoire/.TinyTeX /home/promptgrimoire/.cache/uv /opt/promptgrimoire/.nicegui
 ```
 
-- `MemoryMax=6G` — hard cap; leaves 2 GB for OS, sshd, PostgreSQL
-- `OOMScoreAdjust=500` — kernel kills the app before sshd
+- `MemoryHigh=20G` — applies memory pressure before the hard limit
+- `MemoryMax=24G` — hard app cap; reserves 8 GB for PostgreSQL, the worker, and
+  the operating system on the 32 GB host
+- `OOMScoreAdjust=0` — the worker (`500`) remains the first application cgroup
+  selected under system-wide memory pressure
 - `ReadWritePaths` — repeats the base list plus `/opt/promptgrimoire/.nicegui` (NiceGUI session storage; without it, `ProtectSystem=strict` causes `Errno 30` on every login)
 
 Create the `.nicegui` directory before starting:
@@ -1688,12 +1876,13 @@ sudo crontab -u promptgrimoire -l
 
 ```bash
 # Services
-sudo systemctl status postgresql
+sudo systemctl status postgresql@16-main pgbouncer
 sudo systemctl status promptgrimoire
+sudo systemctl status promptgrimoire-worker
 sudo systemctl status haproxy
 sudo systemctl status fail2ban
 
-# App responds (NiceGUI doesn't support HEAD, so use GET and check status code)
+# App responds (`/healthz` explicitly supports GET and HEAD)
 curl -s -o /dev/null -w "%{http_code}" https://grimoire.drbbs.org
 
 # TLS certificate
@@ -1794,25 +1983,354 @@ All course/activity configuration is done through the web UI:
 
 ### Deploy an update
 
+Production uses Bash. For a guarded release, copy stages 2–4 into an
+operator-owned script outside the checkout, set `accepted_commit` at the top,
+check it with `bash -n`, and run the script. Do not paste `set -euo pipefail` or
+an `exit`-guarded release block into an interactive shell: a failed guard will
+terminate that shell. Keep stages 2–4 in the same script so their captured
+timestamps and commit identifiers remain available to later verification.
+
+#### 1. Accept the candidate off-server
+
+Before touching production:
+
+- record the full, CI-approved candidate SHA as `accepted_commit`; do not derive
+  it later from a moving branch name;
+- require clean GitHub CI for the candidate;
+- for a release after a long quiet period, run `uv run grimoire e2e slow` (or
+  the equivalent nightly workflow) against the exact candidate; this command
+  is a strict gate: isolation retry-passes fail the run and the serial
+  compiled-PDF lane does not retry. On Linux it also reserves one available
+  CPU and lowers its process tree to nice level 19 (plus idle I/O scheduling
+  when `ionice` is installed), so no external `taskset`/`nice` wrapper is
+  required;
+- review the commit range for Alembic migrations and write a compatible
+  rollback plan for every schema change; and
+- keep application, TeX, and wider infrastructure changes in separate stages.
+
+The production deploy gate complements CI; it does not replace the browser,
+NiceGUI, integration, BATS, or JS lanes already run off-server.
+
+#### 2. Capture production state and back up
+
 ```bash
-sudo /opt/promptgrimoire/deploy/restart.sh              # full: pull, sync, test, restart
-sudo /opt/promptgrimoire/deploy/restart.sh --skip-tests  # skip unit tests (faster)
+cd /opt/promptgrimoire
+set -euo pipefail
+: "${accepted_commit:?set accepted_commit to the full CI-approved SHA}"
+if [[ ! "$accepted_commit" =~ ^[0-9a-f]{40}$ ]]; then
+  echo 'ABORT: accepted_commit must be a full 40-character lowercase SHA' >&2
+  exit 1
+fi
+deploy_started_at=$(date -Is)
+
+sudo -H -u promptgrimoire git -C /opt/promptgrimoire status --short --branch
+if [[ -n "$(sudo -H -u promptgrimoire git -C /opt/promptgrimoire status --porcelain)" ]]; then
+  echo "ABORT: production worktree is not clean" >&2
+  exit 1
+fi
+
+sudo -H -u promptgrimoire git -C /opt/promptgrimoire fetch origin main
+checkout_commit=$(sudo -H -u promptgrimoire git -C /opt/promptgrimoire rev-parse HEAD)
+remote_main=$(sudo -H -u promptgrimoire git -C /opt/promptgrimoire rev-parse origin/main)
+if [[ "$remote_main" != "$accepted_commit" ]]; then
+  echo "ABORT: origin/main moved from accepted $accepted_commit to $remote_main" >&2
+  exit 1
+fi
+candidate_commit=$accepted_commit
+
+# restart.sh refreshes the tracked worker unit, but not this host-managed app
+# unit. Record it now; reconcile any drift as a separate infrastructure stage.
+sudo systemctl cat promptgrimoire.service
+sudo systemctl show promptgrimoire.service \
+  --property=FragmentPath,DropInPaths,ExecStart,MemoryHigh,MemoryMax,OOMScoreAdjust
+app_exec=$(sudo systemctl show promptgrimoire.service --property=ExecStart --value)
+if [[ "$app_exec" != *"/uv run --locked --no-sync python run_prod.py"* ]]; then
+  echo 'ABORT: app unit can mutate the accepted environment at startup' >&2
+  exit 1
+fi
+if ! sudo grep -Fq '/uv run --locked --no-sync "$@"' /usr/local/bin/grimoire-run; then
+  echo 'ABORT: grimoire-run can mutate the accepted environment' >&2
+  exit 1
+fi
+
+worker_in_process=$(sudo awk -F= \
+  '$1=="FEATURES__WORKER_IN_PROCESS" {value=$2} END {print value}' \
+  /opt/promptgrimoire/.env)
+worker_concurrency=$(sudo awk -F= \
+  '$1=="EXPORT__MAX_CONCURRENT_COMPILATIONS" {value=$2} END {print value}' \
+  /opt/promptgrimoire/.env)
+if [[ "$worker_in_process" != "false" || "$worker_concurrency" != "1" ]]; then
+  echo "ABORT: production export-worker topology does not match the runbook" >&2
+  exit 1
+fi
+if ! sudo systemctl is-enabled --quiet promptgrimoire-worker.service; then
+  echo 'ABORT: standalone export worker is not enabled' >&2
+  exit 1
+fi
+if ! sudo systemctl is-active --quiet promptgrimoire-worker.service; then
+  echo 'ABORT: standalone export worker is not active' >&2
+  exit 1
+fi
+printf 'worker_topology=standalone-one-at-a-time\n'
+
+# HEAD may already contain a candidate from an earlier pre-restart abort. Read
+# the commit bound to a process in the running app's systemd cgroup instead.
+# MainPID is uv; the structured logger runs in its Python child.
+structured_log=/opt/promptgrimoire/logs/sessions/promptgrimoire.jsonl
+app_cgroup=$(sudo systemctl show promptgrimoire.service --property=ControlGroup --value)
+if [[ -z "$app_cgroup" || ! -r "/sys/fs/cgroup${app_cgroup}/cgroup.procs" ]]; then
+  echo "ABORT: promptgrimoire has no readable systemd cgroup" >&2
+  exit 1
+fi
+app_pids=$(sudo jq -Rsc 'split("\n") | map(select(length > 0) | tonumber)' \
+  "/sys/fs/cgroup${app_cgroup}/cgroup.procs")
+running_short=$(sudo tail -n 5000 "$structured_log" \
+  | jq -r --argjson app_pids "$app_pids" \
+    'select((.pid as $pid | $app_pids | index($pid)) != null
+      and .commit != null and .commit != "unknown") | .commit' \
+  | tail -n 1)
+if [[ ! "$running_short" =~ ^[0-9a-f]{7,40}$ ]]; then
+  echo "ABORT: could not identify the running application commit" >&2
+  exit 1
+fi
+rollback_commit=$(sudo -H -u promptgrimoire git -C /opt/promptgrimoire \
+  rev-parse "${running_short}^{commit}")
+
+printf 'deploy_started_at=%s\nrunning_commit=%s\ncheckout_commit=%s\ncandidate_commit=%s\n' \
+  "$deploy_started_at" "$rollback_commit" "$checkout_commit" "$candidate_commit"
+if [[ "$checkout_commit" != "$rollback_commit" ]]; then
+  echo "NOTICE: checkout differs from the running process (prior aborted deploy?)"
+fi
+
+migration_count=$(sudo -H -u promptgrimoire git -C /opt/promptgrimoire \
+  diff --name-only "$rollback_commit..$candidate_commit" -- alembic/versions/ \
+  | wc -l)
+printf 'migration_files=%s\n' "$migration_count"
+sudo -H -u promptgrimoire git -C /opt/promptgrimoire \
+  diff --name-status "$rollback_commit..$candidate_commit" -- alembic/versions/
+
+sudo /usr/local/bin/promptgrimoire-backup
 ```
 
-The deploy script (`deploy/restart.sh`) runs: `git pull` → `uv sync` → prune stale NiceGUI storage files → unit tests and PDF smoke test (e-stop on failure) → refresh the installed worker unit and reload systemd → update the HAProxy 503 page → pre-restart flush (CRDT persist + session invalidation + parallel client disconnect) → HAProxy drain → wait for connections to drain → stop the export worker → HAProxy maintenance (serves 503 page with healthz polling + login button) → restart the app → wait for `/healthz` → start the worker → HAProxy back to ready.
+Treat a non-zero `migration_files` count as a stop, not an informational
+message, until the forward and rollback migration procedures have been reviewed.
+The backup is only accepted when the command names the uploaded archive and
+reports a successful transfer.
+
+#### 3. Deploy the application
+
+Fast-forward to the captured commit object—not the moving `origin/main` name—
+before invoking the script. The script requires the same full SHA and never
+fetches or pulls. This guarantees that the tree tested and restarted is the
+candidate accepted off-server, even if `main` advances during the deployment.
+
+```bash
+sudo -H -u promptgrimoire git -C /opt/promptgrimoire \
+  merge --ff-only "$candidate_commit"
+deployed_checkout=$(sudo -H -u promptgrimoire git -C /opt/promptgrimoire rev-parse HEAD)
+if [[ "$deployed_checkout" != "$candidate_commit" ]]; then
+  echo "ABORT: checkout does not match the captured candidate" >&2
+  exit 1
+fi
+sudo /opt/promptgrimoire/deploy/restart.sh \
+  --expected-commit "$candidate_commit"
+deploy_finished_at=$(date -Is)
+printf 'deploy_finished_at=%s\n' "$deploy_finished_at"
+```
+
+The deploy script takes an exclusive deployment lock, verifies the pinned clean
+checkout and mandatory standalone-worker topology, and builds a commit-keyed
+Python environment with `uv sync --locked` without mutating the live `.venv`.
+It then runs `npm ci --include=dev` and the e-stop tests against that staged
+environment, revalidates the exact tested tree, refreshes the installed worker
+unit, updates the HAProxy 503 page, and performs the pre-restart flush (CRDT persist + session
+invalidation + parallel client disconnect) → HAProxy drain → wait for
+connections to drain → stop the export worker → HAProxy maintenance → stop the
+app → prune stale NiceGUI storage → select the accepted environment through the
+`.venv` symlink → start the app → wait for `/healthz` → start the worker →
+HAProxy ready. Service starts use `uv run --locked --no-sync`, so they cannot
+silently add or remove packages after the staged exact sync passes.
+
+The test e-stop has explicit environment semantics:
+
+- Python unit tests, BATS, JavaScript tests, and the PDF export smoke test are
+  mandatory. A missing runner, test directory, or test dependency fails the
+  gate; it is never an automatic pass.
+- The host must provide `bats`, Node.js, and npm. `restart.sh` installs the
+  reviewed JavaScript dependency graph from `package-lock.json` with
+  `npm ci --include=dev` before running the gate.
+- JavaScript tests use only `node_modules/.bin/vitest`. A global `npx` is not a
+  test dependency and must never select or download an unreviewed runner.
+  `npm ci` owns lockfile validation and clean dependency installation; the lane
+  then requires and executes the repository-local runner it installed.
+- Node.js remains deployment/test tooling rather than an application runtime
+  dependency. Upgrade it as a separate infrastructure stage, not inside an
+  application deployment.
+
+The repository's `.npmrc` requires npm 11.10 or newer to enforce
+`min-release-age=14`. An older npm can still reproduce the reviewed lock with
+`npm ci`, but it does not enforce that age policy; record and resolve that host
+provisioning gap separately rather than changing npm during the app restart.
+
+If the script aborts during candidate verification, staged locked sync, or the
+test e-stop, HAProxy and systemd have not been touched: the old process and its
+selected `.venv` are still serving traffic. The operator has already
+fast-forwarded the checkout, so candidate static files may be visible; the
+Python environment is not selected until after the app stops. Investigate the
+named gate. Do not turn `--skip-tests` into the normal recovery path. A future
+release-directory deployment should also make the source-tree switch atomic;
+the current mutable-checkout topology cannot provide that property.
+
+`--skip-tests` exists for an operator-declared emergency only, after the exact
+candidate has passed the full off-server gates and the reason for bypassing the
+production e-stop has been recorded:
+
+```bash
+sudo /opt/promptgrimoire/deploy/restart.sh \
+  --expected-commit "$candidate_commit" --skip-tests
+```
 
 Alembic migrations run automatically on app start.
 
-**Post-deploy verification** — after every deploy, check for connection leaks:
+#### 4. Verify the deployed application positively
+
+Do not infer success from a quiet terminal or an empty error query. Require
+positive service, unit-file, health, and database signals:
 
 ```bash
-# Wait ~30 seconds for users to reconnect, then:
-sudo -u promptgrimoire psql -c "SELECT state, count(*) FROM pg_stat_activity WHERE datname = 'promptgrimoire' GROUP BY state ORDER BY count DESC;"
+running_checkout=$(sudo -H -u promptgrimoire git -C /opt/promptgrimoire rev-parse HEAD)
+if [[ "$running_checkout" != "$candidate_commit" ]]; then
+  echo "ABORT: post-deploy checkout is not the accepted candidate" >&2
+  exit 1
+fi
+printf 'running_checkout=%s\n' "$running_checkout"
+
+for service in promptgrimoire promptgrimoire-worker haproxy pgbouncer postgresql@16-main; do
+  if ! sudo systemctl is-active --quiet "$service"; then
+    echo "ABORT: $service is not active" >&2
+    exit 1
+  fi
+  printf 'service_active=%s\n' "$service"
+done
+
+if sudo cmp -s \
+  /opt/promptgrimoire/deploy/promptgrimoire-worker.service \
+  /etc/systemd/system/promptgrimoire-worker.service; then
+  echo 'worker_unit=tracked'
+else
+  echo 'worker_unit=mismatch' >&2
+  exit 1
+fi
+
+if curl --fail --show-error --silent http://127.0.0.1:8080/healthz; then
+  printf '\nlocal_healthz=ok\n'
+else
+  echo 'ABORT: local health check failed' >&2
+  exit 1
+fi
+if curl --fail --show-error --silent https://grimoire.drbbs.org/healthz; then
+  printf '\npublic_healthz=ok\n'
+else
+  echo 'ABORT: public health check failed' >&2
+  exit 1
+fi
+
+sudo systemctl show promptgrimoire \
+  --property=MainPID,ExecMainStartTimestamp,ActiveState,SubState
+sudo systemctl show promptgrimoire-worker \
+  --property=MainPID,ExecMainStartTimestamp,ActiveState,SubState
+
+sudo -u promptgrimoire psql -v ON_ERROR_STOP=1 -d promptgrimoire \
+  -c 'SELECT 1 AS database_ok;'
+sudo -u promptgrimoire psql -v ON_ERROR_STOP=1 -c \
+  "SELECT state, count(*) FROM pg_stat_activity WHERE datname = 'promptgrimoire' GROUP BY state ORDER BY state;"
 ```
 
-Expected: `idle` + `active` only. If `idle in transaction` appears and climbs, the deploy introduced a connection leak — restart immediately (`sudo systemctl restart promptgrimoire`) and investigate before redeploying.
+Then inspect the bounded deploy window. An empty result is not itself a pass;
+the positive checks above establish that the query reached live components.
 
-> **Incident (2026-03-24):** A deploy introduced a session leak that accumulated 25 idle-in-transaction connections, exhausting the pool (69/80 checked out) and causing 60s timeouts on all page loads. The app had to be restarted. See postmortem (forthcoming).
+```bash
+sudo journalctl -u promptgrimoire -u promptgrimoire-worker \
+  --since "$deploy_started_at" --until "$deploy_finished_at" --no-pager
+```
+
+Expected database states are `active` and `idle`. If `idle in transaction`
+appears and climbs, restart and investigate before admitting the release.
+
+#### 5. Human UAT gate
+
+Stop here and hand control to the release operator. Automated browser lanes use
+mock authentication, so a production release that changes authentication or its
+dependencies requires a real Stytch exercise.
+
+In the release transcript, record
+`uat_started_at=$(date -u +'%Y-%m-%dT%H:%M:%S.%6NZ')`, the UAT account,
+workspace UUID, export job UUID, and
+`uat_finished_at=$(date -u +'%Y-%m-%dT%H:%M:%S.%6NZ')`. Use a named non-student
+UAT workspace and remove the temporary highlight/annotation after the
+persistence check so the test does not become unexplained production data.
+
+Record pass/fail for each falsifiable claim:
+
+1. In a private browser session, request and consume a real Stytch magic link;
+   the user lands in PromptGrimoire authenticated as the expected account.
+2. Open a non-student production UAT workspace, create a highlight and
+   annotation, reload the page, and observe both persisted once (no duplicate).
+3. Export the release's affected production workspace as PDF. Open it and
+   inspect the affected table/header boundary, body text, annotations, CJK, and
+   emoji—not merely the HTTP response or file size.
+4. Navigate away and back through the normal Unit/activity/workspace path; the
+   annotation workflow remains usable and no new ERROR/CRITICAL alert is emitted
+   for the UAT actions.
+
+Inspect the exact UAT interval rather than an unbounded tail:
+
+```bash
+sudo journalctl -u promptgrimoire -u promptgrimoire-worker \
+  --since "$uat_started_at" --until "$uat_finished_at" --no-pager
+sudo jq --arg start "$uat_started_at" --arg finish "$uat_finished_at" \
+  'select(.timestamp >= $start and .timestamp <= $finish and
+          (.level == "error" or .level == "critical"))' \
+  /opt/promptgrimoire/logs/sessions/promptgrimoire.jsonl
+```
+
+The positive browser actions establish that the UAT reached the live system;
+the bounded error query is supporting evidence, not a pass merely because it
+returned no rows.
+
+Do not update TinyTeX until the operator explicitly accepts this gate. If UAT
+fails, leave TeX unchanged and roll back or repair the application layer first.
+
+#### 6. TinyTeX and first-day observation
+
+After UAT acceptance, follow [Update TinyTeX after an application
+release](#update-tinytex-after-an-application-release), then repeat the export
+smoke test and affected-workspace PDF inspection.
+
+For the first day after a long-stale release, watch Beszel memory and CPU,
+event-loop lag diagnostics, PgBouncer waiting clients, worker restarts, and
+Discord ERROR/CRITICAL alerts. Compare against the pre-deploy baseline rather
+than treating the absence of an alert as evidence of normal operation.
+
+#### Rollback
+
+The `rollback_commit` captured from the live process's structured log identifies
+the previous running application tree. It can differ from the checkout after an
+earlier deploy changed files or dependencies but aborted before restart.
+The normal rollback is to revert the release on `main`, let CI gate the revert,
+capture that revert commit as a new candidate, then run this deployment
+procedure again with its full SHA. Do not locally detach or reset production:
+that creates an unreviewed deployment outside the pinned-candidate procedure.
+
+If the release included schema changes, follow its reviewed migration rollback
+plan. If data must be restored, use [Restore procedure](#restore-procedure); that
+is destructive and requires an explicit decision about data created since the
+backup.
+
+> **Incident (2026-03-24):** A deploy introduced a session leak that accumulated
+> 25 idle-in-transaction connections, exhausting the pool (69/80 checked out)
+> and causing 60s timeouts on all page loads. The app had to be restarted. See
+> postmortem (forthcoming).
 
 **One-time setup** (after first deploy of the script):
 
@@ -1826,7 +2344,7 @@ sudo haproxy -c -f /etc/haproxy/haproxy.cfg && sudo systemctl reload haproxy
 **Recovery** — if a deploy fails mid-restart and HAProxy is stuck in maintenance mode:
 
 ```bash
-echo "set server be_promptgrimoire/app state ready" | socat stdio /run/haproxy/admin.sock
+echo "set server be_promptgrimoire/app state ready" | sudo socat stdio /run/haproxy/admin.sock
 ```
 
 ### View logs
@@ -1863,7 +2381,8 @@ sudo tail -f /var/log/promptgrimoire-backup.log
 
 ```bash
 # All services running?
-sudo systemctl status postgresql pgbouncer promptgrimoire haproxy fail2ban
+sudo systemctl status postgresql@16-main pgbouncer promptgrimoire \
+  promptgrimoire-worker haproxy fail2ban
 
 # App responds? (/healthz supports HEAD + GET for UptimeRobot)
 curl -s -o /dev/null -w "%{http_code}" https://grimoire.drbbs.org/healthz
@@ -1961,8 +2480,8 @@ and the NiceGUI `/restarting` page (auto-restart) both inform users of this.
 
 ### Memory threshold auto-restart
 
-The app monitors RSS every `APP__DIAGNOSTIC_INTERVAL_SECONDS` (default: 60s).
-When RSS exceeds `APP__MEMORY_RESTART_THRESHOLD_MB` (default: 2560):
+The app monitors RSS every `APP__DIAGNOSTIC_INTERVAL_SECONDS` (default: 300s).
+When RSS exceeds `APP__MEMORY_RESTART_THRESHOLD_MB` (default: 3072):
 
 1. Logs `memory_threshold_exceeded_restarting` at CRITICAL (triggers Discord alert)
 2. Flushes Milkdown editors to CRDT
@@ -1973,8 +2492,8 @@ When RSS exceeds `APP__MEMORY_RESTART_THRESHOLD_MB` (default: 2560):
 
 **Tuning** (in `/opt/promptgrimoire/.env`):
 ```bash
-APP__DIAGNOSTIC_INTERVAL_SECONDS=60      # Check interval (lower = faster response)
-APP__MEMORY_RESTART_THRESHOLD_MB=2560    # RSS threshold (lower = more headroom before saturation)
+APP__DIAGNOSTIC_INTERVAL_SECONDS=300     # Check interval (lower = faster response)
+APP__MEMORY_RESTART_THRESHOLD_MB=3072    # RSS threshold (lower = more headroom before saturation)
 # Set to 0 to disable auto-restart:
 # APP__MEMORY_RESTART_THRESHOLD_MB=0
 ```
@@ -2041,7 +2560,9 @@ echo 'set server be_promptgrimoire/app state ready' | sudo socat stdio /run/hapr
 
 - **Hot reload** is on by default (`PROMPTGRIMOIRE_RELOAD=1`). `run_prod.py` disables it. `run.py` (dev) keeps it.
 - **Single process.** NiceGUI + uvicorn handles connections asynchronously. No horizontal scaling. Practical ceiling ~300-400 concurrent users before GC pauses and memory pressure become untenable. See `docs/nicegui/production-memory-management.md`. PgBouncer handles connection pooling for up to 500 concurrent clients.
-- **PDF export blocks briefly.** LaTeX compilation is CPU-bound. Under heavy concurrent export load, consider `asyncio.to_thread()` wrapping (tracked in perf epic #142).
+- **One export at a time.** LaTeX compilation is isolated in the standalone
+  worker and `EXPORT__MAX_CONCURRENT_COMPILATIONS=1` protects its 3 GB cgroup;
+  export requests queue during bursts.
 - **Initial cert only uses port 80 standalone.** The first `certbot certonly --standalone` requires port 80 free (HAProxy not yet running). All subsequent renewals use standalone on port 8402 behind HAProxy with zero downtime.
 
 ## Sources

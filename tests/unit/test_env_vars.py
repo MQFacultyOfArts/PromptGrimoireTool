@@ -234,11 +234,13 @@ _ALLOWED_OS_ENVIRON = {
     _SRC_DIR / "db" / "engine.py",
     # subprocess env override for test database
     _SRC_DIR / "cli" / "_shared.py",
+    # xdist worker-count override for local and CI runner calibration
+    _SRC_DIR / "cli" / "testing.py",
     # DEV__AUTH_MOCK env override for doc-gen subprocess
     _SRC_DIR / "cli" / "docs.py",
     # E2E runner sets env vars for subprocess coordination (not config reading)
     _SRC_DIR / "cli" / "e2e" / "__init__.py",
-    # Strict-flaky mode: reads CI / GRIMOIRE_STRICT_FLAKY env vars
+    # E2E worker and retry subprocess environment coordination
     _SRC_DIR / "cli" / "e2e" / "_parallel.py",
     _SRC_DIR / "cli" / "e2e" / "_retry.py",
     # Standalone subprocess script — sets env for isolated NiceGUI server
@@ -266,6 +268,8 @@ _ALLOWED_TEST_OS_ENVIRON_GET = {
     _TESTS_DIR / "unit" / "test_env_vars.py",
     # E2E tests reading E2E_SKIP_LATEXMK (test-runner flag, not app config)
     _TESTS_DIR / "e2e" / "test_pdf_export_filename.py",
+    # Perf probe tuning/output paths are runner flags, not app config
+    _TESTS_DIR / "e2e" / "test_independent_workspace_load.py",
     _TESTS_DIR / "e2e" / "test_cjk_export.py",
     # make_docs test captures DEV__AUTH_MOCK env state at mock call time
     _TESTS_DIR / "unit" / "test_make_docs.py",
@@ -273,8 +277,6 @@ _ALLOWED_TEST_OS_ENVIRON_GET = {
     _TESTS_DIR / "integration" / "test_db_cloning.py",
     # pool cancellation reads DATABASE__URL for direct engine (skip if unset)
     _TESTS_DIR / "integration" / "test_pool_cancellation.py",
-    # memory probe reads PERF_MAX_LOAD + MALLOC_ARENA_MAX (test-runner flags)
-    _TESTS_DIR / "e2e" / "test_memory_probe_434.py",
 }
 
 

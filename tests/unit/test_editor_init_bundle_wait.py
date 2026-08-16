@@ -45,6 +45,8 @@ class TestBundleWaitLoop:
             "Expected retry/polling loop (setTimeout/setInterval) in editor "
             "init JS, but found immediate check only"
         )
+        assert "document.createElement('script')" in js
+        assert "__promptGrimoireMilkdownBundlePromise" in js
 
     def test_js_still_fails_after_timeout(self) -> None:
         """After exhausting retries, the JS should still emit editor_ready

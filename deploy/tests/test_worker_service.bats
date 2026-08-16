@@ -67,6 +67,11 @@ UNIT_FILE="$BATS_TEST_DIRNAME/../promptgrimoire-worker.service"
     [ "$status" -eq 0 ]
 }
 
+@test "worker starts only from an unchanged lockfile" {
+    run grep -E '^ExecStart=.*/uv run --locked --no-sync python -m promptgrimoire\.export\.worker_main$' "$UNIT_FILE"
+    [ "$status" -eq 0 ]
+}
+
 # ---------------------------------------------------------------------------
 # Lifecycle coupling with app service
 # ---------------------------------------------------------------------------
@@ -76,7 +81,7 @@ UNIT_FILE="$BATS_TEST_DIRNAME/../promptgrimoire-worker.service"
     [ "$status" -eq 0 ]
 }
 
-@test "Restart=always (restarts after PartOf-triggered stop)" {
+@test "Restart=always covers worker process failures" {
     run grep -E '^Restart=always$' "$UNIT_FILE"
     [ "$status" -eq 0 ]
 }

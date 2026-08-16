@@ -4,12 +4,10 @@ from __future__ import annotations
 
 import asyncio
 import os
+import shutil
+import subprocess
 import sys
 from pathlib import Path
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    import subprocess
 
 import typer
 
@@ -38,6 +36,54 @@ from promptgrimoire.cli.testing import _run_pytest
 
 e2e_app = typer.Typer(help="End-to-end test commands.")
 _PLAYWRIGHT_TEST_PATH = str(PLAYWRIGHT_LANE.test_paths[0])
+
+
+def _playwright_worker_count() -> int:
+    """Return a bounded client count that leaves CPUs for shared services."""
+    if override := os.environ.get("GRIMOIRE_TEST_WORKERS"):
+        return int(override)
+    try:
+        available = len(os.sched_getaffinity(0))
+    except AttributeError:
+        available = os.cpu_count() or 1
+    return max(1, min(4, available // 2))
+
+
+def _configure_slow_run_resources() -> None:
+    """Keep the Linux workstation responsive during the exhaustive slow gate.
+
+    CPU affinity and scheduling priorities are inherited by every subprocess.
+    Reserve the lowest-numbered available CPU for interactive work, lower the
+    whole process tree to the least-favoured CPU priority, and request idle I/O
+    scheduling when ``ionice`` is installed. A single-CPU host keeps its only
+    CPU so the suite remains runnable.
+    """
+    if sys.platform != "linux":
+        return
+
+    available_cpus = os.sched_getaffinity(0)
+    test_cpus = (
+        available_cpus - {min(available_cpus)}
+        if len(available_cpus) > 1
+        else available_cpus
+    )
+    if test_cpus != available_cpus:
+        os.sched_setaffinity(0, test_cpus)
+
+    os.setpriority(os.PRIO_PROCESS, 0, 19)
+
+    io_policy = "default"
+    if ionice := shutil.which("ionice"):
+        subprocess.run(
+            [ionice, "-c", "3", "-p", str(os.getpid())],
+            check=True,
+        )
+        io_policy = "idle"
+
+    console.print(
+        "[dim]Slow-run resources: "
+        f"{len(test_cpus)}/{len(available_cpus)} CPUs, nice=19, I/O={io_policy}[/]"
+    )
 
 
 def _latest_artifact_dir(lane_name: str) -> Path | None:
@@ -91,28 +137,25 @@ def run_playwright_lane(
     browser: str | None = None,
 ) -> int:
     """Run the Playwright lane and return its exit code."""
-    from promptgrimoire.cli.e2e._parallel import _run_parallel_e2e
     from promptgrimoire.config import get_settings
 
     get_settings()
 
     if parallel:
-        if py_spy:
-            console.print(
-                "[yellow]--py-spy is not supported in parallel mode, ignoring[/]"
-            )
-        try:
-            return asyncio.run(
-                _run_parallel_e2e(
-                    user_args=user_args, fail_fast=fail_fast, browser=browser
-                )
-            )
-        except KeyboardInterrupt:
-            console.print("\n[yellow]Interrupted — cleaning up...[/]")
-            return 130
+        return _run_shared_playwright_e2e(
+            user_args,
+            use_pyspy=py_spy,
+            worker_count=_playwright_worker_count(),
+            fail_fast=fail_fast,
+            browser=browser,
+        )
 
-    return _run_serial_playwright_e2e(
-        user_args, use_pyspy=py_spy, reruns=True, browser=browser
+    return _run_shared_playwright_e2e(
+        user_args,
+        use_pyspy=py_spy,
+        worker_count=1,
+        fail_fast=fail_fast,
+        browser=browser,
     )
 
 
@@ -356,8 +399,6 @@ def run_slow_lanes(user_args: list[str]) -> int:
             _run_serial_playwright_e2e(
                 user_args,
                 use_pyspy=False,
-                reruns=True,
-                clear_cache=True,
                 marker_expr=PLAYWRIGHT_SLOW_MARKER_EXPR,
                 test_timeout=120,
                 log_file=pw_latexmk_log,
@@ -423,15 +464,8 @@ def run(
     browser: str | None = typer.Option(
         None, help="Browser engine: chromium, firefox (default: chromium)"
     ),
-    strict_flaky: bool = typer.Option(
-        False,
-        "--strict-flaky",
-        help="Treat flaky tests as failures (automatic on CI)",
-    ),
 ) -> None:
     """Run Playwright E2E tests (parallel by default, --serial for single server)."""
-    if strict_flaky:
-        os.environ["GRIMOIRE_STRICT_FLAKY"] = "1"
     args = _prepend_filter(ctx.args, filter_expr)
     args = _prepend_pytest_flags(args, exit_first=exit_first, failed_first=failed_first)
     sys.exit(
@@ -608,7 +642,6 @@ def perf(
     console.print(f"[green]Server ready at {url}[/]")
 
     os.environ["E2E_BASE_URL"] = url
-
     args = _prepend_pytest_flags(args, exit_first=exit_first, failed_first=False)
 
     try:
@@ -680,6 +713,7 @@ def slow(
     ),
 ) -> None:
     """Run all lanes (superset of `e2e all`), then latexmk + compiled-PDF suites."""
+    _configure_slow_run_resources()
     sys.exit(run_slow_lanes(_prepend_filter(ctx.args, filter_expr)))
 
 
@@ -695,11 +729,6 @@ def latexmk(
     filter_expr: str | None = typer.Option(
         None, "-k", "--filter", help="Pytest keyword filter expression"
     ),
-    strict_flaky: bool = typer.Option(
-        False,
-        "--strict-flaky",
-        help="Treat flaky tests as failures (automatic on CI)",
-    ),
     exit_first: bool = typer.Option(
         False, "-x", "--exit-first", help="Stop on first failure (-x)"
     ),
@@ -708,8 +737,6 @@ def latexmk(
     ),
 ) -> None:
     """Run only the latexmk serial Playwright lane (real PDF compilation)."""
-    if strict_flaky:
-        os.environ["GRIMOIRE_STRICT_FLAKY"] = "1"
     args = _prepend_filter(ctx.args, filter_expr)
     args = _prepend_pytest_flags(args, exit_first=exit_first, failed_first=failed_first)
 
@@ -719,8 +746,6 @@ def latexmk(
         exit_code = _run_serial_playwright_e2e(
             args,
             use_pyspy=False,
-            reruns=True,
-            clear_cache=True,
             marker_expr=PLAYWRIGHT_SLOW_MARKER_EXPR,
             test_timeout=120,
             log_file=Path("test-playwright-latexmk.log"),
@@ -923,24 +948,25 @@ def _clear_lastfailed_cache() -> None:
         cache_file.unlink()
 
 
-def _run_serial_playwright_e2e(
+def _run_shared_playwright_e2e(
     extra_args: list[str],
     *,
     use_pyspy: bool,
-    reruns: bool,
-    clear_cache: bool = False,
+    worker_count: int,
+    fail_fast: bool = False,
     browser: str | None = None,
     marker_expr: str = PLAYWRIGHT_DEFAULT_MARKER_EXPR,
     test_timeout: int | None = None,
     log_file: Path | None = None,
 ) -> int:
-    """Run Playwright tests in single-server serial mode."""
+    """Run concurrent Playwright clients against one server and database."""
     from promptgrimoire.config import get_settings
 
     get_settings()
 
-    if clear_cache:
-        _clear_lastfailed_cache()
+    # Diagnostic retries must only see failures from this Playwright run,
+    # never failures cached by an earlier lane.
+    _clear_lastfailed_cache()
 
     if use_pyspy:
         _check_ptrace_scope()
@@ -954,6 +980,8 @@ def _run_serial_playwright_e2e(
     console.print(f"[green]Server ready at {url}[/]")
 
     os.environ["E2E_BASE_URL"] = url
+    if worker_count > 1:
+        os.environ["E2E_SHARED_SERVER"] = "1"
 
     pyspy_process: subprocess.Popen[bytes] | None = None
     if use_pyspy:
@@ -967,6 +995,10 @@ def _run_serial_playwright_e2e(
         "--tb=short",
         "--log-cli-level=WARNING",
     ]
+    if worker_count > 1:
+        default_args += ["-n", str(worker_count), "--dist", "loadscope"]
+    if fail_fast:
+        default_args.append("-x")
     if test_timeout is not None:
         default_args += ["--timeout", str(test_timeout)]
     if browser is not None:
@@ -974,22 +1006,42 @@ def _run_serial_playwright_e2e(
     if not _has_test_path(extra_args):
         default_args.insert(0, _PLAYWRIGHT_TEST_PATH)
 
-    if reruns:
-        default_args += ["--reruns", "3"]
-
     exit_code = 1
     try:
         log_path = log_file or Path("test-e2e.log")
         exit_code = _run_pytest(
-            title=(f"Playwright Test Suite (serial, fail-fast) — server {url}"),
+            title=(f"Playwright Test Suite ({worker_count} clients) — server {url}"),
             log_path=log_path,
             default_args=default_args,
             extra_args=extra_args,
         )
-        if reruns and exit_code not in (0, 5):
-            exit_code = _retry_e2e_tests_in_isolation(log_path)
+        if exit_code not in (0, 5):
+            _retry_e2e_tests_in_isolation(log_path)
     finally:
         if pyspy_process is not None:
             _stop_pyspy(pyspy_process)
         _stop_e2e_server(server_process)
+        os.environ.pop("E2E_BASE_URL", None)
+        os.environ.pop("E2E_SHARED_SERVER", None)
     return exit_code
+
+
+def _run_serial_playwright_e2e(
+    extra_args: list[str],
+    *,
+    use_pyspy: bool,
+    browser: str | None = None,
+    marker_expr: str = PLAYWRIGHT_DEFAULT_MARKER_EXPR,
+    test_timeout: int | None = None,
+    log_file: Path | None = None,
+) -> int:
+    """Run Playwright tests against one server with one pytest worker."""
+    return _run_shared_playwright_e2e(
+        extra_args,
+        use_pyspy=use_pyspy,
+        worker_count=1,
+        browser=browser,
+        marker_expr=marker_expr,
+        test_timeout=test_timeout,
+        log_file=log_file,
+    )

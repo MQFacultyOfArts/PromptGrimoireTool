@@ -626,8 +626,25 @@ def _build_editor_init_js(
                     }});
                     return;
                 }}
-                // Poll for the Milkdown bundle — under load the <script>
-                // fetch can lag behind the run_javascript call.
+                async function ensureMilkdownBundle() {{
+                    if (window._createMilkdownEditor) {{
+                        return;
+                    }}
+                    if (!window.__promptGrimoireMilkdownBundlePromise) {{
+                        window.__promptGrimoireMilkdownBundlePromise =
+                            new Promise(function(resolve, reject) {{
+                                const script = document.createElement('script');
+                                script.src = '/milkdown/milkdown-bundle.js';
+                                script.async = true;
+                                script.onload = resolve;
+                                script.onerror = reject;
+                                document.head.appendChild(script);
+                            }});
+                    }}
+                    await window.__promptGrimoireMilkdownBundlePromise;
+                }}
+                await ensureMilkdownBundle();
+
                 var _bundleRetries = 0;
                 while (!window._createMilkdownEditor && _bundleRetries < 50) {{
                     await new Promise(function(r) {{ setTimeout(r, 100); }});

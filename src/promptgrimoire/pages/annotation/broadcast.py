@@ -333,19 +333,20 @@ async def _handle_client_delete(
 async def _handle_remote_update(state: PageState) -> None:
     """Process a CRDT update received from another client.
 
-    Rebuilds tag state, CSS, toolbar, annotations, and any
-    tab-specific views that are currently active.
+    Rebuilds tag-dependent UI only when tag metadata changed, then refreshes
+    annotations and any tab-specific views that are currently active.
     """
     old_tag_info = state.tag_info_list
     _rebuild_tag_state_from_crdt(state)
+    tag_info_changed = state.tag_info_list != old_tag_info
     _update_highlight_css(state)
-    if state.refresh_toolbar:
+    if tag_info_changed and state.refresh_toolbar:
         await state.refresh_toolbar()
     _update_user_count(state)
     # Only invalidate card cache when tag metadata actually changed
     # (rename, recolour, create, delete). Highlight-only changes are
     # handled by the diff algorithm's per-highlight snapshots.
-    if state.tag_info_list != old_tag_info:
+    if tag_info_changed:
         state.invalidate_card_cache()
     if state.refresh_annotations:
         state.refresh_annotations(trigger="crdt_broadcast")
@@ -444,6 +445,12 @@ def _setup_client_sync(
     # sets state.doc_container_id.  Call replay_existing_cursors()
     # from the workspace view after _build_tab_panels completes.
 
+    def stop_export_polling() -> None:
+        poll_timer = state.export_poll_timer
+        if poll_timer is not None:
+            poll_timer.cancel(with_current_invocation=True)
+            state.export_poll_timer = None
+
     async def on_client_delete() -> None:
         await _handle_client_delete(
             workspace_key,
@@ -451,6 +458,7 @@ def _setup_client_sync(
             workspace_id,
         )
 
+    client.on_delete(stop_export_polling)
     client.on_delete(on_client_delete)
 
 

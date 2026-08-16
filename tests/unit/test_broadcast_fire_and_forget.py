@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import contextlib
 import inspect
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 from uuid import UUID
 
 import pytest
@@ -140,6 +140,35 @@ class TestBroadcastFireAndForget:
 
 class TestClientDeleteFireAndForget:
     """AC1.3: Cursor/selection removal on client delete is fire-and-forget."""
+
+    def test_client_delete_stops_export_polling_before_slot_teardown(self) -> None:
+        """Client deletion synchronously deactivates its export timer."""
+        from promptgrimoire.pages.annotation.broadcast import _setup_client_sync
+
+        state = _make_state()
+        timer = MagicMock()
+        state.export_poll_timer = timer
+        client = MagicMock()
+
+        with patch("promptgrimoire.pages.annotation.broadcast.app") as mock_app:
+            mock_app.storage.user.get.return_value = None
+            _setup_client_sync(_TEST_UUID, client, state)
+
+        callbacks = [call.args[0] for call in client.on_delete.call_args_list]
+        synchronous_callbacks = [
+            callback
+            for callback in callbacks
+            if not inspect.iscoroutinefunction(callback)
+        ]
+        assert synchronous_callbacks, (
+            "Export polling must stop synchronously before NiceGUI deletes page slots"
+        )
+
+        synchronous_callbacks[0]()
+
+        timer.cancel.assert_called_once_with(with_current_invocation=True)
+        timer.deactivate.assert_not_called()
+        assert state.export_poll_timer is None
 
     @pytest.mark.asyncio
     async def test_handle_client_delete_calls_run_javascript_without_await(

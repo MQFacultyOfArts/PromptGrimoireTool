@@ -15,6 +15,8 @@ from typing import TYPE_CHECKING
 from typer.testing import CliRunner
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     import pytest
 
 from promptgrimoire.cli import app
@@ -266,12 +268,25 @@ class TestHandleRunningPhase:
 # _xdist_worker_count
 # ---------------------------------------------------------------------------
 class TestXdistWorkerCount:
-    """Xdist worker count returns 'auto'."""
+    """Xdist worker count stays bounded and operator-tunable."""
 
-    def test_returns_auto(self) -> None:
+    def test_caps_large_hosts(self, monkeypatch: pytest.MonkeyPatch) -> None:
         from promptgrimoire.cli.testing import _xdist_worker_count
 
-        assert _xdist_worker_count() == "auto"
+        monkeypatch.delenv("GRIMOIRE_TEST_WORKERS", raising=False)
+        monkeypatch.setattr(
+            "promptgrimoire.cli.testing.os.sched_getaffinity",
+            lambda _: set(range(32)),
+        )
+
+        assert _xdist_worker_count() == "4"
+
+    def test_honours_worker_override(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from promptgrimoire.cli.testing import _xdist_worker_count
+
+        monkeypatch.setenv("GRIMOIRE_TEST_WORKERS", "4")
+
+        assert _xdist_worker_count() == "4"
 
 
 # ---------------------------------------------------------------------------
@@ -471,6 +486,126 @@ class TestTestingCommands:
         assert result.exit_code == 0, result.output
         assert captured.get("js_calls") == 1
         assert captured.get("js_verbose") is False
+
+    def test_js_lane_fails_when_local_vitest_is_absent(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """An unprovisioned mandatory JS lane must fail without invoking npx."""
+        import shutil
+        import subprocess
+
+        from promptgrimoire.cli import testing
+
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setattr(shutil, "which", lambda _executable: "/usr/bin/npx")
+
+        def fail_if_called(*_args: object, **_kwargs: object) -> None:
+            raise AssertionError("JS subprocess ran without repository-local Vitest")
+
+        monkeypatch.setattr(subprocess, "run", fail_if_called)
+
+        assert testing._run_js() == 1
+        assert "required local Vitest is not installed" in capsys.readouterr().out
+
+    def test_js_lane_runs_repository_local_vitest(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ) -> None:
+        """A provisioned JS lane executes its locked local test runner."""
+        import subprocess
+
+        from promptgrimoire.cli import testing
+
+        monkeypatch.chdir(tmp_path)
+        vitest = tmp_path / "node_modules" / ".bin" / "vitest"
+        vitest.parent.mkdir(parents=True)
+        vitest.touch()
+        vitest.chmod(0o755)
+        calls: list[list[str]] = []
+
+        def capture_run(
+            command: list[str], *, check: bool
+        ) -> subprocess.CompletedProcess[str]:
+            assert check is False
+            calls.append(command)
+            return subprocess.CompletedProcess(command, returncode=0)
+
+        monkeypatch.setattr(subprocess, "run", capture_run)
+
+        assert testing._run_js(verbose=True) == 0
+        assert calls == [["node_modules/.bin/vitest", "run", "--reporter=verbose"]]
+
+    def test_js_lane_fails_when_local_vitest_is_not_executable(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ) -> None:
+        """A non-executable local shim cannot satisfy the mandatory JS lane."""
+        import subprocess
+
+        from promptgrimoire.cli import testing
+
+        monkeypatch.chdir(tmp_path)
+        vitest = tmp_path / "node_modules" / ".bin" / "vitest"
+        vitest.parent.mkdir(parents=True)
+        vitest.touch(mode=0o644)
+
+        def fail_if_called(*_args: object, **_kwargs: object) -> None:
+            raise AssertionError("JS subprocess ran with non-executable Vitest")
+
+        monkeypatch.setattr(subprocess, "run", fail_if_called)
+
+        assert testing._run_js() == 1
+
+    def test_bats_lane_fails_when_bats_is_absent(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """A missing BATS executable is a failed lane, never an automatic pass."""
+        import shutil
+
+        from promptgrimoire.cli import testing
+
+        monkeypatch.setattr(shutil, "which", lambda _executable: None)
+
+        assert testing._run_bats() == 1
+        assert "required BATS runner is not installed" in capsys.readouterr().out
+
+    def test_bats_lane_fails_when_test_directory_is_absent(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ) -> None:
+        """A missing tracked BATS test directory cannot satisfy the lane."""
+        import shutil
+
+        from promptgrimoire.cli import testing
+
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setattr(shutil, "which", lambda _executable: "/usr/bin/bats")
+
+        assert testing._run_bats() == 1
+
+    def test_bats_lane_fails_when_no_test_files_exist(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ) -> None:
+        """An empty tracked BATS lane is not evidence that its tests passed."""
+        import shutil
+
+        from promptgrimoire.cli import testing
+
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setattr(shutil, "which", lambda _executable: "/usr/bin/bats")
+        (tmp_path / "deploy" / "tests").mkdir(parents=True)
+
+        assert testing._run_bats() == 1
 
     def test_test_all_excludes_e2e_and_nicegui_ui(
         self, monkeypatch: pytest.MonkeyPatch

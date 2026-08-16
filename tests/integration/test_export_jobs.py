@@ -471,3 +471,47 @@ class TestPartialUniqueIndex:
             # in an error state. This rolls back both the session flush and
             # the outer conn.begin() transaction.
             await conn.rollback()
+
+
+class TestFailOrphanedJobs:
+    """Restart recovery distinguishes interrupted work from waiting work."""
+
+    @pytest.mark.asyncio
+    async def test_fails_running_job_but_preserves_queued_job(self) -> None:
+        """Only a claimed job is orphaned; queued work remains processable."""
+        from promptgrimoire.db.export_jobs import (
+            create_export_job,
+            fail_job,
+            fail_orphaned_jobs,
+            get_job,
+        )
+        from tests.integration.conftest import claim_own_job
+
+        running_user, running_workspace = await _create_user_and_workspace()
+        running = await create_export_job(
+            running_user,
+            running_workspace,
+            {"format": "pdf"},
+        )
+        claimed = await claim_own_job({running.id})
+        assert claimed is not None
+        assert claimed.id == running.id
+        assert claimed.status == "running"
+
+        queued_user, queued_workspace = await _create_user_and_workspace()
+        queued = await create_export_job(
+            queued_user,
+            queued_workspace,
+            {"format": "pdf"},
+        )
+
+        failed_count = await fail_orphaned_jobs()
+
+        interrupted = await get_job(running.id)
+        waiting = await get_job(queued.id)
+        assert failed_count >= 1
+        assert interrupted is not None
+        assert interrupted.status == "failed"
+        assert waiting is not None
+        assert waiting.status == "queued"
+        await fail_job(queued.id, "test cleanup")

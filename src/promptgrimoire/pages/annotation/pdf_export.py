@@ -286,8 +286,10 @@ def _show_download_button(download_token: str, state: PageState) -> None:
             ui.button(
                 "Download your PDF",
                 icon="download",
-                on_click=lambda: ui.download(download_url),
-            ).props('color=positive data-testid="export-download-btn"')
+            ).props(
+                f'color=positive href="{download_url}" '
+                'data-testid="export-download-btn"'
+            )
 
     # Re-enable the export button for new exports
     export_btn = getattr(state, "export_btn", None)

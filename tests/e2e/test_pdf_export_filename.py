@@ -18,17 +18,19 @@ from __future__ import annotations
 import os
 import re
 from datetime import datetime
+from email.message import Message
 from typing import TYPE_CHECKING
+from urllib.parse import urljoin
 
 import pytest
 
 if TYPE_CHECKING:
-    from playwright.sync_api import Browser
+    from playwright.sync_api import Browser, Page
 
 from promptgrimoire.docs.helpers import wait_for_text_walker
 from tests.e2e.conftest import _authenticate_page
 from tests.e2e.db_fixtures import _create_workspace_for_filename_export
-from tests.e2e.export_tools import export_annotation_tex_text
+from tests.e2e.export_tools import _wait_for_download_button, export_annotation_tex_text
 
 
 # The expected filename stem is built literally from the deterministic
@@ -44,6 +46,20 @@ from tests.e2e.export_tools import export_annotation_tex_text
 def _expected_stem() -> str:
     today = datetime.now().strftime("%Y%m%d")
     return f"LAWS5000_Lovelace_Ada_Final_Essay_Week_3_Response_{today}"
+
+
+def _export_response_filename(page: Page) -> tuple[str, str]:
+    """Return the completed export's HTTP filename and download URL."""
+    _wait_for_download_button(page)
+    href = page.get_by_test_id("export-download-btn").get_attribute("href")
+    assert href is not None
+    response = page.context.request.get(urljoin(page.url, href))
+    assert response.ok
+    message = Message()
+    message["content-disposition"] = response.headers["content-disposition"]
+    filename = message.get_filename()
+    assert filename is not None
+    return filename, href
 
 
 @pytest.mark.e2e
@@ -147,6 +163,7 @@ class TestPdfExportFilename:
         """
         context = browser.new_context()
         page = context.new_page()
+        respond_page = context.new_page()
 
         try:
             email = _authenticate_page(page, app_server)
@@ -156,32 +173,36 @@ class TestPdfExportFilename:
             wait_for_text_walker(page, timeout=15000)
 
             # Export from Annotate tab (default)
-            result_annotate = export_annotation_tex_text(page)
+            filename_annotate, href_annotate = _export_response_filename(page)
 
-            # Switch to Respond tab and export again
-            page.get_by_test_id("tab-respond").click()
+            # Export the same workspace from Respond in a second browser tab.
+            respond_page.goto(f"{app_server}/annotation?workspace_id={workspace_id}")
+            wait_for_text_walker(respond_page, timeout=15000)
+            respond_page.get_by_test_id("tab-respond").click()
             # Wait for respond tab to load
-            page.locator("[data-testid='milkdown-editor-container']").wait_for(
+            respond_page.locator("[data-testid='milkdown-editor-container']").wait_for(
                 state="visible", timeout=10000
             )
 
-            result_respond = export_annotation_tex_text(page)
+            filename_respond, href_respond = _export_response_filename(respond_page)
 
-            assert (
-                result_annotate.suggested_filename == result_respond.suggested_filename
-            ), (
-                f"Annotate tab suggested {result_annotate.suggested_filename!r} "
-                f"but Respond tab suggested {result_respond.suggested_filename!r}"
+            assert href_annotate != href_respond, (
+                "Respond export reused the Annotate tab's completed export job"
+            )
+
+            assert filename_annotate == filename_respond, (
+                f"Annotate tab served {filename_annotate!r} "
+                f"but Respond tab served {filename_respond!r}"
             )
 
             # Also verify it's descriptive (not workspace_{uuid})
-            assert not re.match(
-                r"workspace_[0-9a-f-]+\.", result_annotate.suggested_filename
-            ), (
+            assert not re.match(r"workspace_[0-9a-f-]+\.", filename_annotate), (
                 f"Filename still uses old workspace_{{uuid}} pattern: "
-                f"{result_annotate.suggested_filename!r}"
+                f"{filename_annotate!r}"
             )
         finally:
             page.goto("about:blank")
+            respond_page.goto("about:blank")
             page.close()
+            respond_page.close()
             context.close()

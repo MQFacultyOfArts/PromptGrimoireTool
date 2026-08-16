@@ -279,14 +279,6 @@ Removed 2026-02-10. Same replacement as pylatexenc above. The Lark lexer grammar
 **Why not alternatives:** pytest-rerunfailures is the standard pytest plugin for test retries. No viable alternative with the same pytest integration.
 **Classification:** Protective belt. Test infrastructure only.
 
-### pytest-sugar >= 1.1.1
-
-**Added:** 2026-02-22
-**Claim:** Prettier pytest progress bars. Auto-activates as a pytest plugin when installed. Replaces the default dot-based progress with a real-time progress bar showing test names and pass/fail status.
-**Evidence:** `pyproject.toml` dev dependency. No explicit imports -- pytest auto-discovers the plugin.
-**Why not alternatives:** pytest-sugar is the standard pytest progress plugin. Drop-in replacement for default output.
-**Classification:** Protective belt. Developer experience only. No code depends on it.
-
 ### playwright >= 1.49
 
 **Claim:** Browser automation for E2E tests.
@@ -324,13 +316,6 @@ Removed 2026-02-10. Same replacement as pylatexenc above. The Lark lexer grammar
 **Claim:** Linter and formatter. Replaces flake8, isort, black, and pyupgrade.
 
 **Evidence:** `pyproject.toml` `[tool.ruff.*]` configuration. Claude Code hooks run ruff on every file write.
-
-### pyright >= 1.1.408
-
-**Added:** 2026-03-10
-**Claim:** LSP server for Claude Code. Provides code intelligence (go-to-definition, hover, find-references) during AI-assisted development sessions. Not used for type checking — the project uses `ty` for that.
-**Evidence:** `pyproject.toml` dev dependency. No CLI invocation or CI integration.
-**Classification:** Protective belt. Developer tooling only, no code depends on it.
 
 ### ast-grep-cli >= 0.40.5
 

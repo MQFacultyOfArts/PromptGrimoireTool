@@ -160,15 +160,17 @@ def _create_tag_callbacks(
 
 
 def _update_page_title(title: str | None) -> None:
-    """Update browser tab title AND visible header after deferred load."""
+    """Update the page title, then atomically signal deferred-load readiness."""
+    script = ""
     if title:
         safe = json.dumps(title)  # JSON-escaped, double-quoted
-        ui.run_javascript(
+        script = (
             f"document.title = {safe};"
             " var h = document.querySelector("
             "  '[data-testid=\"page-header-title\"]');"
             f" if (h) h.textContent = {safe};"
         )
+    ui.run_javascript(f"{script} window.__loadComplete = true;")
 
 
 def _show_error_ui(
@@ -359,10 +361,6 @@ async def _load_workspace_content(
             )
             _t_header = time.monotonic()
 
-            # Update page title now we have the workspace name
-            # (skeleton used generic "Annotation Workspace").
-            _update_page_title(context.workspace.title)
-
             _first_tab = str(documents[0].id) if documents else "Source"
             state.initialised_tabs, state.active_tab = {_first_tab}, _first_tab
 
@@ -397,8 +395,9 @@ async def _load_workspace_content(
             if protect:
                 inject_copy_protection()
 
-            # Signal load complete: JS flag for E2E + marker for NiceGUI tests.
-            ui.run_javascript("window.__loadComplete = true")
+            # Update the generic skeleton title and signal readiness in one
+            # browser operation so observers cannot see completion first.
+            _update_page_title(context.workspace.title)
             ui.element("div").props(
                 'data-testid="annotation-ready" style="display:none"'
             )

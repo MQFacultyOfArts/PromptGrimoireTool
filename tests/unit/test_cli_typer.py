@@ -60,6 +60,13 @@ def test_grimoire_e2e_all_help() -> None:
     assert "-k" in _plain(result)
 
 
+def test_grimoire_e2e_perf_help() -> None:
+    """Performance lane exposes production-style pool selection."""
+    result = runner.invoke(app, ["e2e", "perf", "--help"])
+    assert result.exit_code == 0
+    assert "--queue-pool" in _plain(result)
+
+
 def test_grimoire_admin_help() -> None:
     result = runner.invoke(app, ["admin", "--help"])
     assert result.exit_code == 0

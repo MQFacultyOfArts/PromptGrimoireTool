@@ -12,6 +12,29 @@ import pytest
 import typer
 
 
+def test_perf_queue_pool_removes_test_nullpool_override(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Production-pool perf runs cross from forced NullPool to configured pooling."""
+    from promptgrimoire.cli.e2e import _configure_perf_pool
+
+    monkeypatch.setenv("_PROMPTGRIMOIRE_USE_NULL_POOL", "1")
+    monkeypatch.setenv(
+        "E2E_PERF_DATABASE_URL", "postgresql+asyncpg://localhost:6432/test"
+    )
+    _configure_perf_pool(queue_pool=True)
+    assert "_PROMPTGRIMOIRE_USE_NULL_POOL" not in os.environ
+    assert os.environ["DATABASE__URL"] == os.environ["E2E_PERF_DATABASE_URL"]
+
+
+def test_e2e_server_can_use_dedicated_cpus(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Load-generator affinity does not leak into a production-shaped server."""
+    from promptgrimoire.cli.e2e._server import _server_command
+
+    monkeypatch.setenv("E2E_SERVER_CPU_LIST", "0-7")
+    assert _server_command(4312)[:3] == ["taskset", "--cpu-list", "0-7"]
+
+
 class _DummyWriter:
     """Minimal asyncio stream writer for server readiness checks."""
 

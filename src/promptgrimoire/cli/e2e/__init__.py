@@ -49,6 +49,14 @@ def _playwright_worker_count() -> int:
     return max(1, min(4, available // 2))
 
 
+def _configure_perf_pool(*, queue_pool: bool) -> None:
+    """Let the perf server use configured pooling after test DB cleanup."""
+    if queue_pool:
+        os.environ.pop("_PROMPTGRIMOIRE_USE_NULL_POOL", None)
+        if database_url := os.environ.get("E2E_PERF_DATABASE_URL"):
+            os.environ["DATABASE__URL"] = database_url
+
+
 def _configure_slow_run_resources() -> None:
     """Keep the Linux workstation responsive during the exhaustive slow gate.
 
@@ -620,6 +628,11 @@ def perf(
     collect_only: bool = typer.Option(
         False, "--co", "--collect-only", help="Only collect tests, don't run them"
     ),
+    queue_pool: bool = typer.Option(
+        False,
+        "--queue-pool",
+        help="Use configured QueuePool settings (and E2E_PERF_DATABASE_URL)",
+    ),
 ) -> None:
     """Run performance baseline tests (perf marker) with managed E2E server."""
     args = _prepend_filter(ctx.args, filter_expr)
@@ -635,6 +648,7 @@ def perf(
 
     get_settings()
     _pre_test_db_cleanup()
+    _configure_perf_pool(queue_pool=queue_pool)
 
     port = _allocate_ports(1)[0]
     url = f"http://localhost:{port}"

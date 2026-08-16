@@ -349,6 +349,37 @@ The useful worker-isolation architecture has already landed for export. Keep
 the historical plans/postmortem; do not revive the branch as a general-purpose
 worker framework until a measured document-import job needs it.
 
+## Production-pool baseline (2026-08-16)
+
+One managed server was pinned to 8 CPUs. Chromium load generators used the
+other 24 CPUs. The app used production's QueuePool 20+10 through a local
+PgBouncer in transaction mode (40+10, 120 clients) to PostgreSQL. PostgreSQL
+itself remained host-wide, so this isolates browser CPU from the app but does
+not reproduce production's fully co-located 8-core contention.
+
+| Sessions | Median ready | Mean ready | Max ready | During RSS | Result |
+| ---: | ---: | ---: | ---: | ---: | --- |
+| 1 | 435 ms | 435 ms | 435 ms | 290 MB | pass |
+| 10 | 1.22 s | 1.22 s | 1.31 s | 399 MB | pass |
+| 25 | 2.81 s | 2.81 s | 3.01 s | 574 MB | pass |
+| 50 | 5.67 s | 5.17 s | 6.45 s | 842 MB | pass |
+| 75 | 8.31 s | 7.13 s | 9.19 s | 1.03 GB | pass |
+| 100 | 11.44 s | 9.74 s | 13.33 s | 1.19 GB | fail: 97/100 present |
+
+At 50 sessions, server-side page construction averaged 2.39 s (746.9 ms in
+the context/DB-resolution slice), while document rendering averaged 34.6 ms.
+At 100 sessions all 100 browser workers reached the annotation-ready boundary,
+but only 97 had completed NiceGUI/outbox/presence registration at the immediate
+snapshot. The server had 100 WebSocket ASGI tasks but only 97 Outbox loops.
+This is evidence that visible document readiness can precede live
+collaboration readiness under load; do not weaken the assertion into a sleep.
+PgBouncer's overlapping 60-second stats reported zero pool wait, roughly
+0.6 ms/query, and 168 ms/transaction. That weakens PgBouncer saturation as the
+cause and instead points at time held inside application transactions and the
+remaining page/WebSocket work.
+
+Raw diagnostic snapshots are in `perf-results/prod-pool-*.json`.
+
 ## Decision rule
 
 The next implementation should be the smallest change that improves both a

@@ -17,6 +17,14 @@ from promptgrimoire.cli._shared import console
 _SERVER_SCRIPT_PATH = Path(__file__).parent / "_server_script.py"
 
 
+def _server_command(port: int) -> list[str]:
+    """Build the server command, optionally pinned to dedicated CPUs."""
+    command = [sys.executable, str(_SERVER_SCRIPT_PATH), str(port)]
+    if cpu_list := os.environ.get("E2E_SERVER_CPU_LIST"):
+        return ["taskset", "--cpu-list", cpu_list, *command]
+    return command
+
+
 def _start_e2e_server(port: int) -> subprocess.Popen[bytes]:
     """Start a NiceGUI server subprocess for E2E tests.
 
@@ -31,7 +39,7 @@ def _start_e2e_server(port: int) -> subprocess.Popen[bytes]:
     server_log = Path("test-e2e-server.log")
     server_log_fh = server_log.open("w")
     process = subprocess.Popen(
-        [sys.executable, str(_SERVER_SCRIPT_PATH), str(port)],
+        _server_command(port),
         stdout=server_log_fh,
         stderr=subprocess.STDOUT,
         env=clean_env,

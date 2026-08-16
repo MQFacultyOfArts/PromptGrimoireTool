@@ -39,6 +39,9 @@ library references during development.
 
 - [Dead End: Client-Side Char Span Synchronisation](dead-ends/2026-02-10-charspan-sync.md)
 - [Dead End: \annot with \par inside longtable + luatexja](dead-ends/2026-03-15-annot-par-in-longtable.md)
+- [Dead End: Independent Load DB Narrowing Falsifiers](dead-ends/2026-04-23-independent-load-db-narrowing.md)
+- [Dead End: Moving First `get_document(...)` Outside `with client:`](dead-ends/2026-04-23-independent-load-prefetch-outside-client.md)
+- [Dead End: Export-Recovery Timer Deferral](dead-ends/2026-04-24-independent-load-export-recovery-deferral.md)
 
 ## decisions
 

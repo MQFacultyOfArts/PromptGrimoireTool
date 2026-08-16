@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import asyncio
+import fcntl
 import os
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path
+from typing import TextIO
 
 import typer
 
@@ -37,6 +40,7 @@ from promptgrimoire.cli.testing import _run_pytest
 
 e2e_app = typer.Typer(help="End-to-end test commands.")
 _PLAYWRIGHT_TEST_PATH = str(PLAYWRIGHT_LANE.test_paths[0])
+_perf_lock_files: list[TextIO] = []
 
 
 def _playwright_worker_count() -> int:
@@ -51,12 +55,31 @@ def _playwright_worker_count() -> int:
 
 
 def _wait_for_idle_perf_host() -> None:
-    """Wait to add a performance wave until the host is quiet."""
+    """Serialize host-wide perf runs, then require one quiet minute."""
+    if not _perf_lock_files:
+        # ponytail: one host-wide slot; add named resources only if independent
+        # perf suites need safe concurrency.
+        lock_path = Path(
+            os.environ.get(
+                "E2E_PERF_LOCK_PATH",
+                str(Path(tempfile.gettempdir()) / "promptgrimoire-perf.lock"),
+            )
+        )
+        lock_file = lock_path.open("w", encoding="utf-8")
+        console.print("[yellow]Waiting for host-wide performance slot...[/]")
+        fcntl.flock(lock_file, fcntl.LOCK_EX)
+        _perf_lock_files.append(lock_file)
+
     limit = float(os.environ.get("E2E_PERF_MAX_LOAD", "4"))
-    while (load_1m := os.getloadavg()[0]) > limit:
+    quiet_samples = 0
+    while quiet_samples < 4:
+        load_1m = os.getloadavg()[0]
+        quiet_samples = quiet_samples + 1 if load_1m <= limit else 0
+        if quiet_samples == 4:
+            return
         console.print(
-            f"[yellow]Host load {load_1m:.1f} exceeds perf limit {limit:.1f}; "
-            "waiting 15s...[/]"
+            f"[yellow]Host load {load_1m:.1f}; need {4 - quiet_samples} more "
+            f"quiet sample(s) at ≤{limit:.1f}. Waiting 15s...[/]"
         )
         time.sleep(15)
 

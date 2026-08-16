@@ -38,9 +38,13 @@ one managed server. It is intentionally absent from PR CI, `e2e all`,
 `e2e slow`, and the nightly workflow: these probes create production-shaped
 browser waves and produce evidence rather than a release gate.
 
-The command waits until the host's one-minute load average is at or below 4
-before provisioning the server. `E2E_PERF_MAX_LOAD` overrides that threshold.
-Use `--queue-pool` to exercise configured QueuePool settings;
+The command takes a host-wide file lock, then requires four consecutive
+15-second samples with the one-minute load average at or below 4 before
+provisioning the server. This serializes perf commands from separate worktrees
+instead of releasing them together on the same quiet sample.
+`E2E_PERF_MAX_LOAD` overrides the load threshold and `E2E_PERF_LOCK_PATH`
+overrides the lock path. Use `--queue-pool` to exercise configured QueuePool
+settings;
 `E2E_PERF_DATABASE_URL` may then point the managed app server through a local
 transaction pool after migrations and cleanup have run directly. The
 independent-workspace probe accepts:

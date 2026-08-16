@@ -1,0 +1,847 @@
+{
+  "auth_client_settle_seconds": 16.0,
+  "before": {
+    "pool": "size=20 checked_in=1 checked_out=0 overflow=-19/10",
+    "engine_id": 135718351180432,
+    "engine_is_none": false,
+    "rss_bytes": 270151680,
+    "nicegui_clients": 0,
+    "nicegui_delete_tasks": 0,
+    "crdt_docs": 0,
+    "crdt_dirty": 0,
+    "crdt_pending_saves": 0,
+    "presence_workspaces": 0,
+    "presence_total_clients": 0,
+    "ws_registry": 0,
+    "asyncio_tasks": 14,
+    "asyncio_task_names": {
+      "Timer._run_in_loop": 4,
+      "<locals>.coro": 3,
+      "RequestResponseCycle.run_asgi": 1,
+      "Server.serve": 1,
+      "start_export_worker": 1,
+      "sample_event_loop_lag": 1,
+      "refresh_loop": 1,
+      "start_diagnostic_logger": 1,
+      "LifespanOn.main": 1
+    },
+    "load_metrics": {
+      "db_connection_hold_ms_count": 5,
+      "db_connection_hold_ms_avg": 2.471,
+      "db_connection_hold_ms_p95": 4.482,
+      "db_connection_hold_ms_max": 4.482,
+      "event_loop_lag_ms_count": 141,
+      "event_loop_lag_ms_avg": 0.17,
+      "event_loop_lag_ms_p95": 1.0,
+      "event_loop_lag_ms_max": 1.0
+    }
+  },
+  "during": {
+    "pool": "size=20 checked_in=20 checked_out=0 overflow=0/10",
+    "engine_id": 135718351180432,
+    "engine_is_none": false,
+    "rss_bytes": 1189502976,
+    "nicegui_clients": 129,
+    "nicegui_delete_tasks": 0,
+    "crdt_docs": 100,
+    "crdt_dirty": 0,
+    "crdt_pending_saves": 0,
+    "presence_workspaces": 100,
+    "presence_total_clients": 100,
+    "ws_registry": 100,
+    "asyncio_tasks": 544,
+    "asyncio_task_names": {
+      "Outbox.loop": 129,
+      "<locals>.websocket_wait": 100,
+      "AsyncSocket._send_ping": 100,
+      "<locals>.writer": 100,
+      "WSProtocol.run_asgi": 100,
+      "Timer._run_in_loop": 4,
+      "<locals>.coro": 3,
+      "sample_event_loop_lag": 1,
+      "start_diagnostic_logger": 1,
+      "LifespanOn.main": 1
+    },
+    "load_metrics": {
+      "event_loop_lag_ms_count": 349,
+      "event_loop_lag_ms_avg": 11.011,
+      "event_loop_lag_ms_p95": 73.0,
+      "event_loop_lag_ms_max": 328.0,
+      "db_connection_hold_ms_count": 909,
+      "db_connection_hold_ms_avg": 140.809,
+      "db_connection_hold_ms_p95": 405.43,
+      "db_connection_hold_ms_max": 1278.504,
+      "collaboration_presence_registered_count": 100,
+      "collaboration_presence_registered_avg": 1.0,
+      "collaboration_presence_registered_p95": 1,
+      "collaboration_presence_registered_max": 1,
+      "page_db_resolve_ms_count": 100,
+      "page_db_resolve_ms_avg": 1761.381,
+      "page_db_resolve_ms_p95": 4848.1,
+      "page_db_resolve_ms_max": 6004.2,
+      "page_ui_setup_ms_count": 100,
+      "page_ui_setup_ms_avg": 0.133,
+      "page_ui_setup_ms_p95": 0.2,
+      "page_ui_setup_ms_max": 0.4,
+      "page_header_ms_count": 100,
+      "page_header_ms_avg": 935.228,
+      "page_header_ms_p95": 2255.7,
+      "page_header_ms_max": 3044.4,
+      "page_tab_panels_ms_count": 100,
+      "page_tab_panels_ms_avg": 1017.841,
+      "page_tab_panels_ms_p95": 2252.0,
+      "page_tab_panels_ms_max": 3890.4,
+      "page_finish_ms_count": 100,
+      "page_finish_ms_avg": 0.103,
+      "page_finish_ms_p95": 0.1,
+      "page_finish_ms_max": 0.2,
+      "page_total_ui_ms_count": 100,
+      "page_total_ui_ms_avg": 1953.299,
+      "page_total_ui_ms_p95": 3649.3,
+      "page_total_ui_ms_max": 4649.9,
+      "page_total_ms_count": 100,
+      "page_total_ms_avg": 3714.717,
+      "page_total_ms_p95": 6393.3,
+      "page_total_ms_max": 7082.2
+    }
+  },
+  "after": {
+    "pool": "size=20 checked_in=20 checked_out=0 overflow=0/10",
+    "engine_id": 135718351180432,
+    "engine_is_none": false,
+    "rss_bytes": 1189834752,
+    "nicegui_clients": 129,
+    "nicegui_delete_tasks": 100,
+    "crdt_docs": 100,
+    "crdt_dirty": 0,
+    "crdt_pending_saves": 0,
+    "presence_workspaces": 100,
+    "presence_total_clients": 100,
+    "ws_registry": 100,
+    "asyncio_tasks": 291,
+    "asyncio_task_names": {
+      "Outbox.loop": 129,
+      "<locals>.delete_content": 100,
+      "AsyncSocket._send_ping": 47,
+      "Timer._run_in_loop": 4,
+      "<locals>.coro": 3,
+      "RequestResponseCycle.run_asgi": 1,
+      "refresh_loop": 1,
+      "sample_event_loop_lag": 1,
+      "LifespanOn.main": 1,
+      "AsyncServer._service_task": 1
+    },
+    "load_metrics": {
+      "event_loop_lag_ms_count": 12,
+      "event_loop_lag_ms_avg": 0.167,
+      "event_loop_lag_ms_p95": 1.0,
+      "event_loop_lag_ms_max": 1.0,
+      "db_connection_hold_ms_count": 1,
+      "db_connection_hold_ms_avg": 1.129,
+      "db_connection_hold_ms_p95": 1.129,
+      "db_connection_hold_ms_max": 1.129
+    }
+  },
+  "results": [
+    {
+      "email": "iw-c50f5f0c@test.example.edu.au",
+      "workspace_id": "f12f23f0-e291-433a-b966-4d619b3e15b6",
+      "annotation_loaded": true,
+      "elapsed_ms": 11246,
+      "error": null
+    },
+    {
+      "email": "iw-127bc9ec@test.example.edu.au",
+      "workspace_id": "88724386-f7b1-4f55-8c71-8a28e89b91e9",
+      "annotation_loaded": true,
+      "elapsed_ms": 11183,
+      "error": null
+    },
+    {
+      "email": "iw-3d8488bb@test.example.edu.au",
+      "workspace_id": "fcf17f6c-eeeb-4972-b06d-27e4c32c0ed1",
+      "annotation_loaded": true,
+      "elapsed_ms": 11918,
+      "error": null
+    },
+    {
+      "email": "iw-f70a7077@test.example.edu.au",
+      "workspace_id": "a3a81e5d-373e-45a2-bf43-9a7b1abe175d",
+      "annotation_loaded": true,
+      "elapsed_ms": 10082,
+      "error": null
+    },
+    {
+      "email": "iw-801e3fca@test.example.edu.au",
+      "workspace_id": "414fc640-74f1-40d5-9bc2-bb1fc598edae",
+      "annotation_loaded": true,
+      "elapsed_ms": 10402,
+      "error": null
+    },
+    {
+      "email": "iw-1269edbb@test.example.edu.au",
+      "workspace_id": "d4e69b09-3e3a-4049-9a17-cee9abe28b5e",
+      "annotation_loaded": true,
+      "elapsed_ms": 11476,
+      "error": null
+    },
+    {
+      "email": "iw-16fe014d@test.example.edu.au",
+      "workspace_id": "439b5511-86a5-443e-94b6-059d87d7728d",
+      "annotation_loaded": true,
+      "elapsed_ms": 10365,
+      "error": null
+    },
+    {
+      "email": "iw-ad7063b5@test.example.edu.au",
+      "workspace_id": "6e9cdcde-4d38-46f7-b46b-a50edd3a7581",
+      "annotation_loaded": true,
+      "elapsed_ms": 10281,
+      "error": null
+    },
+    {
+      "email": "iw-01887e99@test.example.edu.au",
+      "workspace_id": "2368176d-84fc-4c0b-9d1f-11c9fcca14b1",
+      "annotation_loaded": true,
+      "elapsed_ms": 10217,
+      "error": null
+    },
+    {
+      "email": "iw-a3f849ed@test.example.edu.au",
+      "workspace_id": "a3ea3dd4-2495-4876-8719-b5db4535983e",
+      "annotation_loaded": true,
+      "elapsed_ms": 10622,
+      "error": null
+    },
+    {
+      "email": "iw-07a885ed@test.example.edu.au",
+      "workspace_id": "079c1850-31c7-43b4-b973-90ba0c1e2b82",
+      "annotation_loaded": true,
+      "elapsed_ms": 10266,
+      "error": null
+    },
+    {
+      "email": "iw-dd2f76c9@test.example.edu.au",
+      "workspace_id": "b6499f34-1f91-475c-b46f-4be225946b38",
+      "annotation_loaded": true,
+      "elapsed_ms": 10355,
+      "error": null
+    },
+    {
+      "email": "iw-6434a266@test.example.edu.au",
+      "workspace_id": "3dcfceb3-7124-47d0-a92d-bfebb16c8280",
+      "annotation_loaded": true,
+      "elapsed_ms": 11078,
+      "error": null
+    },
+    {
+      "email": "iw-8af18f82@test.example.edu.au",
+      "workspace_id": "78d908dd-28f8-4f8d-8e20-210a66bc460c",
+      "annotation_loaded": true,
+      "elapsed_ms": 10725,
+      "error": null
+    },
+    {
+      "email": "iw-6f31f2e0@test.example.edu.au",
+      "workspace_id": "d897a711-b6f1-424c-bd2b-0064a1cbc0e8",
+      "annotation_loaded": true,
+      "elapsed_ms": 12164,
+      "error": null
+    },
+    {
+      "email": "iw-bc98473a@test.example.edu.au",
+      "workspace_id": "848e0516-bf50-4d61-9d6e-9478e59dbf1e",
+      "annotation_loaded": true,
+      "elapsed_ms": 11225,
+      "error": null
+    },
+    {
+      "email": "iw-1b05a0bc@test.example.edu.au",
+      "workspace_id": "a52ff4fc-6000-4405-80bc-a6a9b583039c",
+      "annotation_loaded": true,
+      "elapsed_ms": 10958,
+      "error": null
+    },
+    {
+      "email": "iw-bf9c4590@test.example.edu.au",
+      "workspace_id": "aa5f002e-be19-4d3d-b8ca-6dc4abe4f4cd",
+      "annotation_loaded": true,
+      "elapsed_ms": 10812,
+      "error": null
+    },
+    {
+      "email": "iw-4444f3bc@test.example.edu.au",
+      "workspace_id": "cdda4f4b-5a95-4b7f-a0bb-fa3e842675bd",
+      "annotation_loaded": true,
+      "elapsed_ms": 11285,
+      "error": null
+    },
+    {
+      "email": "iw-211c901c@test.example.edu.au",
+      "workspace_id": "686c0f9d-6e74-43bd-95c1-215d07172619",
+      "annotation_loaded": true,
+      "elapsed_ms": 10458,
+      "error": null
+    },
+    {
+      "email": "iw-d7b1102a@test.example.edu.au",
+      "workspace_id": "e58ff3a5-473b-4353-bbfe-e687b1a67ae0",
+      "annotation_loaded": true,
+      "elapsed_ms": 8333,
+      "error": null
+    },
+    {
+      "email": "iw-432f373d@test.example.edu.au",
+      "workspace_id": "23716401-8f31-4755-babe-8f3ecdb8486c",
+      "annotation_loaded": true,
+      "elapsed_ms": 10925,
+      "error": null
+    },
+    {
+      "email": "iw-8fe1263b@test.example.edu.au",
+      "workspace_id": "ac53bad9-ca8e-4185-9fab-258c22e583e1",
+      "annotation_loaded": true,
+      "elapsed_ms": 11516,
+      "error": null
+    },
+    {
+      "email": "iw-11573b12@test.example.edu.au",
+      "workspace_id": "d568751f-ddd5-48c0-a1dc-acfee16ba51c",
+      "annotation_loaded": true,
+      "elapsed_ms": 11133,
+      "error": null
+    },
+    {
+      "email": "iw-da387a4c@test.example.edu.au",
+      "workspace_id": "e62ed8ae-2875-4838-bd07-e52e07968c5a",
+      "annotation_loaded": true,
+      "elapsed_ms": 10548,
+      "error": null
+    },
+    {
+      "email": "iw-253faa77@test.example.edu.au",
+      "workspace_id": "123541c7-36da-4037-96bc-c9abe18174fa",
+      "annotation_loaded": true,
+      "elapsed_ms": 10149,
+      "error": null
+    },
+    {
+      "email": "iw-766cea14@test.example.edu.au",
+      "workspace_id": "523dcbf7-af96-4cf2-b173-9127cd539f51",
+      "annotation_loaded": true,
+      "elapsed_ms": 12032,
+      "error": null
+    },
+    {
+      "email": "iw-071d441c@test.example.edu.au",
+      "workspace_id": "cd8f255f-00f7-427e-825f-cdd717c4f79c",
+      "annotation_loaded": true,
+      "elapsed_ms": 4516,
+      "error": null
+    },
+    {
+      "email": "iw-86cfac6a@test.example.edu.au",
+      "workspace_id": "32d7f49f-87df-4aac-a8b9-ebae6e18e9f9",
+      "annotation_loaded": true,
+      "elapsed_ms": 9835,
+      "error": null
+    },
+    {
+      "email": "iw-bf9a1c7c@test.example.edu.au",
+      "workspace_id": "ff6d7179-b7b7-46c7-99ee-6255c48b1200",
+      "annotation_loaded": true,
+      "elapsed_ms": 11021,
+      "error": null
+    },
+    {
+      "email": "iw-4b0fff17@test.example.edu.au",
+      "workspace_id": "b84bc54d-5863-43b7-91b4-76df13c42a4d",
+      "annotation_loaded": true,
+      "elapsed_ms": 10825,
+      "error": null
+    },
+    {
+      "email": "iw-4d9efa81@test.example.edu.au",
+      "workspace_id": "edc7630a-304b-48ff-8c8d-4b147307ea80",
+      "annotation_loaded": true,
+      "elapsed_ms": 10691,
+      "error": null
+    },
+    {
+      "email": "iw-4e353164@test.example.edu.au",
+      "workspace_id": "32bac242-b351-4ef4-ad75-332d3a8e7c43",
+      "annotation_loaded": true,
+      "elapsed_ms": 11102,
+      "error": null
+    },
+    {
+      "email": "iw-0e01d965@test.example.edu.au",
+      "workspace_id": "e9ea9439-b8cf-441d-9ef4-74a1b1933619",
+      "annotation_loaded": true,
+      "elapsed_ms": 10999,
+      "error": null
+    },
+    {
+      "email": "iw-efdec4f2@test.example.edu.au",
+      "workspace_id": "04ac23ac-0030-47b2-8ab8-d45171854021",
+      "annotation_loaded": true,
+      "elapsed_ms": 4217,
+      "error": null
+    },
+    {
+      "email": "iw-ec3ed1c9@test.example.edu.au",
+      "workspace_id": "f63c8644-f593-4b58-8e40-2c26684c08b0",
+      "annotation_loaded": true,
+      "elapsed_ms": 10820,
+      "error": null
+    },
+    {
+      "email": "iw-28866aac@test.example.edu.au",
+      "workspace_id": "41a43059-24aa-475e-83de-a0f43878a7c7",
+      "annotation_loaded": true,
+      "elapsed_ms": 10929,
+      "error": null
+    },
+    {
+      "email": "iw-7cb4a9b7@test.example.edu.au",
+      "workspace_id": "22211a22-fd8f-4bb2-8278-2068dc43edd0",
+      "annotation_loaded": true,
+      "elapsed_ms": 9475,
+      "error": null
+    },
+    {
+      "email": "iw-3b8e8439@test.example.edu.au",
+      "workspace_id": "b756f9da-8af5-4c30-a23d-84659baa7288",
+      "annotation_loaded": true,
+      "elapsed_ms": 10668,
+      "error": null
+    },
+    {
+      "email": "iw-7bdf9e47@test.example.edu.au",
+      "workspace_id": "c31f24e5-8bca-4774-8e3b-ab9de00d1a22",
+      "annotation_loaded": true,
+      "elapsed_ms": 11280,
+      "error": null
+    },
+    {
+      "email": "iw-77e54dc4@test.example.edu.au",
+      "workspace_id": "34441cc1-4031-4fd4-b089-caceb4c9c04b",
+      "annotation_loaded": true,
+      "elapsed_ms": 11116,
+      "error": null
+    },
+    {
+      "email": "iw-1573b2a0@test.example.edu.au",
+      "workspace_id": "ef048d10-ed68-4281-a285-5d5295472520",
+      "annotation_loaded": true,
+      "elapsed_ms": 11655,
+      "error": null
+    },
+    {
+      "email": "iw-1bf3b3dc@test.example.edu.au",
+      "workspace_id": "b58e6248-60f8-416e-bc37-c8142a3f6279",
+      "annotation_loaded": true,
+      "elapsed_ms": 10067,
+      "error": null
+    },
+    {
+      "email": "iw-28237cf5@test.example.edu.au",
+      "workspace_id": "cb877f77-67f7-4e56-984c-b87cf6524c1b",
+      "annotation_loaded": true,
+      "elapsed_ms": 11976,
+      "error": null
+    },
+    {
+      "email": "iw-5fd56d44@test.example.edu.au",
+      "workspace_id": "fcbb4fc0-f133-4041-b672-169e254e52a4",
+      "annotation_loaded": true,
+      "elapsed_ms": 10012,
+      "error": null
+    },
+    {
+      "email": "iw-52624b5a@test.example.edu.au",
+      "workspace_id": "f92561fa-60b1-4c85-9d9d-7f479c4e4945",
+      "annotation_loaded": true,
+      "elapsed_ms": 9586,
+      "error": null
+    },
+    {
+      "email": "iw-989c76bb@test.example.edu.au",
+      "workspace_id": "31758366-aa1e-4a2d-ad36-1f8613970070",
+      "annotation_loaded": true,
+      "elapsed_ms": 11353,
+      "error": null
+    },
+    {
+      "email": "iw-5a871f83@test.example.edu.au",
+      "workspace_id": "133afa98-7291-47dd-833a-e43d914558e6",
+      "annotation_loaded": true,
+      "elapsed_ms": 11459,
+      "error": null
+    },
+    {
+      "email": "iw-6574a441@test.example.edu.au",
+      "workspace_id": "5b3725f9-3e70-4904-b47d-67c1a79a1646",
+      "annotation_loaded": true,
+      "elapsed_ms": 11002,
+      "error": null
+    },
+    {
+      "email": "iw-c57cf24f@test.example.edu.au",
+      "workspace_id": "9daa789b-4300-444d-b082-93539b9a1692",
+      "annotation_loaded": true,
+      "elapsed_ms": 10296,
+      "error": null
+    },
+    {
+      "email": "iw-8c857220@test.example.edu.au",
+      "workspace_id": "efdc28c5-7140-486e-abef-fcbff66246c2",
+      "annotation_loaded": true,
+      "elapsed_ms": 10306,
+      "error": null
+    },
+    {
+      "email": "iw-31bf12fe@test.example.edu.au",
+      "workspace_id": "41d3a360-10da-4883-a13f-591c5c48efb5",
+      "annotation_loaded": true,
+      "elapsed_ms": 11804,
+      "error": null
+    },
+    {
+      "email": "iw-e1817d65@test.example.edu.au",
+      "workspace_id": "11c3d1ce-200e-44cf-a884-21547721939a",
+      "annotation_loaded": true,
+      "elapsed_ms": 11630,
+      "error": null
+    },
+    {
+      "email": "iw-74f944be@test.example.edu.au",
+      "workspace_id": "3e60ff58-eb48-4787-8dbc-356e92298045",
+      "annotation_loaded": true,
+      "elapsed_ms": 5909,
+      "error": null
+    },
+    {
+      "email": "iw-65eadeeb@test.example.edu.au",
+      "workspace_id": "752b1e86-6929-4a86-801b-f27b6f2d96a6",
+      "annotation_loaded": true,
+      "elapsed_ms": 10705,
+      "error": null
+    },
+    {
+      "email": "iw-35214630@test.example.edu.au",
+      "workspace_id": "99e5f9b1-496e-4ab5-af91-d1183455822f",
+      "annotation_loaded": true,
+      "elapsed_ms": 11724,
+      "error": null
+    },
+    {
+      "email": "iw-1ca573ea@test.example.edu.au",
+      "workspace_id": "80afdd03-36cb-4152-979f-2a2c9b69a650",
+      "annotation_loaded": true,
+      "elapsed_ms": 11108,
+      "error": null
+    },
+    {
+      "email": "iw-22b52c9f@test.example.edu.au",
+      "workspace_id": "b87de86a-71e2-48d7-914f-9df50ff7fe6f",
+      "annotation_loaded": true,
+      "elapsed_ms": 10804,
+      "error": null
+    },
+    {
+      "email": "iw-4d0bb38f@test.example.edu.au",
+      "workspace_id": "1ef6a279-8c94-4ee2-831e-77ee4c8beccc",
+      "annotation_loaded": true,
+      "elapsed_ms": 11628,
+      "error": null
+    },
+    {
+      "email": "iw-f774596b@test.example.edu.au",
+      "workspace_id": "94b6efa2-1620-43d5-ae18-38b219f6edf5",
+      "annotation_loaded": true,
+      "elapsed_ms": 10445,
+      "error": null
+    },
+    {
+      "email": "iw-c109f16e@test.example.edu.au",
+      "workspace_id": "caa5901f-1745-4b87-99ea-869f97aace7c",
+      "annotation_loaded": true,
+      "elapsed_ms": 5531,
+      "error": null
+    },
+    {
+      "email": "iw-adc57107@test.example.edu.au",
+      "workspace_id": "41194e9e-b62d-451d-a122-c08fafe583a3",
+      "annotation_loaded": true,
+      "elapsed_ms": 7428,
+      "error": null
+    },
+    {
+      "email": "iw-b6a48ae8@test.example.edu.au",
+      "workspace_id": "29398afe-5077-4242-a3a9-505d7a35e676",
+      "annotation_loaded": true,
+      "elapsed_ms": 11154,
+      "error": null
+    },
+    {
+      "email": "iw-8a4897f0@test.example.edu.au",
+      "workspace_id": "80e077c3-02b5-44b2-baac-629f7d117a40",
+      "annotation_loaded": true,
+      "elapsed_ms": 7304,
+      "error": null
+    },
+    {
+      "email": "iw-e28ad4ac@test.example.edu.au",
+      "workspace_id": "9fd12952-ee5d-45f9-b51f-e3c1cb09ab46",
+      "annotation_loaded": true,
+      "elapsed_ms": 10878,
+      "error": null
+    },
+    {
+      "email": "iw-f7c1a04d@test.example.edu.au",
+      "workspace_id": "cd070ed5-0a01-449a-9738-055f4290ce17",
+      "annotation_loaded": true,
+      "elapsed_ms": 12076,
+      "error": null
+    },
+    {
+      "email": "iw-d0594974@test.example.edu.au",
+      "workspace_id": "ebd51be0-2490-47f9-867d-8d4b85633b45",
+      "annotation_loaded": true,
+      "elapsed_ms": 11307,
+      "error": null
+    },
+    {
+      "email": "iw-da5ad299@test.example.edu.au",
+      "workspace_id": "e577eba3-13b3-40ac-bf7c-b4572c883d99",
+      "annotation_loaded": true,
+      "elapsed_ms": 8982,
+      "error": null
+    },
+    {
+      "email": "iw-c5e36b1a@test.example.edu.au",
+      "workspace_id": "11c448c9-de11-426e-937a-88300e92f33d",
+      "annotation_loaded": true,
+      "elapsed_ms": 10758,
+      "error": null
+    },
+    {
+      "email": "iw-c939b4af@test.example.edu.au",
+      "workspace_id": "f5f5ae9a-cb4f-4534-bdd6-f6638ee7b290",
+      "annotation_loaded": true,
+      "elapsed_ms": 11623,
+      "error": null
+    },
+    {
+      "email": "iw-87550b9d@test.example.edu.au",
+      "workspace_id": "b7ecd622-1c40-45c7-8a62-4d18a8159a56",
+      "annotation_loaded": true,
+      "elapsed_ms": 6335,
+      "error": null
+    },
+    {
+      "email": "iw-f66b7422@test.example.edu.au",
+      "workspace_id": "40d218ca-2ebf-40fb-808f-b9bd70465b57",
+      "annotation_loaded": true,
+      "elapsed_ms": 10437,
+      "error": null
+    },
+    {
+      "email": "iw-3488d242@test.example.edu.au",
+      "workspace_id": "e22ff487-4a40-4271-9346-914d78ab12ef",
+      "annotation_loaded": true,
+      "elapsed_ms": 11442,
+      "error": null
+    },
+    {
+      "email": "iw-ede514d0@test.example.edu.au",
+      "workspace_id": "b61ff0cb-231a-4d82-88b4-7b39f3a02366",
+      "annotation_loaded": true,
+      "elapsed_ms": 11853,
+      "error": null
+    },
+    {
+      "email": "iw-70e6ecf5@test.example.edu.au",
+      "workspace_id": "31b0c0ed-d528-4c9c-9817-ac5fce59eacc",
+      "annotation_loaded": true,
+      "elapsed_ms": 11748,
+      "error": null
+    },
+    {
+      "email": "iw-468110c3@test.example.edu.au",
+      "workspace_id": "9fd831c4-c698-4235-a34e-96026f1ef079",
+      "annotation_loaded": true,
+      "elapsed_ms": 10586,
+      "error": null
+    },
+    {
+      "email": "iw-99fc2739@test.example.edu.au",
+      "workspace_id": "45cca1df-c796-4630-9505-6c51f34c2d04",
+      "annotation_loaded": true,
+      "elapsed_ms": 8876,
+      "error": null
+    },
+    {
+      "email": "iw-2555d03b@test.example.edu.au",
+      "workspace_id": "17232dba-33f7-4c7a-93d8-a4b10cbd7f18",
+      "annotation_loaded": true,
+      "elapsed_ms": 10262,
+      "error": null
+    },
+    {
+      "email": "iw-9d1d1491@test.example.edu.au",
+      "workspace_id": "0875fb02-9692-4530-8b02-376f2eaa5d10",
+      "annotation_loaded": true,
+      "elapsed_ms": 9772,
+      "error": null
+    },
+    {
+      "email": "iw-d1af68b5@test.example.edu.au",
+      "workspace_id": "55ff17a2-13e9-4afd-8850-1fe5f64ceaa7",
+      "annotation_loaded": true,
+      "elapsed_ms": 6838,
+      "error": null
+    },
+    {
+      "email": "iw-f67cfee4@test.example.edu.au",
+      "workspace_id": "6099c506-4a48-4b0d-b23b-ad1a4f7eb5ff",
+      "annotation_loaded": true,
+      "elapsed_ms": 11519,
+      "error": null
+    },
+    {
+      "email": "iw-e204e374@test.example.edu.au",
+      "workspace_id": "ba976bd4-da7e-4306-9c82-cf9777788ec2",
+      "annotation_loaded": true,
+      "elapsed_ms": 11329,
+      "error": null
+    },
+    {
+      "email": "iw-990110ce@test.example.edu.au",
+      "workspace_id": "0b543d63-21f6-4727-8f38-71e46dee0c65",
+      "annotation_loaded": true,
+      "elapsed_ms": 11770,
+      "error": null
+    },
+    {
+      "email": "iw-884b62bb@test.example.edu.au",
+      "workspace_id": "b3e3862b-f775-4935-a231-9b14540e4cf3",
+      "annotation_loaded": true,
+      "elapsed_ms": 12097,
+      "error": null
+    },
+    {
+      "email": "iw-b7f3eb09@test.example.edu.au",
+      "workspace_id": "14d1d65b-f351-4cf1-849e-ba9cb1444abc",
+      "annotation_loaded": true,
+      "elapsed_ms": 5067,
+      "error": null
+    },
+    {
+      "email": "iw-a5ade222@test.example.edu.au",
+      "workspace_id": "e577aaa8-071e-4497-a011-3ebd62b16b0c",
+      "annotation_loaded": true,
+      "elapsed_ms": 11045,
+      "error": null
+    },
+    {
+      "email": "iw-0ef86cf9@test.example.edu.au",
+      "workspace_id": "37216f94-fa51-4ce5-8115-f4161e09a3c5",
+      "annotation_loaded": true,
+      "elapsed_ms": 11001,
+      "error": null
+    },
+    {
+      "email": "iw-b015bae7@test.example.edu.au",
+      "workspace_id": "6f19f154-2f43-4a95-b699-aa7e1dda65c7",
+      "annotation_loaded": true,
+      "elapsed_ms": 4808,
+      "error": null
+    },
+    {
+      "email": "iw-fa29086e@test.example.edu.au",
+      "workspace_id": "317e04db-7018-48e8-9ee9-5712637c04a8",
+      "annotation_loaded": true,
+      "elapsed_ms": 9859,
+      "error": null
+    },
+    {
+      "email": "iw-34f27ea6@test.example.edu.au",
+      "workspace_id": "dc410e98-ff6c-4d2b-90a0-476d275a1812",
+      "annotation_loaded": true,
+      "elapsed_ms": 10813,
+      "error": null
+    },
+    {
+      "email": "iw-6a5b744c@test.example.edu.au",
+      "workspace_id": "85878dfe-8fe9-4eea-b30b-8e4bb493cc7e",
+      "annotation_loaded": true,
+      "elapsed_ms": 11358,
+      "error": null
+    },
+    {
+      "email": "iw-68e09e0b@test.example.edu.au",
+      "workspace_id": "2289dfa8-9332-4a08-aae9-334c6d9866a1",
+      "annotation_loaded": true,
+      "elapsed_ms": 10604,
+      "error": null
+    },
+    {
+      "email": "iw-6071939e@test.example.edu.au",
+      "workspace_id": "5ab1e6fc-cf1e-45a0-918b-6ce2a2e5f435",
+      "annotation_loaded": true,
+      "elapsed_ms": 10623,
+      "error": null
+    },
+    {
+      "email": "iw-870f4d7d@test.example.edu.au",
+      "workspace_id": "d5273060-9e7c-499f-82f0-2e6c0d38dc5a",
+      "annotation_loaded": true,
+      "elapsed_ms": 11472,
+      "error": null
+    },
+    {
+      "email": "iw-c843e8be@test.example.edu.au",
+      "workspace_id": "f15358b9-69a9-4fba-aaf1-4e4aabf49a00",
+      "annotation_loaded": true,
+      "elapsed_ms": 11290,
+      "error": null
+    },
+    {
+      "email": "iw-dba5085d@test.example.edu.au",
+      "workspace_id": "b0ac5a77-99b5-484a-8880-2e881eb2eb5d",
+      "annotation_loaded": true,
+      "elapsed_ms": 6670,
+      "error": null
+    },
+    {
+      "email": "iw-f5f81ffa@test.example.edu.au",
+      "workspace_id": "2340dea9-8a82-4f7a-86c5-e821f9d34f17",
+      "annotation_loaded": true,
+      "elapsed_ms": 11519,
+      "error": null
+    },
+    {
+      "email": "iw-ab8fe98a@test.example.edu.au",
+      "workspace_id": "3c6c00d1-f619-471a-865b-d5d30b1c9a16",
+      "annotation_loaded": true,
+      "elapsed_ms": 10916,
+      "error": null
+    },
+    {
+      "email": "iw-c5677dd4@test.example.edu.au",
+      "workspace_id": "cf44082f-b26e-42f7-a0e3-0cbd2cda2424",
+      "annotation_loaded": true,
+      "elapsed_ms": 11519,
+      "error": null
+    },
+    {
+      "email": "iw-715074ff@test.example.edu.au",
+      "workspace_id": "0b3f1648-8801-4296-bc4b-d0d1625327b5",
+      "annotation_loaded": true,
+      "elapsed_ms": 11590,
+      "error": null
+    }
+  ]
+}

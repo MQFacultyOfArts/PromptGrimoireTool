@@ -56,6 +56,9 @@ pytestmark = [
 N_INDEPENDENT_WORKSPACES = int(
     os.environ.get("E2E_INDEPENDENT_WORKSPACES_SESSIONS", "10")
 )
+AUTH_CLIENT_SETTLE_SECONDS = float(
+    os.environ.get("E2E_AUTH_CLIENT_SETTLE_SECONDS", "0")
+)
 
 
 @dataclass
@@ -175,6 +178,7 @@ def _maybe_write_independent_load_diag(
         return
 
     payload = {
+        "auth_client_settle_seconds": AUTH_CLIENT_SETTLE_SECONDS,
         "before": diag_before,
         "during": diag_during,
         "after": diag_after,
@@ -206,6 +210,9 @@ def _run_independent_workspace_session(
                 lambda url: "/auth/callback" not in url,
                 timeout=15_000,
             )
+            if AUTH_CLIENT_SETTLE_SECONDS:
+                page.goto("about:blank")
+                time.sleep(AUTH_CLIENT_SETTLE_SECONDS)
 
             try:
                 start_barrier.wait(timeout=240)

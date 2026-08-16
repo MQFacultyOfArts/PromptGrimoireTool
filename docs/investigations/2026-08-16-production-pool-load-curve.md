@@ -278,3 +278,30 @@ improves the observed student boundary by about 0.5 seconds mean and 1.25
 seconds p95. It does not change the architectural scaling limit. The next
 low-risk experiment is an already-authenticated cold-document wave; moving the
 initial read surface out of NiceGUI remains a separate architectural change.
+
+## Phase 5: authenticated-session control
+
+The performance probe can now navigate its authenticated warm-up pages to
+`about:blank` and wait out the 15-second production reconnect grace before
+releasing the document-load barrier. This retains each browser session cookie
+while removing the preceding login/navigation NiceGUI client from the wave.
+
+Two 100-session controls with a 16-second settle produced:
+
+| Run | Browser mean | Browser p95 | Server mean | Lag p95 | NiceGUI clients | RSS |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Unsettled | 9.02 s | 11.02 s | 3.79 s | 108 ms | 281 | 1.27 GB |
+| Settled 1 | 10.10 s | 11.59 s | 3.67 s | 88 ms | 119 | 1.19 GB |
+| Settled 2 | 10.35 s | 11.92 s | 3.71 s | 73 ms | 129 | 1.19 GB |
+
+All runs retained 100/100 annotation presence clients. Removing warm-up clients
+reliably saved about 83 MB and reduced event-loop lag p95, but did not improve
+the student readiness boundary. Login/navigation retention is therefore a
+real transient memory amplifier, not the cause of the document-load latency.
+
+The settled controls leave roughly 6.4 seconds between measured server page
+completion and browser readiness. The next measurement should split that gap
+with browser-visible milestones for initial response, NiceGUI connection,
+outbox application, document/sidebar mount, and collaboration readiness. Do
+not attempt another server query optimisation on the assumption that the full
+remaining delay is in the database.

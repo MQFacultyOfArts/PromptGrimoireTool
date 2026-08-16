@@ -24,6 +24,27 @@ from promptgrimoire.cli import app
 runner = CliRunner()
 
 
+def test_test_commands_apply_resource_policy_at_group_boundary(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Every `grimoire test` subcommand is wrapped before lane dispatch."""
+    from promptgrimoire.cli import testing
+
+    events: list[str] = []
+    monkeypatch.setattr(
+        testing,
+        "_configure_test_run_resources",
+        lambda: events.append("resources"),
+        raising=False,
+    )
+    monkeypatch.setattr(testing, "_run_bats", lambda: events.append("lane") or 0)
+
+    result = runner.invoke(app, ["test", "bats"])
+
+    assert result.exit_code == 0
+    assert events == ["resources", "lane"]
+
+
 def _capture_run_pytest(monkeypatch: pytest.MonkeyPatch) -> dict[str, object]:
     """Capture `_run_pytest` arguments without starting subprocesses."""
     from promptgrimoire.cli import testing

@@ -5,17 +5,16 @@ from __future__ import annotations
 import asyncio
 import fcntl
 import os
-import shutil
-import subprocess
 import sys
 import tempfile
 import time
 from pathlib import Path
-from typing import TextIO
+from typing import TYPE_CHECKING, TextIO
 
 import typer
 
 from promptgrimoire.cli._shared import (
+    _configure_test_run_resources,
     _pre_test_db_cleanup,
     _prepend_filter,
     _prepend_pytest_flags,
@@ -38,7 +37,18 @@ from promptgrimoire.cli.e2e._server import (
 from promptgrimoire.cli.e2e._workers import _allocate_ports as _allocate_ports
 from promptgrimoire.cli.testing import _run_pytest
 
+if TYPE_CHECKING:
+    import subprocess
+
 e2e_app = typer.Typer(help="End-to-end test commands.")
+
+
+@e2e_app.callback()
+def _apply_e2e_resource_policy() -> None:
+    """Apply the inherited resource policy before any E2E subcommand."""
+    _configure_test_run_resources()
+
+
 _PLAYWRIGHT_TEST_PATH = str(PLAYWRIGHT_LANE.test_paths[0])
 _perf_lock_files: list[TextIO] = []
 
@@ -92,43 +102,6 @@ def _configure_perf_server(*, queue_pool: bool) -> None:
         os.environ.pop("_PROMPTGRIMOIRE_USE_NULL_POOL", None)
         if database_url := os.environ.get("E2E_PERF_DATABASE_URL"):
             os.environ["DATABASE__URL"] = database_url
-
-
-def _configure_slow_run_resources() -> None:
-    """Keep the Linux workstation responsive during the exhaustive slow gate.
-
-    CPU affinity and scheduling priorities are inherited by every subprocess.
-    Reserve the lowest-numbered available CPU for interactive work, lower the
-    whole process tree to the least-favoured CPU priority, and request idle I/O
-    scheduling when ``ionice`` is installed. A single-CPU host keeps its only
-    CPU so the suite remains runnable.
-    """
-    if sys.platform != "linux":
-        return
-
-    available_cpus = os.sched_getaffinity(0)
-    test_cpus = (
-        available_cpus - {min(available_cpus)}
-        if len(available_cpus) > 1
-        else available_cpus
-    )
-    if test_cpus != available_cpus:
-        os.sched_setaffinity(0, test_cpus)
-
-    os.setpriority(os.PRIO_PROCESS, 0, 19)
-
-    io_policy = "default"
-    if ionice := shutil.which("ionice"):
-        subprocess.run(
-            [ionice, "-c", "3", "-p", str(os.getpid())],
-            check=True,
-        )
-        io_policy = "idle"
-
-    console.print(
-        "[dim]Slow-run resources: "
-        f"{len(test_cpus)}/{len(available_cpus)} CPUs, nice=19, I/O={io_policy}[/]"
-    )
 
 
 def _latest_artifact_dir(lane_name: str) -> Path | None:
@@ -765,7 +738,6 @@ def slow(
     ),
 ) -> None:
     """Run all lanes (superset of `e2e all`), then latexmk + compiled-PDF suites."""
-    _configure_slow_run_resources()
     sys.exit(run_slow_lanes(_prepend_filter(ctx.args, filter_expr)))
 
 

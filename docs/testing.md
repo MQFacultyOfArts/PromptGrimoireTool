@@ -311,14 +311,21 @@ only for diagnostic retries and tests that cannot satisfy that isolation rule.
 | `e2e slow` | X | X | X (slow + `noci`) | X | X | X |
 | `e2e all` | X | X | X | X | X | X |
 
-On Linux, `e2e slow` automatically lowers its process tree to nice level 19,
-uses idle I/O scheduling when `ionice` is available, and reserves one CPU from
-the command's current affinity mask. For example, a 32-CPU workstation runs the
-suite on 31 CPUs. This preserves an interactive CPU and lets foreground work
-win scheduler contention; it does not artificially lower the load-average
-number. Single-CPU and non-Linux hosts remain runnable without CPU reservation.
-After the standard six lanes, it also runs the serial compiled-PDF Playwright
-suite. Retries are diagnostic only: an initial failure always fails the command.
+On Linux, every `grimoire test` and `grimoire e2e` command lowers its process
+tree to nice level 19, uses idle I/O scheduling when `ionice` is available, and
+reserves one CPU from the command's current affinity mask. For example, a
+32-CPU workstation runs tests on 31 CPUs. Top-level commands also take a shared
+per-user host lock, so test waves from the same user's separate worktrees queue
+instead of competing, then wait for one-minute load to fall to
+`GRIMOIRE_TEST_MAX_LOAD` (default `4`) before starting. The policy is applied
+once at the CLI group boundary and inherited by nested lane processes, so a
+nested command neither queues again nor reserves another CPU. This preserves an
+interactive CPU and lets foreground work win scheduler contention; it does not
+artificially lower the load-average number. Single-CPU and non-Linux hosts remain
+runnable without CPU reservation.
+After the standard six lanes, `e2e slow` also runs the serial compiled-PDF
+Playwright suite. Retries are diagnostic only: an initial failure always fails
+the command.
 
 ### Smoke Marker Propagation
 

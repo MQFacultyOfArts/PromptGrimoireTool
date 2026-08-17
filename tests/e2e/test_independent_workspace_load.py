@@ -38,7 +38,6 @@ import pytest
 
 from promptgrimoire.config import get_settings
 from tests.e2e.card_helpers import PABAI_WORKSPACE_ID, ensure_pabai_workspace
-from tests.e2e.snapshot_harness import start_snapshot_service, stop_snapshot_service
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -286,28 +285,6 @@ def _run_independent_workspace_session(
                 context.close()
         finally:
             browser.close()
-
-
-@pytest.fixture(scope="module", autouse=True)
-def snapshot_service_if_enabled() -> Iterator[None]:
-    """Run the snapshot service alongside the app for the candidate arm.
-
-    Only when SNAPSHOT__ENABLED=true (the baseline arm needs no service).
-    Pinned to the same CPU budget as the app server so the candidate arm
-    stays production-faithful: both processes share the host allocation.
-    """
-    if os.environ.get("SNAPSHOT__ENABLED") != "true":
-        yield
-        return
-    process = start_snapshot_service(
-        port=get_settings().snapshot.port,
-        allow_origin=os.environ.get(
-            "E2E_BASE_URL", get_settings().snapshot.allow_origin
-        ),
-        cpu_list=os.environ.get("E2E_SERVER_CPU_LIST"),
-    )
-    yield
-    stop_snapshot_service(process)
 
 
 @pytest.fixture(scope="module")

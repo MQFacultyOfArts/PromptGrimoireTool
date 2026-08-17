@@ -39,6 +39,34 @@ if TYPE_CHECKING:
 _diag_logger = logging.getLogger("e2e.diagnostics")
 
 
+@pytest.fixture(scope="module", autouse=True)
+def snapshot_service_if_enabled() -> Generator[None]:
+    """Run the standalone snapshot service when SNAPSHOT__ENABLED=true.
+
+    Inert for normal runs.  With the flag set (candidate perf arms, the
+    snapshot delivery E2E), every module gets a service on the configured
+    port whose CORS grant names the app server's actual origin.  Pinned
+    to E2E_SERVER_CPU_LIST when set so perf arms stay production-faithful.
+    """
+    if os.environ.get("SNAPSHOT__ENABLED") != "true":
+        yield
+        return
+    from promptgrimoire.config import get_settings
+    from tests.e2e.snapshot_harness import (
+        start_snapshot_service,
+        stop_snapshot_service,
+    )
+
+    settings = get_settings()
+    process = start_snapshot_service(
+        port=settings.snapshot.port,
+        allow_origin=os.environ.get("E2E_BASE_URL", settings.snapshot.allow_origin),
+        cpu_list=os.environ.get("E2E_SERVER_CPU_LIST"),
+    )
+    yield
+    stop_snapshot_service(process)
+
+
 @pytest.fixture(autouse=True)
 def _e2e_post_test_cleanup() -> Generator[None]:
     """Wait for NiceGUI to process disconnects after each E2E test.

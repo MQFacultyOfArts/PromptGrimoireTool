@@ -32,11 +32,8 @@ from promptgrimoire.config import get_settings
 from tests.e2e.card_helpers import ensure_pabai_workspace
 from tests.e2e.db_fixtures import grant_acl
 from tests.e2e.highlight_tools import create_highlight_with_tag, find_text_range
-from tests.e2e.snapshot_harness import start_snapshot_service, stop_snapshot_service
 
 if TYPE_CHECKING:
-    from collections.abc import Generator
-
     from playwright.sync_api import Page
 
 pytestmark = [
@@ -59,23 +56,13 @@ ANNOTATION_CARD = "[data-testid='annotation-card']"
 
 
 @pytest.fixture(scope="module")
-def snapshot_service() -> Generator[str]:
-    """Run the standalone snapshot service against the test database.
+def snapshot_service() -> str:
+    """URL of the snapshot service.
 
-    Inherits the worker's environment (DATABASE__URL points at this
-    file's cloned test DB) and pins the storage secret to the E2E app
-    server's value so minted tokens verify.  The E2E app server runs on
-    a random port; the bundle endpoint's CORS grant must name that
-    actual origin, not the config default.
+    The process itself is started by the shared conftest autouse fixture
+    (active because this file requires SNAPSHOT__ENABLED=true).
     """
-    settings = get_settings()
-    port = settings.snapshot.port
-    process = start_snapshot_service(
-        port=port,
-        allow_origin=os.environ.get("E2E_BASE_URL", settings.snapshot.allow_origin),
-    )
-    yield f"http://localhost:{port}"
-    stop_snapshot_service(process)
+    return f"http://localhost:{get_settings().snapshot.port}"
 
 
 def _open_pabai(page: Page, app_server: str, snapshot_service: str) -> None:

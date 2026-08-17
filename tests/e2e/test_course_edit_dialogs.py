@@ -76,8 +76,8 @@ class TestCourseEditDialogs:
             page.get_by_test_id("save-edit-activity-btn").click()
 
             expect(
-                page.get_by_text("Edited Activity", exact=False).first
-            ).to_be_visible(timeout=5000)
+                page.locator('[data-testid^="activity-row-"]').first
+            ).to_contain_text("Edited Activity", timeout=5000)
 
             # Reopen the dialog: both captured fields must have persisted.
             page.goto(f"{app_server}/courses/{course_id}")

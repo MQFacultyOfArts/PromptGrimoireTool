@@ -80,7 +80,13 @@
   c9d1e7a40b21 adds the four promoted partial indices (817cb8e7),
   if_not_exists, up+down round-tripped on dev. (c) `test all` green on
   the stack (4090 unit); `e2e all` result recorded under P13 evidence.
-  (d) 100-way leg: peer waits for the PR ping.
+  (d) 100-way leg: RAN 2026-08-17 (peer, flag on, --queue-pool, stacked
+  annotation path at 437cec36): 100/100 loaded, highlights_ready_ms
+  p50 8424 / p95 9678, identical ws payload to Phase 10 — no
+  regression, possibly a small (~500ms p50) win from the raw-SQL
+  resolve_annotation_context; peer reads it conservatively (1.7× the
+  within-arm spread). Evidence: perf-results/snapshot-stacked-100.json,
+  banked with the peer's #533 branch. Perf-clear for merge.
   Their session state: .notes/project_session-state-2026-08-17-snapshot-spike.md.
 - [ ] **P13 UAT** — Brian reviews; PR description tells the ADR story.
   PR-notes flag (from initial-snapshot-delivery session): that branch pins

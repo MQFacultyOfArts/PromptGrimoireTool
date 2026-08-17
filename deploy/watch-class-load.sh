@@ -4,7 +4,12 @@
 #
 #   /opt/promptgrimoire/deploy/watch-class-load.sh            # refresh every 60s
 #   /opt/promptgrimoire/deploy/watch-class-load.sh --once     # single snapshot
-#   COURSE_CODE=LAWS1000 WATCH_INTERVAL=30 .../watch-class-load.sh
+#   COURSE_CODE=LAWS8001 WATCH_INTERVAL=30 .../watch-class-load.sh
+#
+# COURSE_CODE narrows the per-activity table (ILIKE substring match).
+# The default matches every course: shared content can serve several
+# units (LAWS1000 daytime and LAWS8001 evening share JJ Savage), and a
+# narrow default silently hid the evening class on 2026-08-17.
 #
 # Reads the app's structured JSON log (memory_diagnostic / page_load_profile
 # events) and counts student workspaces per activity from PostgreSQL.
@@ -13,7 +18,7 @@
 set -euo pipefail
 
 INTERVAL="${WATCH_INTERVAL:-60}"
-COURSE_CODE="${COURSE_CODE:-LAWS1000}"
+COURSE_CODE="${COURSE_CODE:-}"
 DB_NAME="${DB_NAME:-promptgrimoire}"
 DB_USER="${DB_USER:-promptgrimoire}"
 LOG_DIR="${GRIMOIRE_LOG_DIR:-/opt/promptgrimoire/logs/sessions}"
@@ -97,7 +102,7 @@ snapshot() {
     file=$(log_file)
     since_10m=$(date -u -d '-10 minutes' +%Y-%m-%dT%H:%M:%S)
 
-    echo "=== $(date '+%H:%M:%S %Z')  (course: ${COURSE_CODE}) ==="
+    echo "=== $(date '+%H:%M:%S %Z')  (course: ${COURSE_CODE:-all}) ==="
     if [[ -n "$file" ]]; then
         echo "server   $(server_section "$file")"
         echo "loads (10m):"

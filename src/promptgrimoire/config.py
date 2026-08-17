@@ -254,6 +254,12 @@ def get_current_branch() -> str | None:
     return _current_branch()
 
 
+# Cap on the sanitised branch-name suffix appended to the database name;
+# PostgreSQL identifiers max out at 63 bytes, so this leaves room for the
+# base database name alongside the suffix.
+_MAX_BRANCH_SUFFIX_LENGTH = 40
+
+
 def _branch_db_suffix(branch: str | None) -> str:
     """Derive a database name suffix from the branch name.
 
@@ -270,9 +276,10 @@ def _branch_db_suffix(branch: str | None) -> str:
     if not sanitised:
         return ""
 
-    if len(sanitised) > 40:
+    if len(sanitised) > _MAX_BRANCH_SUFFIX_LENGTH:
         h = hashlib.sha256(branch.encode()).hexdigest()[:8]
-        sanitised = f"{sanitised[:31]}_{h}"
+        truncate_at = _MAX_BRANCH_SUFFIX_LENGTH - len(h) - 1
+        sanitised = f"{sanitised[:truncate_at]}_{h}"
 
     return sanitised
 

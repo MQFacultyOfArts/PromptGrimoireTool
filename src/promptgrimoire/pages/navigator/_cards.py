@@ -72,13 +72,93 @@ async def _persist_title_change(
         title_input.value = original_title
 
 
+@dataclasses.dataclass
+class _TitleEditIcons:
+    """Pencil/confirm/cancel icon trio for one inline title editor."""
+
+    pencil: ui.icon
+    confirm: ui.icon
+    cancel: ui.icon
+
+
+class _TitleEditController:
+    """Owns editing state and event handlers for one inline title editor.
+
+    Replaces a set of closures that shared mutable state through a dict;
+    each event handler is a plain method instead, so complexity is
+    attributed per-method rather than accumulating in one function that
+    nests four closures.
+    """
+
+    def __init__(
+        self,
+        *,
+        workspace_id: UUID,
+        title_input: Input,
+        icons: _TitleEditIcons,
+        fallback_title: str,
+        page_state: PageState | None,
+    ) -> None:
+        self.workspace_id = workspace_id
+        self.title_input = title_input
+        self.icons = icons
+        self.fallback_title = fallback_title
+        self.page_state = page_state
+        self.original_title = title_input.value
+        self.editing = False
+        self.saving = False
+
+    def _set_editing_mode(self, editing: bool) -> None:
+        if editing:
+            self.title_input.props(remove="readonly borderless", add="outlined")
+        else:
+            self.title_input.props(remove="outlined", add="readonly borderless")
+        self.editing = editing
+        self.saving = False
+        self.icons.pencil.set_visibility(not editing)
+        for ico in (self.icons.confirm, self.icons.cancel):
+            ico.set_visibility(editing)
+        if self.page_state is not None:
+            self.page_state["editing_active"] = editing
+
+    async def activate_edit(self, _e: object) -> None:
+        if self.editing:
+            return
+        self.original_title = self.title_input.value
+        self._set_editing_mode(True)
+        self.title_input.run_method("focus")
+        self.title_input.run_method("select")
+
+    async def save_title(self, _e: object) -> None:
+        if not self.editing or self.saving:
+            return
+        self.saving = True
+        await _persist_title_change(
+            workspace_id=self.workspace_id,
+            title_input=self.title_input,
+            fallback_title=self.fallback_title,
+            original_title=self.original_title,
+            page_state=self.page_state,
+        )
+        self._set_editing_mode(False)
+
+    async def cancel_edit(self, _e: object) -> None:
+        if not self.editing:
+            return
+        self.title_input.value = self.original_title
+        self._set_editing_mode(False)
+
+    def handle_title_click(self, _e: object) -> None:
+        if not self.editing:
+            ui.navigate.to(workspace_url(self.workspace_id))
+
+
 def _wire_title_edit_handlers(
     *,
-    row: NavigatorRow,
+    workspace_id: UUID,
     title_input: Input,
-    pencil_icon: ui.icon,
-    confirm_icon: ui.icon,
-    cancel_icon: ui.icon,
+    icons: _TitleEditIcons,
+    fallback_title: str,
     page_state: PageState | None,
 ) -> None:
     """Wire save/cancel handlers for an inline-editable title.
@@ -87,69 +167,20 @@ def _wire_title_edit_handlers(
     the input's ``blur`` event, preventing the blur-save from racing
     with a cancel click.
     """
-    workspace_id = row.workspace_id
-    if workspace_id is None:
-        return
-    original_title = title_input.value
-    _state: dict[str, object] = {"editing": False, "saving": False}
-
-    def _set_editing_mode(editing: bool) -> None:
-        if editing:
-            title_input.props(remove="readonly borderless", add="outlined")
-        else:
-            title_input.props(remove="outlined", add="readonly borderless")
-        _state["editing"] = editing
-        _state["saving"] = False
-        pencil_icon.set_visibility(not editing)
-        for ico in (confirm_icon, cancel_icon):
-            ico.set_visibility(editing)
-        if page_state is not None:
-            page_state["editing_active"] = editing
-
-    async def _activate_edit(_e: object) -> None:
-        nonlocal original_title
-        if _state["editing"]:
-            return
-        original_title = title_input.value
-        _set_editing_mode(True)
-        title_input.run_method("focus")
-        title_input.run_method("select")
-
-    pencil_icon.on("click", _activate_edit)
-
-    async def _save_title(_e: object) -> None:
-        if not _state["editing"] or _state["saving"]:
-            return
-        _state["saving"] = True
-        await _persist_title_change(
-            workspace_id=workspace_id,
-            title_input=title_input,
-            fallback_title=row.activity_title or "Untitled",
-            original_title=original_title,
-            page_state=page_state,
-        )
-        _set_editing_mode(False)
-
-    confirm_icon.on("mousedown", _save_title)
-    title_input.on("keydown.enter", _save_title)
-    title_input.on("blur", _save_title)
-
-    async def _cancel_edit(_e: object) -> None:
-        if not _state["editing"]:
-            return
-        title_input.value = original_title
-        _set_editing_mode(False)
-
-    cancel_icon.on("mousedown", _cancel_edit)
-    title_input.on("keydown.escape", _cancel_edit)
-    title_input.on(
-        "click",
-        lambda _e: (
-            ui.navigate.to(workspace_url(workspace_id))
-            if not _state["editing"]
-            else None
-        ),
+    controller = _TitleEditController(
+        workspace_id=workspace_id,
+        title_input=title_input,
+        icons=icons,
+        fallback_title=fallback_title,
+        page_state=page_state,
     )
+    icons.pencil.on("click", controller.activate_edit)
+    icons.confirm.on("mousedown", controller.save_title)
+    title_input.on("keydown.enter", controller.save_title)
+    title_input.on("blur", controller.save_title)
+    icons.cancel.on("mousedown", controller.cancel_edit)
+    title_input.on("keydown.escape", controller.cancel_edit)
+    title_input.on("click", controller.handle_title_click)
 
 
 def render_inline_title_edit(
@@ -192,11 +223,12 @@ def render_inline_title_edit(
     cancel_icon.set_visibility(False)
 
     _wire_title_edit_handlers(
-        row=row,
+        workspace_id=workspace_id,
         title_input=title_input,
-        pencil_icon=pencil_icon,
-        confirm_icon=confirm_icon,
-        cancel_icon=cancel_icon,
+        icons=_TitleEditIcons(
+            pencil=pencil_icon, confirm=confirm_icon, cancel=cancel_icon
+        ),
+        fallback_title=row.activity_title or "Untitled",
         page_state=page_state,
     )
 

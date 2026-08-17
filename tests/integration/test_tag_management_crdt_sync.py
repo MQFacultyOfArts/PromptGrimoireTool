@@ -132,6 +132,7 @@ class TestTagColourEditUpdatesCrdt:
                 return t if t is not None and t.color == "#ff0000" else None
 
             updated = await wait_for(_colour_saved, timeout=5.0)
+            assert updated is not None
             assert updated.color == "#ff0000", (
                 f"tag colour not updated: expected #ff0000, got {updated.color}"
             )
@@ -176,6 +177,7 @@ class TestTagNameEditUpdatesCrdt:
                 return t if t is not None and t.name == "NewName" else None
 
             updated = await wait_for(_name_saved, timeout=5.0)
+            assert updated is not None
             assert updated.name == "NewName", (
                 f"tag name not updated: expected 'NewName', got {updated.name!r}"
             )
@@ -228,6 +230,7 @@ class TestGroupColourEditUpdatesCrdt:
                 return g if g is not None and g.color == "#00ff00" else None
 
             updated = await wait_for(_group_colour_saved, timeout=5.0)
+            assert updated is not None
             assert updated.color == "#00ff00", (
                 f"group colour not updated: expected #00ff00, got {updated.color}"
             )

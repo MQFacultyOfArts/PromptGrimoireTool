@@ -16,6 +16,7 @@ import httpx
 from scripts.incident.parsers import normalise_utc
 
 _GITHUB_API = "https://api.github.com"
+_HTTP_NOT_FOUND = 404
 
 _STATUS_MESSAGES: dict[int, str] = {
     401: "Error: GitHub API returned 401 Unauthorized. Check your token.",
@@ -105,7 +106,7 @@ def _handle_http_error(
 ) -> None:
     """Print a user-friendly error message and exit."""
     status = exc.response.status_code
-    if status == 404:
+    if status == _HTTP_NOT_FOUND:
         msg = f"Error: GitHub API returned 404. Repository '{repo}' not found."
     else:
         msg = _STATUS_MESSAGES.get(status, f"Error: GitHub API returned HTTP {status}.")

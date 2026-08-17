@@ -7,8 +7,8 @@ from typing import TYPE_CHECKING
 from uuid import uuid4
 
 import structlog
-from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlmodel import select
 
 from promptgrimoire.db.courses import _enroll_user_with_session
 from promptgrimoire.db.engine import get_session
@@ -138,11 +138,7 @@ async def _apply_student_id_overwrites(
 ) -> int:
     """Force-overwrite conflicting student_ids. Returns count."""
     for email, _old, new_id in conflicts:
-        result = await session.execute(
-            select(User).where(
-                User.email == email.lower(),  # type: ignore[arg-type]  -- SQLAlchemy column expression
-            )
-        )
+        result = await session.execute(select(User).where(User.email == email.lower()))
         user = result.scalar_one()
         user.student_id = new_id
         session.add(user)
@@ -197,15 +193,18 @@ async def _create_groups_and_memberships(
             stmt = stmt.on_conflict_do_nothing(
                 constraint="uq_student_group_course_name",
             )
-            result = await session.execute(stmt)
-            if result.rowcount == 1:  # type: ignore[union-attr]  -- CursorResult has rowcount
+            # session.exec(), not .execute() -- the deprecated .execute()
+            # stub declares Result[Any] with no .rowcount; .exec() resolves
+            # an Insert/UpdateBase statement to CursorResult[Any], which has it.
+            result = await session.exec(stmt)
+            if result.rowcount == 1:
                 groups_created += 1
 
             # Query back to get the actual group row
             group_result = await session.execute(
                 select(StudentGroup).where(
-                    StudentGroup.course_id == course_id,  # type: ignore[arg-type]  -- SQLAlchemy column expression
-                    StudentGroup.name == group_name,  # type: ignore[arg-type]  -- SQLAlchemy column expression
+                    StudentGroup.course_id == course_id,
+                    StudentGroup.name == group_name,
                 )
             )
             group = group_result.scalar_one()
@@ -219,8 +218,8 @@ async def _create_groups_and_memberships(
             mem_stmt = mem_stmt.on_conflict_do_nothing(
                 constraint="uq_student_group_membership_group_user",
             )
-            mem_result = await session.execute(mem_stmt)
-            if mem_result.rowcount == 1:  # type: ignore[union-attr]  -- CursorResult has rowcount
+            mem_result = await session.exec(mem_stmt)
+            if mem_result.rowcount == 1:
                 memberships_created += 1
 
     return groups_created, memberships_created

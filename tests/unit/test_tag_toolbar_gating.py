@@ -14,7 +14,7 @@ from uuid import UUID, uuid4
 
 import pytest
 
-from promptgrimoire.pages.annotation import PageState
+from promptgrimoire.pages.annotation import PageState, PermissionLevel
 from promptgrimoire.pages.annotation.document import _render_document_with_highlights
 
 
@@ -77,12 +77,12 @@ class TestTagToolbarGating:
 
     @pytest.mark.parametrize("permission", ["peer", "editor", "owner"])
     async def test_tag_toolbar_shown_for_annotating_user(
-        self, workspace_id: UUID, permission: str
+        self, workspace_id: UUID, permission: PermissionLevel
     ) -> None:
         """Users with peer/editor/owner permission must get the tag toolbar."""
         state = PageState(
             workspace_id=workspace_id,
-            effective_permission=permission,  # type: ignore[arg-type]  # parametrize yields str, not Literal PermissionLevel
+            effective_permission=permission,
         )
         assert state.can_annotate is True
 

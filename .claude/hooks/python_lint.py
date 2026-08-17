@@ -75,7 +75,7 @@ def main() -> int:
     if code != 0:
         findings.append(f"ruff check:\n{output}")
 
-    code, output = _run(["uvx", "--quiet", "ty@0.0.24", "check", file_path], timeout=60)
+    code, output = _run(["uv", "run", "--quiet", "ty", "check", file_path], timeout=60)
     if code != 0:
         findings.append(f"ty check:\n{output}")
 

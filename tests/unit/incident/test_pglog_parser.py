@@ -156,6 +156,7 @@ class TestTextEdgeCases:
 
 
 def _make_pg_json_line(
+    *,
     timestamp: str = "2026-03-16 04:32:52.000 GMT",
     pid: int = 1234,
     error_severity: str = "ERROR",

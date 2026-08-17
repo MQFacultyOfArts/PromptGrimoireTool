@@ -48,7 +48,10 @@ def _capture_on_yjs_handler(
 
     Returns (handler, mock_ui_on) so the test can invoke the handler directly.
     """
-    from promptgrimoire.pages.annotation.respond import _setup_yjs_event_handler
+    from promptgrimoire.pages.annotation.respond import (
+        ClientContext,
+        _setup_yjs_event_handler,
+    )
 
     if state is None:
         state = MagicMock()
@@ -59,10 +62,12 @@ def _capture_on_yjs_handler(
     with patch("promptgrimoire.pages.annotation.respond.ui") as mock_ui:
         _setup_yjs_event_handler(
             crdt_doc=crdt_doc,
-            workspace_key="test-ws",
-            workspace_id=MagicMock(),
-            client_id="test-client-id-1234",
-            on_yjs_update_broadcast=mock_broadcast,
+            client_ctx=ClientContext(
+                workspace_key="test-ws",
+                workspace_id=MagicMock(),
+                client_id="test-client-id-1234",
+                on_yjs_update_broadcast=mock_broadcast,
+            ),
             state=state,
         )
         # ui.on("respond_yjs_update", handler) was called

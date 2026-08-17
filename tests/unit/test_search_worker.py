@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import uuid
 from contextlib import asynccontextmanager
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, NamedTuple
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -25,12 +25,26 @@ if TYPE_CHECKING:
 # ---------------------------------------------------------------------------
 
 
+class _DirtyWorkspaceRow(NamedTuple):
+    """Row-like tuple matching the workspace SELECT columns.
+
+    A real SQLAlchemy Row supports both positional and by-label (attribute)
+    access; process_dirty_workspaces() reads it by label (see
+    docs/architecture/raw-sql-convention.md), so the mock must too.
+    """
+
+    id: Any
+    crdt_state: Any
+    ws_title: Any
+    activity_title: Any
+
+
 def _make_row(*values: Any) -> tuple[Any, ...]:
-    """Build a plain tuple row matching the workspace SELECT columns.
+    """Build a Row-like tuple matching the workspace SELECT columns.
 
     Columns: (id, crdt_state, ws_title, activity_title)
     """
-    return tuple(values)
+    return _DirtyWorkspaceRow(*values)
 
 
 def _make_mock_session(

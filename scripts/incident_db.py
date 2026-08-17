@@ -125,7 +125,7 @@ def _aedt_to_utc(local_str: str, tz_name: str) -> str:
 
 
 @app.command()
-def timeline(
+def timeline(  # noqa: PLR0913, PLR0917 -- Typer CLI options, one per flag by design
     start: str = typer.Option(..., help="Start time (local, e.g. '2026-03-16 16:05')"),
     end: str = typer.Option(..., help="End time (local, e.g. '2026-03-16 16:14')"),
     level: str | None = typer.Option(None, help="Filter by level/status"),
@@ -263,11 +263,10 @@ def beszel(
     typer.echo(f"Fetched {len(metrics)} metric data points")
 
 
-def _analyse_epochs(
-    conn: sqlite3.Connection,
-    epochs: list[dict],
-) -> list[dict]:
-    """Run per-epoch queries and attach ratio metrics to each epoch dict."""
+def _run_epoch_queries(
+    conn: sqlite3.Connection, start: str, end: str, duration_seconds: float
+) -> dict:
+    """Run every per-epoch analysis query and bundle their results."""
     from scripts.incident.analysis import (
         detect_pool_config,
         query_epoch_errors,
@@ -279,45 +278,62 @@ def _analyse_epochs(
         query_epoch_users,
     )
 
+    return {
+        "errors": query_epoch_errors(conn, start, end, duration_seconds),
+        "haproxy": query_epoch_haproxy(conn, start, end, duration_seconds),
+        "resources": query_epoch_resources(conn, start, end),
+        "pg": query_epoch_pg(conn, start, end),
+        "journal_anomalies": query_epoch_journal_anomalies(conn, start, end),
+        "users": query_epoch_users(conn, start, end),
+        "js_timeouts": query_epoch_js_timeouts(conn, start, end, duration_seconds),
+        "pool_config": detect_pool_config(conn, start, end),
+    }
+
+
+_ERROR_LEVELS = ("error", "critical")
+
+
+def _attach_epoch_ratios(epoch: dict, analysis: dict, total_requests: int) -> None:
+    """Attach error/warning/5xx ratio metrics to ``epoch`` in place.
+
+    Crash-bounce epochs and epochs with zero traffic get ``None`` ratios —
+    dividing by zero requests would be meaningless, not zero.
+    """
+    if epoch["is_crash_bounce"] or total_requests == 0:
+        epoch["error_ratio"] = None
+        epoch["warning_ratio"] = None
+        epoch["5xx_ratio"] = None
+        return
+
+    error_count = sum(
+        e["count"] for e in analysis["errors"] if e["level"] in _ERROR_LEVELS
+    )
+    warning_count = sum(
+        e["count"] for e in analysis["errors"] if e["level"] == "warning"
+    )
+    epoch["error_ratio"] = error_count / total_requests
+    epoch["warning_ratio"] = warning_count / total_requests
+    epoch["5xx_ratio"] = analysis["haproxy"]["count_5xx"] / total_requests
+
+
+def _analyse_epochs(
+    conn: sqlite3.Connection,
+    epochs: list[dict],
+) -> list[dict]:
+    """Run per-epoch queries and attach ratio metrics to each epoch dict."""
     epoch_analyses: list[dict] = []
     for epoch in epochs:
         start = str(epoch["start_utc"])
         end = str(epoch["end_utc"])
         dur_raw = epoch["duration_seconds"]
         dur = dur_raw if isinstance(dur_raw, float) else float(str(dur_raw))
-        pool_config = detect_pool_config(conn, start, end)
-        analysis = {
-            "errors": query_epoch_errors(conn, start, end, dur),
-            "haproxy": query_epoch_haproxy(conn, start, end, dur),
-            "resources": query_epoch_resources(conn, start, end),
-            "pg": query_epoch_pg(conn, start, end),
-            "journal_anomalies": query_epoch_journal_anomalies(conn, start, end),
-            "users": query_epoch_users(conn, start, end),
-            "js_timeouts": query_epoch_js_timeouts(
-                conn,
-                start,
-                end,
-                dur,
-            ),
-            "pool_config": pool_config,
-        }
+
+        analysis = _run_epoch_queries(conn, start, end, dur)
+        pool_config = analysis["pool_config"]
         total_requests = analysis["haproxy"]["total_requests"]
-        if epoch["is_crash_bounce"] or total_requests == 0:
-            epoch["error_ratio"] = None
-            epoch["warning_ratio"] = None
-            epoch["5xx_ratio"] = None
-        else:
-            error_count = sum(
-                e["count"]
-                for e in analysis["errors"]
-                if e["level"] in ("error", "critical")
-            )
-            warning_count = sum(
-                e["count"] for e in analysis["errors"] if e["level"] == "warning"
-            )
-            epoch["error_ratio"] = error_count / total_requests
-            epoch["warning_ratio"] = warning_count / total_requests
-            epoch["5xx_ratio"] = analysis["haproxy"]["count_5xx"] / total_requests
+
+        _attach_epoch_ratios(epoch, analysis, total_requests)
+
         epoch["total_requests"] = total_requests
         epoch["mean_cpu"] = analysis["resources"].get("mean_cpu")
         epoch["active_users"] = analysis["users"]["active_users"]
@@ -346,7 +362,7 @@ def _detect_github_repo() -> str:
 
 
 @app.command()
-def github(
+def github(  # noqa: PLR0913, PLR0917 -- Typer CLI options, one per flag by design
     start: str = typer.Option(..., help="Window start (local time, YYYY-MM-DD HH:MM)"),
     end: str = typer.Option(..., help="Window end (local time, YYYY-MM-DD HH:MM)"),
     repo: str = typer.Option(
@@ -459,6 +475,7 @@ def review(
 ) -> None:
     """Generate operational review report."""
     from scripts.incident.analysis import (
+        ReportData,
         compute_error_landscape,
         compute_trends,
         enrich_epochs_github,
@@ -513,12 +530,14 @@ def review(
             )
 
     report = render_review_report(
-        sources_data,
-        epochs,
-        epoch_analyses,
-        summative,
-        trends_data,
-        static_counts=static_counts,
+        ReportData(
+            sources=sources_data,
+            epochs=epochs,
+            epoch_analyses=epoch_analyses,
+            summative_users=summative,
+            trends=trends_data,
+            static_counts=static_counts,
+        )
     )
 
     if output:

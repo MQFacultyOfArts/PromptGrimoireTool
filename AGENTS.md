@@ -68,7 +68,7 @@ uv run grimoire e2e perf                # Performance baseline tests (@pytest.ma
 # Code Quality
 uv run ruff check .         # Linting
 uv run ruff format .        # Formatting
-uvx ty@0.0.24 check         # Type checking
+uv run ty check         # Type checking
 
 # Execution & Data
 uv run grimoire seed run            # Idempotent development data seeding

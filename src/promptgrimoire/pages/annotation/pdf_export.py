@@ -15,6 +15,7 @@ Includes pre-export word count enforcement (AC5, AC6):
 from __future__ import annotations
 
 import asyncio
+from dataclasses import dataclass
 from datetime import date, datetime
 from typing import TYPE_CHECKING, Any, cast
 from uuid import UUID
@@ -47,7 +48,8 @@ from promptgrimoire.word_count_enforcement import (
 )
 
 if TYPE_CHECKING:
-    from promptgrimoire.db.models import ExportJob
+    from promptgrimoire.crdt.annotation_doc import AnnotationDocument
+    from promptgrimoire.db.models import ExportJob, WorkspaceDocument
     from promptgrimoire.pages.annotation import PageState
 
 logger = structlog.get_logger()
@@ -419,12 +421,119 @@ def apply_export_recovery(state: PageState, job: ExportJob | None) -> None:
         _show_download_button(job.download_token, state)
 
 
+async def _gather_source_documents(
+    workspace_id: UUID,
+) -> list[WorkspaceDocument] | None:
+    """Fetch the workspace's non-empty source documents.
+
+    Returns None (after notifying the user) if there is nothing to export.
+    """
+    all_docs = await list_documents(workspace_id)
+    source_docs = [d for d in all_docs if d.type == "source" and d.content]
+    if not source_docs:
+        ui.notify(
+            "No document content to export. Please paste or upload content first.",
+            type="warning",
+        )
+        return None
+    return source_docs
+
+
+@dataclass(frozen=True, slots=True)
+class _ExportBuildContext:
+    """Shared inputs for building a workspace's export document entries."""
+
+    crdt_doc: AnnotationDocument
+    tag_name_map: dict[str, str]
+    is_anonymous: bool
+    user_id: str
+    viewer_is_privileged: bool
+    privileged_user_ids: frozenset[str]
+
+
+def _build_export_document_entry(
+    doc: WorkspaceDocument,
+    ctx: _ExportBuildContext,
+    fallback_index: int,
+) -> tuple[dict[str, Any], int]:
+    """Build one source document's export payload entry.
+
+    Returns the entry dict plus the count of highlights dropped because
+    their tag no longer exists (dangling tags).
+    """
+    doc_highlights = ctx.crdt_doc.get_highlights_for_document(str(doc.id))
+    if ctx.is_anonymous and ctx.user_id:
+        doc_highlights = anonymise_highlights(
+            doc_highlights,
+            viewing_user_id=ctx.user_id,
+            anonymous_sharing=True,
+            viewer_is_privileged=ctx.viewer_is_privileged,
+            privileged_user_ids=ctx.privileged_user_ids,
+        )
+
+    valid = [hl for hl in doc_highlights if hl.get("tag", "") in ctx.tag_name_map]
+    dangling = len(doc_highlights) - len(valid)
+
+    enriched = [
+        {**hl, "tag_name": ctx.tag_name_map.get(str(hl.get("tag", "")))} for hl in valid
+    ]
+
+    doc_para_map = doc.paragraph_map
+    legal_para_map: dict[int, int | None] | None = (
+        {int(k): v for k, v in doc_para_map.items()} if doc_para_map else None
+    )
+
+    entry = {
+        "title": doc.title or f"Source {fallback_index + 1}",
+        "html_content": doc.content,
+        "highlights": enriched,
+        "word_to_legal_para": legal_para_map,
+    }
+    return entry, dangling
+
+
+def _build_export_documents(
+    source_docs: list[WorkspaceDocument],
+    ctx: _ExportBuildContext,
+) -> tuple[list[dict[str, Any]], int]:
+    """Build export payload entries for every source document.
+
+    Returns the entry list plus the total dangling-tag count across all
+    documents.
+    """
+    documents: list[dict[str, Any]] = []
+    total_dangling = 0
+    for doc in source_docs:
+        entry, dangling = _build_export_document_entry(doc, ctx, len(documents))
+        documents.append(entry)
+        total_dangling += dangling
+    return documents, total_dangling
+
+
+async def _submit_pdf_export_job(
+    user_id: str, workspace_id: UUID, payload: dict[str, Any]
+) -> ExportJob | None:
+    """Submit the export job, or notify and return None on rejection.
+
+    The per-user concurrency check is handled by create_export_job()
+    (DB-level partial unique index), not an in-memory lock.
+    """
+    try:
+        return await create_export_job(UUID(user_id), workspace_id, payload)
+    except BusinessLogicError:  # only raised by per-user concurrency check
+        logger.debug("export_job_rejected", user_id=user_id)
+        ui.notify(
+            "An earlier export is still processing."
+            " Reload the page to check its status.",
+            type="warning",
+        )
+        return None
+
+
 async def _handle_pdf_export(state: PageState, workspace_id: UUID) -> bool:
     """Handle PDF export: gather data, submit job, start polling.
 
     Returns True if a job was successfully submitted, False otherwise.
-    The per-user concurrency check is handled by create_export_job()
-    (DB-level partial unique index), not an in-memory lock.
     """
     bind_contextvars(workspace_id=str(workspace_id))
     if state.crdt_doc is None or state.document_id is None or state.user_id is None:
@@ -433,6 +542,8 @@ async def _handle_pdf_export(state: PageState, workspace_id: UUID) -> bool:
             type="warning",
         )
         return False
+    crdt_doc = state.crdt_doc
+    user_id = state.user_id
 
     # --- Extract response markdown once (live JS path, with CRDT fallback) ---
     # This single extraction is shared by both enforcement and the export
@@ -449,51 +560,22 @@ async def _handle_pdf_export(state: PageState, workspace_id: UUID) -> bool:
 
     # --- Gather payload: all source documents + their highlights ---
     tag_name_map = {ti.raw_key: ti.name for ti in (state.tag_info_list or [])}
-    tag_colours = state.tag_colours()
 
-    all_docs = await list_documents(workspace_id)
-    source_docs = [d for d in all_docs if d.type == "source" and d.content]
-    if not source_docs:
-        ui.notify(
-            "No document content to export. Please paste or upload content first.",
-            type="warning",
-        )
+    source_docs = await _gather_source_documents(workspace_id)
+    if source_docs is None:
         return False
 
-    documents: list[dict[str, Any]] = []
-    total_dangling = 0
-    for doc in source_docs:
-        doc_highlights = state.crdt_doc.get_highlights_for_document(str(doc.id))
-        if state.is_anonymous and state.user_id:
-            doc_highlights = anonymise_highlights(
-                doc_highlights,
-                viewing_user_id=state.user_id,
-                anonymous_sharing=True,
-                viewer_is_privileged=state.viewer_is_privileged,
-                privileged_user_ids=state.privileged_user_ids,
-            )
-
-        valid = [hl for hl in doc_highlights if hl.get("tag", "") in tag_name_map]
-        total_dangling += len(doc_highlights) - len(valid)
-
-        enriched = [
-            {**hl, "tag_name": tag_name_map.get(str(hl.get("tag", "")))} for hl in valid
-        ]
-
-        doc_para_map = doc.paragraph_map
-        legal_para_map: dict[int, int | None] | None = (
-            {int(k): v for k, v in doc_para_map.items()} if doc_para_map else None
-        )
-
-        documents.append(
-            {
-                "title": doc.title or f"Source {len(documents) + 1}",
-                "html_content": doc.content,
-                "highlights": enriched,
-                "word_to_legal_para": legal_para_map,
-            }
-        )
-
+    documents, total_dangling = _build_export_documents(
+        source_docs,
+        _ExportBuildContext(
+            crdt_doc=crdt_doc,
+            tag_name_map=tag_name_map,
+            is_anonymous=state.is_anonymous,
+            user_id=user_id,
+            viewer_is_privileged=state.viewer_is_privileged,
+            privileged_user_ids=state.privileged_user_ids,
+        ),
+    )
     if total_dangling > 0:
         ui.notify(
             f"{total_dangling} annotation(s) reference deleted tags "
@@ -507,7 +589,7 @@ async def _handle_pdf_export(state: PageState, workspace_id: UUID) -> bool:
 
     payload: dict[str, Any] = {
         "documents": documents,
-        "tag_colours": tag_colours,
+        "tag_colours": state.tag_colours(),
         "general_notes": "",
         "notes_latex": notes_latex,
         "filename": filename,
@@ -516,18 +598,10 @@ async def _handle_pdf_export(state: PageState, workspace_id: UUID) -> bool:
         "word_limit": state.word_limit,
     }
 
-    # --- Submit job to queue ---
-    try:
-        job = await create_export_job(UUID(state.user_id), workspace_id, payload)
-    except BusinessLogicError:  # only raised by per-user concurrency check
-        logger.debug("export_job_rejected", user_id=state.user_id)
-        ui.notify(
-            "An earlier export is still processing."
-            " Reload the page to check its status.",
-            type="warning",
-        )
+    # --- Submit job to queue and start polling for status updates ---
+    job = await _submit_pdf_export_job(user_id, workspace_id, payload)
+    if job is None:
         return False
 
-    # --- Start polling for status updates ---
     _start_export_polling(job.id, state)
     return True

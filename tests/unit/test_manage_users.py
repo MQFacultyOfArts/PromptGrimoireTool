@@ -509,6 +509,7 @@ def _mock_xlsx_file() -> MagicMock:
 
 
 def _make_enrolment_report(
+    *,
     entries_processed: int = 3,
     users_created: int = 2,
     users_existing: int = 1,

@@ -18,3 +18,7 @@ record and mark the old one.
 | [0001](0001-shelve-wargame-retain-tables.md) | Shelve the wargame feature, retain its tables | Accepted | 2026-08-06 |
 | [0002](0002-expunge-browserstack.md) | Expunge BrowserStack rather than keep it quarantined | Accepted | 2026-08-06 |
 | [0003](0003-controlled-dependency-upgrades.md) | Upgrade dependencies one package at a time, transitives included | Accepted | 2026-08-07 |
+| [0004](0004-raw-sql-for-reads.md) | Raw SQL is the convention for query-shaped reads | Accepted | 2026-08-17 |
+| [0005](0005-sqlalchemy-21-beta-override.md) | Run SQLAlchemy 2.1.0b3 under SQLModel via a bounded uv override | Accepted | 2026-08-17 |
+| [0006](0006-toolchain-single-sourced-in-uv-lock.md) | Lint/type toolchain versions live in uv.lock and nowhere else | Accepted | 2026-08-17 |
+| [0007](0007-plr-rules-enforced.md) | Enforce the Pylint refactor rules; ignores must be scoped and argued | Accepted | 2026-08-17 |

@@ -401,6 +401,7 @@ def _run_cram_session(
     app_server: str,
     observation: CramObservation,
     seed: int,
+    *,
     start_barrier: threading.Barrier,
     loaded_barrier: threading.Barrier,
     done_counter: list[int],
@@ -580,16 +581,14 @@ class TestAssessmentCramLoad:
         threads = [
             threading.Thread(
                 target=_run_cram_session,
-                args=(
-                    app_server,
-                    observation,
-                    i,
-                    start_barrier,
-                    loaded_barrier,
-                    done_counter,
-                    done_lock,
-                    release_event,
-                ),
+                args=(app_server, observation, i),
+                kwargs={
+                    "start_barrier": start_barrier,
+                    "loaded_barrier": loaded_barrier,
+                    "done_counter": done_counter,
+                    "done_lock": done_lock,
+                    "release_event": release_event,
+                },
                 name=f"cram-session-{i}",
             )
             for i, observation in enumerate(observations)

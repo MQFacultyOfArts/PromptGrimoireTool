@@ -13,6 +13,8 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
+
     from promptgrimoire.input_pipeline.html_input import TextNodeInfo
 
 # Block-level elements that Pandoc treats as block-level.
@@ -81,8 +83,61 @@ INLINE_FORMATTING_ELEMENTS: frozenset[str] = frozenset(
 
 
 # ---------------------------------------------------------------------------
+# Shared backwards tag scan
+# ---------------------------------------------------------------------------
+
+
+def _iter_tags_backwards(html: str, byte_pos: int) -> Iterator[tuple[int, str, bool]]:
+    """Yield ``(tag_start, tag_name, is_closing)`` for each tag scanning
+    backwards from *byte_pos* through the serialised HTML.
+
+    Comment/doctype markers (tag content starting with ``!``) are skipped.
+    A stray ``>`` with no matching ``<`` before it is skipped rather than
+    treated as a tag.
+    """
+    i = byte_pos - 1
+    while i >= 0:
+        if html[i] != ">":
+            i -= 1
+            continue
+        tag_end = i
+        tag_start = html.rfind("<", 0, i)
+        if tag_start == -1:
+            i -= 1
+            continue
+        tag_content = html[tag_start + 1 : tag_end]
+        i = tag_start - 1
+        if tag_content.startswith("!"):
+            continue
+        is_closing = tag_content.startswith("/")
+        name_part = tag_content[1:] if is_closing else tag_content
+        tag_name = name_part.split()[0].strip("/").lower()
+        yield tag_start, tag_name, is_closing
+
+
+# ---------------------------------------------------------------------------
 # Block-boundary detection
 # ---------------------------------------------------------------------------
+
+
+def _find_block_ancestor_at(html: str, byte_pos: int) -> str:
+    """Find the innermost block-level ancestor tag at a byte position.
+
+    Scans backwards through the HTML to find the nearest open tag that is a
+    block element, tracking already-closed block elements via *depth* so
+    they are not mistaken for an open ancestor.
+    """
+    depth = 0
+    for tag_start, tag_name, is_closing in _iter_tags_backwards(html, byte_pos):
+        if tag_name not in PANDOC_BLOCK_ELEMENTS:
+            continue
+        if is_closing:
+            depth += 1
+            continue
+        if depth == 0:
+            return f"{tag_name}@{tag_start}"
+        depth -= 1
+    return "root@0"
 
 
 def _detect_block_boundaries(
@@ -95,10 +150,6 @@ def _detect_block_boundaries(
     A block boundary is the ``char_start`` of a text node whose nearest
     block-level ancestor differs from that of the preceding text node.
 
-    Scans backwards through the serialized HTML to find the nearest
-    block-level ancestor tag for each text node, then compares consecutive
-    text nodes to detect boundary transitions.
-
     Args:
         html: Serialized HTML string.
         text_nodes: List of text node info from walk_and_map.
@@ -107,48 +158,12 @@ def _detect_block_boundaries(
     if len(text_nodes) <= 1:
         return set()
 
-    def _find_block_ancestor_at(byte_pos: int) -> str:
-        """Find the innermost block-level ancestor tag at a byte position.
-
-        Scans backwards through the HTML to find the nearest open tag that
-        is a block element. Uses a simple tag-stack approach.
-        """
-        # Walk backwards from byte_pos looking for the nearest block tag
-        # We look for the most recent unclosed block-level opening tag.
-        depth = 0
-        i = byte_pos - 1
-        while i >= 0:
-            if html[i] == ">":
-                # Found a tag end, scan backwards to find tag start
-                tag_end = i
-                tag_start = html.rfind("<", 0, i)
-                if tag_start == -1:
-                    i -= 1
-                    continue
-                tag_content = html[tag_start + 1 : tag_end]
-                if tag_content.startswith("/"):
-                    # Closing tag
-                    tag_name = tag_content[1:].split()[0].strip("/").lower()
-                    if tag_name in PANDOC_BLOCK_ELEMENTS:
-                        depth += 1
-                elif not tag_content.startswith("!"):
-                    # Opening tag
-                    tag_name = tag_content.split()[0].strip("/").lower()
-                    if tag_name in PANDOC_BLOCK_ELEMENTS:
-                        if depth == 0:
-                            return f"{tag_name}@{tag_start}"
-                        depth -= 1
-                i = tag_start - 1
-            else:
-                i -= 1
-        return "root@0"
-
     # Build block ancestor identity for each text node
     prev_block: str | None = None
     boundaries: set[int] = set()
 
     for i, tn in enumerate(text_nodes):
-        block_id = _find_block_ancestor_at(byte_offsets[i])
+        block_id = _find_block_ancestor_at(html, byte_offsets[i])
         if prev_block is not None and block_id != prev_block:
             boundaries.add(tn.char_start)
         prev_block = block_id
@@ -175,37 +190,21 @@ def _inline_context_at(
     # open tag (it's a completed element, not an ancestor).
     depth: dict[str, int] = {}
     ancestors: list[str] = []
-    i = byte_pos - 1
 
-    while i >= 0:
-        if html[i] == ">":
-            tag_end = i
-            tag_start = html.rfind("<", 0, i)
-            if tag_start == -1:
-                i -= 1
-                continue
-            tag_content = html[tag_start + 1 : tag_end]
-            if tag_content.startswith("/"):
-                # Closing tag -- the element is completed, skip its opener
-                tag_name = tag_content[1:].split()[0].strip("/").lower()
-                if tag_name in PANDOC_BLOCK_ELEMENTS:
-                    break  # Stop at block boundary
-                if tag_name in INLINE_FORMATTING_ELEMENTS:
-                    depth[tag_name] = depth.get(tag_name, 0) + 1
-            elif not tag_content.startswith("!"):
-                # Opening tag
-                tag_name = tag_content.split()[0].strip("/").lower()
-                if tag_name in PANDOC_BLOCK_ELEMENTS:
-                    break  # Stop at block boundary
-                if tag_name in INLINE_FORMATTING_ELEMENTS:
-                    d = depth.get(tag_name, 0)
-                    if d > 0:
-                        depth[tag_name] = d - 1
-                    else:
-                        ancestors.append(tag_name)
-            i = tag_start - 1
+    for _tag_start, tag_name, is_closing in _iter_tags_backwards(html, byte_pos):
+        if tag_name in PANDOC_BLOCK_ELEMENTS:
+            break  # Stop at block boundary
+        if tag_name not in INLINE_FORMATTING_ELEMENTS:
+            continue
+        if is_closing:
+            # Closing tag -- the element is completed, skip its opener
+            depth[tag_name] = depth.get(tag_name, 0) + 1
+            continue
+        d = depth.get(tag_name, 0)
+        if d > 0:
+            depth[tag_name] = d - 1
         else:
-            i -= 1
+            ancestors.append(tag_name)
 
     return tuple(sorted(ancestors))
 

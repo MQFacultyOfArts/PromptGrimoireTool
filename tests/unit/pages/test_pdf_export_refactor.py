@@ -70,11 +70,31 @@ from promptgrimoire.pages.annotation.header import (  # noqa: E402
     _wrap_refresh_with_stale_download_clear,
 )
 from promptgrimoire.pages.annotation.pdf_export import (  # noqa: E402
+    _build_export_documents,
+    _ExportBuildContext,
     _handle_pdf_export,
     _show_download_button,
     _start_export_polling,
     check_existing_export,
 )
+
+
+# ---------------------------------------------------------------------------
+# Stub for WorkspaceDocument -- avoids importing SQLModel at test time
+# ---------------------------------------------------------------------------
+@dataclass
+class _StubDocument:
+    """Minimal stub matching the WorkspaceDocument fields read by export building."""
+
+    id: UUID = field(default_factory=uuid4)
+    title: str | None = None
+    content: str = "<p>content</p>"
+    paragraph_map: dict[str, int | None] | None = None
+
+
+def _doc(**kwargs: Any) -> Any:
+    """Create a _StubDocument cast to Any for type-checker compat."""
+    return _StubDocument(**kwargs)
 
 
 # ---------------------------------------------------------------------------
@@ -584,3 +604,138 @@ class TestLockRemoval:
 
         source = inspect.getsource(mod)
         assert "asyncio.Lock" not in source
+
+
+# ---------------------------------------------------------------------------
+# _build_export_documents -- pure per-document payload building, extracted
+# from _handle_pdf_export to reduce cognitive complexity.
+# ---------------------------------------------------------------------------
+def _ctx(**overrides: Any) -> _ExportBuildContext:
+    """Build an _ExportBuildContext with sensible defaults for testing."""
+    defaults: dict[str, Any] = {
+        "crdt_doc": MagicMock(),
+        "tag_name_map": {},
+        "is_anonymous": False,
+        "user_id": str(uuid4()),
+        "viewer_is_privileged": False,
+        "privileged_user_ids": frozenset(),
+    }
+    defaults.update(overrides)
+    return _ExportBuildContext(**defaults)
+
+
+class TestBuildExportDocuments:
+    """Unit coverage for the pure per-document export payload builder."""
+
+    def test_builds_entry_with_valid_highlights(self) -> None:
+        """A highlight whose tag is known survives into the entry, untouched."""
+        crdt = MagicMock()
+        crdt.get_highlights_for_document.return_value = [
+            {"tag": "tag-1", "start_char": 0, "end_char": 5}
+        ]
+        doc = _doc(title="My Doc")
+
+        documents, total_dangling = _build_export_documents(
+            [doc], _ctx(crdt_doc=crdt, tag_name_map={"tag-1": "Jurisdiction"})
+        )
+
+        assert total_dangling == 0
+        assert len(documents) == 1
+        assert documents[0]["title"] == "My Doc"
+        assert documents[0]["html_content"] == doc.content
+        assert documents[0]["highlights"] == [
+            {
+                "tag": "tag-1",
+                "start_char": 0,
+                "end_char": 5,
+                "tag_name": "Jurisdiction",
+            }
+        ]
+
+    def test_dangling_tag_is_dropped_and_counted(self) -> None:
+        """A highlight referencing a deleted tag is excluded and counted."""
+        crdt = MagicMock()
+        crdt.get_highlights_for_document.return_value = [
+            {"tag": "deleted-tag", "start_char": 0, "end_char": 5}
+        ]
+        doc = _doc()
+
+        documents, total_dangling = _build_export_documents(
+            [doc], _ctx(crdt_doc=crdt, tag_name_map={"tag-1": "Jurisdiction"})
+        )
+
+        assert total_dangling == 1
+        assert documents[0]["highlights"] == []
+
+    def test_dangling_count_sums_across_documents(self) -> None:
+        """Dangling counts from multiple documents are summed."""
+        crdt = MagicMock()
+        crdt.get_highlights_for_document.side_effect = [
+            [{"tag": "gone-1", "start_char": 0, "end_char": 1}],
+            [{"tag": "gone-2", "start_char": 0, "end_char": 1}],
+        ]
+        docs = [_doc(), _doc()]
+
+        _documents, total_dangling = _build_export_documents(
+            docs, _ctx(crdt_doc=crdt, tag_name_map={})
+        )
+
+        assert total_dangling == 2
+
+    def test_untitled_document_falls_back_to_positional_title(self) -> None:
+        """A document with no title gets 'Source N' based on its position."""
+        crdt = MagicMock()
+        crdt.get_highlights_for_document.return_value = []
+        docs = [_doc(title=None), _doc(title=None)]
+
+        documents, _total_dangling = _build_export_documents(docs, _ctx(crdt_doc=crdt))
+
+        assert documents[0]["title"] == "Source 1"
+        assert documents[1]["title"] == "Source 2"
+
+    def test_paragraph_map_keys_converted_to_int(self) -> None:
+        """String paragraph_map keys (as stored) become int keys in the payload."""
+        crdt = MagicMock()
+        crdt.get_highlights_for_document.return_value = []
+        doc = _doc(paragraph_map={"0": 1, "12": 2})
+
+        documents, _total_dangling = _build_export_documents([doc], _ctx(crdt_doc=crdt))
+
+        assert documents[0]["word_to_legal_para"] == {0: 1, 12: 2}
+
+    def test_empty_paragraph_map_becomes_none(self) -> None:
+        """A falsy paragraph_map (None or {}) becomes None in the payload."""
+        crdt = MagicMock()
+        crdt.get_highlights_for_document.return_value = []
+        doc = _doc(paragraph_map=None)
+
+        documents, _total_dangling = _build_export_documents([doc], _ctx(crdt_doc=crdt))
+
+        assert documents[0]["word_to_legal_para"] is None
+
+    def test_anonymises_highlights_when_anonymous(self) -> None:
+        """When is_anonymous is set, highlights are routed through anonymisation."""
+        crdt = MagicMock()
+        crdt.get_highlights_for_document.return_value = [
+            {"tag": "tag-1", "author": "Real Name", "user_id": "u1"}
+        ]
+        doc = _doc()
+
+        with patch(
+            "promptgrimoire.pages.annotation.pdf_export.anonymise_highlights"
+        ) as mock_anon:
+            mock_anon.return_value = [
+                {"tag": "tag-1", "author": "Anonymous 1", "user_id": "u1"}
+            ]
+            documents, _total_dangling = _build_export_documents(
+                [doc],
+                _ctx(
+                    crdt_doc=crdt,
+                    tag_name_map={"tag-1": "Jurisdiction"},
+                    is_anonymous=True,
+                    user_id="u1",
+                ),
+            )
+
+        mock_anon.assert_called_once()
+        assert documents[0]["highlights"][0]["author"] == "Anonymous 1"

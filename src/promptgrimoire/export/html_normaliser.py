@@ -20,6 +20,9 @@ from lxml.html import HtmlElement
 logger = structlog.get_logger()
 
 
+_NON_CONTENT_TAGS = ("script", "style", "noscript")
+
+
 def strip_scripts_and_styles(html_content: str) -> str:
     """Remove script, style, and noscript elements from HTML.
 
@@ -50,30 +53,49 @@ def strip_scripts_and_styles(html_content: str) -> str:
         )
         return _strip_scripts_regex_fallback(html_content)
 
-    # Remove script, style, noscript elements and their content
-    for tag in ("script", "style", "noscript"):
-        for element in tree.xpath(f"//{tag}"):
-            parent = element.getparent()
-            if parent is not None:
-                # Preserve tail text (text after the element)
-                if element.tail:
-                    prev = element.getprevious()
-                    if prev is not None:
-                        prev.tail = (prev.tail or "") + element.tail
-                    else:
-                        parent.text = (parent.text or "") + element.tail
-                parent.remove(element)
-
-    # Remove inline event handlers (onclick, onload, etc.)
-    for element in tree.iter():
-        if hasattr(element, "attrib"):
-            attrs_to_remove = [
-                attr for attr in element.attrib if attr.lower().startswith("on")
-            ]
-            for attr in attrs_to_remove:
-                del element.attrib[attr]
+    _remove_non_content_elements(tree)
+    _strip_event_handler_attributes(tree)
 
     return lxml_html.tostring(tree, encoding="unicode")
+
+
+def _remove_non_content_elements(tree: HtmlElement) -> None:
+    """Remove script/style/noscript elements from *tree*, preserving tail text."""
+    for tag in _NON_CONTENT_TAGS:
+        for element in tree.xpath(f"//{tag}"):
+            _remove_element_preserving_tail(element)
+
+
+def _remove_element_preserving_tail(element: HtmlElement) -> None:
+    """Detach *element* from its parent, reattaching any tail text.
+
+    Tail text (text after the element, before the next sibling) would
+    otherwise be lost along with the element. It is appended to the
+    previous sibling's tail, or to the parent's own text if there is no
+    previous sibling.
+    """
+    parent = element.getparent()
+    if parent is None:
+        return
+    if element.tail:
+        prev = element.getprevious()
+        if prev is not None:
+            prev.tail = (prev.tail or "") + element.tail
+        else:
+            parent.text = (parent.text or "") + element.tail
+    parent.remove(element)
+
+
+def _strip_event_handler_attributes(tree: HtmlElement) -> None:
+    """Remove inline event-handler attributes (onclick, onload, etc.) from *tree*."""
+    for element in tree.iter():
+        if not hasattr(element, "attrib"):
+            continue
+        attrs_to_remove = [
+            attr for attr in element.attrib if attr.lower().startswith("on")
+        ]
+        for attr in attrs_to_remove:
+            del element.attrib[attr]
 
 
 def _strip_scripts_regex_fallback(html_content: str) -> str:

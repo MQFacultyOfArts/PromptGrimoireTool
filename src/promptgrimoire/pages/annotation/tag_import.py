@@ -30,6 +30,9 @@ if TYPE_CHECKING:
     from promptgrimoire.db.tags import ImportResult
     from promptgrimoire.pages.annotation import PageState
 
+_TAG_PREVIEW_LIMIT = 5
+"""Number of tag names shown before collapsing the rest into a "+N" suffix."""
+
 logger = structlog.get_logger()
 
 
@@ -76,9 +79,9 @@ def _build_workspace_options(
     for ws, course_name, tag_names in workspaces:
         title = ws.title or "Untitled workspace"
         prefix = f"{course_name} / " if course_name else ""
-        tag_preview = ", ".join(tag_names[:5])
-        if len(tag_names) > 5:
-            tag_preview += f" (+{len(tag_names) - 5})"
+        tag_preview = ", ".join(tag_names[:_TAG_PREVIEW_LIMIT])
+        if len(tag_names) > _TAG_PREVIEW_LIMIT:
+            tag_preview += f" (+{len(tag_names) - _TAG_PREVIEW_LIMIT})"
         options[str(ws.id)] = f"{prefix}{title} ({tag_preview})"
     return options
 

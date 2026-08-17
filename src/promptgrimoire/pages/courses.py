@@ -378,7 +378,7 @@ def _render_activity_management_controls(
         )
 
 
-def _render_activity_row(
+def _render_activity_row(  # noqa: PLR0913 -- param-object migration: tracker ledger 8
     act: Activity,
     *,
     can_manage: bool,
@@ -485,7 +485,7 @@ def _render_week_management_controls(
         _render_publish_toggle(week, on_publish_toggle=on_publish_toggle)
 
 
-def _render_week_header(
+def _render_week_header(  # noqa: PLR0913 -- param-object migration: tracker ledger 8
     week: Any,
     *,
     can_view_drafts: bool,
@@ -535,7 +535,7 @@ def _render_publish_toggle(
             ).props('outline color=primary dense data-testid="publish-week-btn"')
 
 
-async def _render_week_activities(
+async def _render_week_activities(  # noqa: PLR0913 -- param-object migration: tracker ledger 8
     week: Any,
     *,
     course_id: str,

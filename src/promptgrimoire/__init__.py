@@ -254,7 +254,7 @@ def _install_session_identity_tracing() -> None:
 
         return await _original_dispatch(self, request, _logging_call_next)
 
-    RequestTrackingMiddleware.dispatch = _instrumented_dispatch  # ty: ignore[invalid-assignment]
+    RequestTrackingMiddleware.dispatch = _instrumented_dispatch
     log.info("session_identity_tracing_installed")
 
 

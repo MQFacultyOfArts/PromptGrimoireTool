@@ -550,6 +550,11 @@ def _build_prefix_query(raw: str) -> str:
     return " & ".join(safe)
 
 
+# Below this length, an FTS prefix search is too broad to be useful and is
+# skipped rather than sent to the database.
+_MIN_SEARCH_QUERY_LENGTH = 3
+
+
 async def search_navigator(
     query: str,
     *,
@@ -565,7 +570,7 @@ async def search_navigator(
     Returns NavigatorRows with snippet and rank, ordered by relevance.
     """
     stripped = query.strip()
-    if len(stripped) < 3:
+    if len(stripped) < _MIN_SEARCH_QUERY_LENGTH:
         return []
 
     prefix_query = _build_prefix_query(stripped)

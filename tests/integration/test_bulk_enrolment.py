@@ -80,11 +80,12 @@ async def _count_users_by_email(emails: list[str]) -> int:
     """Count how many of the given emails exist as users."""
     from promptgrimoire.db.engine import get_session
 
+    # ty cannot type ``User.email.in_(...)`` (Model.field descriptor,
+    # astral-sh/ty#3421); use the plain Core Column instead.
+    user_table = User.metadata.tables[User.__tablename__]
     async with get_session() as session:
         result = await session.exec(
-            select(User).where(
-                User.email.in_([e.lower() for e in emails])  # type: ignore[arg-type]  -- SQLAlchemy in_
-            )
+            select(User).where(user_table.c.email.in_([e.lower() for e in emails]))
         )
         return len(list(result.all()))
 
@@ -105,12 +106,13 @@ async def _count_memberships(course_id: UUID) -> int:
     from promptgrimoire.db.engine import get_session
 
     async with get_session() as session:
+        # .join(StudentGroup) (single-arg) lets SQLAlchemy infer the ON
+        # clause from StudentGroupMembership.student_group_id's FK -- ty
+        # cannot type an explicit Model.field == Model.field onclause
+        # (astral-sh/ty#3421).
         result = await session.exec(
             select(StudentGroupMembership)
-            .join(
-                StudentGroup,
-                StudentGroup.id == StudentGroupMembership.student_group_id,  # type: ignore[invalid-argument-type]  -- SQLAlchemy join expression
-            )
+            .join(StudentGroup)
             .where(StudentGroup.course_id == course_id)
         )
         return len(list(result.all()))
@@ -143,13 +145,15 @@ async def _list_membership_pairs(course_id: UUID) -> list[tuple[str, str]]:
     from promptgrimoire.db.engine import get_session
 
     async with get_session() as session:
+        # .select_from(StudentGroupMembership).join(StudentGroup).join(User)
+        # lets SQLAlchemy infer both ON clauses from
+        # StudentGroupMembership's two FKs -- ty cannot type an explicit
+        # Model.field == Model.field onclause (astral-sh/ty#3421).
         result = await session.exec(
             select(StudentGroup.name, User.email)
-            .join(
-                StudentGroupMembership,
-                StudentGroupMembership.student_group_id == StudentGroup.id,  # type: ignore[invalid-argument-type]  -- SQLAlchemy join expression
-            )
-            .join(User, User.id == StudentGroupMembership.user_id)  # type: ignore[invalid-argument-type]  -- SQLAlchemy join expression
+            .select_from(StudentGroupMembership)
+            .join(StudentGroup)
+            .join(User)
             .where(StudentGroup.course_id == course_id)
             .order_by(StudentGroup.name, User.email)
         )

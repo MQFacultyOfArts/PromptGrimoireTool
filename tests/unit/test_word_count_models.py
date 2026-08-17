@@ -5,6 +5,7 @@ Pure model instantiation tests -- no database required.
 
 from __future__ import annotations
 
+from typing import Any
 from uuid import uuid4
 
 import pytest
@@ -16,26 +17,26 @@ _WEEK_ID = uuid4()
 _TEMPLATE_WS_ID = uuid4()
 
 
-def _make_activity(**overrides: object) -> Activity:
+def _make_activity(**overrides: Any) -> Activity:
     """Create an Activity with required fields pre-filled."""
-    defaults: dict[str, object] = {
+    defaults: dict[str, Any] = {
         "week_id": _WEEK_ID,
         "template_workspace_id": _TEMPLATE_WS_ID,
         "title": "Test Activity",
     }
     defaults.update(overrides)
-    return Activity(**defaults)  # type: ignore[arg-type]
+    return Activity(**defaults)
 
 
-def _make_course(**overrides: object) -> Course:
+def _make_course(**overrides: Any) -> Course:
     """Create a Course with required fields pre-filled."""
-    defaults: dict[str, object] = {
+    defaults: dict[str, Any] = {
         "code": "TEST101",
         "name": "Test Course",
         "semester": "2026S1",
     }
     defaults.update(overrides)
-    return Course(**defaults)  # type: ignore[arg-type]
+    return Course(**defaults)
 
 
 class TestActivityWordCountFields:

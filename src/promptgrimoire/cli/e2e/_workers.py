@@ -181,7 +181,7 @@ def _build_worker_result(
     return result
 
 
-async def run_playwright_file(
+async def run_playwright_file(  # noqa: PLR0913 -- per-worker E2E entrypoint invoked by the fleet; param-object migration: tracker ledger 8
     test_file: Path,
     port: int,
     db_url: str,

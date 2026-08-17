@@ -5,10 +5,13 @@ from __future__ import annotations
 import json
 import re
 import sqlite3
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 _CRASH_BOUNCE_THRESHOLD = 300  # seconds
+_SECONDS_PER_MINUTE = 60
+_SECONDS_PER_HOUR = 3600
 
 LOGIN_EVENT_PATTERN = "Login successful%"
 
@@ -564,18 +567,10 @@ def _query_nosrv_clustering(
     return count_nosrv, nosrv_first_60s
 
 
-def query_epoch_haproxy(
-    conn: sqlite3.Connection,
-    start_utc: str,
-    end_utc: str,
-    duration_seconds: float,
-) -> dict:
-    """Query HAProxy traffic stats within an epoch window.
-
-    Returns status code distribution, request totals, 5xx rates,
-    and latency percentiles (p50/p95/p99).
-    """
-    # Status code distribution
+def _query_status_distribution(
+    conn: sqlite3.Connection, start_utc: str, end_utc: str
+) -> list[dict]:
+    """Query HAProxy status code distribution within a window."""
     status_rows = conn.execute(
         "SELECT status_code, COUNT(*) AS count"
         " FROM haproxy_events"
@@ -584,11 +579,17 @@ def query_epoch_haproxy(
         " ORDER BY status_code",
         (start_utc, end_utc),
     ).fetchall()
-    status_codes = [{"status_code": code, "count": cnt} for code, cnt in status_rows]
+    return [{"status_code": code, "count": cnt} for code, cnt in status_rows]
 
-    # Totals — exclude <NOSRV> (HAProxy 503s during restart, not app errors).
-    # <NOSRV> means HAProxy had no backend available (app restarting).
-    # These are infrastructure transients, not application errors.
+
+def _query_request_totals(
+    conn: sqlite3.Connection, start_utc: str, end_utc: str
+) -> tuple[int, int]:
+    """Query (total_requests, count_5xx), excluding <NOSRV> transients.
+
+    <NOSRV> means HAProxy had no backend available (app restarting) —
+    an infrastructure transient, not an application error.
+    """
     row = conn.execute(
         "SELECT COUNT(*) AS total_requests,"
         " SUM(CASE WHEN status_code >= 500 THEN 1 ELSE 0 END) AS count_5xx"
@@ -597,18 +598,19 @@ def query_epoch_haproxy(
         " AND (server IS NULL OR server != '<NOSRV>')",
         (start_utc, end_utc),
     ).fetchone()
-    total_requests = row[0]
-    count_5xx = row[1] or 0
+    return row[0], row[1] or 0
 
-    count_nosrv, nosrv_first_60s = _query_nosrv_clustering(conn, start_utc, end_utc)
 
-    is_crash = duration_seconds < _CRASH_BOUNCE_THRESHOLD
+_HAPROXY_PERCENTILES = ((0.50, "p50_ms"), (0.95, "p95_ms"), (0.99, "p99_ms"))
 
-    # Percentiles — also exclude <NOSRV> (no meaningful response time)
-    p50_ms: int | None = None
-    p95_ms: int | None = None
-    p99_ms: int | None = None
 
+def _query_latency_percentiles(
+    conn: sqlite3.Connection, start_utc: str, end_utc: str
+) -> tuple[int, int | None, int | None, int | None]:
+    """Query (sample_count, p50_ms, p95_ms, p99_ms), excluding <NOSRV>.
+
+    <NOSRV> rows have no meaningful response time.
+    """
     sample_count_row = conn.execute(
         "SELECT COUNT(*) FROM haproxy_events"
         " WHERE ts_utc >= ? AND ts_utc <= ? AND ta_ms IS NOT NULL"
@@ -617,8 +619,13 @@ def query_epoch_haproxy(
     ).fetchone()
     sample_count = sample_count_row[0]
 
+    percentiles: dict[str, int | None] = {
+        "p50_ms": None,
+        "p95_ms": None,
+        "p99_ms": None,
+    }
     if sample_count > 0:
-        for pct, attr in [(0.50, "p50_ms"), (0.95, "p95_ms"), (0.99, "p99_ms")]:
+        for pct, attr in _HAPROXY_PERCENTILES:
             pct_row = conn.execute(
                 "SELECT ta_ms FROM haproxy_events"
                 " WHERE ts_utc >= ? AND ts_utc <= ? AND ta_ms IS NOT NULL"
@@ -631,21 +638,46 @@ def query_epoch_haproxy(
                 (start_utc, end_utc, pct, start_utc, end_utc),
             ).fetchone()
             if pct_row:
-                if attr == "p50_ms":
-                    p50_ms = pct_row[0]
-                elif attr == "p95_ms":
-                    p95_ms = pct_row[0]
-                else:
-                    p99_ms = pct_row[0]
+                percentiles[attr] = pct_row[0]
+
+    return (
+        sample_count,
+        percentiles["p50_ms"],
+        percentiles["p95_ms"],
+        percentiles["p99_ms"],
+    )
+
+
+def query_epoch_haproxy(
+    conn: sqlite3.Connection,
+    start_utc: str,
+    end_utc: str,
+    duration_seconds: float,
+) -> dict:
+    """Query HAProxy traffic stats within an epoch window.
+
+    Returns status code distribution, request totals, 5xx rates,
+    and latency percentiles (p50/p95/p99).
+    """
+    status_codes = _query_status_distribution(conn, start_utc, end_utc)
+    total_requests, count_5xx = _query_request_totals(conn, start_utc, end_utc)
+    count_nosrv, nosrv_first_60s = _query_nosrv_clustering(conn, start_utc, end_utc)
+    sample_count, p50_ms, p95_ms, p99_ms = _query_latency_percentiles(
+        conn, start_utc, end_utc
+    )
+
+    is_crash = duration_seconds < _CRASH_BOUNCE_THRESHOLD
 
     return {
         "status_codes": status_codes,
         "total_requests": total_requests,
         "count_5xx": count_5xx,
-        "rate_5xx": None if is_crash else count_5xx / (duration_seconds / 3600),
+        "rate_5xx": None
+        if is_crash
+        else count_5xx / (duration_seconds / _SECONDS_PER_HOUR),
         "requests_per_minute": None
         if is_crash
-        else total_requests / (duration_seconds / 60),
+        else total_requests / (duration_seconds / _SECONDS_PER_MINUTE),
         "p50_ms": p50_ms,
         "p95_ms": p95_ms,
         "p99_ms": p99_ms,
@@ -948,14 +980,14 @@ def _fmt_gap_duration(seconds: float | None) -> str:
         return "—"
     if seconds == 0.0:
         return "0s"
-    if seconds < 60:
+    if seconds < _SECONDS_PER_MINUTE:
         return f"{int(seconds)}s"
-    if seconds < 3600:
-        m = int(seconds // 60)
-        s = int(seconds % 60)
+    if seconds < _SECONDS_PER_HOUR:
+        m = int(seconds // _SECONDS_PER_MINUTE)
+        s = int(seconds % _SECONDS_PER_MINUTE)
         return f"{m}m {s}s"
-    h = int(seconds // 3600)
-    m = int((seconds % 3600) // 60)
+    h = int(seconds // _SECONDS_PER_HOUR)
+    m = int((seconds % _SECONDS_PER_HOUR) // _SECONDS_PER_MINUTE)
     return f"{h}h {m}m"
 
 
@@ -1440,12 +1472,16 @@ def _fmt_ratio_delta(n: float) -> str:
     return f"{sign}{pct:.2f}pp"
 
 
+_BYTES_PER_GIB = 1_073_741_824
+_BYTES_PER_MIB = 1_048_576
+
+
 def _fmt_bytes(n: float | int) -> str:
     """Format bytes as human-readable (e.g. 2.7G, 366M)."""
-    if n >= 1_073_741_824:
-        return f"{n / 1_073_741_824:.1f}G"
-    if n >= 1_048_576:
-        return f"{n / 1_048_576:.0f}M"
+    if n >= _BYTES_PER_GIB:
+        return f"{n / _BYTES_PER_GIB:.1f}G"
+    if n >= _BYTES_PER_MIB:
+        return f"{n / _BYTES_PER_MIB:.0f}M"
     return f"{n:.0f}B"
 
 
@@ -1525,20 +1561,36 @@ def _render_section_methodology(lines: list[str]) -> None:
     lines.append("")
 
 
-def render_review_report(
-    sources: list[dict],
-    epochs: list[dict],
-    epoch_analyses: list[dict],
-    summative_users: dict,
-    trends: list[dict],
-    static_counts: dict | None = None,
-) -> str:
+@dataclass
+class ReportData:
+    """Bundles the inputs to :func:`render_review_report`.
+
+    A plain parameter object rather than six positional arguments — every
+    field is always supplied together by the ``review`` CLI orchestration.
+    """
+
+    sources: list[dict]
+    epochs: list[dict]
+    epoch_analyses: list[dict]
+    summative_users: dict
+    trends: list[dict]
+    static_counts: dict | None = None
+
+
+def render_review_report(data: ReportData) -> str:
     """Assemble a markdown operational review report.
 
     Combines source inventory, epoch timeline, per-epoch analysis,
     user activity summary, and trend analysis into a single markdown
     document suitable for review.
     """
+    sources = data.sources
+    epochs = data.epochs
+    epoch_analyses = data.epoch_analyses
+    summative_users = data.summative_users
+    trends = data.trends
+    static_counts = data.static_counts
+
     lines: list[str] = []
     generated = datetime.now(UTC).strftime("%Y-%m-%d %H:%M UTC")
 

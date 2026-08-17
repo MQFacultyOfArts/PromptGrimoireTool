@@ -149,3 +149,72 @@ class TestRenderLatex:
         name = "test_tag"
         result = render_latex(t"\\definecolor{{tag-{name}}}{{HTML}}{{FF0000}}")
         assert result == "\\definecolor{tag-test\\_tag}{HTML}{FF0000}"
+
+
+class TestRenderLatexConversions:
+    """Characterisation tests for conversion specifiers (!r, !s, !a) and
+    format specs -- these branches were previously untested and are the
+    source of most of render_latex's cognitive complexity (a nested
+    if/elif chain), so they must be pinned down before refactoring.
+    """
+
+    def test_repr_conversion_applied_before_escaping(self) -> None:
+        """!r applies repr() to the value, then the LaTeX-special result
+        (the quotes from repr are not special, the & is) is escaped."""
+        val = "a&b"
+        result = render_latex(t"{val!r}")
+        assert result == "'a\\&b'"
+
+    def test_str_conversion_applied(self) -> None:
+        """!s applies str() to the value before escaping."""
+
+        class Wrapper:
+            def __str__(self) -> str:
+                return "wrapped#value"
+
+        result = render_latex(t"{Wrapper()!s}")
+        assert result == "wrapped\\#value"
+
+    def test_ascii_conversion_applied(self) -> None:
+        """!a applies ascii() (backslash-escaping non-ASCII) before LaTeX
+        escaping, so the backslashes ascii() introduces are themselves
+        escaped to \\textbackslash{}."""
+        val = "café"
+        result = render_latex(t"{val!a}")
+        assert result == "'caf\\textbackslash{}xe9'"
+
+    def test_no_conversion_leaves_value_untouched(self) -> None:
+        """Absence of a conversion specifier applies none of !r/!s/!a."""
+        result = render_latex(t"{42}")
+        assert result == "42"
+
+    def test_format_spec_applied(self) -> None:
+        """A format spec (e.g. .2f) is applied via format() before escaping."""
+        result = render_latex(t"{3.14159:.2f}")
+        assert result == "3.14"
+
+    def test_format_spec_combined_with_conversion(self) -> None:
+        """Conversion runs first, then the format spec is applied to the
+        converted (string) value -- matching f-string evaluation order."""
+        result = render_latex(t"{42!r:>6}")
+        assert result == "    42"
+
+    def test_noescape_without_format_spec_stays_unescaped(self) -> None:
+        """A NoEscape value with no format spec passes through verbatim."""
+        val = NoEscape(r"\textbf{x}")
+        result = render_latex(t"{val}")
+        assert result == "\\textbf{x}"
+
+    def test_noescape_with_format_spec_loses_trust_marker(self) -> None:
+        """Documented gotcha: str.__format__ on a str subclass always
+        returns a plain str (verified directly against builtins, not
+        against this module), so applying a format spec to a NoEscape
+        value strips the NoEscape marker and the padded result gets
+        escaped like untrusted text. This is current behaviour, not
+        necessarily desired behaviour -- pinned here so a refactor
+        cannot silently change it either way.
+        """
+        val = NoEscape(r"\textbf{x}")
+        assert type(format(val, ">20")) is str
+        result = render_latex(t"{val:>20}")
+        assert result == "          \\textbackslash{}textbf\\{x\\}"

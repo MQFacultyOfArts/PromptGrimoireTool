@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import re
 import time
+from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
 import structlog
@@ -25,12 +26,32 @@ from promptgrimoire.pages.annotation import (
 )
 from promptgrimoire.pages.annotation.css import _build_highlight_pseudo_css
 
+if TYPE_CHECKING:
+    from collections.abc import Mapping
+
 logger = structlog.get_logger()
 
 _UUID_RE = re.compile(
     r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
     re.IGNORECASE,
 )
+
+
+def _resolve_warp_target_doc_id(
+    document_id: str | None,
+    document_tabs: Mapping[UUID, Any],
+) -> str:
+    """Resolve which document tab id a highlight-warp should land on.
+
+    Prefers ``document_id`` when it names a syntactically valid UUID that
+    is a key of ``document_tabs``; otherwise falls back to the first
+    available tab. Caller guarantees ``document_tabs`` is non-empty.
+    """
+    if document_id:
+        doc_uuid = UUID(document_id) if _UUID_RE.match(document_id) else None
+        if doc_uuid is not None and doc_uuid in document_tabs:
+            return document_id
+    return str(next(iter(document_tabs)))
 
 
 async def _warp_to_highlight(
@@ -52,12 +73,7 @@ async def _warp_to_highlight(
     # Resolve target document tab
     target_doc_id: str | None = None
     if state.tab_panels is not None and state.document_tabs:
-        if document_id:
-            doc_uuid = UUID(document_id) if _UUID_RE.match(document_id) else None
-            if doc_uuid is not None and doc_uuid in state.document_tabs:
-                target_doc_id = document_id
-        if target_doc_id is None:
-            target_doc_id = str(next(iter(state.document_tabs)))
+        target_doc_id = _resolve_warp_target_doc_id(document_id, state.document_tabs)
 
     # Store pending scroll for the tab change handler to execute.
     state._pending_scroll = (start_char, end_char)

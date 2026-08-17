@@ -248,6 +248,40 @@ class TestEnrollment:
         assert course2.id in course_ids
 
     @pytest.mark.asyncio
+    async def test_list_enrollments_for_course(self) -> None:
+        """Returns all enrollments for a course, ordered by role then user_id."""
+        from promptgrimoire.db.courses import (
+            create_course,
+            enroll_user,
+            list_course_enrollments,
+        )
+        from promptgrimoire.db.users import create_user
+
+        course = await create_course(
+            code="LAWS3333", name="Torts", semester=f"test-{uuid4().hex[:8]}"
+        )
+        student = await create_user(
+            email=f"test-{uuid4().hex[:8]}@example.com",
+            display_name="Student User",
+        )
+        tutor = await create_user(
+            email=f"test-{uuid4().hex[:8]}@example.com",
+            display_name="Tutor User",
+        )
+
+        # Enrol in reverse-alphabetical role order so ORDER BY role, user_id
+        # is what proves the sort, not insertion order.
+        await enroll_user(course_id=course.id, user_id=tutor.id, role="tutor")
+        await enroll_user(course_id=course.id, user_id=student.id, role="student")
+
+        enrollments = await list_course_enrollments(course.id)
+
+        assert len(enrollments) == 2
+        assert [e.role for e in enrollments] == ["student", "tutor"]
+        assert enrollments[0].user_id == student.id
+        assert enrollments[1].user_id == tutor.id
+
+    @pytest.mark.asyncio
     async def test_unenroll_user(self) -> None:
         """User can be removed from course."""
         from promptgrimoire.db.courses import (
@@ -646,3 +680,101 @@ class TestUpdateCourse:
 
         result = await update_course(uuid4(), name="Nope")
         assert result is None
+
+
+class TestListStudentsWithoutWorkspaces:
+    """Tests for list_students_without_workspaces.
+
+    Exercises the raw-SQL row-attribute fix in this function (row.display_name
+    / row.email, not row[0] / row[1] -- see
+    docs/architecture/raw-sql-convention.md) against a real query result, not
+    just a mock.
+    """
+
+    @pytest.mark.asyncio
+    async def test_student_with_no_workspace_is_listed(self) -> None:
+        """A student with zero workspaces in the course is returned."""
+        from promptgrimoire.db.courses import (
+            create_course,
+            enroll_user,
+            list_students_without_workspaces,
+        )
+        from promptgrimoire.db.users import create_user
+
+        course = await create_course(
+            code=f"LSW{uuid4().hex[:6].upper()}",
+            name="No Workspace",
+            semester="2025-S1",
+        )
+        student = await create_user(
+            email=f"no-ws-{uuid4().hex[:8]}@example.com",
+            display_name="No Workspace Student",
+        )
+        await enroll_user(course_id=course.id, user_id=student.id, role="student")
+
+        rows = await list_students_without_workspaces(course.id)
+
+        assert (student.display_name, student.email) in rows
+
+    @pytest.mark.asyncio
+    async def test_student_with_owned_workspace_is_excluded(self) -> None:
+        """A student who owns a course-placed workspace is not returned."""
+        from promptgrimoire.db.acl import grant_permission
+        from promptgrimoire.db.courses import (
+            create_course,
+            enroll_user,
+            list_students_without_workspaces,
+        )
+        from promptgrimoire.db.engine import get_session
+        from promptgrimoire.db.models import Workspace
+        from promptgrimoire.db.users import create_user
+        from promptgrimoire.db.workspaces import create_workspace
+
+        course = await create_course(
+            code=f"LSW{uuid4().hex[:6].upper()}",
+            name="Has Workspace",
+            semester="2025-S1",
+        )
+        student = await create_user(
+            email=f"has-ws-{uuid4().hex[:8]}@example.com",
+            display_name="Has Workspace Student",
+        )
+        await enroll_user(course_id=course.id, user_id=student.id, role="student")
+
+        workspace = await create_workspace()
+        async with get_session() as session:
+            db_workspace = await session.get(Workspace, workspace.id)
+            assert db_workspace is not None
+            db_workspace.course_id = course.id
+            session.add(db_workspace)
+            await session.flush()
+        await grant_permission(workspace.id, student.id, "owner")
+
+        rows = await list_students_without_workspaces(course.id)
+
+        assert (student.display_name, student.email) not in rows
+
+    @pytest.mark.asyncio
+    async def test_staff_role_excluded_even_without_workspace(self) -> None:
+        """Staff roles (e.g. instructor) are excluded regardless of workspace."""
+        from promptgrimoire.db.courses import (
+            create_course,
+            enroll_user,
+            list_students_without_workspaces,
+        )
+        from promptgrimoire.db.users import create_user
+
+        course = await create_course(
+            code=f"LSW{uuid4().hex[:6].upper()}",
+            name="Staff Excluded",
+            semester="2025-S1",
+        )
+        instructor = await create_user(
+            email=f"instructor-{uuid4().hex[:8]}@example.com",
+            display_name="Instructor No Workspace",
+        )
+        await enroll_user(course_id=course.id, user_id=instructor.id, role="instructor")
+
+        rows = await list_students_without_workspaces(course.id)
+
+        assert (instructor.display_name, instructor.email) not in rows

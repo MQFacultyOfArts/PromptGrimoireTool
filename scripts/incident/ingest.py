@@ -9,6 +9,7 @@ import sqlite3
 import sys
 import tarfile
 import tempfile
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from scripts.incident.parsers.haproxy import parse_haproxy
@@ -19,25 +20,54 @@ from scripts.incident.parsers.pglog import parse_pglog_auto
 from scripts.incident.provenance import format_to_table, parse_manifest
 from scripts.incident.schema import create_schema
 
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+# Declared ahead of the try/except so both branches assign a value of the
+# same type -- ty needs one declared type per module-level name, not one
+# per branch.
+_fetch_beszel: Callable[[str, str, str], list[dict]] | None
 try:
     from scripts.incident.parsers.beszel import (
         fetch_beszel_metrics as _fetch_beszel,
     )
-
-    _HAS_BESZEL = True
 except ImportError:
-    _HAS_BESZEL = False
-    _fetch_beszel = None  # type: ignore[assignment]
+    _fetch_beszel = None
 
-if TYPE_CHECKING:
-    from pathlib import Path
 
-# Maps format string to (parser_func, table_name, column_names).
-# Parser funcs: (data: bytes, window_start: str, window_end: str) -> list[dict]
-# Exception: haproxy parser returns (list[dict], int) — see _dispatch_parser.
-_PARSERS: dict[str, tuple[object, str, list[str]]] = {
+def _adapt_parser(
+    parser: Callable[[bytes, str, str], list[dict]],
+) -> Callable[[bytes, str, str, str], tuple[list[dict], int]]:
+    """Normalise a 3-arg parser to the uniform 4-arg dispatch signature.
+
+    Only the HAProxy parser natively consumes ``timezone`` and reports an
+    unparseable-line count. Every other parser is wrapped to accept (and
+    ignore) the trailing ``timezone`` argument and always report zero
+    unparseable lines, matching prior dispatch behaviour exactly.
+    """
+
+    def _wrapped(
+        data: bytes,
+        window_start_utc: str,
+        window_end_utc: str,
+        timezone: str,  # noqa: ARG001 — signature parity with the HAProxy parser
+    ) -> tuple[list[dict], int]:
+        return parser(data, window_start_utc, window_end_utc), 0
+
+    return _wrapped
+
+
+# Maps format string to (parser_func, table_name, column_names). Every
+# parser_func has the uniform signature
+# (data, window_start_utc, window_end_utc, timezone) -> (events, unparseable_count) --
+# see _adapt_parser for formats whose underlying parser doesn't natively
+# take/return those.
+_PARSERS: dict[
+    str,
+    tuple[Callable[[bytes, str, str, str], tuple[list[dict], int]], str, list[str]],
+] = {
     "journal": (
-        parse_journal,
+        _adapt_parser(parse_journal),
         "journal_events",
         [
             "source_id",
@@ -50,7 +80,7 @@ _PARSERS: dict[str, tuple[object, str, list[str]]] = {
         ],
     ),
     "jsonl": (
-        parse_jsonl,
+        _adapt_parser(parse_jsonl),
         "jsonl_events",
         [
             "source_id",
@@ -85,7 +115,7 @@ _PARSERS: dict[str, tuple[object, str, list[str]]] = {
         ],
     ),
     "pglog": (
-        parse_pglog_auto,
+        _adapt_parser(parse_pglog_auto),
         "pg_events",
         [
             "source_id",
@@ -99,7 +129,7 @@ _PARSERS: dict[str, tuple[object, str, list[str]]] = {
         ],
     ),
     "pgbouncer": (
-        parse_pgbouncer,
+        _adapt_parser(parse_pgbouncer),
         "pgbouncer_events",
         [
             "source_id",
@@ -112,7 +142,7 @@ _PARSERS: dict[str, tuple[object, str, list[str]]] = {
 }
 
 
-def _dispatch_parser(
+def _dispatch_parser(  # noqa: PLR0913, PLR0917 -- caller passes positionally; param-object migration: tracker ledger 8
     conn: sqlite3.Connection,
     fmt: str,
     source_id: int,
@@ -127,18 +157,9 @@ def _dispatch_parser(
         return
 
     parse_fn, table_name, columns = parser_entry
-
-    # HAProxy parser has a different signature: returns (events, count)
-    # and requires a timezone parameter.
-    unparseable_count = 0
-    if fmt == "haproxy":
-        events, unparseable_count = parse_fn(  # type: ignore[operator]
-            file_data, window_start_utc, window_end_utc, timezone
-        )
-    else:
-        events = parse_fn(  # type: ignore[operator]
-            file_data, window_start_utc, window_end_utc
-        )
+    events, unparseable_count = parse_fn(
+        file_data, window_start_utc, window_end_utc, timezone
+    )
 
     if not events:
         return
@@ -162,17 +183,16 @@ def _dispatch_parser(
         print(f"  \u2192 {len(events)} events parsed")
 
 
-def _resolve_data_dir(source: Path) -> tuple[__import__("pathlib").Path, bool]:
+def _resolve_data_dir(source: Path) -> tuple[Path, bool]:
     """Resolve source to a data directory.
 
     Accepts a tarball (.tar.gz) or a directory path.
     Returns (data_dir, is_temp) — caller must clean up if is_temp.
     """
-    P = __import__("pathlib").Path
     if source.is_dir():
-        return P(source), False
+        return Path(source), False
 
-    tmp_dir = P(tempfile.mkdtemp(prefix="incident-ingest-"))
+    tmp_dir = Path(tempfile.mkdtemp(prefix="incident-ingest-"))
     try:
         with tarfile.open(source, "r:gz") as tar:
             tar.extractall(path=tmp_dir, filter="data")
@@ -184,9 +204,9 @@ def _resolve_data_dir(source: Path) -> tuple[__import__("pathlib").Path, bool]:
 
 
 def _copy_db_snapshot(
-    data_dir: __import__("pathlib").Path,
-    db_path: __import__("pathlib").Path,
-) -> __import__("pathlib").Path | None:
+    data_dir: Path,
+    db_path: Path,
+) -> Path | None:
     """Copy db-snapshot.json next to the DB for ``review --counts-json``.
 
     Returns the destination path, or None if no snapshot found.
@@ -224,8 +244,8 @@ def run_ingest(source: Path, db_path: Path) -> None:
 
 
 def _run_ingest_from_dir(
-    data_dir: __import__("pathlib").Path,
-    db_path: __import__("pathlib").Path,
+    data_dir: Path,
+    db_path: Path,
 ) -> None:
     """Core ingest logic operating on an already-extracted directory."""
     manifest_path = data_dir / "manifest.json"
@@ -331,7 +351,7 @@ def _run_ingest_from_dir(
 
 
 def _try_beszel_fetch(
-    db_path: __import__("pathlib").Path,
+    db_path: Path,
     start_utc: str,
     end_utc: str,
     timezone: str,
@@ -341,7 +361,7 @@ def _try_beszel_fetch(
     Requires an SSH tunnel: ``ssh -L 8090:localhost:8090 <monitor>``.
     Silently skips if the port is not open or httpx is unavailable.
     """
-    if not _HAS_BESZEL:
+    if _fetch_beszel is None:
         print("  httpx not available — skipping Beszel fetch")
         return
 

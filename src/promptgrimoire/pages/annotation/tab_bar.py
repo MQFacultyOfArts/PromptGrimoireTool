@@ -35,7 +35,11 @@ from promptgrimoire.pages.annotation.highlights import (
     _warp_to_highlight,
 )
 from promptgrimoire.pages.annotation.organise import render_organise_tab
-from promptgrimoire.pages.annotation.respond import render_respond_tab
+from promptgrimoire.pages.annotation.respond import (
+    ClientContext,
+    ReferencePanelContext,
+    render_respond_tab,
+)
 from promptgrimoire.pages.annotation.tags import workspace_tags_from_crdt
 
 if TYPE_CHECKING:
@@ -298,12 +302,13 @@ async def _initialise_respond_tab(state: PageState, workspace_id: UUID) -> None:
 
     state.refresh_respond_references = await render_respond_tab(
         panel=state.respond_panel,
-        tags=tags,
-        crdt_doc=state.crdt_doc,
-        workspace_key=str(workspace_id),
-        workspace_id=workspace_id,
-        client_id=state.client_id,
-        on_yjs_update_broadcast=_on_broadcast,
+        ctx=ReferencePanelContext(tags=tags, crdt_doc=state.crdt_doc),
+        client_ctx=ClientContext(
+            workspace_key=str(workspace_id),
+            workspace_id=workspace_id,
+            client_id=state.client_id,
+            on_yjs_update_broadcast=_on_broadcast,
+        ),
         on_locate=_on_respond_locate,
         state=state,
     )
@@ -408,7 +413,7 @@ def _restore_source_tab_state(
     state.toolbar_container = doc_tab.toolbar_container
 
 
-async def _render_source_tab_content(
+async def _render_source_tab_content(  # noqa: PLR0913 -- param-object migration: tracker ledger 8
     state: PageState,
     doc_tab: DocumentTabState,
     *,
@@ -452,7 +457,7 @@ async def _render_source_tab_content(
     _save_source_tab_state(state, doc_tab)
 
 
-async def _handle_source_tab_switch(
+async def _handle_source_tab_switch(  # noqa: PLR0913 -- param-object migration: tracker ledger 8
     state: PageState,
     tab_name: str,
     *,
@@ -519,7 +524,7 @@ def _save_previous_source_tab(state: PageState, prev_tab: str) -> None:
         _save_source_tab_state(state, prev_doc)
 
 
-def _make_tab_change_handler(
+def _make_tab_change_handler(  # noqa: PLR0913 -- param-object migration: tracker ledger 8
     state: PageState,
     workspace_id: UUID,
     *,
@@ -599,7 +604,7 @@ async def _load_crdt_for_workspace(
     )
 
 
-async def _build_first_source_panel(
+async def _build_first_source_panel(  # noqa: PLR0913 -- param-object migration: tracker ledger 8
     state: PageState,
     workspace_id: UUID,
     *,
@@ -702,7 +707,7 @@ async def _build_first_source_panel(
     )
 
 
-async def _build_tab_panels(
+async def _build_tab_panels(  # noqa: PLR0913 -- param-object migration: tracker ledger 8
     state: PageState,
     workspace_id: UUID,
     tabs: ui.tabs,

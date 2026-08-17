@@ -11,6 +11,7 @@ import logging
 import os
 from pathlib import Path
 from tempfile import gettempdir
+from typing import Any
 from unittest.mock import patch
 from uuid import uuid4
 
@@ -54,7 +55,7 @@ class TestTypeValidation:
         public_token = _sample_public_token_value()
         log_dir = _sample_log_dir()
         s = Settings(
-            _env_file=None,  # type: ignore[call-arg]
+            _env_file=None,
             stytch=StytchConfig(
                 project_id="proj-123",
                 secret=SecretStr("sec-456"),
@@ -116,28 +117,28 @@ class TestTypeValidation:
     )
     def test_bool_coercion_case_insensitive(self, raw: str, expected: bool) -> None:
         """AC1.2: DevConfig coerces string values to bool."""
-        cfg = DevConfig(auth_mock=raw)  # type: ignore[arg-type]
+        cfg = DevConfig(auth_mock=raw)
         assert cfg.auth_mock is expected
 
     def test_int_coercion_from_string(self) -> None:
         """AC1.3: Int fields coerce string values."""
-        app = AppConfig(port="9090")  # type: ignore[arg-type]
+        app = AppConfig(port="9090")
         assert app.port == 9090
         assert isinstance(app.port, int)
 
-        llm1 = LlmConfig(thinking_budget="2048")  # type: ignore[arg-type]
+        llm1 = LlmConfig(thinking_budget="2048")
         assert llm1.thinking_budget == 2048
         assert isinstance(llm1.thinking_budget, int)
 
         budget_text = str(500)
-        llm2 = LlmConfig(lorebook_token_budget=budget_text)  # type: ignore[arg-type]
+        llm2 = LlmConfig(lorebook_token_budget=budget_text)
         assert llm2.lorebook_token_budget == 500
         assert isinstance(llm2.lorebook_token_budget, int)
 
     def test_invalid_int_raises_validation_error(self) -> None:
         """AC1.4: Invalid int string raises ValidationError."""
         with pytest.raises(ValidationError):
-            AppConfig(port="not-a-number")  # type: ignore[arg-type]
+            AppConfig(port="not-a-number")
 
     def test_missing_env_file_uses_defaults(
         self, monkeypatch: pytest.MonkeyPatch
@@ -156,7 +157,7 @@ class TestTypeValidation:
                 "DEV",
             ):
                 monkeypatch.delenv(key, raising=False)
-        s = Settings(_env_file=None)  # type: ignore[call-arg]
+        s = Settings(_env_file=None)
         assert s.app.port == 8080
         assert s.app.base_url == "http://localhost:8080"
         assert s.dev.auth_mock is False
@@ -191,8 +192,8 @@ class TestFeaturesConfig:
     def test_bool_coercion_from_string(self) -> None:
         """Feature flags coerce string values to bool (env var style)."""
         cfg = FeaturesConfig(
-            enable_roleplay="false",  # type: ignore[arg-type]
-            enable_file_upload="true",  # type: ignore[arg-type]
+            enable_roleplay="false",
+            enable_file_upload="true",
         )
         assert cfg.enable_roleplay is False
         assert cfg.enable_file_upload is True
@@ -202,7 +203,7 @@ class TestFeaturesConfig:
         for key in list(os.environ):
             if key.startswith("FEATURES__"):
                 monkeypatch.delenv(key, raising=False)
-        s = Settings(_env_file=None)  # type: ignore[call-arg]
+        s = Settings(_env_file=None)
         assert s.features.enable_roleplay is True
         assert s.features.enable_file_upload is True
 
@@ -210,7 +211,7 @@ class TestFeaturesConfig:
         """Settings reads FEATURES__ env vars to override defaults."""
         monkeypatch.setenv("FEATURES__ENABLE_ROLEPLAY", "false")
         monkeypatch.setenv("FEATURES__ENABLE_FILE_UPLOAD", "false")
-        s = Settings(_env_file=None)  # type: ignore[call-arg]
+        s = Settings(_env_file=None)
         assert s.features.enable_roleplay is False
         assert s.features.enable_file_upload is False
 
@@ -289,9 +290,9 @@ class TestWorktreeEnvPaths:
         # without reading the real .env (which may have old-format vars).
         original_init = config_module.Settings.__init__
 
-        def _patched_init(self: object, *args: object, **kwargs: object) -> None:
+        def _patched_init(self: Settings, *args: Any, **kwargs: Any) -> None:
             kwargs.setdefault("_env_file", None)
-            original_init(self, *args, **kwargs)  # type: ignore[invalid-argument-type]
+            original_init(self, *args, **kwargs)
 
         monkeypatch.setattr(config_module.Settings, "__init__", _patched_init)
         get_settings.cache_clear()
@@ -315,7 +316,7 @@ class TestTestIsolation:
     def test_settings_construction_without_env(self) -> None:
         """AC8.1: Direct Settings construction with explicit values."""
         s = Settings(
-            _env_file=None,  # type: ignore[unknown-argument]
+            _env_file=None,
             app=AppConfig(port=1234),
         )
         assert s.app.port == 1234
@@ -328,9 +329,9 @@ class TestTestIsolation:
 
         original_init = config_module.Settings.__init__
 
-        def _patched_init(self: object, *args: object, **kwargs: object) -> None:
+        def _patched_init(self: Settings, *args: Any, **kwargs: Any) -> None:
             kwargs.setdefault("_env_file", None)
-            original_init(self, *args, **kwargs)  # type: ignore[invalid-argument-type]
+            original_init(self, *args, **kwargs)
 
         monkeypatch.setattr(config_module.Settings, "__init__", _patched_init)
         get_settings.cache_clear()
@@ -487,7 +488,7 @@ class TestBranchDbIsolation:
     def test_both_urls_suffixed(self, _mock_branch: object) -> None:
         """AC9.3: Both database.url and dev.test_database_url suffixed."""
         s = Settings(
-            _env_file=None,  # type: ignore[call-arg]
+            _env_file=None,
             database=DatabaseConfig(url="postgresql://u:p@h/mydb"),
             dev=DevConfig(test_database_url="postgresql://u:p@h/testdb"),
         )
@@ -500,7 +501,7 @@ class TestBranchDbIsolation:
     def test_main_branch_urls_unchanged(self, _mock_branch: object) -> None:
         """AC9.1 via validator: main branch leaves URLs unchanged."""
         s = Settings(
-            _env_file=None,  # type: ignore[call-arg]
+            _env_file=None,
             database=DatabaseConfig(url="postgresql://u:p@h/mydb"),
             dev=DevConfig(test_database_url="postgresql://u:p@h/testdb"),
         )
@@ -514,7 +515,7 @@ class TestBranchDbIsolation:
     def test_opt_out_branch_db_suffix(self, _mock_branch: object) -> None:
         """AC9.10: branch_db_suffix=False leaves URL unchanged."""
         s = Settings(
-            _env_file=None,  # type: ignore[call-arg]
+            _env_file=None,
             database=DatabaseConfig(url="postgresql://u:p@h/mydb"),
             dev=DevConfig(branch_db_suffix=False),
         )

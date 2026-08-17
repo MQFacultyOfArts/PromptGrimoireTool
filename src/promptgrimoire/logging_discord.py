@@ -45,6 +45,10 @@ _CONTEXT_FIELDS = (
     "pid",
 )
 
+# exc_info tuples follow sys.exc_info()'s (exc_type, exc_value, traceback)
+# shape; this is the minimum length needed to safely read exc_info[1].
+_EXC_INFO_TUPLE_MIN_LEN = 2
+
 
 def _truncate(text: str, limit: int) -> str:
     """Truncate text to limit, appending ellipsis if truncated."""
@@ -57,7 +61,11 @@ def _exc_type_name(exc_info: object) -> str:
     """Extract exception type name from exc_info."""
     if isinstance(exc_info, BaseException):
         return type(exc_info).__name__
-    if isinstance(exc_info, tuple) and len(exc_info) >= 2 and exc_info[1] is not None:
+    if (
+        isinstance(exc_info, tuple)
+        and len(exc_info) >= _EXC_INFO_TUPLE_MIN_LEN
+        and exc_info[1] is not None
+    ):
         return type(exc_info[1]).__name__
     return ""
 
@@ -186,7 +194,7 @@ class DiscordAlertProcessor:
                 description = f"{type(exc_info).__name__}: {exc_info}"
             elif (
                 isinstance(exc_info, tuple)
-                and len(exc_info) >= 2
+                and len(exc_info) >= _EXC_INFO_TUPLE_MIN_LEN
                 and exc_info[1] is not None
             ):
                 description = f"{type(exc_info[1]).__name__}: {exc_info[1]}"
@@ -258,11 +266,11 @@ class DiscordAlertProcessor:
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
                 response = await client.post(self._webhook_url, json=payload)
-                if response.status_code == 429:
+                if response.status_code == httpx.codes.TOO_MANY_REQUESTS:
                     sys.stderr.write(
                         f"Discord webhook rate-limited (429) for {self._webhook_url}\n"
                     )
-                elif response.status_code >= 400:
+                elif response.status_code >= httpx.codes.BAD_REQUEST:
                     url = self._webhook_url
                     code = response.status_code
                     sys.stderr.write(f"Discord webhook returned {code} for {url}\n")

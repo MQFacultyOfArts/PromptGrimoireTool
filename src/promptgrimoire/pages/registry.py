@@ -216,7 +216,7 @@ def _get_auth_identity(
     return user_id, auth_user
 
 
-def page_route(
+def page_route(  # noqa: PLR0913 -- param-object migration: tracker ledger 8
     route: str,
     *,
     title: str,

@@ -160,14 +160,13 @@ class TestCreateTagOrNotify:
     @pytest.mark.asyncio
     async def test_duplicate_name_shows_warning_not_generic_failure(self) -> None:
         """DuplicateNameError should show warning UI and avoid exception logging."""
-        from types import SimpleNamespace
-
         from promptgrimoire.db.tags import DuplicateNameError
+        from promptgrimoire.pages.annotation import PageState
         from promptgrimoire.pages.annotation.tag_management_save import (
             _create_tag_or_notify,
         )
 
-        state = SimpleNamespace(workspace_id=uuid4(), crdt_doc=None)
+        state = PageState(workspace_id=uuid4())
         create_tag = AsyncMock(
             side_effect=DuplicateNameError(
                 "A tag named 'Evidence' already exists in this workspace"
@@ -182,7 +181,7 @@ class TestCreateTagOrNotify:
         ):
             result = await _create_tag_or_notify(
                 create_tag,
-                state,  # type: ignore[arg-type]  # SimpleNamespace stub for PageState
+                state,
                 "Evidence",
                 "#1f77b4",
                 None,

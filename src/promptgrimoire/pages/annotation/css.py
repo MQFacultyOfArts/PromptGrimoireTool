@@ -17,6 +17,9 @@ if TYPE_CHECKING:
 _COMPACT_THRESHOLD = 5
 """Tag count at or above which toolbar buttons use compact icon-only style."""
 
+_MAX_KEYBOARD_SHORTCUT_TAGS = 10
+"""Number of single-digit keyboard shortcuts available (1-9, then 0)."""
+
 
 def _hex_to_rgb(hex_color: str) -> tuple[int, int, int]:
     """Parse a ``#RRGGBB`` hex string into an (r, g, b) tuple."""
@@ -486,7 +489,11 @@ def _render_tag_group(
 
         with ui.row().classes("gap-1"):
             for idx, ti in members:
-                shortcut = str((idx + 1) % 10) if idx < 10 else ""
+                shortcut = (
+                    str((idx + 1) % _MAX_KEYBOARD_SHORTCUT_TAGS)
+                    if idx < _MAX_KEYBOARD_SHORTCUT_TAGS
+                    else ""
+                )
                 _render_tag_button(ti, shortcut, on_tag_click)
 
 

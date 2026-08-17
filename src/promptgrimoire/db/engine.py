@@ -31,6 +31,10 @@ if TYPE_CHECKING:
 logger = structlog.get_logger()
 _pool_logger = structlog.get_logger(f"{__name__}.pool")
 
+# Session-acquire time above which a warning (rather than debug) log fires,
+# signalling pool contention.
+_SLOW_SESSION_ACQUIRE_MS = 5
+
 
 def _pool_status(pool: object) -> str:
     """Format current pool status for logging."""
@@ -337,7 +341,7 @@ async def get_session() -> AsyncIterator[AsyncSession]:
     _t0 = _time.monotonic()
     async with session_factory() as session:
         _acquire_ms = round((_time.monotonic() - _t0) * 1000)
-        if _acquire_ms > 5:
+        if _acquire_ms > _SLOW_SESSION_ACQUIRE_MS:
             _pool_logger.warning(
                 "session_acquire_slow",
                 acquire_ms=_acquire_ms,

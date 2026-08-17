@@ -391,6 +391,65 @@ class TestResolveAnnotationContextPermission:
         assert ctx is not None
         assert ctx.permission is None
 
+    @pytest.mark.asyncio
+    async def test_staff_derived_permission(self) -> None:
+        """Staff enrollment derives course.default_instructor_permission.
+
+        No explicit ACL entry -- permission comes entirely from the
+        enrollment-derived path (_resolve_enrollment_permission). The
+        course is set to a permission distinct from the model default
+        ("editor") so this cannot pass by coincidentally matching a
+        field default; it also exercises the hydrated Course threaded
+        through from resolve_annotation_context's single joined query
+        (see _HydratedRowEntities in db/workspaces.py).
+        """
+        from promptgrimoire.db.engine import get_session
+        from promptgrimoire.db.models import Course, CourseEnrollment
+        from promptgrimoire.db.users import create_user
+        from promptgrimoire.db.workspaces import (
+            create_workspace,
+            place_workspace_in_course,
+            resolve_annotation_context,
+        )
+
+        tag = uuid4().hex[:8]
+        instructor = await create_user(
+            email=f"ctx-staff-{tag}@test.local",
+            display_name=f"Ctx Staff {tag}",
+        )
+
+        async with get_session() as session:
+            course = Course(
+                id=uuid4(),
+                code=f"STF-{tag[:6]}",
+                name="Staff Permission Test",
+                semester="2026-S1",
+                default_instructor_permission="viewer",
+            )
+            session.add(course)
+            await session.flush()
+
+            enrollment = CourseEnrollment(
+                id=uuid4(),
+                course_id=course.id,
+                user_id=instructor.id,
+                role="instructor",
+            )
+            session.add(enrollment)
+            await session.flush()
+
+            course_id = course.id
+
+        ws = await create_workspace()
+        await place_workspace_in_course(ws.id, course_id)
+        # No ACL entry for `instructor` -- permission must come entirely
+        # from the course-enrollment path.
+
+        ctx = await resolve_annotation_context(ws.id, instructor.id)
+
+        assert ctx is not None
+        assert ctx.permission == "viewer"
+
 
 class TestResolveAnnotationContextPrivilegedUsers:
     """Tests for privileged user ID resolution."""
@@ -559,3 +618,51 @@ class TestResolveAnnotationContextNonexistent:
         result = await resolve_annotation_context(uuid4(), uuid4())
 
         assert result is None
+
+
+class TestResolveAnnotationContextCrdtStateFidelity:
+    """Regression coverage for the to_jsonb/bytea corruption class.
+
+    See docs/architecture/raw-sql-convention.md § "ty gotchas": to_jsonb
+    corrupts bytea columns. resolve_annotation_context's mega-join
+    deliberately hydrates Workspace from its own unprefixed columns
+    (`w.*` + ``Workspace.model_validate(row, from_attributes=True)``),
+    NOT ``to_jsonb(w.*)``, specifically so crdt_state survives as real
+    bytes. This test proves that byte-for-byte, not just "truthy".
+    """
+
+    @pytest.mark.asyncio
+    async def test_crdt_state_byte_identical(self) -> None:
+        """crdt_state round-trips byte-for-byte through the mega-join.
+
+        Uses every byte value 0-255 (including >=0x80, which is not
+        valid UTF-8 on its own) so a hex-encoding, UTF-8-decoding, or
+        truncating mangling of the bytea column could not coincidentally
+        produce a matching value.
+        """
+        from promptgrimoire.db.acl import grant_permission
+        from promptgrimoire.db.users import create_user
+        from promptgrimoire.db.workspaces import (
+            create_workspace,
+            resolve_annotation_context,
+            save_workspace_crdt_state,
+        )
+
+        tag = uuid4().hex[:8]
+        user = await create_user(
+            email=f"ctx-crdt-{tag}@test.local",
+            display_name=f"Ctx Crdt {tag}",
+        )
+
+        ws = await create_workspace()
+        await grant_permission(ws.id, user.id, "owner")
+
+        crdt_state = bytes(range(256)) * 4
+        saved = await save_workspace_crdt_state(ws.id, crdt_state)
+        assert saved is True
+
+        ctx = await resolve_annotation_context(ws.id, user.id)
+
+        assert ctx is not None
+        assert ctx.workspace.crdt_state == crdt_state
+        assert len(ctx.workspace.crdt_state or b"") == len(crdt_state)

@@ -7,6 +7,7 @@ import re
 import shutil
 import sys
 import tempfile
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Annotated
@@ -18,19 +19,9 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.syntax import Syntax
 from rich.table import Table
-from sqlmodel import select
+from sqlalchemy import tstring
 
 from promptgrimoire.db.engine import get_session
-from promptgrimoire.db.models import (
-    ACLEntry,
-    Activity,
-    Course,
-    CourseEnrollment,
-    User,
-    Week,
-    Workspace,
-    WorkspaceDocument,
-)
 from promptgrimoire.db.tags import list_tags_for_workspace
 from promptgrimoire.db.workspace_documents import list_documents
 from promptgrimoire.db.workspaces import get_workspace, get_workspace_export_metadata
@@ -263,6 +254,116 @@ def _extract_error_summary(exc: LaTeXCompilationError) -> str:
     return error_summary
 
 
+def _enrich_document_highlights(
+    doc,
+    highlights: list[dict],
+    tag_name_map: dict[str, str],
+) -> list[dict]:
+    """Filter to one document's highlights and enrich each with its tag name."""
+    doc_highlights = [h for h in highlights if h.get("document_id") == str(doc.id)]
+    valid = [hl for hl in doc_highlights if str(hl.get("tag", "")) in tag_name_map]
+    return [
+        {**hl, "tag_name": tag_name_map.get(str(hl.get("tag", "")))} for hl in valid
+    ]
+
+
+def _build_export_document_payload(
+    doc,
+    enriched_highlights: list[dict],
+    fallback_index: int,
+) -> dict:
+    """Build one document's export payload dict."""
+    doc_para_map = doc.paragraph_map
+    legal_para_map: dict[int, int | None] | None = (
+        {int(k): v for k, v in doc_para_map.items()} if doc_para_map else None
+    )
+    return {
+        "title": doc.title or f"Source {fallback_index}",
+        "html_content": doc.content or "",
+        "highlights": enriched_highlights,
+        "word_to_legal_para": legal_para_map,
+    }
+
+
+def _build_export_documents(
+    content_docs: list,
+    highlights: list[dict],
+    tag_name_map: dict[str, str],
+) -> list[dict]:
+    """Assemble per-document export payloads, enriching highlights with tag names."""
+    documents: list[dict] = []
+    for i, doc in enumerate(content_docs, 1):
+        enriched = _enrich_document_highlights(doc, highlights, tag_name_map)
+        documents.append(_build_export_document_payload(doc, enriched, i))
+    return documents
+
+
+@dataclass(frozen=True, slots=True)
+class WorkspaceExportJob:
+    """A fully-prepared, ready-to-compile single-workspace export."""
+
+    workspace_id: UUID
+    safe_stem: str
+    tag_colours: dict[str, str]
+    notes_latex: str
+    documents: list[dict]
+
+
+async def _compile_workspace_pdf(
+    job: WorkspaceExportJob,
+    output_dir: Path,
+    *,
+    with_log: bool,
+    with_tex: bool,
+) -> tuple[str, str | None]:
+    """Compile one workspace's PDF, copy artifacts, and classify any error.
+
+    Returns (filename_stem, error_or_none).
+    """
+    ws_export_dir = Path(
+        tempfile.mkdtemp(
+            prefix=f"promptgrimoire_export_{str(job.workspace_id)[:8]}_",
+        )
+    )
+
+    try:
+        pdf_path = await export_annotation_pdf(
+            html_content="",
+            highlights=[],
+            tag_colours=job.tag_colours,
+            output_dir=ws_export_dir,
+            filename=job.safe_stem,
+            workspace_id=str(job.workspace_id),
+            notes_latex=job.notes_latex,
+            documents=job.documents,
+        )
+        shutil.copy2(pdf_path, output_dir / pdf_path.name)
+        _copy_artifacts(
+            ws_export_dir,
+            output_dir,
+            job.safe_stem,
+            with_log=with_log,
+            with_tex=with_tex,
+        )
+        return job.safe_stem, None
+
+    except LaTeXCompilationError as exc:
+        _copy_artifacts(
+            ws_export_dir,
+            output_dir,
+            job.safe_stem,
+            with_log=with_log,
+            with_tex=with_tex,
+        )
+        return job.safe_stem, _extract_error_summary(exc)
+
+    except Exception as exc:
+        return job.safe_stem, f"{type(exc).__name__}: {exc}"
+
+    finally:
+        shutil.rmtree(ws_export_dir, ignore_errors=True)
+
+
 async def _export_single_workspace(
     workspace_id: UUID,
     output_dir: Path,
@@ -296,25 +397,7 @@ async def _export_single_workspace(
         highlights = _extract_crdt_highlights(crdt_doc, tags)
 
     tag_name_map = {str(t.id): t.name for t in tags}
-    documents: list[dict] = []
-    for doc in content_docs:
-        doc_highlights = [h for h in highlights if h.get("document_id") == str(doc.id)]
-        valid = [hl for hl in doc_highlights if str(hl.get("tag", "")) in tag_name_map]
-        enriched = [
-            {**hl, "tag_name": tag_name_map.get(str(hl.get("tag", "")))} for hl in valid
-        ]
-        doc_para_map = doc.paragraph_map
-        legal_para_map: dict[int, int | None] | None = (
-            {int(k): v for k, v in doc_para_map.items()} if doc_para_map else None
-        )
-        documents.append(
-            {
-                "title": doc.title or f"Source {len(documents) + 1}",
-                "html_content": doc.content or "",
-                "highlights": enriched,
-                "word_to_legal_para": legal_para_map,
-            }
-        )
+    documents = _build_export_documents(content_docs, highlights, tag_name_map)
 
     has_highlights = any(d["highlights"] for d in documents)
     if not has_highlights:
@@ -324,40 +407,16 @@ async def _export_single_workspace(
     response_md = _extract_response_markdown(crdt_doc) if crdt_doc else ""
     notes_latex = await markdown_to_latex_notes(response_md) if response_md else ""
 
-    ws_export_dir = Path(
-        tempfile.mkdtemp(
-            prefix=f"promptgrimoire_export_{str(workspace_id)[:8]}_",
-        )
+    job = WorkspaceExportJob(
+        workspace_id=workspace_id,
+        safe_stem=safe_stem,
+        tag_colours=tag_colours,
+        notes_latex=notes_latex,
+        documents=documents,
     )
-
-    try:
-        pdf_path = await export_annotation_pdf(
-            html_content="",
-            highlights=[],
-            tag_colours=tag_colours,
-            output_dir=ws_export_dir,
-            filename=safe_stem,
-            workspace_id=str(workspace_id),
-            notes_latex=notes_latex,
-            documents=documents,
-        )
-        shutil.copy2(pdf_path, output_dir / pdf_path.name)
-        _copy_artifacts(
-            ws_export_dir, output_dir, safe_stem, with_log=with_log, with_tex=with_tex
-        )
-        return safe_stem, None
-
-    except LaTeXCompilationError as exc:
-        _copy_artifacts(
-            ws_export_dir, output_dir, safe_stem, with_log=with_log, with_tex=with_tex
-        )
-        return safe_stem, _extract_error_summary(exc)
-
-    except Exception as exc:
-        return safe_stem, f"{type(exc).__name__}: {exc}"
-
-    finally:
-        shutil.rmtree(ws_export_dir, ignore_errors=True)
+    return await _compile_workspace_pdf(
+        job, output_dir, with_log=with_log, with_tex=with_tex
+    )
 
 
 async def _export_single_workspace_tex_only(
@@ -429,37 +488,67 @@ async def _export_single_workspace_tex_only(
 
 
 async def _resolve_scope_workspace_ids(scope: str) -> list[UUID]:
-    """Resolve a --scope value to a list of exportable workspace IDs."""
-    async with get_session() as session:
-        stmt = (
-            select(Workspace.id)
-            .join(
-                WorkspaceDocument,
-                WorkspaceDocument.workspace_id == Workspace.id,  # type: ignore[arg-type]
-            )
-            .where(
-                Workspace.crdt_state.is_not(None),  # type: ignore[union-attr]
-                WorkspaceDocument.content.is_not(None),  # type: ignore[union-attr]
-                WorkspaceDocument.content != "",
-            )
-        )
+    """Resolve a --scope value to a list of exportable workspace IDs.
 
+    Query-shaped read migrated to raw SQL per ADR 0004/0005 -- SQLModel
+    column expressions in .join()/.where()/.in_() do not type-check under
+    ty (astral-sh/ty#3421). The "exportable" predicate (crdt_state set, a
+    document with non-empty content) is repeated per branch rather than
+    shared, since t-string SQL fragments aren't composable the way
+    SQLAlchemy expression objects were.
+    """
+    async with get_session() as session:
         if scope == "server":
-            pass
+            rows = await session.execute(
+                tstring(
+                    t"""
+                    SELECT DISTINCT w.id
+                    FROM workspace w
+                    JOIN workspace_document wd ON wd.workspace_id = w.id
+                    WHERE w.crdt_state IS NOT NULL
+                      AND wd.content IS NOT NULL
+                      AND wd.content != ''
+                    """
+                )
+            )
         elif scope.startswith("unit:"):
             course_id = UUID(scope.removeprefix("unit:"))
-            activity_ids_stmt = (
-                select(Activity.id)
-                .join(Week, Week.id == Activity.week_id)  # type: ignore[arg-type]
-                .where(Week.course_id == course_id)
-            )
-            stmt = stmt.where(
-                (Workspace.course_id == course_id)
-                | Workspace.activity_id.in_(activity_ids_stmt),  # type: ignore[union-attr]
+            rows = await session.execute(
+                tstring(
+                    t"""
+                    SELECT DISTINCT w.id
+                    FROM workspace w
+                    JOIN workspace_document wd ON wd.workspace_id = w.id
+                    WHERE w.crdt_state IS NOT NULL
+                      AND wd.content IS NOT NULL
+                      AND wd.content != ''
+                      AND (
+                        w.course_id = {course_id}
+                        OR w.activity_id IN (
+                            SELECT a.id
+                            FROM activity a
+                            JOIN week wk ON wk.id = a.week_id
+                            WHERE wk.course_id = {course_id}
+                        )
+                      )
+                    """
+                )
             )
         elif scope.startswith("activity:"):
             activity_id = UUID(scope.removeprefix("activity:"))
-            stmt = stmt.where(Workspace.activity_id == activity_id)
+            rows = await session.execute(
+                tstring(
+                    t"""
+                    SELECT DISTINCT w.id
+                    FROM workspace w
+                    JOIN workspace_document wd ON wd.workspace_id = w.id
+                    WHERE w.crdt_state IS NOT NULL
+                      AND wd.content IS NOT NULL
+                      AND wd.content != ''
+                      AND w.activity_id = {activity_id}
+                    """
+                )
+            )
         else:
             console.print(
                 f"[red]Error:[/] Invalid scope '{scope}'. "
@@ -467,9 +556,7 @@ async def _resolve_scope_workspace_ids(scope: str) -> list[UUID]:
             )
             sys.exit(1)
 
-        stmt = stmt.distinct()
-        result = await session.exec(stmt)
-        return list(result.all())
+        return [row[0] for row in rows.all()]
 
 
 # ---------------------------------------------------------------------------
@@ -553,39 +640,50 @@ async def _resolve_workspace_unit_mapping(
     Uses ACL owner entries for the owner, and course_enrollment for
     unit membership. Multi-enrolled users appear under every unit.
     Users with no enrollment get ["_unenrolled"].
+
+    Query-shaped read migrated to raw SQL per ADR 0004/0005 -- SQLModel
+    column expressions in .join()/.where()/.in_() do not type-check under
+    ty (astral-sh/ty#3421).
     """
     mapping: dict[UUID, tuple[str, list[str]]] = {}
     async with get_session() as session:
         # workspace -> owner email
-        owner_rows = await session.exec(
-            select(
-                ACLEntry.workspace_id,
-                User.email,
-                User.id,
-            )
-            .join(User, User.id == ACLEntry.user_id)  # type: ignore[arg-type]
-            .where(
-                ACLEntry.workspace_id.in_(workspace_ids),  # type: ignore[union-attr]
-                ACLEntry.permission == "owner",
+        # Row indexing beyond [0] doesn't type-check for raw execute()
+        # results (ty infers `Row[Any]` as length-1); attribute access by
+        # column label does, so every column here is explicitly aliased.
+        owner_rows = await session.execute(
+            tstring(
+                t"""
+                SELECT a.workspace_id AS workspace_id,
+                       u.email AS email,
+                       u.id AS user_id
+                FROM acl_entry a
+                JOIN "user" u ON u.id = a.user_id
+                WHERE a.workspace_id = ANY({workspace_ids})
+                  AND a.permission = 'owner'
+                """
             )
         )
         ws_owner: dict[UUID, tuple[str, UUID]] = {}
-        for ws_id, email, user_id in owner_rows:
-            ws_owner[ws_id] = (email, user_id)
+        for row in owner_rows:
+            ws_owner[row.workspace_id] = (row.email, row.user_id)
 
         # user -> enrolled unit names
-        user_ids = {uid for _, uid in ws_owner.values()}
+        user_ids = list({uid for _, uid in ws_owner.values()})
+        user_units: dict[UUID, list[str]] = {}
         if user_ids:
-            enroll_rows = await session.exec(
-                select(CourseEnrollment.user_id, Course.name)
-                .join(Course, Course.id == CourseEnrollment.course_id)  # type: ignore[arg-type]
-                .where(CourseEnrollment.user_id.in_(user_ids))  # type: ignore[union-attr]
+            enroll_rows = await session.execute(
+                tstring(
+                    t"""
+                    SELECT ce.user_id AS user_id, c.name AS unit_name
+                    FROM course_enrollment ce
+                    JOIN course c ON c.id = ce.course_id
+                    WHERE ce.user_id = ANY({user_ids})
+                    """
+                )
             )
-            user_units: dict[UUID, list[str]] = {}
-            for uid, unit_name in enroll_rows:
-                user_units.setdefault(uid, []).append(unit_name)
-        else:
-            user_units = {}
+            for row in enroll_rows:
+                user_units.setdefault(row.user_id, []).append(row.unit_name)
 
         for ws_id in workspace_ids:
             if ws_id in ws_owner:
@@ -603,6 +701,47 @@ def _sanitise_dirname(name: str) -> str:
     return re.sub(r'[<>:"/\\|?*]', "_", name).strip(". ")
 
 
+def _resolve_reorganise_target(
+    result: tuple[str, str, str | None],
+    short_to_full: dict[str, UUID],
+    ws_mapping: dict[UUID, tuple[str, list[str]]],
+    output_dir: Path,
+) -> tuple[str, list[str], list[Path]] | None:
+    """Resolve one export result to (owner_email, units, matching_files).
+
+    Returns None if the result should be skipped (failed, unmapped, or
+    no matching files on disk).
+    """
+    short_id, stem, error = result
+    if error is not None:
+        return None
+    ws_id = short_to_full.get(short_id)
+    if ws_id is None or ws_id not in ws_mapping:
+        return None
+
+    email, units = ws_mapping[ws_id]
+    files = list(output_dir.glob(f"{stem}.*"))
+    if not files:
+        return None
+
+    return email, units, files
+
+
+def _copy_files_to_unit_dirs(
+    files: list[Path],
+    units: list[str],
+    output_dir: Path,
+    safe_email: str,
+) -> None:
+    """Copy exported files into output_dir/<unit>/<email>/ for every unit."""
+    for unit_name in units:
+        safe_unit = _sanitise_dirname(unit_name)
+        dest_dir = output_dir / safe_unit / safe_email
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        for f in files:
+            shutil.copy2(f, dest_dir / f.name)
+
+
 def _reorganise_by_unit(
     output_dir: Path,
     results: list[tuple[str, str, str | None]],
@@ -614,27 +753,16 @@ def _reorganise_by_unit(
     short_to_full: dict[str, UUID] = {str(ws_id)[:8]: ws_id for ws_id in workspace_ids}
 
     moved = 0
-    for short_id, stem, error in results:
-        if error is not None:
+    for result in results:
+        target = _resolve_reorganise_target(
+            result, short_to_full, ws_mapping, output_dir
+        )
+        if target is None:
             continue
-        ws_id = short_to_full.get(short_id)
-        if ws_id is None or ws_id not in ws_mapping:
-            continue
+        email, units, files = target
 
-        email, units = ws_mapping[ws_id]
         safe_email = _sanitise_dirname(email)
-
-        # Find all files matching this stem
-        files = list(output_dir.glob(f"{stem}.*"))
-        if not files:
-            continue
-
-        for unit_name in units:
-            safe_unit = _sanitise_dirname(unit_name)
-            dest_dir = output_dir / safe_unit / safe_email
-            dest_dir.mkdir(parents=True, exist_ok=True)
-            for f in files:
-                shutil.copy2(f, dest_dir / f.name)
+        _copy_files_to_unit_dirs(files, units, output_dir, safe_email)
 
         # Remove the flat copies
         for f in files:
@@ -658,16 +786,22 @@ async def _resolve_ids(ids_or_scope: list[UUID] | str) -> list[UUID] | None:
     return workspace_ids
 
 
+@dataclass(frozen=True, slots=True)
+class BatchExportOptions:
+    """Flags controlling one batch export run."""
+
+    with_log: bool = False
+    with_tex: bool = False
+    dry_run: bool = False
+    tex_only: bool = False
+    only_errors: bool = False
+    by_unit: bool = False
+
+
 async def _run_batch_export(
     workspace_ids_or_scope: list[UUID] | str,
     output_dir: Path,
-    *,
-    with_log: bool,
-    with_tex: bool,
-    dry_run: bool,
-    tex_only: bool,
-    only_errors: bool,
-    by_unit: bool = False,
+    options: BatchExportOptions,
 ) -> None:
     """Export multiple workspaces sequentially.
 
@@ -680,7 +814,7 @@ async def _run_batch_export(
         return
     workspace_ids = resolved
 
-    if dry_run:
+    if options.dry_run:
         _print_dry_run(workspace_ids)
         return
 
@@ -690,8 +824,8 @@ async def _run_batch_export(
     output_dir.mkdir(parents=True)
 
     # --only-errors implies --with-log --with-tex for failures
-    effective_with_log = with_log or only_errors
-    effective_with_tex = with_tex or only_errors
+    effective_with_log = options.with_log or options.only_errors
+    effective_with_tex = options.with_tex or options.only_errors
 
     results: list[tuple[str, str, str | None]] = []
     for i, ws_id in enumerate(workspace_ids, 1):
@@ -700,7 +834,7 @@ async def _run_batch_export(
             f"[dim][{i}/{len(workspace_ids)}][/] Exporting {short_id}...",
             end=" ",
         )
-        if tex_only:
+        if options.tex_only:
             stem, error = await _export_single_workspace_tex_only(ws_id, output_dir)
         else:
             stem, error = await _export_single_workspace(
@@ -717,18 +851,18 @@ async def _run_batch_export(
             console.print("[green]OK[/]")
         results.append((short_id, stem, error))
 
-    if only_errors:
+    if options.only_errors:
         _purge_successes(output_dir, results)
 
-    if by_unit:
+    if options.by_unit:
         console.print("\n[bold]Resolving unit/user mapping...[/]")
         ws_mapping = await _resolve_workspace_unit_mapping(workspace_ids)
         _reorganise_by_unit(output_dir, results, ws_mapping, workspace_ids)
 
     _print_results_table(
         results,
-        only_errors=only_errors,
-        tex_only=tex_only,
+        only_errors=options.only_errors,
+        tex_only=options.tex_only,
         output_dir=output_dir,
     )
 
@@ -771,7 +905,11 @@ def _validate_workspace_args(
                 raise typer.Exit(1) from None
         return parsed
 
-    return scope  # type: ignore[return-value]  -- guarded by early exits above
+    # workspace_ids is falsy here. The first guard proved
+    # `workspace_ids or scope`, so scope must be set -- ty can't trace that
+    # cross-branch boolean invariant, hence the explicit assert.
+    assert scope is not None  # noqa: S101 - guarded by early exits above
+    return scope
 
 
 def _build_artifacts_label(
@@ -793,8 +931,13 @@ def _build_artifacts_label(
     return mode
 
 
+# PLR0913/PLR0917 (too many arguments): each parameter is an independent
+# Typer CLI flag with its own --help text; Typer maps one Python parameter
+# per flag, so there is no param-object form to bundle these into without
+# adopting a codebase-wide Typer pattern this project doesn't otherwise use
+# (see the matching noqa on `run`/`firefox` in cli/e2e/__init__.py).
 @export_app.command("run")
-def run(
+def run(  # noqa: PLR0913, PLR0917
     workspace_ids: Annotated[
         list[str] | None,
         typer.Argument(help="Workspace UUIDs to export"),
@@ -880,11 +1023,13 @@ def run(
         _run_batch_export(
             ids_or_scope,
             output,
-            with_log=with_log,
-            with_tex=with_tex,
-            dry_run=dry_run,
-            tex_only=tex_only,
-            only_errors=only_errors,
-            by_unit=by_unit,
+            BatchExportOptions(
+                with_log=with_log,
+                with_tex=with_tex,
+                dry_run=dry_run,
+                tex_only=tex_only,
+                only_errors=only_errors,
+                by_unit=by_unit,
+            ),
         )
     )

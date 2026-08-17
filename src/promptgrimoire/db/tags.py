@@ -10,11 +10,12 @@ import re
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from enum import Enum, auto
 from typing import TYPE_CHECKING
 from uuid import uuid4
 
 import structlog
-from sqlalchemy import text
+from sqlalchemy import text, tstring
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import func, select
@@ -33,6 +34,7 @@ from promptgrimoire.db.models import Tag, TagGroup
 logger = structlog.get_logger()
 if TYPE_CHECKING:
     from collections.abc import Iterator
+    from types import EllipsisType
     from uuid import UUID
 
     from sqlalchemy.ext.asyncio import AsyncSession
@@ -174,7 +176,18 @@ async def get_tag_group(group_id: UUID) -> TagGroup | None:
         return await session.get(TagGroup, group_id)
 
 
-_UNSET = object()
+class _Unset(Enum):
+    """Sentinel enum member distinguishing "not provided" from explicit ``None``.
+
+    A plain ``object()`` singleton cannot be narrowed by ty's ``is``/``is not``
+    analysis (it stays typed as ``object`` after the check), so a single-member
+    enum is used instead -- ty narrows enum-literal identity checks correctly.
+    """
+
+    TOKEN = auto()
+
+
+_UNSET = _Unset.TOKEN
 
 
 async def _flush_or_detect_duplicate(
@@ -203,13 +216,13 @@ async def update_tag_group(
     group_id: UUID,
     name: str | None = None,
     order_index: int | None = None,
-    # ``color`` uses the ``_UNSET`` object sentinel (not ``...``) because the
+    # ``color`` uses the ``_UNSET`` enum sentinel (not ``...``) because the
     # parameter lives in the public function signature where ``Ellipsis`` as a
     # default looks unusual to callers.  The ``_UNSET`` name makes the intent
     # ("omitted") explicit.  ``update_tag`` uses ``...`` (Ellipsis) for the
     # same purpose in an internal helper -- both patterns are valid, but we keep
     # them separate here for readability.
-    color: str | None | object = _UNSET,
+    color: str | _Unset | None = _UNSET,
     *,
     crdt_doc: AnnotationDocument | None = None,
 ) -> TagGroup | None:
@@ -223,7 +236,7 @@ async def update_tag_group(
         DuplicateNameError: If *name* conflicts with an existing group name.
     """
     if color is not _UNSET and color is not None:
-        _validate_hex_color(str(color))
+        _validate_hex_color(color)
 
     async with get_session() as session:
         group = await session.get(TagGroup, group_id)
@@ -235,7 +248,7 @@ async def update_tag_group(
         if order_index is not None:
             group.order_index = order_index
         if color is not _UNSET:
-            group.color = color  # type: ignore[assignment]  -- sentinel pattern
+            group.color = color
 
         session.add(group)
         duplicate = await _flush_or_detect_duplicate(
@@ -298,18 +311,23 @@ async def delete_tag_group(
 async def list_tag_groups_for_workspace(workspace_id: UUID) -> list[TagGroup]:
     """List all TagGroups for a workspace, ordered by order_index."""
     async with get_session() as session:
-        result = await session.exec(
-            select(TagGroup)
-            .where(TagGroup.workspace_id == workspace_id)
-            .order_by(TagGroup.order_index)  # type: ignore[arg-type]  -- SQLModel order_by() stubs don't accept Column expressions
+        result = await session.execute(
+            tstring(
+                t"""
+                SELECT id, workspace_id, name, color, order_index, created_at
+                FROM tag_group
+                WHERE workspace_id = {workspace_id}
+                ORDER BY order_index
+                """
+            )
         )
-        return list(result.all())
+        return [TagGroup(**row._mapping) for row in result.all()]
 
 
 # ── Tag CRUD ─────────────────────────────────────────────────────────
 
 
-async def create_tag(
+async def create_tag(  # noqa: PLR0913 -- param-object migration: tracker ledger 8
     workspace_id: UUID,
     name: str,
     color: str,
@@ -411,15 +429,21 @@ async def get_tag(tag_id: UUID) -> Tag | None:
         return await session.get(Tag, tag_id)
 
 
-def _enforce_tag_lock(
-    tag: Tag,
-    *,
-    bypass_lock: bool,
-    name: object,
-    color: object,
-    description: object,
-    group_id: object,
-) -> None:
+@dataclass(frozen=True, slots=True)
+class _TagFieldUpdate:
+    """Sentinel-typed partial-update fields shared by lock-checking and apply.
+
+    Bundles ``update_tag``'s four Ellipsis-sentinel fields so the two
+    single-call-site helpers below take one param instead of four.
+    """
+
+    name: str | EllipsisType
+    color: str | EllipsisType
+    description: str | EllipsisType | None
+    group_id: UUID | EllipsisType | None
+
+
+def _enforce_tag_lock(tag: Tag, fields: _TagFieldUpdate, *, bypass_lock: bool) -> None:
     """Raise TagLockedError if a locked tag has non-lock field changes.
 
     Skipped when ``bypass_lock`` is True (instructor operations).
@@ -427,7 +451,8 @@ def _enforce_tag_lock(
     if not tag.locked or bypass_lock:
         return
     has_non_lock_changes = any(
-        v is not ... for v in [name, color, description, group_id]
+        v is not ...
+        for v in (fields.name, fields.color, fields.description, fields.group_id)
     )
     if has_non_lock_changes:
         msg = "Tag is locked"
@@ -435,23 +460,17 @@ def _enforce_tag_lock(
 
 
 def _apply_tag_field_updates(
-    tag: Tag,
-    *,
-    name: object,
-    color: object,
-    description: object,
-    group_id: object,
-    locked: bool | None,
+    tag: Tag, fields: _TagFieldUpdate, *, locked: bool | None
 ) -> None:
     """Apply Ellipsis-sentinel partial updates to a Tag model."""
-    if name is not ...:
-        tag.name = name  # type: ignore[assignment]  -- Ellipsis sentinel already checked
-    if color is not ...:
-        tag.color = color  # type: ignore[assignment]  -- Ellipsis sentinel already checked
-    if description is not ...:
-        tag.description = description  # type: ignore[assignment]  -- Ellipsis sentinel already checked
-    if group_id is not ...:
-        tag.group_id = group_id  # type: ignore[assignment]  -- Ellipsis sentinel already checked
+    if fields.name is not ...:
+        tag.name = fields.name
+    if fields.color is not ...:
+        tag.color = fields.color
+    if fields.description is not ...:
+        tag.description = fields.description
+    if fields.group_id is not ...:
+        tag.group_id = fields.group_id
     if locked is not None:
         tag.locked = locked
 
@@ -472,13 +491,13 @@ def _sync_tag_to_crdt(tag: Tag, crdt_doc: AnnotationDocument) -> None:
         )
 
 
-async def update_tag(
+async def update_tag(  # noqa: PLR0913 -- param-object migration: tracker ledger 8
     tag_id: UUID,
     *,
-    name: str | None = ...,  # type: ignore[assignment]  -- Ellipsis sentinel distinguishes "not provided" from explicit None
-    color: str | None = ...,  # type: ignore[assignment]  -- Ellipsis sentinel
-    description: str | None = ...,  # type: ignore[assignment]  -- Ellipsis sentinel
-    group_id: UUID | None = ...,  # type: ignore[assignment]  -- Ellipsis sentinel
+    name: str | EllipsisType = ...,
+    color: str | EllipsisType = ...,
+    description: str | EllipsisType | None = ...,
+    group_id: UUID | EllipsisType | None = ...,
     locked: bool | None = None,
     bypass_lock: bool = False,
     crdt_doc: AnnotationDocument | None = None,
@@ -490,32 +509,26 @@ async def update_tag(
     may be changed (to allow instructor lock toggle); all other field
     changes raise ``TagLockedError``.
 
+    ``name`` and ``color`` cannot be cleared to ``None`` -- both are
+    NOT NULL columns on ``Tag`` -- so their sentinel type omits ``None``
+    (unlike ``description``/``group_id``, which are nullable).
+
     Pass ``bypass_lock=True`` to allow instructors to edit locked tags.
     """
-    if color is not ... and color is not None:
+    if color is not ...:
         _validate_hex_color(color)
+
+    fields = _TagFieldUpdate(
+        name=name, color=color, description=description, group_id=group_id
+    )
 
     async with get_session() as session:
         tag = await session.get(Tag, tag_id)
         if not tag:
             return None
 
-        _enforce_tag_lock(
-            tag,
-            bypass_lock=bypass_lock,
-            name=name,
-            color=color,
-            description=description,
-            group_id=group_id,
-        )
-        _apply_tag_field_updates(
-            tag,
-            name=name,
-            color=color,
-            description=description,
-            group_id=group_id,
-            locked=locked,
-        )
+        _enforce_tag_lock(tag, fields, bypass_lock=bypass_lock)
+        _apply_tag_field_updates(tag, fields, locked=locked)
 
         session.add(tag)
         duplicate_name = await _flush_or_detect_duplicate(
@@ -610,12 +623,18 @@ async def delete_tag(
 async def list_tags_for_workspace(workspace_id: UUID) -> list[Tag]:
     """List all Tags for a workspace, ordered by order_index."""
     async with get_session() as session:
-        result = await session.exec(
-            select(Tag)
-            .where(Tag.workspace_id == workspace_id)
-            .order_by(Tag.order_index)  # type: ignore[arg-type]  -- SQLModel order_by() stubs don't accept Column expressions
+        result = await session.execute(
+            tstring(
+                t"""
+                SELECT id, workspace_id, group_id, name, description, color,
+                       locked, order_index, created_at
+                FROM tag
+                WHERE workspace_id = {workspace_id}
+                ORDER BY order_index
+                """
+            )
         )
-        return list(result.all())
+        return [Tag(**row._mapping) for row in result.all()]
 
 
 # ── Reorder ──────────────────────────────────────────────────────────
@@ -764,93 +783,114 @@ class ImportResult:
     skipped_groups: int = 0
 
 
+@dataclass(slots=True)
+class _ImportContext:
+    """Mutable state threaded through one import_tags_from_workspace() run.
+
+    Bundles the session, target workspace, and the two in-place-mutated
+    accumulators so ``_import_groups``/``_import_tags`` take three params
+    instead of six.
+    """
+
+    session: AsyncSession
+    target_workspace_id: UUID
+    group_id_map: dict[UUID, UUID]
+    result_obj: ImportResult
+
+
 async def _import_groups(
-    session: AsyncSession,
+    ctx: _ImportContext,
     source_groups: list[TagGroup],
-    target_workspace_id: UUID,
     base_order: int,
-    result_obj: ImportResult,
-    group_id_map: dict[UUID, UUID],
 ) -> None:
     """Insert source groups into target via ON CONFLICT DO NOTHING.
 
-    Populates *result_obj* and *group_id_map* in place.
+    Populates *ctx.result_obj* and *ctx.group_id_map* in place.
     """
+    # ty cannot type ``TagGroup.__table__`` (SQLModel metaclass access, #3421);
+    # go through .metadata.tables[...] to get a plain Core Table/Column instead.
+    tag_group_table = TagGroup.metadata.tables[TagGroup.__tablename__]
     for idx, src_group in enumerate(source_groups):
         new_id = uuid4()
         stmt = (
             pg_insert(TagGroup)
             .values(
                 id=new_id,
-                workspace_id=target_workspace_id,
+                workspace_id=ctx.target_workspace_id,
                 name=src_group.name,
                 color=src_group.color or "#808080",
                 order_index=base_order + idx,
                 created_at=datetime.now(UTC),
             )
             .on_conflict_do_nothing(constraint="uq_tag_group_workspace_name")
-            .returning(TagGroup.__table__.c.id)  # type: ignore[union-attr]  -- SQLModel __table__
+            .returning(tag_group_table.c.id)
         )
-        insert_result = await session.execute(stmt)
+        insert_result = await ctx.session.execute(stmt)
         created_id = insert_result.scalar_one_or_none()
 
         if created_id is not None:
-            created_group = await session.get(TagGroup, created_id)
+            created_group = await ctx.session.get(TagGroup, created_id)
             assert created_group is not None  # noqa: S101  -- RETURNING guarantees non-None after insert
-            result_obj.created_groups.append(created_group)
-            group_id_map[src_group.id] = created_id
+            ctx.result_obj.created_groups.append(created_group)
+            ctx.group_id_map[src_group.id] = created_id
         else:
-            result_obj.skipped_groups += 1
-            existing = await session.execute(
-                select(TagGroup).where(
-                    TagGroup.workspace_id == target_workspace_id,
-                    TagGroup.name == src_group.name,
+            ctx.result_obj.skipped_groups += 1
+            target_workspace_id = ctx.target_workspace_id
+            src_group_name = src_group.name
+            existing_id = await ctx.session.execute(
+                tstring(
+                    t"""
+                    SELECT id FROM tag_group
+                    WHERE workspace_id = {target_workspace_id}
+                      AND name = {src_group_name}
+                    """
                 )
             )
-            existing_group = existing.scalar_one()
-            group_id_map[src_group.id] = existing_group.id
+            ctx.group_id_map[src_group.id] = existing_id.scalar_one()
 
 
 async def _import_tags(
-    session: AsyncSession,
+    ctx: _ImportContext,
     source_tags: list[Tag],
-    target_workspace_id: UUID,
     base_order: int,
-    group_id_map: dict[UUID, UUID],
-    result_obj: ImportResult,
 ) -> None:
     """Insert source tags into target via ON CONFLICT DO NOTHING.
 
-    Populates *result_obj* in place.
+    Populates *ctx.result_obj* in place.
     """
+    # ty cannot type ``Tag.__table__`` (SQLModel metaclass access, #3421);
+    # go through .metadata.tables[...] to get a plain Core Table/Column instead.
+    tag_table = Tag.metadata.tables[Tag.__tablename__]
     for src_tag in source_tags:
-        new_group_id = group_id_map.get(src_tag.group_id) if src_tag.group_id else None
+        new_group_id = (
+            ctx.group_id_map.get(src_tag.group_id) if src_tag.group_id else None
+        )
         new_id = uuid4()
         stmt = (
             pg_insert(Tag)
             .values(
                 id=new_id,
-                workspace_id=target_workspace_id,
+                workspace_id=ctx.target_workspace_id,
                 name=src_tag.name,
                 color=src_tag.color,
                 group_id=new_group_id,
                 description=src_tag.description,
                 locked=False,
-                order_index=base_order + len(result_obj.created_tags),
+                order_index=base_order + len(ctx.result_obj.created_tags),
                 created_at=datetime.now(UTC),
             )
             .on_conflict_do_nothing(constraint="uq_tag_workspace_name")
-            .returning(Tag.__table__.c.id)  # type: ignore[union-attr]  -- SQLModel __table__
+            .returning(tag_table.c.id)
         )
-        insert_result = await session.execute(stmt)
+        insert_result = await ctx.session.execute(stmt)
         created_id = insert_result.scalar_one_or_none()
 
         if created_id is not None:
-            created_tag = await session.get(Tag, created_id)
+            created_tag = await ctx.session.get(Tag, created_id)
             assert created_tag is not None  # noqa: S101  -- RETURNING guarantees non-None after insert
-            result_obj.created_tags.append(created_tag)
+            ctx.result_obj.created_tags.append(created_tag)
         else:
-            result_obj.skipped_tags += 1
+            ctx.result_obj.skipped_tags += 1
 
 
 def _import_crdt_dual_write(
@@ -933,23 +973,22 @@ async def import_tags_from_workspace(
         if row is None:
             msg = f"Workspace {target_workspace_id} not found"
             raise ValueError(msg)
+        # Attribute access by label, not row[0]/row[1] -- SQLModel's
+        # AsyncSession.execute() stub declares Result[Any], which ty resolves
+        # as a length-1 Row TypeVarTuple; positional indexing past 0 is
+        # therefore flagged as out-of-bounds even though the query selects
+        # two columns. See docs/architecture/raw-sql-convention.md.
+        next_group_order = row.next_group_order
+        next_tag_order = row.next_tag_order
 
-        await _import_groups(
-            session,
-            source_groups,
-            target_workspace_id,
-            row[0],
-            result_obj,
-            group_id_map,
+        ctx = _ImportContext(
+            session=session,
+            target_workspace_id=target_workspace_id,
+            group_id_map=group_id_map,
+            result_obj=result_obj,
         )
-        await _import_tags(
-            session,
-            source_tags,
-            target_workspace_id,
-            row[1],
-            group_id_map,
-            result_obj,
-        )
+        await _import_groups(ctx, source_groups, next_group_order)
+        await _import_tags(ctx, source_tags, next_tag_order)
 
         # Counter bumps
         if result_obj.created_groups:

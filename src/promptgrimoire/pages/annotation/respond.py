@@ -24,6 +24,7 @@ import base64
 import html as _html
 import json
 import time
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 import structlog
@@ -37,6 +38,8 @@ from promptgrimoire.word_count import word_count
 if TYPE_CHECKING:
     from collections.abc import Callable
     from uuid import UUID
+
+    from nicegui.events import GenericEventArguments
 
     from promptgrimoire.crdt.annotation_doc import AnnotationDocument
     from promptgrimoire.pages.annotation import PageState
@@ -62,6 +65,52 @@ _EDITOR_CSS = """
         padding: 24px 0 24px 82px;
     }
 """
+
+# A Yjs update encoding an empty/no-op delta is 2 bytes (sync-step markers
+# only). Anything longer carries real document state worth syncing/relaying.
+_EMPTY_YJS_UPDATE_BYTES = 2
+
+
+@dataclass(slots=True)
+class ReferenceCardContent:
+    """Content for a single reference card body (PLR0913: bundles fields
+    that always travel together into ``_render_reference_card_html``).
+    """
+
+    tag_display: str
+    color: str
+    display_author: str
+    text: str
+    para_ref: str
+    comments: list[tuple[str, str]]
+
+
+@dataclass(slots=True)
+class ReferencePanelContext:
+    """Read-only source data for reference-panel rendering.
+
+    Bundles the tag list and CRDT doc that are threaded unchanged through
+    ``_build_reference_panel``, ``_build_reference_column``, and
+    ``render_respond_tab`` (PLR0913).
+    """
+
+    tags: list[TagInfo]
+    crdt_doc: AnnotationDocument
+
+
+@dataclass(slots=True)
+class ClientContext:
+    """Identifies the connected client for Yjs broadcast/persistence routing.
+
+    Bundles the workspace/client identifiers and broadcast callback threaded
+    unchanged through ``_setup_yjs_event_handler`` and ``render_respond_tab``
+    (PLR0913).
+    """
+
+    workspace_key: str
+    workspace_id: UUID
+    client_id: str
+    on_yjs_update_broadcast: Any
 
 
 def group_highlights_by_tag(
@@ -108,15 +157,7 @@ def group_highlights_by_tag(
     return tagged_highlights, untagged_highlights, has_any_highlights
 
 
-def _render_reference_card_html(
-    *,
-    tag_display: str,
-    color: str,
-    display_author: str,
-    text: str,
-    para_ref: str,
-    comments: list[tuple[str, str]],
-) -> str:
+def _render_reference_card_html(content: ReferenceCardContent) -> str:
     """Render the body of a reference card as an HTML string.
 
     Returns an HTML fragment for use with ``ui.html(sanitize=False)``.
@@ -129,13 +170,19 @@ def _render_reference_card_html(
     by the caller.
 
     Args:
-        tag_display: Human-readable tag name.
-        color: Hex colour for tag label.
-        display_author: Pre-anonymised author display name.
-        text: Highlighted text content.
-        para_ref: Paragraph reference (empty string if absent).
-        comments: List of (display_author, text) tuples, pre-anonymised.
+        content: Card fields -- tag_display (human-readable tag name), color
+            (hex colour for tag label), display_author (pre-anonymised author
+            display name), text (highlighted text content), para_ref
+            (paragraph reference, empty string if absent), and comments
+            (list of (display_author, text) tuples, pre-anonymised).
     """
+    tag_display = content.tag_display
+    color = content.color
+    display_author = content.display_author
+    text = content.text
+    para_ref = content.para_ref
+    comments = content.comments
+
     esc = _html.escape
     parts: list[str] = [
         # Tag label
@@ -220,12 +267,14 @@ def _build_reference_card_html(
         comments.append((display_c_author, c_text))
 
     html_str = _render_reference_card_html(
-        tag_display=display_tag_name,
-        color=tag_colour,
-        display_author=display_author,
-        text=full_text,
-        para_ref=para_ref,
-        comments=comments,
+        ReferenceCardContent(
+            tag_display=display_tag_name,
+            color=tag_colour,
+            display_author=display_author,
+            text=full_text,
+            para_ref=para_ref,
+            comments=comments,
+        )
     )
 
     with (
@@ -323,8 +372,7 @@ def _tracked_expansion(
 
 
 def _build_reference_panel(
-    tags: list[TagInfo],
-    crdt_doc: AnnotationDocument,
+    ctx: ReferencePanelContext,
     state: PageState,
     filter_text: str | None = None,
     accordion_state: dict[str, bool] | None = None,
@@ -336,8 +384,7 @@ def _build_reference_panel(
     If no highlights exist, shows an empty-state message.
 
     Args:
-        tags: List of TagInfo instances for grouping.
-        crdt_doc: The CRDT annotation document.
+        ctx: Reference-panel source data (tag list + CRDT annotation doc).
         state: Page state for anonymisation context.
         filter_text: Optional search string to filter highlights by text or author.
         accordion_state: Dict mapping tag name to open/closed state. Mutated in
@@ -346,6 +393,8 @@ def _build_reference_panel(
         on_locate: Optional async callback(start_char, end_char) to warp to
             a highlight in Tab 1.
     """
+    tags = ctx.tags
+    crdt_doc = ctx.crdt_doc
     tagged_highlights, untagged_highlights, has_any_highlights = (
         group_highlights_by_tag(tags, crdt_doc)
     )
@@ -390,8 +439,7 @@ def _build_reference_panel(
 
 def _build_reference_column(
     splitter: ui.splitter,
-    tags: list[TagInfo],
-    crdt_doc: AnnotationDocument,
+    ctx: ReferencePanelContext,
     accordion_state: dict[str, bool],
     state: PageState,
     on_locate: Callable[..., Any] | None = None,
@@ -424,8 +472,7 @@ def _build_reference_column(
         reference_container = ui.column().classes("w-full")
         with reference_container:
             _build_reference_panel(
-                tags,
-                crdt_doc,
+                ctx,
                 state,
                 accordion_state=accordion_state,
                 on_locate=on_locate,
@@ -472,10 +519,7 @@ def _update_markdown_mirror(
 
 def _setup_yjs_event_handler(
     crdt_doc: AnnotationDocument,
-    workspace_key: str,
-    workspace_id: UUID,
-    client_id: str,
-    on_yjs_update_broadcast: Any,
+    client_ctx: ClientContext,
     state: PageState,
 ) -> None:
     """Register the NiceGUI event handler for Yjs updates from the Milkdown editor.
@@ -486,17 +530,21 @@ def _setup_yjs_event_handler(
 
     Args:
         crdt_doc: The CRDT annotation document.
-        workspace_key: Workspace identifier for broadcast lookup.
-        workspace_id: Workspace UUID for persistence.
-        client_id: This client's unique ID (for echo prevention).
-        on_yjs_update_broadcast: Callable(b64_update, origin_client_id) to
-            broadcast Yjs updates to other clients.
+        client_ctx: Workspace/client identifiers and the broadcast callback
+            (workspace_key for broadcast lookup, workspace_id for
+            persistence, client_id for echo prevention,
+            on_yjs_update_broadcast(b64_update, origin_client_id) to relay
+            updates to other clients).
         state: PageState containing word count limits and badge reference.
     """
+    workspace_key = client_ctx.workspace_key
+    workspace_id = client_ctx.workspace_id
+    client_id = client_ctx.client_id
+    on_yjs_update_broadcast = client_ctx.on_yjs_update_broadcast
 
-    async def on_yjs_update(e: object) -> None:
+    async def on_yjs_update(e: GenericEventArguments) -> None:
         """Receive a Yjs update from the JS Milkdown editor."""
-        b64_update: str = e.args["update"]  # type: ignore[union-attr]  # NiceGUI GenericEventArguments.args is untyped
+        b64_update: str = e.args["update"]
         raw = base64.b64decode(b64_update)
         # Apply to server-side CRDT Doc
         crdt_doc.apply_update(raw, origin_client_id=client_id)
@@ -509,7 +557,7 @@ def _setup_yjs_event_handler(
             len(raw),
         )
         # Write markdown from event payload to CRDT mirror (no JS round-trip).
-        md: str | None = e.args.get("markdown")  # type: ignore[union-attr]  # NiceGUI GenericEventArguments.args is untyped
+        md: str | None = e.args.get("markdown")
         _update_markdown_mirror(crdt_doc, md, workspace_key, client_id)
         # Update word count badge if limits configured
         if state.word_count_badge is not None:
@@ -532,7 +580,7 @@ def _setup_yjs_event_handler(
 
 
 def _on_markdown_flush(
-    e: object,
+    e: GenericEventArguments,
     *,
     crdt_doc: AnnotationDocument,
     workspace_id: UUID,
@@ -551,7 +599,7 @@ def _on_markdown_flush(
         workspace_id: Workspace UUID (str or UUID).
         client_id: Client identifier for logging.
     """
-    md: str | None = e.args.get("markdown")  # type: ignore[union-attr]  # NiceGUI GenericEventArguments.args is untyped
+    md: str | None = e.args.get("markdown")
     if md is None:
         logger.debug("RESPOND_FLUSH_NO_MARKDOWN client=%s", client_id[:8])
         return
@@ -593,7 +641,7 @@ def _build_editor_init_js(
     """
     full_state = crdt_doc.get_full_state()
     b64_state = ""
-    if len(full_state) > 2:
+    if len(full_state) > _EMPTY_YJS_UPDATE_BYTES:
         b64_state = base64.b64encode(full_state).decode("ascii")
         logger.debug(
             "RESPOND_FULL_STATE_SYNC ws=%s to_client=%s bytes=%d",
@@ -687,7 +735,7 @@ def _build_editor_init_js(
 
 
 def _handle_editor_ready(
-    e: object,
+    e: GenericEventArguments,
     state: PageState,
     workspace_key: str,
     client_id: str,
@@ -702,7 +750,7 @@ def _handle_editor_ready(
         _workspace_presence,
     )
 
-    args = e.args  # type: ignore[union-attr]  # NiceGUI GenericEventArguments
+    args = e.args
     if args.get("status") == "ok":
         state.has_milkdown_editor = True
         clients = _workspace_presence.get(workspace_key, {})
@@ -714,7 +762,7 @@ def _handle_editor_ready(
         # was False. Send a fresh full-state to converge.
         if state.crdt_doc is not None:
             full_state = state.crdt_doc.get_full_state()
-            if len(full_state) > 2:
+            if len(full_state) > _EMPTY_YJS_UPDATE_BYTES:
                 b64_state = base64.b64encode(full_state).decode("ascii")
                 presence = clients.get(client_id)
                 if presence and presence.nicegui_client:
@@ -737,12 +785,8 @@ def _handle_editor_ready(
 
 async def render_respond_tab(
     panel: ui.element,
-    tags: list[TagInfo],
-    crdt_doc: AnnotationDocument,
-    workspace_key: str,
-    workspace_id: UUID,
-    client_id: str,
-    on_yjs_update_broadcast: Any,
+    ctx: ReferencePanelContext,
+    client_ctx: ClientContext,
     on_locate: Callable[..., Any] | None = None,
     *,
     state: PageState,
@@ -760,12 +804,10 @@ async def render_respond_tab(
 
     Args:
         panel: The ui.tab_panel element to populate.
-        tags: List of TagInfo instances for the reference panel.
-        crdt_doc: The CRDT annotation document.
-        workspace_key: String key for the workspace (for broadcast lookup).
-        client_id: This client's unique ID (for echo prevention).
-        on_yjs_update_broadcast: Callable(b64_update, origin_client_id) to
-            broadcast Yjs updates to other clients.
+        ctx: Reference-panel source data (tag list + CRDT annotation doc).
+        client_ctx: Workspace/client identifiers and the Yjs broadcast
+            callback -- Callable(b64_update, origin_client_id) to broadcast
+            Yjs updates to other clients.
         on_locate: Optional async callback(start_char, end_char) to warp to
             a highlight in Tab 1.
         state: PageState containing word count limits and badge reference,
@@ -774,6 +816,10 @@ async def render_respond_tab(
     Returns:
         refresh_references: Callable that refreshes the reference panel.
     """
+    crdt_doc = ctx.crdt_doc
+    workspace_key = client_ctx.workspace_key
+    client_id = client_ctx.client_id
+
     panel.clear()
     editor_id = "milkdown-respond-editor"
 
@@ -802,22 +848,21 @@ async def render_respond_tab(
         )
 
         reference_container, search_input = _build_reference_column(
-            splitter, tags, crdt_doc, accordion_state, state=state, on_locate=on_locate
+            splitter, ctx, accordion_state, state=state, on_locate=on_locate
         )
 
-        def _filter_highlights(e: object) -> None:
+        def _filter_highlights(e: GenericEventArguments) -> None:
             """Re-render reference panel filtered by search text.
 
             Uses the event value directly rather than search_input.value because
             NiceGUI debounces server-side value sync — reading .value here would
             return stale data.
             """
-            filter_val = e.args if isinstance(e.args, str) else ""  # type: ignore[union-attr]  # NiceGUI GenericEventArguments.args is untyped
+            filter_val = e.args if isinstance(e.args, str) else ""
             reference_container.clear()
             with reference_container:
                 _build_reference_panel(
-                    tags,
-                    crdt_doc,
+                    ctx,
                     state,
                     filter_text=filter_val,
                     accordion_state=accordion_state,
@@ -845,10 +890,7 @@ async def render_respond_tab(
 
     _setup_yjs_event_handler(
         crdt_doc,
-        workspace_key,
-        workspace_id,
-        client_id,
-        on_yjs_update_broadcast,
+        client_ctx,
         state=state,
     )
 
@@ -886,7 +928,7 @@ async def render_respond_tab(
         lambda e: _on_markdown_flush(
             e,
             crdt_doc=crdt_doc,
-            workspace_id=workspace_id,
+            workspace_id=client_ctx.workspace_id,
             client_id=client_id,
         ),
     )
@@ -906,8 +948,7 @@ async def render_respond_tab(
         reference_container.clear()
         with reference_container:
             _build_reference_panel(
-                tags,
-                crdt_doc,
+                ctx,
                 state,
                 filter_text=search_input.value,
                 accordion_state=accordion_state,

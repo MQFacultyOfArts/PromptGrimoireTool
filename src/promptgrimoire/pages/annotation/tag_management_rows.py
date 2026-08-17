@@ -13,6 +13,7 @@ feedback.
 from __future__ import annotations
 
 import asyncio
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, cast
 
 import structlog
@@ -32,6 +33,89 @@ if TYPE_CHECKING:
     )
 
 logger = structlog.get_logger()
+
+
+@dataclass(slots=True)
+class TagListRenderContext:
+    """Read-only context shared across tag/group row rendering (PLR0913).
+
+    Bundles the fields that travel unchanged through
+    ``_render_tag_list_content``, ``_render_group_tags``, and
+    ``_render_tag_row``.
+    """
+
+    group_options: dict[str, str]
+    is_instructor: bool
+    highlight_counts: dict[UUID, int] | None = None
+
+
+@dataclass(slots=True)
+class TagRowContext:
+    """Per-row rendering context for a single tag row (PLR0913)."""
+
+    render_ctx: TagListRenderContext
+    can_edit: bool
+    on_delete: Callable[[UUID, str], None]
+    on_lock_toggle: Callable[[UUID, bool], Awaitable[None]] | None = None
+    on_move_tag: Callable[[UUID, int], Awaitable[None]] | None = None
+    tag_index: int = 0
+    total_tags: int = 1
+    row_collector: dict[UUID, TagRowInputs] | None = None
+    on_field_save: Callable[[UUID], Awaitable[None]] | None = None
+    highlight_count: int = 0
+
+
+@dataclass(slots=True)
+class GroupHeaderContext:
+    """Rendering context for a single group header row (PLR0913)."""
+
+    on_delete_group: Callable[[UUID, str], None]
+    on_move_group: Callable[[UUID, int], Awaitable[None]] | None = None
+    group_index: int = 0
+    total_groups: int = 1
+    row_collector: dict[UUID, dict[str, Any]] | None = None
+    on_group_field_save: Callable[[UUID], Awaitable[None]] | None = None
+    tag_count: int = 0
+
+
+@dataclass(slots=True)
+class GroupTagsContext:
+    """Rendering context for all tags within one group (PLR0913)."""
+
+    render_ctx: TagListRenderContext
+    on_delete_tag: Callable[[UUID, str], None]
+    on_lock_toggle: Callable[[UUID, bool], Awaitable[None]] | None
+    on_move_tag: Callable[[UUID, int], Awaitable[None]] | None = None
+    tag_row_collector: dict[UUID, TagRowInputs] | None = None
+    on_field_save: Callable[[UUID], Awaitable[None]] | None = None
+
+
+@dataclass(slots=True)
+class TagListCallbacks:
+    """Callbacks threaded unchanged through the tag list render tree (PLR0913)."""
+
+    on_delete_tag: Callable[[UUID, str], None]
+    on_delete_group: Callable[[UUID, str], None]
+    on_add_tag: Callable[[UUID | None, ui.button | None], Awaitable[None]]
+    on_add_group: Callable[[], Awaitable[None]]
+    on_lock_toggle: Callable[[UUID, bool], Awaitable[None]] | None
+    on_tag_reorder_for_group: Any
+    on_group_reorder: Any
+    on_move_group: Callable[[UUID, int], Awaitable[None]] | None = None
+    on_move_tag: Callable[[UUID, int], Awaitable[None]] | None = None
+    on_field_save: Callable[[UUID], Awaitable[None]] | None = None
+    on_group_field_save: Callable[[UUID], Awaitable[None]] | None = None
+
+
+@dataclass(slots=True)
+class TagListCollectors:
+    """Mutable order/save-state collectors populated during rendering (PLR0913)."""
+
+    tag_id_lists: dict[UUID | None, list[UUID]]
+    group_id_list: list[UUID]
+    tag_row_collector: dict[UUID, TagRowInputs]
+    group_row_collector: dict[UUID, dict[str, Any]]
+
 
 # ── Element creation helpers ────────────────────────────────────────
 
@@ -204,55 +288,43 @@ def _create_tag_fields(
 # ── Tag row rendering helper ─────────────────────────────────────────
 
 
-def _render_tag_row(
-    tag: Tag,
-    *,
-    can_edit: bool,
-    is_instructor: bool,
-    group_options: dict[str, str],
-    on_delete: Callable[[UUID, str], None],
-    on_lock_toggle: (Callable[[UUID, bool], Awaitable[None]] | None) = None,
-    on_move_tag: (Callable[[UUID, int], Awaitable[None]] | None) = None,
-    tag_index: int = 0,
-    total_tags: int = 1,
-    row_collector: dict[UUID, TagRowInputs] | None = None,
-    on_field_save: (Callable[[UUID], Awaitable[None]] | None) = None,
-    highlight_count: int = 0,
-) -> None:
+def _render_tag_row(tag: Tag, ctx: TagRowContext) -> None:
     """Render a single tag row with inline editing controls.
 
     Values are stored in a model dict and kept in sync with inputs
     via ``bind_value()``. The model dict is stored in
-    ``row_collector`` for the "Done" button to save all changes.
+    ``ctx.row_collector`` for the "Done" button to save all changes.
 
     Parameters
     ----------
     tag:
         A Tag model instance.
-    can_edit:
-        Whether inputs should be editable.
-    is_instructor:
-        Whether the current user is an instructor.
-    group_options:
-        Mapping of group UUID string -> group name.
-    on_delete:
-        Sync callback ``(tag_id, tag_name) -> None``.
-    on_lock_toggle:
-        Async callback ``(tag_id, locked) -> None``.
-    on_move_tag:
-        Async callback ``(tag_id, direction) -> None``.
-    tag_index:
-        Zero-based position within its group.
-    total_tags:
-        Total tags in this group.
-    row_collector:
-        Mutable dict to store model dicts for batch save.
-    on_field_save:
-        Async callback for immediate save (colour debounce).
-    highlight_count:
-        Number of CRDT highlights referencing this tag.  When > 0 the
-        delete button is disabled with a tooltip explaining the precondition.
+    ctx:
+        Rendering context: can_edit (whether inputs should be editable),
+        render_ctx.is_instructor, render_ctx.group_options (mapping of
+        group UUID string -> group name), on_delete (sync callback
+        ``(tag_id, tag_name) -> None``), on_lock_toggle (async callback
+        ``(tag_id, locked) -> None``), on_move_tag (async callback
+        ``(tag_id, direction) -> None``), tag_index (zero-based position
+        within its group), total_tags (total tags in this group),
+        row_collector (mutable dict to store model dicts for batch save),
+        on_field_save (async callback for immediate save on colour
+        debounce), and highlight_count (number of CRDT highlights
+        referencing this tag -- when > 0 the delete button is disabled
+        with a tooltip explaining the precondition).
     """
+    can_edit = ctx.can_edit
+    is_instructor = ctx.render_ctx.is_instructor
+    group_options = ctx.render_ctx.group_options
+    on_delete = ctx.on_delete
+    on_lock_toggle = ctx.on_lock_toggle
+    on_move_tag = ctx.on_move_tag
+    tag_index = ctx.tag_index
+    total_tags = ctx.total_tags
+    row_collector = ctx.row_collector
+    on_field_save = ctx.on_field_save
+    highlight_count = ctx.highlight_count
+
     # Model dict — bind_value keeps this in sync with inputs
     model: TagRowInputs = {
         "name": tag.name,
@@ -345,17 +417,7 @@ def _render_lock_toggle(
 # ── Group header rendering helper ────────────────────────────────────
 
 
-def _render_group_header(
-    group: TagGroup,
-    *,
-    on_delete_group: Callable[[UUID, str], None],
-    on_move_group: (Callable[[UUID, int], Awaitable[None]] | None) = None,
-    group_index: int = 0,
-    total_groups: int = 1,
-    row_collector: dict[UUID, dict[str, Any]] | None = None,
-    on_group_field_save: (Callable[[UUID], Awaitable[None]] | None) = None,
-    tag_count: int = 0,
-) -> None:
+def _render_group_header(group: TagGroup, ctx: GroupHeaderContext) -> None:
     """Render a group header with name input, colour, and delete.
 
     Values are stored in a model dict kept in sync via
@@ -365,22 +427,25 @@ def _render_group_header(
     ----------
     group:
         The TagGroup model instance.
-    on_delete_group:
-        Sync callback ``(group_id, group_name) -> None``.
-    on_move_group:
-        Async callback ``(group_id, direction) -> None``.
-    group_index:
-        Zero-based position within the group list.
-    total_groups:
-        Total number of groups.
-    row_collector:
-        Mutable dict to store model dicts for batch save.
-    on_group_field_save:
-        Async callback for immediate save (colour debounce).
-    tag_count:
-        Number of tags in this group.  When > 0 the delete button is
-        disabled with a tooltip explaining the precondition.
+    ctx:
+        Rendering context: on_delete_group (sync callback
+        ``(group_id, group_name) -> None``), on_move_group (async
+        callback ``(group_id, direction) -> None``), group_index
+        (zero-based position within the group list), total_groups
+        (total number of groups), row_collector (mutable dict to store
+        model dicts for batch save), on_group_field_save (async
+        callback for immediate save on colour debounce), and tag_count
+        (number of tags in this group -- when > 0 the delete button is
+        disabled with a tooltip explaining the precondition).
     """
+    on_delete_group = ctx.on_delete_group
+    on_move_group = ctx.on_move_group
+    group_index = ctx.group_index
+    total_groups = ctx.total_groups
+    row_collector = ctx.row_collector
+    on_group_field_save = ctx.on_group_field_save
+    tag_count = ctx.tag_count
+
     model: dict[str, Any] = {
         "name": group.name,
         "color": group.color or "",
@@ -510,20 +575,16 @@ def _render_group_tags(
     *,
     group_tags: list[Tag],
     tag_ids: list[UUID],
-    is_instructor: bool,
-    group_options: dict[str, str],
-    on_delete_tag: Callable[[UUID, str], None],
-    on_lock_toggle: (Callable[[UUID, bool], Awaitable[None]] | None),
     on_tag_reorder: Any,
-    on_move_tag: (Callable[[UUID, int], Awaitable[None]] | None) = None,
-    tag_row_collector: (dict[UUID, TagRowInputs] | None) = None,
-    on_field_save: (Callable[[UUID], Awaitable[None]] | None) = None,
-    highlight_counts: dict[UUID, int] | None = None,
+    ctx: GroupTagsContext,
 ) -> None:
     """Render tags within a group in a Sortable."""
     from promptgrimoire.elements.sortable.sortable import (  # noqa: PLC0415
         Sortable,
     )
+
+    is_instructor = ctx.render_ctx.is_instructor
+    highlight_counts = ctx.render_ctx.highlight_counts
 
     total_tags = len(group_tags)
     with Sortable(
@@ -538,17 +599,18 @@ def _render_group_tags(
             can_edit = not tag.locked or is_instructor
             _render_tag_row(
                 tag,
-                can_edit=can_edit,
-                is_instructor=is_instructor,
-                group_options=group_options,
-                on_delete=on_delete_tag,
-                on_lock_toggle=on_lock_toggle,
-                on_move_tag=on_move_tag,
-                tag_index=idx,
-                total_tags=total_tags,
-                row_collector=tag_row_collector,
-                on_field_save=on_field_save,
-                highlight_count=(highlight_counts or {}).get(tag.id, 0),
+                TagRowContext(
+                    render_ctx=ctx.render_ctx,
+                    can_edit=can_edit,
+                    on_delete=ctx.on_delete_tag,
+                    on_lock_toggle=ctx.on_lock_toggle,
+                    on_move_tag=ctx.on_move_tag,
+                    tag_index=idx,
+                    total_tags=total_tags,
+                    row_collector=ctx.tag_row_collector,
+                    on_field_save=ctx.on_field_save,
+                    highlight_count=(highlight_counts or {}).get(tag.id, 0),
+                ),
             )
 
 
@@ -556,34 +618,51 @@ def _render_tag_list_content(
     *,
     groups: list[TagGroup],
     tags_by_group: dict[UUID | None, list[Tag]],
-    group_options: dict[str, str],
-    is_instructor: bool,
-    on_delete_tag: Callable[[UUID, str], None],
-    on_delete_group: Callable[[UUID, str], None],
-    on_add_tag: Callable[[UUID | None, ui.button | None], Awaitable[None]],
-    on_add_group: Callable[[], Awaitable[None]],
-    on_lock_toggle: (Callable[[UUID, bool], Awaitable[None]] | None),
-    on_tag_reorder_for_group: Any,
-    on_group_reorder: Any,
-    on_move_group: (Callable[[UUID, int], Awaitable[None]] | None) = None,
-    on_move_tag: (Callable[[UUID, int], Awaitable[None]] | None) = None,
-    tag_id_lists: dict[UUID | None, list[UUID]],
-    group_id_list: list[UUID],
-    tag_row_collector: dict[UUID, TagRowInputs],
-    group_row_collector: dict[UUID, dict[str, Any]],
-    on_field_save: (Callable[[UUID], Awaitable[None]] | None) = None,
-    on_group_field_save: (Callable[[UUID], Awaitable[None]] | None) = None,
-    highlight_counts: dict[UUID, int] | None = None,
+    render_ctx: TagListRenderContext,
+    callbacks: TagListCallbacks,
+    collectors: TagListCollectors,
 ) -> None:
     """Render all tag groups and ungrouped tags.
 
     Wraps groups in a top-level Sortable for group reordering and
     each group's tags in a nested Sortable for tag reordering.
     Model dicts are stored in the collector dicts for batch save.
+
+    Parameters
+    ----------
+    groups, tags_by_group:
+        Tag groups and the tags belonging to each (``None`` key for
+        ungrouped tags).
+    render_ctx:
+        Read-only rendering context (group_options, is_instructor,
+        highlight_counts).
+    callbacks:
+        CRUD/reorder/save callbacks threaded unchanged through the
+        render tree.
+    collectors:
+        Mutable dicts/lists populated during rendering: tag_id_lists,
+        group_id_list (drag-order tracking), tag_row_collector,
+        group_row_collector (batch-save model dicts).
     """
     from promptgrimoire.elements.sortable.sortable import (  # noqa: PLC0415
         Sortable,
     )
+
+    on_delete_tag = callbacks.on_delete_tag
+    on_delete_group = callbacks.on_delete_group
+    on_add_tag = callbacks.on_add_tag
+    on_add_group = callbacks.on_add_group
+    on_lock_toggle = callbacks.on_lock_toggle
+    on_tag_reorder_for_group = callbacks.on_tag_reorder_for_group
+    on_group_reorder = callbacks.on_group_reorder
+    on_move_group = callbacks.on_move_group
+    on_move_tag = callbacks.on_move_tag
+    on_field_save = callbacks.on_field_save
+    on_group_field_save = callbacks.on_group_field_save
+    tag_id_lists = collectors.tag_id_lists
+    group_id_list = collectors.group_id_list
+    tag_row_collector = collectors.tag_row_collector
+    group_row_collector = collectors.group_row_collector
 
     # Groups section -- wrapped in Sortable for group reorder
     with Sortable(
@@ -603,28 +682,30 @@ def _render_tag_list_content(
             with ui.column().classes("w-full"):
                 _render_group_header(
                     group,
-                    on_delete_group=on_delete_group,
-                    on_move_group=on_move_group,
-                    group_index=idx,
-                    total_groups=total_groups,
-                    row_collector=group_row_collector,
-                    on_group_field_save=on_group_field_save,
-                    tag_count=len(group_tags),
+                    GroupHeaderContext(
+                        on_delete_group=on_delete_group,
+                        on_move_group=on_move_group,
+                        group_index=idx,
+                        total_groups=total_groups,
+                        row_collector=group_row_collector,
+                        on_group_field_save=on_group_field_save,
+                        tag_count=len(group_tags),
+                    ),
                 )
                 _render_group_tags(
                     group_tags=group_tags,
                     tag_ids=tag_ids,
-                    is_instructor=is_instructor,
-                    group_options=group_options,
-                    on_delete_tag=on_delete_tag,
-                    on_lock_toggle=on_lock_toggle,
                     on_tag_reorder=lambda e, gid=group.id: on_tag_reorder_for_group(
                         e, gid
                     ),
-                    on_move_tag=on_move_tag,
-                    tag_row_collector=tag_row_collector,
-                    on_field_save=on_field_save,
-                    highlight_counts=highlight_counts,
+                    ctx=GroupTagsContext(
+                        render_ctx=render_ctx,
+                        on_delete_tag=on_delete_tag,
+                        on_lock_toggle=on_lock_toggle,
+                        on_move_tag=on_move_tag,
+                        tag_row_collector=tag_row_collector,
+                        on_field_save=on_field_save,
+                    ),
                 )
                 ui.button(
                     "+ Add tag",
@@ -643,15 +724,15 @@ def _render_tag_list_content(
         _render_group_tags(
             group_tags=ungrouped,
             tag_ids=ungrouped_ids,
-            is_instructor=is_instructor,
-            group_options=group_options,
-            on_delete_tag=on_delete_tag,
-            on_lock_toggle=on_lock_toggle,
             on_tag_reorder=lambda e: on_tag_reorder_for_group(e, None),
-            on_move_tag=on_move_tag,
-            tag_row_collector=tag_row_collector,
-            on_field_save=on_field_save,
-            highlight_counts=highlight_counts,
+            ctx=GroupTagsContext(
+                render_ctx=render_ctx,
+                on_delete_tag=on_delete_tag,
+                on_lock_toggle=on_lock_toggle,
+                on_move_tag=on_move_tag,
+                tag_row_collector=tag_row_collector,
+                on_field_save=on_field_save,
+            ),
         )
         ui.button(
             "+ Add tag",

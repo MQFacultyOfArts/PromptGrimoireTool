@@ -233,3 +233,41 @@ Two defects surfaced by the failed attempts, both banked:
    timeouts via the build's exception path). The service MUST share the
    app's pooling discipline (QueuePool/PgBouncer in production);
    `--queue-pool` on both arms eliminated it (200/200 clean).
+
+## Phase 12: stacked-head re-attachment + freshness hardening (2026-08-17 evening)
+
+Two post-stack obligations, both discharged on the #533 branch
+(`snapshot-freshness-533`, stacked above PR #536's typing rewrite whose
+raw-SQL `resolve_annotation_context` sits on the measured load path).
+
+**Re-attachment leg.** One 100-way sanity leg (flag on, `--queue-pool`,
+CPUs 0-7, same probe and boundary as Phase 10). Evidence:
+`perf-results/snapshot-stacked-100.json`.
+
+| leg | p50 | p95 | ws bytes p50 |
+|---|---|---|---|
+| stacked head | 8 424 | 9 678 | 74 139 |
+| Phase 10 candidate (better/worse leg) | 8 961 / 9 273 | 10 108 / 10 406 | 74 139 |
+
+100/100 loaded. The stacked head is slightly faster than both Phase 10
+candidate legs (~500 ms at p50, ~1.7× the Phase 10 within-arm spread).
+Read as: no regression from the typing rewrite, possibly a small win from
+the raw-SQL context query. Single leg, so no stronger claim.
+
+**Freshness race, adversarially probed.** Brian's ruling: test first,
+mechanism only against evidence.
+`test_stale_bundle_converges_to_live_state` forces the widest
+deterministic version of the mint-to-mount race (client A's bundle
+request stalled at the route layer; bundle fetched pre-mutation so
+staleness holds by construction; client B creates a highlight; A is then
+fulfilled with the stale body). The page converges to B's highlight
+without a reload: the server-push-wins healing claim now has a positive
+E2E gate instead of an argument. No staleness mechanism is built; if the
+gate ever fails, build the mechanism then.
+
+**Flag-on soak.** The full Playwright lane run serial with
+`SNAPSHOT__ENABLED=true` (serial because parallel per-file isolation
+would collide every file's service on one port): 152 passed, 5 skipped,
+1 xfailed in 10:52 — the identical skip/xfail set as the flag-off lane.
+The wider E2E surface holds under snapshot delivery, closing the #533
+soak item.

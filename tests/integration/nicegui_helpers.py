@@ -296,7 +296,7 @@ def _click_testid(user: User, testid: str) -> None:
         events.handle_event(listener.handler, event_arguments)
 
 
-def _simulated_capture_args(el: Element) -> dict[str, str] | str | None:
+def _simulated_capture_args(el: Element) -> dict[str, str | int] | str | None:
     """Build the args a value-capture js_handler would emit for *el*.
 
     Returns None for elements without the capture hook (plain buttons),
@@ -311,6 +311,17 @@ def _simulated_capture_args(el: Element) -> dict[str, str] | str | None:
         return {key: dom_str(inp.value) for key, inp in capture.items()}
     if capture is not None:
         return dom_str(capture.value)
+
+    # Selection-capture triggers (ui_helpers.on_click_with_selection):
+    # in the User harness the browser-side window._annotSel mirrors the
+    # server-side selection state, so emit that (or None when empty).
+    sel_state = getattr(el, "_value_capture_selection", None)
+    if sel_state is not None:
+        start = sel_state.selection_start
+        end = sel_state.selection_end
+        if start is None or end is None:
+            return None
+        return {"start_char": start, "end_char": end}
     return None
 
 

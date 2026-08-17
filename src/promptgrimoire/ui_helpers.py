@@ -108,6 +108,50 @@ def on_submit_with_value(
     trigger.on(event, _handle, js_handler=js)
 
 
+def on_click_with_selection(
+    trigger: ui.element,
+    selection_state: Any,
+    handler: Callable[[dict[str, Any] | None], Any],
+    *,
+    event: str = "click",
+) -> None:
+    """Wire an event on *trigger* to call *handler* with the browser's
+    current annotation selection captured client-side at event time.
+
+    The selection-capture counterpart of ``on_submit_with_value``: the
+    payload is ``window._annotSel`` — written by
+    ``setupAnnotationSelection()`` on mouseup (annotation-highlight.js)
+    and cleared alongside ``selection_cleared`` — so the offsets ride
+    the triggering event itself instead of racing the separate
+    ``selection_made`` socket event (#502).
+
+    Args:
+        trigger: The element whose event fires the handler
+            (e.g. a tag button).
+        selection_state: Object carrying ``selection_start`` /
+            ``selection_end`` (the annotation ``PageState``) — used only
+            by the User-harness simulation hook, never by the live
+            handler.
+        handler: Called with ``{"start_char": int, "end_char": int}``
+            or ``None`` when the browser had no selection.  May be sync
+            or async.
+        event: The event type (default ``"click"``).
+    """
+    js = "() => {emit(window._annotSel || null);}"
+
+    async def _handle(e: GenericEventArguments) -> None:
+        sel = e.args if isinstance(e.args, dict) else None
+        result = handler(sel)
+        if isinstance(result, Awaitable):
+            await result
+
+    # Simulation hook — see on_submit_with_value.  The harness emits the
+    # server-side selection state, which in the User harness is exactly
+    # what the browser-side capture would hold.
+    setattr(trigger, "_value_capture_selection", selection_state)  # noqa: B010 -- dynamic simulation-hook attribute
+    trigger.on(event, _handle, js_handler=js)
+
+
 def on_submit_with_values(
     trigger: ui.element,
     inputs: Mapping[str, ui.element],

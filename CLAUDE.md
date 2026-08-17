@@ -110,11 +110,14 @@ Six failure-mode classes surfaced by the April 2026 independent-workspace load i
 
 Claude Code hooks automatically run on every `.py` file write:
 
-1. `ruff check --fix` - autofix lint issues
-2. `ruff format` - format code
-3. `ty@0.0.24 check` - type checking
+1. `ruff format` - format the file in place
+2. `ruff check --ignore F401` - report issues (no autofix)
+3. `ty check` - type checking (uv-locked version)
 
-All three must pass before code is considered complete.
+The write hook is informational: findings describe the file's state right
+now, which legitimately fails mid-batch or on a TDD red. The gates are the
+Stop hook (final_lint.py), explicit verification runs, and pre-commit — all
+three checks must pass there before code is considered complete.
 
 ### Pre-commit Hooks
 
@@ -192,7 +195,7 @@ uv run grimoire e2e perf
 uv run ruff check .
 
 # Run type checking
-uvx ty@0.0.24 check
+uv run ty check
 
 # Seed development data (idempotent)
 uv run grimoire seed run

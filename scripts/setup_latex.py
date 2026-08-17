@@ -38,6 +38,9 @@ import sys
 import tempfile
 from pathlib import Path
 
+from promptgrimoire.export.pdf_export import ensure_sty_in_dir
+from promptgrimoire.export.preamble import build_annotation_preamble
+
 # TinyTeX installation paths
 TINYTEX_DIR = Path.home() / ".TinyTeX"
 TINYTEX_BIN = TINYTEX_DIR / "bin" / "x86_64-linux"
@@ -266,43 +269,58 @@ def check_system_fonts() -> list[str]:
 
 
 def warm_font_cache() -> bool:
-    """Warm LuaLaTeX font cache by compiling a minimal document.
+    """Warm LuaLaTeX font cache by compiling the production preamble.
 
-    First compilation with CJK fonts can use ~6GB RAM for font cache generation.
-    This function triggers that cache generation so subsequent compilations are fast.
+    Glyph caches are built per font file, so the warm document must load the
+    same fonts production compiles with. Building the preamble via
+    build_annotation_preamble keeps the warmed font set aligned with
+    production by construction — a hand-written document here once warmed
+    luatexja's default Harano Aji fonts while production loaded
+    Noto Serif CJK SC, leaving the first real compile cold (>30s, killing
+    the smoke lane in CI).
+
+    First compilation with CJK fonts can use ~6GB RAM for cache generation.
 
     Returns True if cache warming succeeded, False otherwise.
     """
     print("Warming font cache (this may take a while on first run)...")
 
-    # Minimal document that triggers font cache for CJK and extended Unicode
-    test_doc = r"""\documentclass{article}
-\usepackage{fontspec}
-\usepackage{luatexja-fontspec}
-\setmainfont{TeX Gyre Termes}
-\setmonofont{DejaVu Sans Mono}[Scale=0.9]
-\begin{document}
-Hello World. 你好世界。こんにちは。안녕하세요。
-\end{document}
-"""
+    # CJK body text makes build_annotation_preamble load the full CJK font
+    # chain (Noto Serif CJK SC + script fallbacks), matching what the smoke
+    # test test_unicode_preamble_compiles_without_tofu compiles.
+    cjk_text = "日本語 你好世界"
+    preamble = build_annotation_preamble({}, body_text=cjk_text)
+    test_doc = (
+        "\\documentclass{article}\n"
+        f"{preamble}\n"
+        "\\begin{document}\n"
+        f"Hello World. CJK: \\cjktext{{{cjk_text}}}\n"
+        "\\end{document}\n"
+    )
 
     with tempfile.TemporaryDirectory() as tmpdir:
+        ensure_sty_in_dir(Path(tmpdir))
         tex_path = Path(tmpdir) / "cache_warm.tex"
         tex_path.write_text(test_doc)
 
-        result = subprocess.run(
-            [
-                str(LUALATEX),
-                "-interaction=nonstopmode",
-                "-halt-on-error",
-                f"-output-directory={tmpdir}",
-                str(tex_path),
-            ],
-            capture_output=True,
-            text=True,
-            check=False,
-            cwd=tmpdir,
-        )
+        try:
+            result = subprocess.run(
+                [
+                    str(LUALATEX),
+                    "-interaction=nonstopmode",
+                    "-halt-on-error",
+                    f"-output-directory={tmpdir}",
+                    str(tex_path),
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+                cwd=tmpdir,
+                timeout=600,
+            )
+        except subprocess.TimeoutExpired:
+            print("  Warning: Font cache warming timed out after 600s")
+            return False
 
         pdf_path = Path(tmpdir) / "cache_warm.pdf"
         if pdf_path.exists():

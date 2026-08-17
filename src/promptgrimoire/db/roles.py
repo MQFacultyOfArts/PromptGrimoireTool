@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from sqlalchemy import tstring
 from sqlmodel import select
 
 from promptgrimoire.db.engine import get_session
@@ -46,15 +47,14 @@ async def get_all_roles(*, session: AsyncSession | None = None) -> tuple[str, ..
     """
     global _all_roles_cache  # noqa: PLW0603
     if _all_roles_cache is None:
+        query = tstring(t"SELECT name FROM course_role ORDER BY level")
         if session is None:
             async with get_session() as db_session:
-                result = await db_session.exec(
-                    select(CourseRoleRef.name).order_by("level")
-                )
-                _all_roles_cache = tuple(result.all())
+                result = await db_session.execute(query)
+                _all_roles_cache = tuple(row.name for row in result.all())
         else:
-            result = await session.exec(select(CourseRoleRef.name).order_by("level"))
-            _all_roles_cache = tuple(result.all())
+            result = await session.execute(query)
+            _all_roles_cache = tuple(row.name for row in result.all())
     return _all_roles_cache
 
 

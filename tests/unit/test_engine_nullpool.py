@@ -8,7 +8,7 @@ Verifies:
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from unittest.mock import AsyncMock
 
 from sqlalchemy.pool import NullPool
@@ -19,12 +19,21 @@ if TYPE_CHECKING:
     import pytest
 
 
+def _dummy_creator() -> Any:
+    """Stand in for a DBAPI connection factory.
+
+    Never actually invoked: these tests only inspect ``NullPool``'s type
+    and status output, never call ``.connect()`` on it.
+    """
+    return None
+
+
 class TestPoolStatusWithNullPool:
     """infra-split.AC2.3: _pool_status() does not error with NullPool."""
 
     def test_pool_status_nullpool_returns_question_marks(self) -> None:
         """NullPool lacks size/checkedin/etc — _pool_status returns '?' values."""
-        pool = NullPool(creator=lambda: None)
+        pool = NullPool(creator=_dummy_creator)
         result = _pool_status(pool)
         assert "size=?" in result
         assert "checked_in=?" in result
@@ -46,7 +55,7 @@ class TestInitDbPoolSelection:
         captured_kwargs: dict[str, object] = {}
 
         mock_engine = AsyncMock()
-        mock_engine.sync_engine.pool = NullPool(creator=lambda: None)
+        mock_engine.sync_engine.pool = NullPool(creator=_dummy_creator)
 
         def fake_create_async_engine(_url: str, **kwargs: object) -> AsyncMock:
             captured_kwargs.update(kwargs)

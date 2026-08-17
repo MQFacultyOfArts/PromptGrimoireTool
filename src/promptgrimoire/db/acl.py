@@ -10,6 +10,7 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 import sqlalchemy as sa
+from sqlalchemy import tstring
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlmodel import select
 
@@ -20,7 +21,6 @@ from promptgrimoire.db.models import (
     Activity,
     Course,
     CourseEnrollment,
-    Permission,
     User,
     Week,
     Workspace,
@@ -135,16 +135,24 @@ async def list_accessible_workspaces(
         (Workspace, permission_name) tuples, ordered by workspace.created_at.
     """
     async with get_session() as session:
-        result = await session.exec(
-            select(Workspace, ACLEntry.permission)
-            .join(ACLEntry, ACLEntry.workspace_id == Workspace.id)  # type: ignore[arg-type]  -- SQLAlchemy == returns ColumnElement
-            .where(
-                ACLEntry.user_id == user_id,
-                ACLEntry.workspace_id != None,  # noqa: E711
+        rows = (
+            await session.execute(
+                tstring(
+                    t"""
+                    SELECT w.*, a.permission AS permission
+                    FROM workspace w
+                    JOIN acl_entry a ON a.workspace_id = w.id
+                    WHERE a.user_id = {user_id}
+                      AND a.workspace_id IS NOT NULL
+                    ORDER BY w.created_at
+                    """
+                )
             )
-            .order_by(Workspace.created_at)  # type: ignore[arg-type]  # TODO(2026-Q2): Revisit when SQLModel updates type stubs
-        )
-        return list(result.all())
+        ).all()
+        return [
+            (Workspace.model_validate(row, from_attributes=True), row.permission)
+            for row in rows
+        ]
 
 
 async def list_course_workspaces(
@@ -166,31 +174,57 @@ async def list_course_workspaces(
     """
     async with get_session() as session:
         # Collect template workspace IDs to exclude
-        template_result = await session.exec(
-            select(Activity.template_workspace_id)
-            .join(Week, Activity.week_id == Week.id)  # type: ignore[arg-type]  -- SQLAlchemy == returns ColumnElement
-            .where(Week.course_id == course_id)
+        template_rows = (
+            (
+                await session.execute(
+                    tstring(
+                        t"""
+                    SELECT a.template_workspace_id
+                    FROM activity a
+                    JOIN week wk ON wk.id = a.week_id
+                    WHERE wk.course_id = {course_id}
+                    """
+                    )
+                )
+            )
+            .scalars()
+            .all()
         )
-        template_ids = set(template_result.all())
+        template_ids = set(template_rows)
 
         # Activity-placed workspaces: via Activity -> Week -> Course
-        activity_result = await session.exec(
-            select(Workspace)
-            .join(Activity, Workspace.activity_id == Activity.id)  # type: ignore[arg-type]  -- SQLAlchemy == returns ColumnElement
-            .join(Week, Activity.week_id == Week.id)  # type: ignore[arg-type]  -- SQLAlchemy == returns ColumnElement
-            .where(Week.course_id == course_id)
-            .order_by(Workspace.created_at)  # type: ignore[arg-type]  -- SQLModel order_by stubs
-        )
-        activity_workspaces = list(activity_result.all())
+        activity_rows = (
+            await session.execute(
+                tstring(
+                    t"""
+                    SELECT w.* FROM workspace w
+                    JOIN activity a ON w.activity_id = a.id
+                    JOIN week wk ON a.week_id = wk.id
+                    WHERE wk.course_id = {course_id}
+                    ORDER BY w.created_at
+                    """
+                )
+            )
+        ).all()
+        activity_workspaces = [
+            Workspace.model_validate(row, from_attributes=True) for row in activity_rows
+        ]
 
         # Loose workspaces: directly placed in course
-        loose_result = await session.exec(
-            select(Workspace)
-            .where(Workspace.course_id == course_id)
-            .where(Workspace.activity_id == None)  # noqa: E711
-            .order_by(Workspace.created_at)  # type: ignore[arg-type]  -- SQLModel order_by stubs
-        )
-        loose_workspaces = list(loose_result.all())
+        loose_rows = (
+            await session.execute(
+                tstring(
+                    t"""
+                    SELECT w.* FROM workspace w
+                    WHERE w.course_id = {course_id} AND w.activity_id IS NULL
+                    ORDER BY w.created_at
+                    """
+                )
+            )
+        ).all()
+        loose_workspaces = [
+            Workspace.model_validate(row, from_attributes=True) for row in loose_rows
+        ]
 
         # Combine and exclude templates
         all_workspaces = activity_workspaces + loose_workspaces
@@ -217,18 +251,30 @@ async def list_activity_workspaces(
             return []
         template_id = activity.template_workspace_id
 
-        result = await session.exec(
-            select(Workspace, ACLEntry.permission, ACLEntry.user_id)
-            .join(ACLEntry, ACLEntry.workspace_id == Workspace.id)  # type: ignore[arg-type]  -- SQLAlchemy == returns ColumnElement
-            .where(
-                Workspace.activity_id == activity_id,
-                ACLEntry.permission == "owner",
-                ACLEntry.workspace_id != None,  # noqa: E711
+        rows = (
+            await session.execute(
+                tstring(
+                    t"""
+                    SELECT w.*, a.permission AS permission, a.user_id AS acl_user_id
+                    FROM workspace w
+                    JOIN acl_entry a ON a.workspace_id = w.id
+                    WHERE w.activity_id = {activity_id}
+                      AND a.permission = 'owner'
+                      AND a.workspace_id IS NOT NULL
+                    ORDER BY w.created_at
+                    """
+                )
             )
-            .order_by(Workspace.created_at)  # type: ignore[arg-type]  -- SQLModel order_by stubs
-        )
-        rows = list(result.all())
-        return [(ws, perm, uid) for ws, perm, uid in rows if ws.id != template_id]
+        ).all()
+        return [
+            (
+                Workspace.model_validate(row, from_attributes=True),
+                row.permission,
+                row.acl_user_id,
+            )
+            for row in rows
+            if row.id != template_id
+        ]
 
 
 async def _resolve_workspace_course(
@@ -329,12 +375,13 @@ async def _resolve_permission_with_session(
 
     # Step 3: Highest wins
     if explicit and derived_permission:
-        level_result = await session.exec(
-            select(Permission.name, Permission.level).where(
-                Permission.name.in_([explicit.permission, derived_permission])  # type: ignore[union-attr]  -- Column has in_
+        names = [explicit.permission, derived_permission]
+        level_rows = (
+            await session.execute(
+                tstring(t"SELECT name, level FROM permission WHERE name = ANY({names})")
             )
-        )
-        levels = dict(level_result.all())
+        ).all()
+        levels = {row.name: row.level for row in level_rows}
         e_level = levels[explicit.permission]
         d_level = levels[derived_permission]
         return explicit.permission if e_level >= d_level else derived_permission
@@ -369,7 +416,7 @@ async def resolve_permission(workspace_id: UUID, user_id: UUID) -> str | None:
         return await _resolve_permission_with_session(session, workspace_id, user_id)
 
 
-async def grant_share(
+async def grant_share(  # noqa: PLR0913 -- param-object migration: tracker ledger 8
     workspace_id: UUID,
     grantor_id: UUID,
     recipient_id: UUID,
@@ -525,14 +572,15 @@ async def list_importable_workspaces(
     #
     # Mirrors the navigator CTE visibility logic but returns only
     # workspaces that have at least one tag, with tag names aggregated.
-    sql = sa.text("""
+    stmt = tstring(
+        t"""
         WITH visible AS (
             -- Path 1: ACL-granted workspaces
             SELECT DISTINCT w.id AS workspace_id,
                    acl.permission AS permission
             FROM workspace w
             JOIN acl_entry acl ON acl.workspace_id = w.id
-                AND acl.user_id = :user_id
+                AND acl.user_id = {user_id}
 
             UNION ALL
 
@@ -542,8 +590,8 @@ async def list_importable_workspaces(
             FROM activity a
             JOIN week wk ON wk.id = a.week_id
             WHERE a.template_workspace_id IS NOT NULL
-                AND wk.course_id = ANY(:enrolled_course_ids)
-                AND :is_privileged = true
+                AND wk.course_id = ANY({course_ids})
+                AND {is_privileged} = true
 
             UNION ALL
 
@@ -559,10 +607,10 @@ async def list_importable_workspaces(
             JOIN week wk ON wk.id = a.week_id
             JOIN course c ON c.id = wk.course_id
             WHERE tmpl_check.id IS NULL
-                AND c.id = ANY(:enrolled_course_ids)
-                AND owner_acl.user_id != :user_id
+                AND c.id = ANY({course_ids})
+                AND owner_acl.user_id != {user_id}
                 AND (
-                    :is_privileged = true
+                    {is_privileged} = true
                     OR (
                         w.shared_with_class = true
                         AND COALESCE(a.allow_sharing, c.default_allow_sharing)
@@ -580,10 +628,10 @@ async def list_importable_workspaces(
                 AND owner_acl.permission = 'owner'
             JOIN course c ON c.id = w.course_id
             WHERE w.activity_id IS NULL
-                AND c.id = ANY(:enrolled_course_ids)
-                AND owner_acl.user_id != :user_id
+                AND c.id = ANY({course_ids})
+                AND owner_acl.user_id != {user_id}
                 AND (
-                    :is_privileged = true
+                    {is_privileged} = true
                     OR (
                         w.shared_with_class = true
                         AND c.default_allow_sharing = true
@@ -600,8 +648,8 @@ async def list_importable_workspaces(
                        ELSE 3
                    END) AS perm_rank
             FROM visible
-            WHERE (CAST(:exclude_id AS uuid) IS NULL
-                   OR workspace_id != :exclude_id)
+            WHERE (CAST({exclude_workspace_id} AS uuid) IS NULL
+                   OR workspace_id != {exclude_workspace_id})
             GROUP BY workspace_id
         )
         -- Final: join with tags and course info
@@ -624,19 +672,11 @@ async def list_importable_workspaces(
             array_length(array_agg(t.name), 1) DESC,  -- more tags first
             COALESCE(c1.name, c2.name, ''),
             COALESCE(w.title, '')
-    """)
+        """
+    )
 
     async with get_session() as session:
-        raw = await session.execute(
-            sql,
-            {
-                "user_id": user_id,
-                "enrolled_course_ids": course_ids,
-                "is_privileged": is_privileged,
-                "exclude_id": exclude_workspace_id,
-            },
-        )
-        rows = raw.fetchall()
+        rows = (await session.execute(stmt)).all()
 
     if not rows:
         return []
@@ -644,21 +684,29 @@ async def list_importable_workspaces(
     # Hydrate Workspace objects and build result tuples
     ws_ids = [row[0] for row in rows]
     async with get_session() as session:
-        ws_result = await session.exec(
-            select(Workspace).where(Workspace.id.in_(ws_ids))  # type: ignore[union-attr]
-        )
-        ws_by_id: dict[UUID, Workspace] = {ws.id: ws for ws in ws_result.all()}
+        ws_rows = (
+            await session.execute(
+                tstring(t"SELECT * FROM workspace WHERE id = ANY({ws_ids})")
+            )
+        ).all()
+        ws_by_id: dict[UUID, Workspace] = {
+            ws.id: ws
+            for ws in (
+                Workspace.model_validate(row, from_attributes=True) for row in ws_rows
+            )
+        }
 
     result: list[tuple[Workspace, str | None, list[str]]] = []
     seen_tag_sets: set[tuple[str, ...]] = set()
-    for ws_id, course_name, tag_names, _is_template, _perm_rank in rows:
-        ws = ws_by_id.get(ws_id)
+    for row in rows:
+        ws = ws_by_id.get(row.id)
         if ws is None:
             continue
+        tag_names = row.tag_names
         key = tuple(sorted(n.lower() for n in tag_names))
         if key not in seen_tag_sets:
             seen_tag_sets.add(key)
-            result.append((ws, course_name, tag_names))
+            result.append((ws, row.course_name, tag_names))
     return result
 
 
@@ -693,14 +741,22 @@ async def get_privileged_user_ids_for_workspace(
         staff_ids: set[str] = set()
 
         if course_id is not None:
-            staff_roles = await get_staff_roles(session=session)
-            result = await session.exec(
-                select(CourseEnrollment.user_id).where(
-                    CourseEnrollment.course_id == course_id,
-                    CourseEnrollment.role.in_(staff_roles),  # type: ignore[union-attr]  -- Column has in_
+            staff_roles = list(await get_staff_roles(session=session))
+            staff_rows = (
+                (
+                    await session.execute(
+                        tstring(
+                            t"""
+                        SELECT user_id FROM course_enrollment
+                        WHERE course_id = {course_id} AND role = ANY({staff_roles})
+                        """
+                        )
+                    )
                 )
+                .scalars()
+                .all()
             )
-            staff_ids = {str(uid) for uid in result.all()}
+            staff_ids = {str(uid) for uid in staff_rows}
 
         # Also include org-level admins
         admin_result = await session.exec(
@@ -745,33 +801,23 @@ async def list_peer_workspaces(
         # Team-target ACL rows satisfy num_nonnulls(workspace_id, team_id) = 1
         # with workspace_id NULL, so this NOT IN subquery must exclude NULLs
         # explicitly to avoid NULL poisoning workspace-only peer discovery.
-        owned_subq = (
-            select(ACLEntry.workspace_id)
-            .where(
-                ACLEntry.user_id == exclude_user_id,
-                ACLEntry.permission == "owner",
-                ACLEntry.workspace_id != None,  # noqa: E711
-            )
-            .scalar_subquery()
-        )
-
-        # Main query
-        stmt = (
-            select(Workspace)
-            .where(
-                Workspace.activity_id == activity_id,
-                Workspace.shared_with_class == True,  # noqa: E712
-            )
-            .where(Workspace.id.not_in(owned_subq))  # type: ignore[union-attr]  -- Column has not_in
-            .order_by(Workspace.created_at)  # type: ignore[arg-type]  -- SQLModel order_by stubs
-        )
-
-        # Exclude template workspace
+        query = t"""
+            SELECT w.* FROM workspace w
+            WHERE w.activity_id = {activity_id}
+              AND w.shared_with_class = true
+              AND w.id NOT IN (
+                  SELECT workspace_id FROM acl_entry
+                  WHERE user_id = {exclude_user_id}
+                    AND permission = 'owner'
+                    AND workspace_id IS NOT NULL
+              )
+        """
         if template_id is not None:
-            stmt = stmt.where(Workspace.id != template_id)
+            query = query + t" AND w.id != {template_id}"
+        query = query + t" ORDER BY w.created_at"
 
-        result = await session.exec(stmt)
-        return list(result.all())
+        rows = (await session.execute(tstring(query))).all()
+        return [Workspace.model_validate(row, from_attributes=True) for row in rows]
 
 
 async def list_peer_workspaces_with_owners(
@@ -795,31 +841,31 @@ async def list_peer_workspaces_with_owners(
         # Team-target ACL rows satisfy num_nonnulls(workspace_id, team_id) = 1
         # with workspace_id NULL, so this NOT IN subquery must exclude NULLs
         # explicitly to keep workspace-owner filtering NULL-safe.
-        owned_subq = (
-            select(ACLEntry.workspace_id)
-            .where(
-                ACLEntry.user_id == exclude_user_id,
-                ACLEntry.permission == "owner",
-                ACLEntry.workspace_id != None,  # noqa: E711
-            )
-            .scalar_subquery()
-        )
-
-        stmt = (
-            select(Workspace, User.display_name, ACLEntry.user_id)
-            .join(ACLEntry, ACLEntry.workspace_id == Workspace.id)  # type: ignore[arg-type]  -- SQLAlchemy join stubs
-            .join(User, User.id == ACLEntry.user_id)  # type: ignore[arg-type]  -- SQLAlchemy join stubs
-            .where(
-                Workspace.activity_id == activity_id,
-                Workspace.shared_with_class == True,  # noqa: E712
-                ACLEntry.permission == "owner",
-            )
-            .where(Workspace.id.not_in(owned_subq))  # type: ignore[union-attr]
-            .order_by(Workspace.created_at)  # type: ignore[arg-type]
-        )
-
+        query = t"""
+            SELECT w.*, u.display_name AS owner_display_name,
+                   a.user_id AS owner_user_id
+            FROM workspace w
+            JOIN acl_entry a ON a.workspace_id = w.id AND a.permission = 'owner'
+            JOIN "user" u ON u.id = a.user_id
+            WHERE w.activity_id = {activity_id}
+              AND w.shared_with_class = true
+              AND w.id NOT IN (
+                  SELECT workspace_id FROM acl_entry
+                  WHERE user_id = {exclude_user_id}
+                    AND permission = 'owner'
+                    AND workspace_id IS NOT NULL
+              )
+        """
         if template_id is not None:
-            stmt = stmt.where(Workspace.id != template_id)
+            query = query + t" AND w.id != {template_id}"
+        query = query + t" ORDER BY w.created_at"
 
-        rows = await session.exec(stmt)
-        return [(row[0], row[1], row[2]) for row in rows.all()]
+        rows = (await session.execute(tstring(query))).all()
+        return [
+            (
+                Workspace.model_validate(row, from_attributes=True),
+                row.owner_display_name,
+                row.owner_user_id,
+            )
+            for row in rows
+        ]

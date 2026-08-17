@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import text
+from sqlalchemy import text, tstring
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import select
 
@@ -17,7 +17,6 @@ from promptgrimoire.db.models import (
     Activity,
     Course,
     CourseEnrollment,
-    User,
     Week,
     Workspace,
 )
@@ -25,6 +24,7 @@ from promptgrimoire.db.weeks import purge_activity
 from promptgrimoire.db.workspaces import has_student_workspaces
 
 if TYPE_CHECKING:
+    from types import EllipsisType
     from uuid import UUID
 
     from sqlmodel.ext.asyncio.session import AsyncSession
@@ -98,14 +98,15 @@ async def list_courses(
         return list(result.all())
 
 
-async def update_course(
+async def update_course(  # noqa: PLR0913 -- param-object migration: tracker ledger 8
     course_id: UUID,
+    *,
     name: str | None = None,
-    default_copy_protection: bool = ...,  # type: ignore[assignment]  -- Ellipsis sentinel
-    default_allow_sharing: bool = ...,  # type: ignore[assignment]  -- Ellipsis sentinel
-    default_anonymous_sharing: bool = ...,  # type: ignore[assignment]  -- Ellipsis sentinel
-    default_allow_tag_creation: bool = ...,  # type: ignore[assignment]  -- Ellipsis sentinel
-    default_word_limit_enforcement: bool = ...,  # type: ignore[assignment]  -- Ellipsis sentinel
+    default_copy_protection: bool | EllipsisType = ...,
+    default_allow_sharing: bool | EllipsisType = ...,
+    default_anonymous_sharing: bool | EllipsisType = ...,
+    default_allow_tag_creation: bool | EllipsisType = ...,
+    default_word_limit_enforcement: bool | EllipsisType = ...,
 ) -> Course | None:
     """Update a course's mutable fields.
 
@@ -190,10 +191,12 @@ async def _fetch_course_children(
     if not week_ids:
         return weeks, []
 
+    # ty cannot type ``Activity.week_id.in_(...)`` (Model.field descriptor,
+    # astral-sh/ty#3421); go through .metadata.tables[...] for a plain Core
+    # Column instead, still returning session-attached Activity instances.
+    activity_table = Activity.metadata.tables[Activity.__tablename__]
     activity_rows = await session.exec(
-        select(Activity).where(
-            Activity.week_id.in_(week_ids)  # type: ignore[union-attr]  -- Column has .in_()
-        )
+        select(Activity).where(activity_table.c.week_id.in_(week_ids))
     )
     return weeks, list(activity_rows.all())
 
@@ -250,10 +253,13 @@ async def delete_course(
             await purge_activity(session, act)
 
         # Delete loose workspaces (course-placed, no activity)
+        # ty cannot type ``Workspace.activity_id.is_(...)`` (Model.field
+        # descriptor, astral-sh/ty#3421); use the plain Core Column instead.
+        workspace_table = Workspace.metadata.tables[Workspace.__tablename__]
         loose_rows = await session.exec(
             select(Workspace).where(
                 Workspace.course_id == course_id,
-                Workspace.activity_id.is_(None),  # type: ignore[union-attr]  -- Column has .is_()
+                workspace_table.c.activity_id.is_(None),
             )
         )
         for ws in loose_rows.all():
@@ -362,12 +368,17 @@ async def list_user_enrollments(user_id: UUID) -> list[CourseEnrollment]:
         List of CourseEnrollment objects.
     """
     async with get_session() as session:
-        result = await session.exec(
-            select(CourseEnrollment)
-            .where(CourseEnrollment.user_id == user_id)
-            .order_by("created_at")
+        result = await session.execute(
+            tstring(
+                t"""
+                SELECT id, course_id, user_id, role, created_at
+                FROM course_enrollment
+                WHERE user_id = {user_id}
+                ORDER BY created_at
+                """
+            )
         )
-        return list(result.all())
+        return [CourseEnrollment(**row._mapping) for row in result.all()]
 
 
 async def list_course_enrollments(course_id: UUID) -> list[CourseEnrollment]:
@@ -380,12 +391,17 @@ async def list_course_enrollments(course_id: UUID) -> list[CourseEnrollment]:
         List of CourseEnrollment objects.
     """
     async with get_session() as session:
-        result = await session.exec(
-            select(CourseEnrollment)
-            .where(CourseEnrollment.course_id == course_id)
-            .order_by("role", "user_id")
+        result = await session.execute(
+            tstring(
+                t"""
+                SELECT id, course_id, user_id, role, created_at
+                FROM course_enrollment
+                WHERE course_id = {course_id}
+                ORDER BY role, user_id
+                """
+            )
         )
-        return list(result.all())
+        return [CourseEnrollment(**row._mapping) for row in result.all()]
 
 
 async def list_enrollment_rows(course_id: UUID) -> list[dict[str, Any]]:
@@ -401,22 +417,28 @@ async def list_enrollment_rows(course_id: UUID) -> list[dict[str, Any]]:
         List of dicts ready for ui.table rows parameter.
     """
     async with get_session() as session:
-        result = await session.exec(
-            select(CourseEnrollment, User)
-            .join(User, User.id == CourseEnrollment.user_id)  # type: ignore[arg-type]  -- SQLModel Column expression valid at runtime; ty infers InstrumentedAttribute mismatch
-            .where(CourseEnrollment.course_id == course_id)
-            .order_by(CourseEnrollment.role, User.display_name)
+        result = await session.execute(
+            tstring(
+                t"""
+                SELECT ce.role, ce.created_at, ce.user_id,
+                       u.email, u.display_name, u.student_id
+                FROM course_enrollment ce
+                JOIN "user" u ON u.id = ce.user_id
+                WHERE ce.course_id = {course_id}
+                ORDER BY ce.role, u.display_name
+                """
+            )
         )
         return [
             {
-                "email": user.email,
-                "display_name": user.display_name,
-                "student_id": user.student_id or "",
-                "role": enrollment.role,
-                "created_at": enrollment.created_at.isoformat(),
-                "user_id": str(enrollment.user_id),
+                "email": row.email,
+                "display_name": row.display_name,
+                "student_id": row.student_id or "",
+                "role": row.role,
+                "created_at": row.created_at.isoformat(),
+                "user_id": str(row.user_id),
             }
-            for enrollment, user in result.all()
+            for row in result.all()
         ]
 
 
@@ -515,4 +537,8 @@ async def list_students_without_workspaces(
             text(_ZERO_WORKSPACE_SQL),
             {"course_id": course_id},
         )
-        return [(row[0], row[1]) for row in result.all()]
+        # Attribute access by label, not row[0]/row[1] -- SQLModel's
+        # AsyncSession.execute() stub declares Result[Any], which ty resolves
+        # as a length-1 Row TypeVarTuple; positional indexing past 0 is
+        # flagged as out-of-bounds even though the query selects two columns.
+        return [(row.display_name, row.email) for row in result.all()]

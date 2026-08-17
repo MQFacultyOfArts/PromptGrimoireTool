@@ -476,7 +476,7 @@ class TestWargameMessageTable:
             result = await session.exec(
                 select(WargameMessage)
                 .where(WargameMessage.team_id == team_id)
-                .order_by(WargameMessage.sequence_no)  # type: ignore[arg-type]  -- SQLModel order_by() stubs don't accept Column expressions
+                .order_by("sequence_no")
             )
             messages = list(result.all())
 
@@ -595,7 +595,7 @@ class TestWargameMessageTable:
             result = await session.exec(
                 select(WargameMessage)
                 .where(WargameMessage.team_id == team_id)
-                .order_by(WargameMessage.sequence_no)  # type: ignore[arg-type]  -- SQLModel order_by() stubs don't accept Column expressions
+                .order_by("sequence_no")
             )
             messages = list(result.all())
 

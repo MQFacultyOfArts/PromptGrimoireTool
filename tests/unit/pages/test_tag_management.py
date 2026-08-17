@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 from unittest.mock import AsyncMock, patch
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 
@@ -104,3 +104,85 @@ class TestBuildGroupCallbacks:
         )
         render_tag_list.assert_not_awaited()
         mock_logger.exception.assert_not_called()
+
+
+class TestReorderedGroupForMove:
+    """Pure helper extracted from ``_move_tag`` (cognitive-complexity split).
+
+    Computes the new tag ordering for a move-up/move-down button click
+    without touching the DB or CRDT -- ``_move_tag`` applies the result.
+    """
+
+    def test_move_up_within_group(self) -> None:
+        from promptgrimoire.pages.annotation.tag_management import (
+            _reordered_group_for_move,
+        )
+
+        a, b, c = uuid4(), uuid4(), uuid4()
+        tag_id_lists = {None: [a, b, c]}
+
+        result = _reordered_group_for_move(b, tag_id_lists, -1)
+
+        assert result == [b, a, c]
+
+    def test_move_down_within_group(self) -> None:
+        from promptgrimoire.pages.annotation.tag_management import (
+            _reordered_group_for_move,
+        )
+
+        a, b, c = uuid4(), uuid4(), uuid4()
+        tag_id_lists = {None: [a, b, c]}
+
+        result = _reordered_group_for_move(b, tag_id_lists, 1)
+
+        assert result == [a, c, b]
+
+    def test_move_up_at_top_is_noop(self) -> None:
+        """Moving the first tag up would go out of bounds -- returns None."""
+        from promptgrimoire.pages.annotation.tag_management import (
+            _reordered_group_for_move,
+        )
+
+        a, b = uuid4(), uuid4()
+        tag_id_lists = {None: [a, b]}
+
+        assert _reordered_group_for_move(a, tag_id_lists, -1) is None
+
+    def test_move_down_at_bottom_is_noop(self) -> None:
+        """Moving the last tag down would go out of bounds -- returns None."""
+        from promptgrimoire.pages.annotation.tag_management import (
+            _reordered_group_for_move,
+        )
+
+        a, b = uuid4(), uuid4()
+        tag_id_lists = {None: [a, b]}
+
+        assert _reordered_group_for_move(b, tag_id_lists, 1) is None
+
+    def test_tag_not_found_returns_none(self) -> None:
+        from promptgrimoire.pages.annotation.tag_management import (
+            _reordered_group_for_move,
+        )
+
+        a, b = uuid4(), uuid4()
+        tag_id_lists = {None: [a]}
+
+        assert _reordered_group_for_move(b, tag_id_lists, 1) is None
+
+    def test_finds_tag_in_its_own_group_not_the_first(self) -> None:
+        """With multiple groups, the tag's own group is used, not group 0."""
+        from promptgrimoire.pages.annotation.tag_management import (
+            _reordered_group_for_move,
+        )
+
+        group1_id, group2_id = uuid4(), uuid4()
+        a, b = uuid4(), uuid4()
+        c, d = uuid4(), uuid4()
+        tag_id_lists: dict[UUID | None, list[UUID]] = {
+            group1_id: [a, b],
+            group2_id: [c, d],
+        }
+
+        result = _reordered_group_for_move(d, tag_id_lists, -1)
+
+        assert result == [d, c]

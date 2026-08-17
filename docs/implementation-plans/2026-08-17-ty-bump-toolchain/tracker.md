@@ -228,3 +228,23 @@
     everything is a vacuous pass, not evidence — the tracing audit should
     give the selector a page-route/testid mapping or make all-deselected
     runs fail loudly.
+19. **[DONE — branch js-injection-guard]** JS-injection audit (Brian,
+    2026-08-17 evening): classifier swept 159 browser-JS sites in
+    tests/e2e — 54 READ / 60 WAIT (all pure) / 44 INPUT-FAKE / 1 SETUP.
+    Existing guard (test_e2e_compliance.py) had two holes: helper
+    modules unscanned (glob test_*.py) and no commit-time enforcement.
+    Fixed: policy extracted to scripts/check_js_injection.py (single
+    source), pre-commit hook on changed tests/e2e files + unit-lane
+    whole-tree test + two falsification tests; forbidden set widened
+    (evaluate_handle, add_init_script, add_script_tag, dispatch_event);
+    helpers allowlisted with audited reasons. Annotation fixes:
+    select_text_range now cites #154 and names itself INPUT-FAKE,
+    scroll_to_char justifies the app-function call, and
+    _set_tag_colour's FALSE docstring (claimed real picker interaction
+    it never does) corrected, pointing at #235. Residual accepted risk:
+    whole-file allowlist entries can accumulate new injection within
+    already-listed files — per-site markers were judged not worth 98
+    annotations today; revisit in the test-quality layer if creep
+    appears inside listed files. The emitEvent wire-spy caught live in
+    the 502 session (told to use behavioural assertion instead) is the
+    guard's fixture case.

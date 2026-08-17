@@ -22,6 +22,7 @@ from promptgrimoire.export.highlight_spans import compute_highlight_spans
 from promptgrimoire.export.html_normaliser import (
     fix_midword_font_splits,
     normalise_styled_paragraphs,
+    promote_code_block_highlights,
     strip_scripts_and_styles,
 )
 from promptgrimoire.export.list_normalizer import normalize_list_values
@@ -416,6 +417,10 @@ async def convert_html_with_annotations(
 
     # Inject paragraph number markers for PDF margin display
     span_html = inject_paragraph_markers_for_export(span_html, word_to_legal_para)
+
+    # Pandoc flattens descendants of <pre><code> into a metadata-free
+    # CodeBlock. Promote selection and annotation metadata to the block first.
+    span_html = promote_code_block_highlights(span_html)
 
     # Build filter list: always include highlight.lua, plus caller's filters
     filters: list[Path] = [_HIGHLIGHT_FILTER]

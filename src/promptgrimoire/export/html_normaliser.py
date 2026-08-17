@@ -4,6 +4,7 @@ Provides HTML sanitization and normalization for the PDF export pipeline:
 - strip_scripts_and_styles: Remove <script>, <style>, and noscript content
 - normalise_styled_paragraphs: Wrap styled <p> tags for Pandoc attribute preservation
 - fix_midword_font_splits: Fix LibreOffice RTF mid-word font tag splits
+- promote_code_block_highlights: Preserve metadata Pandoc drops inside CodeBlock
 
 These functions handle browser copy-paste content which may contain JavaScript,
 CSS, and other non-content elements that shouldn't appear in PDFs.
@@ -18,6 +19,11 @@ from lxml import html as lxml_html
 from lxml.html import HtmlElement
 
 logger = structlog.get_logger()
+
+_CODE_LINES_ATTR = "data-pg-code-lines"
+_CODE_COLOR_ATTR = "data-pg-code-color"
+_CODE_ANNOTS_ATTR = "data-pg-code-annots"
+_CODE_METADATA_ATTRS = (_CODE_LINES_ATTR, _CODE_COLOR_ATTR, _CODE_ANNOTS_ATTR)
 
 
 def strip_scripts_and_styles(html_content: str) -> str:
@@ -186,6 +192,92 @@ def normalise_styled_paragraphs(html_content: str) -> str:
     # Serialize back to HTML string
     result = lxml_html.tostring(tree, encoding="unicode")
     return result
+
+
+def _highlighted_line_numbers(
+    pre: HtmlElement,
+) -> tuple[set[int], list[str], list[str]]:
+    """Collect highlighted code lines, colours, and annotations from *pre*."""
+    line_number = 1
+    lines: set[int] = set()
+    colours: list[str] = []
+    annotations: list[str] = []
+
+    def record_text(text: str | None, *, highlighted: bool) -> None:
+        nonlocal line_number
+        if not text:
+            return
+        for character in text:
+            if character == "\n":
+                line_number += 1
+            elif highlighted and character != "\r":
+                lines.add(line_number)
+
+    def walk(element: HtmlElement, *, highlighted: bool = False) -> None:
+        is_highlight = element.tag == "span" and element.get("data-hl") is not None
+        active = highlighted or is_highlight
+
+        if is_highlight:
+            for colour in (element.get("data-colors") or "").split(","):
+                if colour and colour not in colours:
+                    colours.append(colour)
+            annotation = element.get("data-annots")
+            if annotation:
+                annotations.append(annotation)
+
+        record_text(element.text, highlighted=active)
+        for child in element:
+            if not isinstance(child, HtmlElement):
+                continue
+            walk(child, highlighted=active)
+            record_text(child.tail, highlighted=active)
+
+    walk(pre)
+    return lines, colours, annotations
+
+
+def promote_code_block_highlights(html_content: str) -> str:
+    """Move annotated-code metadata onto ``pre`` before Pandoc flattens it.
+
+    Pandoc represents ``<pre><code>`` as a single ``CodeBlock`` and discards
+    descendant spans.  The block attributes survive, so this pass records the
+    selected line numbers, display colour, and annotation commands there for
+    the Lua filter.  Unannotated code blocks are returned unchanged.
+    """
+    if not html_content:
+        return html_content
+    if "data-hl" not in html_content and not any(
+        attribute in html_content for attribute in _CODE_METADATA_ATTRS
+    ):
+        return html_content
+
+    try:
+        tree = lxml_html.fromstring(html_content)
+    except Exception:
+        logger.warning("html_parse_failed", operation="promote_code_block_highlights")
+        return html_content
+
+    # These attributes are an internal Python→Lua channel.  Remove any
+    # source-provided values before deriving them from computed highlight spans.
+    for element in tree.xpath("descendant-or-self::*"):
+        if not isinstance(element, HtmlElement):
+            continue
+        for attribute in _CODE_METADATA_ATTRS:
+            element.attrib.pop(attribute, None)
+
+    code_blocks = tree.xpath("descendant-or-self::pre[.//span[@data-hl]]")
+    for pre in code_blocks:
+        if not isinstance(pre, HtmlElement):
+            continue
+        lines, colours, annotations = _highlighted_line_numbers(pre)
+        if lines:
+            pre.set(_CODE_LINES_ATTR, ",".join(str(line) for line in sorted(lines)))
+        if colours:
+            pre.set(_CODE_COLOR_ATTR, colours[0])
+        if annotations:
+            pre.set(_CODE_ANNOTS_ATTR, "".join(annotations))
+
+    return lxml_html.tostring(tree, encoding="unicode")
 
 
 def fix_midword_font_splits(html_content: str) -> str:

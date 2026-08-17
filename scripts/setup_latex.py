@@ -67,6 +67,7 @@ REQUIRED_PACKAGES = [
     "luabidi",  # Bidirectional text for LuaLaTeX (for dir="ltr" HTML elements)
     # Code blocks
     "fancyvrb",  # Verbatim/code blocks from Pandoc syntax highlighting
+    "fvextra",  # Line wrapping and selected-line backgrounds in code blocks
     # Speaker turns
     "tcolorbox",  # Breakable coloured boxes for speaker turns with left border
     "pdfcol",  # Colour stack management (tcolorbox breakable dependency)

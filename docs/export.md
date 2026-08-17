@@ -230,12 +230,14 @@ The annotation export uses a pre-Pandoc span injection + Lua filter pipeline (Is
 
 1. **Region computation** - `compute_highlight_spans()` in `highlight_spans.py` computes non-overlapping regions from overlapping highlights using an event-sweep algorithm, then inserts `<span data-hl="..." data-colors="..." data-annots="...">` elements into clean HTML
 2. **Block boundary splitting** - Boundary detection in `span_boundaries.py`. Spans are pre-split at block element boundaries (p, h1-h6, li, etc.) and inline formatting boundaries (b, em, code, etc.) because Pandoc silently destroys cross-boundary spans
-3. **Pandoc conversion** - HTML to LaTeX with `highlight.lua` Lua filter included
-4. **Lua filter rendering** - `highlight.lua` reads span attributes and emits nested `\highLight` / `\underLine` / `\annot` LaTeX commands using a "one, two, many" stacking model:
+3. **Code-block metadata promotion** - `promote_code_block_highlights()` in `html_normaliser.py` moves selected line numbers, colour, and annotation commands onto `<pre>` attributes before Pandoc flattens its descendants into a `CodeBlock`
+4. **Pandoc conversion** - HTML to LaTeX with `highlight.lua` Lua filter included
+5. **Lua filter rendering** - `highlight.lua` reads span attributes and emits nested `\highLight` / `\underLine` / `\annot` LaTeX commands using a "one, two, many" stacking model:
    - 1 highlight: single 1pt underline in tag's dark colour
    - 2 highlights: stacked 2pt outer + 1pt inner underlines
    - 3+ highlights: single 4pt underline in many-dark colour
-5. **Post-processing** - `\annot` commands (which contain `\par`) are moved outside restricted LaTeX contexts (e.g. `\section{}` arguments)
+   - Annotated code blocks use `fvextra` for wrapped verbatim text and selected-line backgrounds; unannotated code blocks retain Pandoc's native rendering
+6. **Post-processing** - `\annot` commands (which contain `\par`) are moved outside restricted LaTeX contexts (e.g. `\section{}` arguments)
 
 Key files:
 - `highlight_spans.py` - `compute_highlight_spans()`, `_HlRegion`, region computation + DOM insertion

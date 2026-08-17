@@ -18,7 +18,7 @@ import asyncio
 import inspect
 import re
 import time
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, cast, overload
 
 from nicegui import ElementFilter
 
@@ -35,6 +35,21 @@ if TYPE_CHECKING:
 # ---------------------------------------------------------------------------
 
 
+# Overloads so an async condition binds T through Awaitable[T]: with the
+# plain `T | Awaitable[T]` union, type checkers unify T with the coroutine
+# itself and callers get a Coroutine back instead of the awaited type.
+@overload
+async def wait_for[T](
+    condition: Callable[[], Awaitable[T]],
+    timeout: float = 5.0,
+    interval: float = 0.05,
+) -> T: ...
+@overload
+async def wait_for[T](
+    condition: Callable[[], T],
+    timeout: float = 5.0,
+    interval: float = 0.05,
+) -> T: ...
 async def wait_for[T](
     condition: Callable[[], T | Awaitable[T]],
     timeout: float = 5.0,

@@ -16,12 +16,14 @@ INTERVAL="${WATCH_INTERVAL:-60}"
 COURSE_CODE="${COURSE_CODE:-LAWS1000}"
 DB_NAME="${DB_NAME:-promptgrimoire}"
 DB_USER="${DB_USER:-promptgrimoire}"
-LOG_DIR="${GRIMOIRE_LOG_DIR:-/opt/promptgrimoire/logs}"
+LOG_DIR="${GRIMOIRE_LOG_DIR:-/opt/promptgrimoire/logs/sessions}"
 
 # Newest JSONL wins: the log file name is branch-suffixed on non-main.
+# find errors stay on stderr (loud), and a failed pipeline must not kill
+# the watch under set -e — the empty-file branch in snapshot() handles it.
 log_file() {
     find "$LOG_DIR" -maxdepth 1 -name 'promptgrimoire*.jsonl' \
-        -printf '%T@ %p\n' 2>/dev/null | sort -rn | head -1 | cut -d' ' -f2-
+        -printf '%T@ %p\n' | sort -rn | head -1 | cut -d' ' -f2- || true
 }
 
 # Parse the tail of the JSONL log, skipping any malformed lines.
@@ -86,7 +88,8 @@ activity_section() {
             ON ae.workspace_id = w.id AND ae.permission = 'owner'
         WHERE c.code ILIKE '%${COURSE_CODE}%'
         GROUP BY a.id, a.title
-        ORDER BY ws_10m DESC, ws_12h DESC, a.title;"
+        ORDER BY ws_10m DESC, ws_12h DESC, a.title;" \
+        || echo "  psql query failed (transient? next cycle retries)"
 }
 
 snapshot() {

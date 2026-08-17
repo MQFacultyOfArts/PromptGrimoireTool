@@ -192,3 +192,44 @@ works against the candidate. Verdict unaffected.
 race hardening (currently argued/structurally tested only), flag-on soak of
 the wider E2E suite, deployment wiring for the service unit, and Brian's
 UAT.
+
+## Phase 11: cram interaction A/B (2026-08-17 afternoon)
+
+Question: does snapshot delivery move the n=100 interaction knee found by
+the assessment-cram ramp (highlight round trip p50 199 ms at n=75 →
+~2 s at n=100)? Two n=100 cram legs, identical but for the flag, flag-on
+first (drift favours the baseline), `--queue-pool`, CPUs 0-7. Evidence:
+`perf-results/cram-snapshot-{on,off}-100.json`.
+
+Result — 100/100 loads and 1300/1300 interactions clean in both arms:
+
+| metric | ON | OFF |
+|---|---|---|
+| load p50 / p95 (ms) | 4 268 / 5 355 | 4 432 / 5 153 |
+| interaction p50 / p95 (ms) | 2 413 / 5 029 | 1 830 / 7 731 |
+
+**The knee does not move.** Interaction medians slightly favour the
+baseline, tails favour the candidate; a single pair cannot separate either
+delta from noise, and the honest reading is "no demonstrated interaction
+effect". The knee lives in the per-interaction CRDT/refresh path, which
+snapshot delivery does not touch.
+
+**Load parity here is the key scoping finding:** the assessment document
+is ~47 KB (`document_html_len` 47 446), not Pabai's 665 KB. The snapshot
+win scales with document size; at 47 KB there is nothing to bite on. The
+Phase 10 claim therefore holds for large-document workspaces and does NOT
+extend to assessment-sized documents.
+
+Two defects surfaced by the failed attempts, both banked:
+
+1. **Observer attribute blindness (client, fixed).** NiceGUI can flush
+   the doc container and its `data-snapshot-url` props in separate WS
+   patches; a childList-only MutationObserver misses arming-by-attribute
+   and ~4% of 100-way sessions never fetched. Fixed with
+   `attributes`+`attributeFilter`; vitest guard added.
+2. **Connection budget (deployment requirement).** In NullPool test mode
+   the service's ~100 concurrent bundle builds exhausted PostgreSQL
+   `max_connections` (3/100 page loads refused, surfacing as client
+   timeouts via the build's exception path). The service MUST share the
+   app's pooling discipline (QueuePool/PgBouncer in production);
+   `--queue-pool` on both arms eliminated it (200/200 clean).

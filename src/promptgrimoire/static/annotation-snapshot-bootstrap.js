@@ -44,11 +44,32 @@ async function loadAnnotationSnapshot(cfg) {
   } catch (err) {
     console.error('snapshot bundle load failed', err);
     container.dataset.snapshotState = 'error';
+    // Unmissable by design: the page shell (toolbar, tabs, sidebar) stays
+    // live around this pane, so plain body text reads as "short document".
     var failed = document.createElement('div');
     failed.setAttribute('data-testid', 'snapshot-error');
-    failed.textContent =
-      'The document could not be loaded. ' +
-      'Reload the page to try again — your annotations are safe on the server.';
+    failed.setAttribute('role', 'alert');
+    failed.style.cssText =
+      'margin: 3rem auto; max-width: 34rem; padding: 2rem;' +
+      'border: 2px solid #c62828; border-radius: 8px;' +
+      'background: #ffebee; color: #b71c1c;' +
+      'font-size: 1.15rem; line-height: 1.5; text-align: center;';
+    var heading = document.createElement('div');
+    heading.style.cssText = 'font-size: 1.4rem; font-weight: 700; margin-bottom: 0.75rem;';
+    heading.textContent = '⚠️ Document not loaded';
+    var body = document.createElement('div');
+    body.textContent =
+      'This document could not be loaded, so nothing on this page is ' +
+      'showing it. Your annotations are safe on the server.';
+    var reload = document.createElement('button');
+    reload.setAttribute('data-testid', 'snapshot-reload');
+    reload.textContent = 'Reload page';
+    reload.style.cssText =
+      'margin-top: 1.25rem; padding: 0.6rem 2rem; font-size: 1rem;' +
+      'border: none; border-radius: 4px; cursor: pointer;' +
+      'background: #c62828; color: white;';
+    reload.addEventListener('click', function () { window.location.reload(); });
+    failed.replaceChildren(heading, body, reload);
     container.replaceChildren(failed);
     return false;
   }

@@ -125,7 +125,7 @@ describe('loadAnnotationSnapshot', () => {
     expect(container.querySelector('[data-testid="snapshot-error"]')).toBeNull();
   });
 
-  test('network rejection shows a calm, honest error message', async () => {
+  test('network rejection shows an unmissable error with a reload button', async () => {
     const container = mountContainer();
     globalThis.fetch = vi.fn().mockRejectedValue(new TypeError('offline'));
 
@@ -140,6 +140,12 @@ describe('loadAnnotationSnapshot', () => {
     expect(error).not.toBeNull();
     expect(error.textContent).toContain('annotations are safe');
     expect(error.textContent).not.toContain('Failed');
+    // Must not read as body text: styled as an alert, with a real action.
+    expect(error.getAttribute('role')).toBe('alert');
+    expect(error.style.border).not.toBe('');
+    expect(
+      error.querySelector('[data-testid="snapshot-reload"]'),
+    ).not.toBeNull();
   });
 
   test('missing container returns false without touching the DOM', async () => {

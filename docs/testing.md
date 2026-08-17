@@ -55,6 +55,22 @@ independent-workspace probe accepts:
 - `E2E_INDEPENDENT_WORKSPACES_DIAG_PATH` for the JSON evidence path; and
 - `E2E_SERVER_CPU_LIST` for the managed server's Linux CPU affinity.
 
+The assessment-cram probe (`test_assessment_cram_load.py`) adds an
+interaction phase — each student performs a case-brief annotation pass
+(highlight + tag + comment) on their own clone of the Narayan v R
+assessment template. Ramp the session count externally in steps of 25.
+It accepts:
+
+- `E2E_CRAM_SESSIONS` for the student count (default 25);
+- `E2E_CRAM_HIGHLIGHTS` / `E2E_CRAM_COMMENTS` for actions per student
+  (defaults 10 and 3);
+- `E2E_CRAM_THINK_MS` for the jittered think-time between actions
+  (default 2000);
+- `E2E_CRAM_ACTION_TIMEOUT_MS` for the highlight round-trip bound
+  (default 30000; comment round trips use the shared helper's 10 s wait);
+- `E2E_CRAM_DIAG_SAMPLE_SECONDS` for the diagnostics sampling interval; and
+- `E2E_CRAM_DIAG_PATH` for the JSON evidence path.
+
 Comparative performance claims require alternating or interleaved arms (ABBA
 at minimum), per-leg results, and within-arm spread. Report server-side and
 browser-side boundaries separately; browser timings from co-located load

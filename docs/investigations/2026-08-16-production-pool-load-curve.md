@@ -548,3 +548,43 @@ issue a short-lived authorization token, but it must not build or transmit the
 document, highlight, tag, and sidebar snapshot itself. One bundle is preferred
 to several lazy requests; NiceGUI/WebSocket should carry only incremental CRDT,
 presence, cursor, and interaction deltas after the initial mount.
+
+## 2026-08-17 addendum: assessment-cram interaction ramp
+
+Harness: `tests/e2e/test_assessment_cram_load.py` (clone-per-student chassis
+plus a case-brief annotation pass: 10 highlights across the 10 tags, 3
+comments, jittered 2 s think time) on the Narayan v R assessment template
+(47 KB document, 14x smaller than PABAI). Flag off. One leg per step, no ABBA
+— this is a load-shape curve, not a comparative claim. Co-located Chromium
+generators; browser timings are not production client latencies. Raw evidence:
+`perf-data/cram_n{25,50,75,100}.json`.
+
+| n | page load p50 | highlight round-trip p50 / p90 | no-op retries | hard failures | RSS |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| 25 | 1.3 s | 177 ms / 5.3 s* | 28/250 (11%) | 0 | 423 MB |
+| 50 | 2.6 s | 178 ms / 1.3 s | 45/500 (9%) | 0 | 548 MB |
+| 75 | 4.3 s | 199 ms / 2.4 s | 81/750 (11%) | 2 | 613 MB |
+| 100 | 6.1 s | 1970 ms / 4.0 s | 69/1000 (7%) | 1 | 688 MB |
+
+*p90 at n=25 is retry-inflated (5 s per-attempt wait); the underlying
+successful round trip is sub-second at 25-75.
+
+Findings:
+
+1. **No crash by n=100.** All students loaded and reached readiness at every
+   step (the small document avoids PABAI's 100-way readiness failure). RSS
+   stayed under 700 MB.
+2. **Interaction knee between 75 and 100:** highlight round-trip p50 jumps
+   199 ms to 1970 ms. Page load grows linearly (~60 ms per session)
+   throughout.
+3. **Silent tag-click no-op at every load level (~7-11% of highlight
+   actions).** The tag click depends on server-side `selection_start` set by
+   a separate `selection_made` socket event (`document.py:35`); when the
+   click is processed first, `_add_highlight` early-returns "No selection"
+   (`highlights.py:215`) with no user feedback. Mechanism is plausible from
+   code reading but not instrumented-confirmed (the annotation debug logger
+   does not reach `test-perf.log`). Same event-reordering class as the
+   value-capture pattern; the harness re-selects and clicks again (up to 3
+   attempts), mirroring real student behaviour, and reports the retry count.
+   Hard failures above are students whose three attempts all no-op'd during
+   the load burst.

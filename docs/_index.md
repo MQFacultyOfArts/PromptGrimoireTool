@@ -52,6 +52,7 @@ library references during development.
 
 ## design-notes
 
+- [Initial annotation snapshot delivery from a separate process](design-notes/2026-08-16-initial-snapshot-delivery.md)
 - [Large-document loading and annotation performance](design-notes/2026-08-16-large-document-performance.md)
 - [Design Notes: Bottom-Anchored Tag Bar](design-notes/bottom-tag-bar.md)
 

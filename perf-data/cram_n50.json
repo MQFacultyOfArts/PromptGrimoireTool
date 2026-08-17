@@ -1,0 +1,5295 @@
+{
+  "sessions": 50,
+  "highlights_per_student": 10,
+  "comments_per_student": 3,
+  "think_ms": 2000,
+  "diag_samples": [
+    {
+      "pool": "size=? checked_in=? checked_out=? overflow=?/?",
+      "engine_id": 126853071093456,
+      "engine_is_none": false,
+      "rss_bytes": 269656064,
+      "nicegui_clients": 0,
+      "nicegui_delete_tasks": 0,
+      "crdt_docs": 0,
+      "crdt_dirty": 0,
+      "crdt_pending_saves": 0,
+      "presence_workspaces": 0,
+      "presence_total_clients": 0,
+      "ws_registry": 0,
+      "asyncio_tasks": 14,
+      "asyncio_task_names": {
+        "Timer._run_in_loop": 4,
+        "<locals>.coro": 3,
+        "Server.serve": 1,
+        "LifespanOn.main": 1,
+        "refresh_loop": 1,
+        "start_diagnostic_logger": 1,
+        "sample_event_loop_lag": 1,
+        "start_export_worker": 1,
+        "RequestResponseCycle.run_asgi": 1
+      },
+      "load_metrics": {
+        "db_connection_hold_ms_count": 3,
+        "db_connection_hold_ms_avg": 2.118,
+        "db_connection_hold_ms_p95": 2.459,
+        "db_connection_hold_ms_max": 2.459,
+        "event_loop_lag_ms_count": 29,
+        "event_loop_lag_ms_avg": 0.793,
+        "event_loop_lag_ms_p95": 3.0,
+        "event_loop_lag_ms_max": 4.0
+      },
+      "t_s": 0.0739475170003061
+    },
+    {
+      "pool": "size=? checked_in=? checked_out=? overflow=?/?",
+      "engine_id": 126853071093456,
+      "engine_is_none": false,
+      "rss_bytes": 548061184,
+      "nicegui_clients": 150,
+      "nicegui_delete_tasks": 100,
+      "crdt_docs": 50,
+      "crdt_dirty": 0,
+      "crdt_pending_saves": 0,
+      "presence_workspaces": 50,
+      "presence_total_clients": 50,
+      "ws_registry": 50,
+      "asyncio_tasks": 565,
+      "asyncio_task_names": {
+        "Outbox.loop": 150,
+        "AsyncSocket._send_ping": 150,
+        "<locals>.delete_content": 100,
+        "<locals>.writer": 50,
+        "<locals>.websocket_wait": 50,
+        "WSProtocol.run_asgi": 50,
+        "Timer._run_in_loop": 4,
+        "<locals>.coro": 3,
+        "Server.serve": 1,
+        "LifespanOn.main": 1
+      },
+      "load_metrics": {
+        "event_loop_lag_ms_count": 66,
+        "event_loop_lag_ms_avg": 22.545,
+        "event_loop_lag_ms_p95": 59.0,
+        "event_loop_lag_ms_max": 308.0,
+        "db_connection_hold_ms_count": 353,
+        "db_connection_hold_ms_avg": 109.689,
+        "db_connection_hold_ms_p95": 272.081,
+        "db_connection_hold_ms_max": 353.339,
+        "engineio_websocket_send_ms_count": 800,
+        "engineio_websocket_send_ms_avg": 0.278,
+        "engineio_websocket_send_ms_p95": 1.5,
+        "engineio_websocket_send_ms_max": 6.9,
+        "collaboration_presence_registered_count": 50,
+        "collaboration_presence_registered_avg": 1.0,
+        "collaboration_presence_registered_p95": 1,
+        "collaboration_presence_registered_max": 1,
+        "page_db_resolve_ms_count": 50,
+        "page_db_resolve_ms_avg": 827.818,
+        "page_db_resolve_ms_p95": 1152.2,
+        "page_db_resolve_ms_max": 1164.1,
+        "page_ui_setup_ms_count": 50,
+        "page_ui_setup_ms_avg": 0.122,
+        "page_ui_setup_ms_p95": 0.2,
+        "page_ui_setup_ms_max": 0.3,
+        "page_header_ms_count": 50,
+        "page_header_ms_avg": 1.528,
+        "page_header_ms_p95": 2.9,
+        "page_header_ms_max": 7.5,
+        "page_tab_panels_ms_count": 50,
+        "page_tab_panels_ms_avg": 10.482,
+        "page_tab_panels_ms_p95": 16.3,
+        "page_tab_panels_ms_max": 18.7,
+        "page_finish_ms_count": 50,
+        "page_finish_ms_avg": 0.116,
+        "page_finish_ms_p95": 0.2,
+        "page_finish_ms_max": 0.2,
+        "page_total_ui_ms_count": 50,
+        "page_total_ui_ms_avg": 12.246,
+        "page_total_ui_ms_p95": 17.7,
+        "page_total_ui_ms_max": 26.6,
+        "page_total_ms_count": 50,
+        "page_total_ms_avg": 840.088,
+        "page_total_ms_p95": 1163.9,
+        "page_total_ms_max": 1174.7,
+        "outbox_update_prepare_ms_count": 50,
+        "outbox_update_prepare_ms_avg": 392.252,
+        "outbox_update_prepare_ms_p95": 837.7,
+        "outbox_update_prepare_ms_max": 1048.2,
+        "outbox_update_elements_count": 50,
+        "outbox_update_elements_avg": 94.0,
+        "outbox_update_elements_p95": 94,
+        "outbox_update_elements_max": 94,
+        "outbox_update_emit_ms_count": 50,
+        "outbox_update_emit_ms_avg": 121.586,
+        "outbox_update_emit_ms_p95": 444.3,
+        "outbox_update_emit_ms_max": 466.4
+      },
+      "t_s": 8.118520760999672
+    },
+    {
+      "pool": "size=? checked_in=? checked_out=? overflow=?/?",
+      "engine_id": 126853071093456,
+      "engine_is_none": false,
+      "rss_bytes": 548073472,
+      "nicegui_clients": 150,
+      "nicegui_delete_tasks": 100,
+      "crdt_docs": 50,
+      "crdt_dirty": 0,
+      "crdt_pending_saves": 0,
+      "presence_workspaces": 50,
+      "presence_total_clients": 50,
+      "ws_registry": 50,
+      "asyncio_tasks": 565,
+      "asyncio_task_names": {
+        "Outbox.loop": 150,
+        "AsyncSocket._send_ping": 150,
+        "<locals>.delete_content": 100,
+        "<locals>.writer": 50,
+        "WSProtocol.run_asgi": 50,
+        "<locals>.websocket_wait": 50,
+        "Timer._run_in_loop": 4,
+        "<locals>.coro": 3,
+        "Server.serve": 1,
+        "RequestResponseCycle.run_asgi": 1
+      },
+      "load_metrics": {
+        "event_loop_lag_ms_count": 50,
+        "event_loop_lag_ms_avg": 0.54,
+        "event_loop_lag_ms_p95": 3.0,
+        "event_loop_lag_ms_max": 6.0,
+        "outbox_update_prepare_ms_count": 276,
+        "outbox_update_prepare_ms_avg": 0.722,
+        "outbox_update_prepare_ms_p95": 2.4,
+        "outbox_update_prepare_ms_max": 5.8,
+        "outbox_update_elements_count": 276,
+        "outbox_update_elements_avg": 2.333,
+        "outbox_update_elements_p95": 5,
+        "outbox_update_elements_max": 5,
+        "engineio_websocket_send_ms_count": 475,
+        "engineio_websocket_send_ms_avg": 0.078,
+        "engineio_websocket_send_ms_p95": 0.3,
+        "engineio_websocket_send_ms_max": 0.5,
+        "outbox_update_emit_ms_count": 276,
+        "outbox_update_emit_ms_avg": 1.148,
+        "outbox_update_emit_ms_p95": 4.7,
+        "outbox_update_emit_ms_max": 13.0,
+        "db_connection_hold_ms_count": 94,
+        "db_connection_hold_ms_avg": 9.212,
+        "db_connection_hold_ms_p95": 20.731,
+        "db_connection_hold_ms_max": 30.664,
+        "crdt_persist_ms_count": 92,
+        "crdt_persist_ms_avg": 19.035,
+        "crdt_persist_ms_p95": 37.802,
+        "crdt_persist_ms_max": 48.087,
+        "crdt_persist_bytes_count": 92,
+        "crdt_persist_bytes_avg": 2134.435,
+        "crdt_persist_bytes_p95": 2771,
+        "crdt_persist_bytes_max": 3578
+      },
+      "t_s": 13.132867985999837
+    },
+    {
+      "pool": "size=? checked_in=? checked_out=? overflow=?/?",
+      "engine_id": 126853071093456,
+      "engine_is_none": false,
+      "rss_bytes": 548073472,
+      "nicegui_clients": 150,
+      "nicegui_delete_tasks": 100,
+      "crdt_docs": 50,
+      "crdt_dirty": 0,
+      "crdt_pending_saves": 0,
+      "presence_workspaces": 50,
+      "presence_total_clients": 50,
+      "ws_registry": 50,
+      "asyncio_tasks": 465,
+      "asyncio_task_names": {
+        "Outbox.loop": 150,
+        "<locals>.delete_content": 100,
+        "<locals>.writer": 50,
+        "<locals>.websocket_wait": 50,
+        "WSProtocol.run_asgi": 50,
+        "AsyncSocket._send_ping": 49,
+        "Timer._run_in_loop": 4,
+        "<locals>.coro": 3,
+        "Server.serve": 1,
+        "LifespanOn.main": 1
+      },
+      "load_metrics": {
+        "event_loop_lag_ms_count": 50,
+        "event_loop_lag_ms_avg": 0.06,
+        "event_loop_lag_ms_p95": 1.0,
+        "event_loop_lag_ms_max": 1.0,
+        "outbox_update_prepare_ms_count": 295,
+        "outbox_update_prepare_ms_avg": 0.444,
+        "outbox_update_prepare_ms_p95": 1.3,
+        "outbox_update_prepare_ms_max": 3.3,
+        "outbox_update_elements_count": 295,
+        "outbox_update_elements_avg": 2.329,
+        "outbox_update_elements_p95": 5,
+        "outbox_update_elements_max": 5,
+        "engineio_websocket_send_ms_count": 516,
+        "engineio_websocket_send_ms_avg": 0.048,
+        "engineio_websocket_send_ms_p95": 0.2,
+        "engineio_websocket_send_ms_max": 0.4,
+        "outbox_update_emit_ms_count": 295,
+        "outbox_update_emit_ms_avg": 0.507,
+        "outbox_update_emit_ms_p95": 1.9,
+        "outbox_update_emit_ms_max": 4.8,
+        "db_connection_hold_ms_count": 100,
+        "db_connection_hold_ms_avg": 5.338,
+        "db_connection_hold_ms_p95": 12.805,
+        "db_connection_hold_ms_max": 20.099,
+        "crdt_persist_ms_count": 98,
+        "crdt_persist_ms_avg": 12.778,
+        "crdt_persist_ms_p95": 23.25,
+        "crdt_persist_ms_max": 38.869,
+        "crdt_persist_bytes_count": 98,
+        "crdt_persist_bytes_avg": 3021.592,
+        "crdt_persist_bytes_p95": 3951,
+        "crdt_persist_bytes_max": 4945
+      },
+      "t_s": 18.159508902999733
+    },
+    {
+      "pool": "size=? checked_in=? checked_out=? overflow=?/?",
+      "engine_id": 126853071093456,
+      "engine_is_none": false,
+      "rss_bytes": 548110336,
+      "nicegui_clients": 50,
+      "nicegui_delete_tasks": 0,
+      "crdt_docs": 50,
+      "crdt_dirty": 2,
+      "crdt_pending_saves": 0,
+      "presence_workspaces": 50,
+      "presence_total_clients": 50,
+      "ws_registry": 50,
+      "asyncio_tasks": 267,
+      "asyncio_task_names": {
+        "<locals>.writer": 50,
+        "AsyncSocket._send_ping": 50,
+        "<locals>.websocket_wait": 50,
+        "Outbox.loop": 50,
+        "WSProtocol.run_asgi": 50,
+        "Timer._run_in_loop": 4,
+        "<locals>.coro": 3,
+        "_await_and_handle_in_context": 2,
+        "Server.serve": 1,
+        "refresh_loop": 1
+      },
+      "load_metrics": {
+        "engineio_websocket_send_ms_count": 516,
+        "engineio_websocket_send_ms_avg": 0.047,
+        "engineio_websocket_send_ms_p95": 0.2,
+        "engineio_websocket_send_ms_max": 0.4,
+        "outbox_update_prepare_ms_count": 289,
+        "outbox_update_prepare_ms_avg": 0.462,
+        "outbox_update_prepare_ms_p95": 1.3,
+        "outbox_update_prepare_ms_max": 2.6,
+        "outbox_update_elements_count": 289,
+        "outbox_update_elements_avg": 2.315,
+        "outbox_update_elements_p95": 5,
+        "outbox_update_elements_max": 5,
+        "outbox_update_emit_ms_count": 288,
+        "outbox_update_emit_ms_avg": 0.553,
+        "outbox_update_emit_ms_p95": 1.6,
+        "outbox_update_emit_ms_max": 7.5,
+        "db_connection_hold_ms_count": 97,
+        "db_connection_hold_ms_avg": 5.683,
+        "db_connection_hold_ms_p95": 10.306,
+        "db_connection_hold_ms_max": 14.526,
+        "crdt_persist_ms_count": 95,
+        "crdt_persist_ms_avg": 13.27,
+        "crdt_persist_ms_p95": 20.622,
+        "crdt_persist_ms_max": 29.361,
+        "crdt_persist_bytes_count": 95,
+        "crdt_persist_bytes_avg": 3946.958,
+        "crdt_persist_bytes_p95": 5283,
+        "crdt_persist_bytes_max": 6255,
+        "event_loop_lag_ms_count": 50,
+        "event_loop_lag_ms_avg": 0.32,
+        "event_loop_lag_ms_p95": 1.0,
+        "event_loop_lag_ms_max": 8.0
+      },
+      "t_s": 23.192097146999913
+    },
+    {
+      "pool": "size=? checked_in=? checked_out=? overflow=?/?",
+      "engine_id": 126853071093456,
+      "engine_is_none": false,
+      "rss_bytes": 548098048,
+      "nicegui_clients": 50,
+      "nicegui_delete_tasks": 0,
+      "crdt_docs": 50,
+      "crdt_dirty": 0,
+      "crdt_pending_saves": 0,
+      "presence_workspaces": 50,
+      "presence_total_clients": 50,
+      "ws_registry": 50,
+      "asyncio_tasks": 265,
+      "asyncio_task_names": {
+        "<locals>.writer": 50,
+        "AsyncSocket._send_ping": 50,
+        "<locals>.websocket_wait": 50,
+        "Outbox.loop": 50,
+        "WSProtocol.run_asgi": 50,
+        "Timer._run_in_loop": 4,
+        "<locals>.coro": 3,
+        "Server.serve": 1,
+        "refresh_loop": 1,
+        "RequestResponseCycle.run_asgi": 1
+      },
+      "load_metrics": {
+        "engineio_websocket_send_ms_count": 524,
+        "engineio_websocket_send_ms_avg": 0.043,
+        "engineio_websocket_send_ms_p95": 0.2,
+        "engineio_websocket_send_ms_max": 0.4,
+        "outbox_update_emit_ms_count": 311,
+        "outbox_update_emit_ms_avg": 0.454,
+        "outbox_update_emit_ms_p95": 1.2,
+        "outbox_update_emit_ms_max": 4.4,
+        "db_connection_hold_ms_count": 108,
+        "db_connection_hold_ms_avg": 5.544,
+        "db_connection_hold_ms_p95": 8.889,
+        "db_connection_hold_ms_max": 12.632,
+        "outbox_update_prepare_ms_count": 310,
+        "outbox_update_prepare_ms_avg": 0.429,
+        "outbox_update_prepare_ms_p95": 1.3,
+        "outbox_update_prepare_ms_max": 2.1,
+        "outbox_update_elements_count": 310,
+        "outbox_update_elements_avg": 2.348,
+        "outbox_update_elements_p95": 5,
+        "outbox_update_elements_max": 5,
+        "crdt_persist_ms_count": 106,
+        "crdt_persist_ms_avg": 12.817,
+        "crdt_persist_ms_p95": 19.129,
+        "crdt_persist_ms_max": 24.397,
+        "crdt_persist_bytes_count": 106,
+        "crdt_persist_bytes_avg": 4744.142,
+        "crdt_persist_bytes_p95": 5951,
+        "crdt_persist_bytes_max": 6920,
+        "event_loop_lag_ms_count": 50,
+        "event_loop_lag_ms_avg": 0.2,
+        "event_loop_lag_ms_p95": 1.0,
+        "event_loop_lag_ms_max": 2.0
+      },
+      "t_s": 28.20593215900044
+    },
+    {
+      "pool": "size=? checked_in=? checked_out=? overflow=?/?",
+      "engine_id": 126853071093456,
+      "engine_is_none": false,
+      "rss_bytes": 548106240,
+      "nicegui_clients": 50,
+      "nicegui_delete_tasks": 0,
+      "crdt_docs": 50,
+      "crdt_dirty": 0,
+      "crdt_pending_saves": 0,
+      "presence_workspaces": 50,
+      "presence_total_clients": 50,
+      "ws_registry": 50,
+      "asyncio_tasks": 265,
+      "asyncio_task_names": {
+        "<locals>.writer": 50,
+        "AsyncSocket._send_ping": 50,
+        "Outbox.loop": 50,
+        "WSProtocol.run_asgi": 50,
+        "<locals>.websocket_wait": 50,
+        "Timer._run_in_loop": 4,
+        "<locals>.coro": 3,
+        "Server.serve": 1,
+        "refresh_loop": 1,
+        "sample_event_loop_lag": 1
+      },
+      "load_metrics": {
+        "outbox_update_prepare_ms_count": 226,
+        "outbox_update_prepare_ms_avg": 0.369,
+        "outbox_update_prepare_ms_p95": 1.0,
+        "outbox_update_prepare_ms_max": 1.9,
+        "outbox_update_elements_count": 226,
+        "outbox_update_elements_avg": 2.283,
+        "outbox_update_elements_p95": 5,
+        "outbox_update_elements_max": 5,
+        "engineio_websocket_send_ms_count": 409,
+        "engineio_websocket_send_ms_avg": 0.05,
+        "engineio_websocket_send_ms_p95": 0.2,
+        "engineio_websocket_send_ms_max": 0.4,
+        "outbox_update_emit_ms_count": 226,
+        "outbox_update_emit_ms_avg": 0.499,
+        "outbox_update_emit_ms_p95": 1.2,
+        "outbox_update_emit_ms_max": 4.7,
+        "event_loop_lag_ms_count": 50,
+        "event_loop_lag_ms_avg": 0.36,
+        "event_loop_lag_ms_p95": 1.0,
+        "event_loop_lag_ms_max": 2.0,
+        "db_connection_hold_ms_count": 103,
+        "db_connection_hold_ms_avg": 5.585,
+        "db_connection_hold_ms_p95": 9.133,
+        "db_connection_hold_ms_max": 33.266,
+        "crdt_persist_ms_count": 101,
+        "crdt_persist_ms_avg": 12.385,
+        "crdt_persist_ms_p95": 18.327,
+        "crdt_persist_ms_max": 41.767,
+        "crdt_persist_bytes_count": 101,
+        "crdt_persist_bytes_avg": 5572.792,
+        "crdt_persist_bytes_p95": 6511,
+        "crdt_persist_bytes_max": 7334
+      },
+      "t_s": 33.226300049999736
+    },
+    {
+      "pool": "size=? checked_in=? checked_out=? overflow=?/?",
+      "engine_id": 126853071093456,
+      "engine_is_none": false,
+      "rss_bytes": 548130816,
+      "nicegui_clients": 50,
+      "nicegui_delete_tasks": 0,
+      "crdt_docs": 50,
+      "crdt_dirty": 0,
+      "crdt_pending_saves": 0,
+      "presence_workspaces": 50,
+      "presence_total_clients": 50,
+      "ws_registry": 50,
+      "asyncio_tasks": 265,
+      "asyncio_task_names": {
+        "<locals>.writer": 50,
+        "AsyncSocket._send_ping": 50,
+        "Outbox.loop": 50,
+        "<locals>.websocket_wait": 50,
+        "WSProtocol.run_asgi": 50,
+        "Timer._run_in_loop": 4,
+        "<locals>.coro": 3,
+        "Server.serve": 1,
+        "refresh_loop": 1,
+        "sample_event_loop_lag": 1
+      },
+      "load_metrics": {
+        "outbox_update_prepare_ms_count": 136,
+        "outbox_update_prepare_ms_avg": 0.345,
+        "outbox_update_prepare_ms_p95": 1.0,
+        "outbox_update_prepare_ms_max": 2.2,
+        "outbox_update_elements_count": 136,
+        "outbox_update_elements_avg": 2.221,
+        "outbox_update_elements_p95": 5,
+        "outbox_update_elements_max": 5,
+        "engineio_websocket_send_ms_count": 199,
+        "engineio_websocket_send_ms_avg": 0.064,
+        "engineio_websocket_send_ms_p95": 0.2,
+        "engineio_websocket_send_ms_max": 0.4,
+        "outbox_update_emit_ms_count": 136,
+        "outbox_update_emit_ms_avg": 0.422,
+        "outbox_update_emit_ms_p95": 1.2,
+        "outbox_update_emit_ms_max": 3.0,
+        "event_loop_lag_ms_count": 50,
+        "event_loop_lag_ms_avg": 0.16,
+        "event_loop_lag_ms_p95": 1.0,
+        "event_loop_lag_ms_max": 1.0,
+        "db_connection_hold_ms_count": 78,
+        "db_connection_hold_ms_avg": 5.106,
+        "db_connection_hold_ms_p95": 9.79,
+        "db_connection_hold_ms_max": 13.128,
+        "crdt_persist_ms_count": 76,
+        "crdt_persist_ms_avg": 11.658,
+        "crdt_persist_ms_p95": 18.638,
+        "crdt_persist_ms_max": 22.52,
+        "crdt_persist_bytes_count": 76,
+        "crdt_persist_bytes_avg": 5957.684,
+        "crdt_persist_bytes_p95": 6622,
+        "crdt_persist_bytes_max": 6740
+      },
+      "t_s": 38.23820493400035
+    },
+    {
+      "pool": "size=? checked_in=? checked_out=? overflow=?/?",
+      "engine_id": 126853071093456,
+      "engine_is_none": false,
+      "rss_bytes": 548139008,
+      "nicegui_clients": 50,
+      "nicegui_delete_tasks": 0,
+      "crdt_docs": 50,
+      "crdt_dirty": 0,
+      "crdt_pending_saves": 0,
+      "presence_workspaces": 50,
+      "presence_total_clients": 50,
+      "ws_registry": 50,
+      "asyncio_tasks": 265,
+      "asyncio_task_names": {
+        "<locals>.writer": 50,
+        "Outbox.loop": 50,
+        "<locals>.websocket_wait": 50,
+        "WSProtocol.run_asgi": 50,
+        "AsyncSocket._send_ping": 50,
+        "Timer._run_in_loop": 4,
+        "<locals>.coro": 3,
+        "Server.serve": 1,
+        "refresh_loop": 1,
+        "sample_event_loop_lag": 1
+      },
+      "load_metrics": {
+        "db_connection_hold_ms_count": 51,
+        "db_connection_hold_ms_avg": 4.691,
+        "db_connection_hold_ms_p95": 7.745,
+        "db_connection_hold_ms_max": 10.472,
+        "crdt_persist_ms_count": 49,
+        "crdt_persist_ms_avg": 11.354,
+        "crdt_persist_ms_p95": 15.974,
+        "crdt_persist_ms_max": 21.564,
+        "crdt_persist_bytes_count": 49,
+        "crdt_persist_bytes_avg": 6206.959,
+        "crdt_persist_bytes_p95": 6731,
+        "crdt_persist_bytes_max": 7791,
+        "outbox_update_prepare_ms_count": 79,
+        "outbox_update_prepare_ms_avg": 0.39,
+        "outbox_update_prepare_ms_p95": 1.3,
+        "outbox_update_prepare_ms_max": 2.9,
+        "outbox_update_elements_count": 79,
+        "outbox_update_elements_avg": 2.19,
+        "outbox_update_elements_p95": 5,
+        "outbox_update_elements_max": 5,
+        "engineio_websocket_send_ms_count": 160,
+        "engineio_websocket_send_ms_avg": 0.064,
+        "engineio_websocket_send_ms_p95": 0.2,
+        "engineio_websocket_send_ms_max": 0.4,
+        "outbox_update_emit_ms_count": 79,
+        "outbox_update_emit_ms_avg": 0.423,
+        "outbox_update_emit_ms_p95": 1.0,
+        "outbox_update_emit_ms_max": 1.7,
+        "event_loop_lag_ms_count": 50,
+        "event_loop_lag_ms_avg": 0.18,
+        "event_loop_lag_ms_p95": 1.0,
+        "event_loop_lag_ms_max": 1.0
+      },
+      "t_s": 43.2622753579999
+    },
+    {
+      "pool": "size=? checked_in=? checked_out=? overflow=?/?",
+      "engine_id": 126853071093456,
+      "engine_is_none": false,
+      "rss_bytes": 548143104,
+      "nicegui_clients": 50,
+      "nicegui_delete_tasks": 0,
+      "crdt_docs": 50,
+      "crdt_dirty": 0,
+      "crdt_pending_saves": 0,
+      "presence_workspaces": 50,
+      "presence_total_clients": 50,
+      "ws_registry": 50,
+      "asyncio_tasks": 265,
+      "asyncio_task_names": {
+        "<locals>.writer": 50,
+        "<locals>.websocket_wait": 50,
+        "Outbox.loop": 50,
+        "WSProtocol.run_asgi": 50,
+        "AsyncSocket._send_ping": 50,
+        "Timer._run_in_loop": 4,
+        "<locals>.coro": 3,
+        "Server.serve": 1,
+        "refresh_loop": 1,
+        "sample_event_loop_lag": 1
+      },
+      "load_metrics": {
+        "event_loop_lag_ms_count": 51,
+        "event_loop_lag_ms_avg": 0.118,
+        "event_loop_lag_ms_p95": 1.0,
+        "event_loop_lag_ms_max": 1.0,
+        "outbox_update_prepare_ms_count": 29,
+        "outbox_update_prepare_ms_avg": 0.238,
+        "outbox_update_prepare_ms_p95": 0.7,
+        "outbox_update_prepare_ms_max": 0.7,
+        "outbox_update_elements_count": 29,
+        "outbox_update_elements_avg": 2.069,
+        "outbox_update_elements_p95": 5,
+        "outbox_update_elements_max": 5,
+        "engineio_websocket_send_ms_count": 33,
+        "engineio_websocket_send_ms_avg": 0.088,
+        "engineio_websocket_send_ms_p95": 0.2,
+        "engineio_websocket_send_ms_max": 0.2,
+        "outbox_update_emit_ms_count": 29,
+        "outbox_update_emit_ms_avg": 0.372,
+        "outbox_update_emit_ms_p95": 0.8,
+        "outbox_update_emit_ms_max": 0.9,
+        "db_connection_hold_ms_count": 27,
+        "db_connection_hold_ms_avg": 5.6,
+        "db_connection_hold_ms_p95": 11.458,
+        "db_connection_hold_ms_max": 14.98,
+        "crdt_persist_ms_count": 25,
+        "crdt_persist_ms_avg": 11.933,
+        "crdt_persist_ms_p95": 18.767,
+        "crdt_persist_ms_max": 25.713,
+        "crdt_persist_bytes_count": 25,
+        "crdt_persist_bytes_avg": 6439.6,
+        "crdt_persist_bytes_p95": 7997,
+        "crdt_persist_bytes_max": 8205
+      },
+      "t_s": 48.286045327000465
+    },
+    {
+      "pool": "size=? checked_in=? checked_out=? overflow=?/?",
+      "engine_id": 126853071093456,
+      "engine_is_none": false,
+      "rss_bytes": 548143104,
+      "nicegui_clients": 50,
+      "nicegui_delete_tasks": 0,
+      "crdt_docs": 50,
+      "crdt_dirty": 0,
+      "crdt_pending_saves": 0,
+      "presence_workspaces": 50,
+      "presence_total_clients": 50,
+      "ws_registry": 50,
+      "asyncio_tasks": 265,
+      "asyncio_task_names": {
+        "<locals>.writer": 50,
+        "<locals>.websocket_wait": 50,
+        "Outbox.loop": 50,
+        "WSProtocol.run_asgi": 50,
+        "AsyncSocket._send_ping": 50,
+        "Timer._run_in_loop": 4,
+        "<locals>.coro": 3,
+        "Server.serve": 1,
+        "refresh_loop": 1,
+        "sample_event_loop_lag": 1
+      },
+      "load_metrics": {
+        "event_loop_lag_ms_count": 50,
+        "event_loop_lag_ms_avg": 0.22,
+        "event_loop_lag_ms_p95": 1.0,
+        "event_loop_lag_ms_max": 1.0,
+        "db_connection_hold_ms_count": 6,
+        "db_connection_hold_ms_avg": 6.603,
+        "db_connection_hold_ms_p95": 13.682,
+        "db_connection_hold_ms_max": 13.682,
+        "crdt_persist_ms_count": 4,
+        "crdt_persist_ms_avg": 15.286,
+        "crdt_persist_ms_p95": 23.962,
+        "crdt_persist_ms_max": 23.962,
+        "crdt_persist_bytes_count": 4,
+        "crdt_persist_bytes_avg": 6450.25,
+        "crdt_persist_bytes_p95": 6703,
+        "crdt_persist_bytes_max": 6703,
+        "outbox_update_prepare_ms_count": 4,
+        "outbox_update_prepare_ms_avg": 0.3,
+        "outbox_update_prepare_ms_p95": 0.6,
+        "outbox_update_prepare_ms_max": 0.6,
+        "outbox_update_elements_count": 4,
+        "outbox_update_elements_avg": 2.0,
+        "outbox_update_elements_p95": 2,
+        "outbox_update_elements_max": 2,
+        "engineio_websocket_send_ms_count": 5,
+        "engineio_websocket_send_ms_avg": 0.12,
+        "engineio_websocket_send_ms_p95": 0.3,
+        "engineio_websocket_send_ms_max": 0.3,
+        "outbox_update_emit_ms_count": 4,
+        "outbox_update_emit_ms_avg": 0.55,
+        "outbox_update_emit_ms_p95": 1.0,
+        "outbox_update_emit_ms_max": 1.0
+      },
+      "t_s": 53.294704347000334
+    },
+    {
+      "pool": "size=? checked_in=? checked_out=? overflow=?/?",
+      "engine_id": 126853071093456,
+      "engine_is_none": false,
+      "rss_bytes": 548143104,
+      "nicegui_clients": 50,
+      "nicegui_delete_tasks": 0,
+      "crdt_docs": 50,
+      "crdt_dirty": 0,
+      "crdt_pending_saves": 0,
+      "presence_workspaces": 50,
+      "presence_total_clients": 50,
+      "ws_registry": 50,
+      "asyncio_tasks": 265,
+      "asyncio_task_names": {
+        "<locals>.writer": 50,
+        "AsyncSocket._send_ping": 50,
+        "Outbox.loop": 50,
+        "<locals>.websocket_wait": 50,
+        "WSProtocol.run_asgi": 50,
+        "Timer._run_in_loop": 4,
+        "<locals>.coro": 3,
+        "Server.serve": 1,
+        "refresh_loop": 1,
+        "sample_event_loop_lag": 1
+      },
+      "load_metrics": {
+        "event_loop_lag_ms_count": 50,
+        "event_loop_lag_ms_avg": 0.28,
+        "event_loop_lag_ms_p95": 1.0,
+        "event_loop_lag_ms_max": 2.0,
+        "engineio_websocket_send_ms_count": 56,
+        "engineio_websocket_send_ms_avg": 0.095,
+        "engineio_websocket_send_ms_p95": 0.1,
+        "engineio_websocket_send_ms_max": 0.3,
+        "outbox_update_prepare_ms_count": 4,
+        "outbox_update_prepare_ms_avg": 0.325,
+        "outbox_update_prepare_ms_p95": 0.9,
+        "outbox_update_prepare_ms_max": 0.9,
+        "outbox_update_elements_count": 4,
+        "outbox_update_elements_avg": 2.25,
+        "outbox_update_elements_p95": 5,
+        "outbox_update_elements_max": 5,
+        "outbox_update_emit_ms_count": 4,
+        "outbox_update_emit_ms_avg": 0.35,
+        "outbox_update_emit_ms_p95": 0.5,
+        "outbox_update_emit_ms_max": 0.5,
+        "db_connection_hold_ms_count": 4,
+        "db_connection_hold_ms_avg": 9.193,
+        "db_connection_hold_ms_p95": 10.978,
+        "db_connection_hold_ms_max": 10.978,
+        "crdt_persist_ms_count": 2,
+        "crdt_persist_ms_avg": 15.585,
+        "crdt_persist_ms_p95": 16.2,
+        "crdt_persist_ms_max": 16.2,
+        "crdt_persist_bytes_count": 2,
+        "crdt_persist_bytes_avg": 6043.0,
+        "crdt_persist_bytes_p95": 6150,
+        "crdt_persist_bytes_max": 6150
+      },
+      "t_s": 58.32160010500047
+    },
+    {
+      "pool": "size=? checked_in=? checked_out=? overflow=?/?",
+      "engine_id": 126853071093456,
+      "engine_is_none": false,
+      "rss_bytes": 548143104,
+      "nicegui_clients": 50,
+      "nicegui_delete_tasks": 0,
+      "crdt_docs": 50,
+      "crdt_dirty": 0,
+      "crdt_pending_saves": 0,
+      "presence_workspaces": 50,
+      "presence_total_clients": 50,
+      "ws_registry": 50,
+      "asyncio_tasks": 265,
+      "asyncio_task_names": {
+        "<locals>.writer": 50,
+        "AsyncSocket._send_ping": 50,
+        "Outbox.loop": 50,
+        "<locals>.websocket_wait": 50,
+        "WSProtocol.run_asgi": 50,
+        "Timer._run_in_loop": 4,
+        "<locals>.coro": 3,
+        "Server.serve": 1,
+        "refresh_loop": 1,
+        "sample_event_loop_lag": 1
+      },
+      "load_metrics": {
+        "event_loop_lag_ms_count": 50,
+        "event_loop_lag_ms_avg": 0.22,
+        "event_loop_lag_ms_p95": 1.0,
+        "event_loop_lag_ms_max": 1.0,
+        "db_connection_hold_ms_count": 4,
+        "db_connection_hold_ms_avg": 10.633,
+        "db_connection_hold_ms_p95": 14.379,
+        "db_connection_hold_ms_max": 14.379,
+        "crdt_persist_ms_count": 2,
+        "crdt_persist_ms_avg": 25.883,
+        "crdt_persist_ms_p95": 27.745,
+        "crdt_persist_ms_max": 27.745,
+        "crdt_persist_bytes_count": 2,
+        "crdt_persist_bytes_avg": 6462.0,
+        "crdt_persist_bytes_p95": 6566,
+        "crdt_persist_bytes_max": 6566,
+        "outbox_update_prepare_ms_count": 2,
+        "outbox_update_prepare_ms_avg": 0.6,
+        "outbox_update_prepare_ms_p95": 0.8,
+        "outbox_update_prepare_ms_max": 0.8,
+        "outbox_update_elements_count": 2,
+        "outbox_update_elements_avg": 2.0,
+        "outbox_update_elements_p95": 2,
+        "outbox_update_elements_max": 2,
+        "engineio_websocket_send_ms_count": 2,
+        "engineio_websocket_send_ms_avg": 0.25,
+        "engineio_websocket_send_ms_p95": 0.3,
+        "engineio_websocket_send_ms_max": 0.3,
+        "outbox_update_emit_ms_count": 2,
+        "outbox_update_emit_ms_avg": 0.95,
+        "outbox_update_emit_ms_p95": 1.1,
+        "outbox_update_emit_ms_max": 1.1
+      },
+      "t_s": 63.3468659629998
+    },
+    {
+      "pool": "size=? checked_in=? checked_out=? overflow=?/?",
+      "engine_id": 126853071093456,
+      "engine_is_none": false,
+      "rss_bytes": 548143104,
+      "nicegui_clients": 50,
+      "nicegui_delete_tasks": 0,
+      "crdt_docs": 50,
+      "crdt_dirty": 0,
+      "crdt_pending_saves": 0,
+      "presence_workspaces": 50,
+      "presence_total_clients": 50,
+      "ws_registry": 50,
+      "asyncio_tasks": 265,
+      "asyncio_task_names": {
+        "<locals>.writer": 50,
+        "<locals>.websocket_wait": 50,
+        "AsyncSocket._send_ping": 50,
+        "Outbox.loop": 50,
+        "WSProtocol.run_asgi": 50,
+        "Timer._run_in_loop": 4,
+        "<locals>.coro": 3,
+        "Server.serve": 1,
+        "refresh_loop": 1,
+        "sample_event_loop_lag": 1
+      },
+      "load_metrics": {
+        "event_loop_lag_ms_count": 50,
+        "event_loop_lag_ms_avg": 0.16,
+        "event_loop_lag_ms_p95": 1.0,
+        "event_loop_lag_ms_max": 1.0,
+        "engineio_websocket_send_ms_count": 50,
+        "engineio_websocket_send_ms_avg": 0.096,
+        "engineio_websocket_send_ms_p95": 0.2,
+        "engineio_websocket_send_ms_max": 0.3,
+        "db_connection_hold_ms_count": 2,
+        "db_connection_hold_ms_avg": 10.522,
+        "db_connection_hold_ms_p95": 12.317,
+        "db_connection_hold_ms_max": 12.317
+      },
+      "t_s": 68.37799472700044
+    },
+    {
+      "pool": "size=? checked_in=? checked_out=? overflow=?/?",
+      "engine_id": 126853071093456,
+      "engine_is_none": false,
+      "rss_bytes": 548179968,
+      "nicegui_clients": 50,
+      "nicegui_delete_tasks": 50,
+      "crdt_docs": 50,
+      "crdt_dirty": 0,
+      "crdt_pending_saves": 0,
+      "presence_workspaces": 50,
+      "presence_total_clients": 50,
+      "ws_registry": 50,
+      "asyncio_tasks": 165,
+      "asyncio_task_names": {
+        "AsyncSocket._send_ping": 50,
+        "<locals>.delete_content": 50,
+        "Outbox.loop": 50,
+        "Timer._run_in_loop": 4,
+        "<locals>.coro": 3,
+        "Server.serve": 1,
+        "refresh_loop": 1,
+        "sample_event_loop_lag": 1,
+        "AsyncServer._service_task": 1,
+        "RequestResponseCycle.run_asgi": 1
+      },
+      "load_metrics": {
+        "event_loop_lag_ms_count": 4,
+        "event_loop_lag_ms_avg": 0.0,
+        "event_loop_lag_ms_p95": 0.0,
+        "event_loop_lag_ms_max": 0.0,
+        "db_connection_hold_ms_count": 1,
+        "db_connection_hold_ms_avg": 4.02,
+        "db_connection_hold_ms_p95": 4.02,
+        "db_connection_hold_ms_max": 4.02
+      },
+      "t_s": 68.74051695700018
+    }
+  ],
+  "results": [
+    {
+      "email": "cram-1e67658d@test.example.edu.au",
+      "workspace_id": "70199fb3-3cae-42e3-8983-92afb3fa6609",
+      "annotation_loaded": true,
+      "load_elapsed_ms": 2559,
+      "pass_elapsed_ms": 33677,
+      "actions": [
+        {
+          "action": "highlight-0",
+          "elapsed_ms": 1008,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-1",
+          "elapsed_ms": 5339,
+          "retries": 1,
+          "error": null
+        },
+        {
+          "action": "highlight-2",
+          "elapsed_ms": 144,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-3",
+          "elapsed_ms": 186,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-4",
+          "elapsed_ms": 147,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-5",
+          "elapsed_ms": 169,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-6",
+          "elapsed_ms": 181,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-7",
+          "elapsed_ms": 171,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-8",
+          "elapsed_ms": 133,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-9",
+          "elapsed_ms": 199,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-0",
+          "elapsed_ms": 203,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-1",
+          "elapsed_ms": 142,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-2",
+          "elapsed_ms": 130,
+          "retries": 0,
+          "error": null
+        }
+      ],
+      "error": null
+    },
+    {
+      "email": "cram-62f1e1d5@test.example.edu.au",
+      "workspace_id": "f542e2b3-9d8c-4f92-8878-98128fd45902",
+      "annotation_loaded": true,
+      "load_elapsed_ms": 2652,
+      "pass_elapsed_ms": 55651,
+      "actions": [
+        {
+          "action": "highlight-0",
+          "elapsed_ms": 1263,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-1",
+          "elapsed_ms": 5413,
+          "retries": 1,
+          "error": null
+        },
+        {
+          "action": "highlight-2",
+          "elapsed_ms": 5384,
+          "retries": 1,
+          "error": null
+        },
+        {
+          "action": "highlight-3",
+          "elapsed_ms": 151,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-4",
+          "elapsed_ms": 140,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-5",
+          "elapsed_ms": 152,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-6",
+          "elapsed_ms": 138,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-7",
+          "elapsed_ms": 166,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-8",
+          "elapsed_ms": 10424,
+          "retries": 2,
+          "error": null
+        },
+        {
+          "action": "highlight-9",
+          "elapsed_ms": 5318,
+          "retries": 1,
+          "error": null
+        },
+        {
+          "action": "comment-0",
+          "elapsed_ms": 202,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-1",
+          "elapsed_ms": 210,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-2",
+          "elapsed_ms": 244,
+          "retries": 0,
+          "error": null
+        }
+      ],
+      "error": null
+    },
+    {
+      "email": "cram-dbf4f9ec@test.example.edu.au",
+      "workspace_id": "7fffd84a-c452-4149-a558-0f327b3f0dc1",
+      "annotation_loaded": true,
+      "load_elapsed_ms": 2509,
+      "pass_elapsed_ms": 34062,
+      "actions": [
+        {
+          "action": "highlight-0",
+          "elapsed_ms": 851,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-1",
+          "elapsed_ms": 254,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-2",
+          "elapsed_ms": 161,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-3",
+          "elapsed_ms": 173,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-4",
+          "elapsed_ms": 204,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-5",
+          "elapsed_ms": 144,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-6",
+          "elapsed_ms": 285,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-7",
+          "elapsed_ms": 164,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-8",
+          "elapsed_ms": 153,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-9",
+          "elapsed_ms": 172,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-0",
+          "elapsed_ms": 215,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-1",
+          "elapsed_ms": 133,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-2",
+          "elapsed_ms": 256,
+          "retries": 0,
+          "error": null
+        }
+      ],
+      "error": null
+    },
+    {
+      "email": "cram-3108e12a@test.example.edu.au",
+      "workspace_id": "765865ad-d876-44c2-a3c4-5d0642f7a04b",
+      "annotation_loaded": true,
+      "load_elapsed_ms": 2659,
+      "pass_elapsed_ms": 35468,
+      "actions": [
+        {
+          "action": "highlight-0",
+          "elapsed_ms": 6561,
+          "retries": 1,
+          "error": null
+        },
+        {
+          "action": "highlight-1",
+          "elapsed_ms": 174,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-2",
+          "elapsed_ms": 167,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-3",
+          "elapsed_ms": 197,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-4",
+          "elapsed_ms": 156,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-5",
+          "elapsed_ms": 165,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-6",
+          "elapsed_ms": 149,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-7",
+          "elapsed_ms": 153,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-8",
+          "elapsed_ms": 166,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-9",
+          "elapsed_ms": 128,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-0",
+          "elapsed_ms": 188,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-1",
+          "elapsed_ms": 130,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-2",
+          "elapsed_ms": 127,
+          "retries": 0,
+          "error": null
+        }
+      ],
+      "error": null
+    },
+    {
+      "email": "cram-92437854@test.example.edu.au",
+      "workspace_id": "05afd552-b46b-4b9c-a0f7-44f51afe24ed",
+      "annotation_loaded": true,
+      "load_elapsed_ms": 2640,
+      "pass_elapsed_ms": 27279,
+      "actions": [
+        {
+          "action": "highlight-0",
+          "elapsed_ms": 1037,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-1",
+          "elapsed_ms": 219,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-2",
+          "elapsed_ms": 208,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-3",
+          "elapsed_ms": 184,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-4",
+          "elapsed_ms": 147,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-5",
+          "elapsed_ms": 141,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-6",
+          "elapsed_ms": 153,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-7",
+          "elapsed_ms": 164,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-8",
+          "elapsed_ms": 214,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-9",
+          "elapsed_ms": 139,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-0",
+          "elapsed_ms": 225,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-1",
+          "elapsed_ms": 182,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-2",
+          "elapsed_ms": 115,
+          "retries": 0,
+          "error": null
+        }
+      ],
+      "error": null
+    },
+    {
+      "email": "cram-0da529ce@test.example.edu.au",
+      "workspace_id": "e090d71d-df35-4aa3-b245-19d114b1748d",
+      "annotation_loaded": true,
+      "load_elapsed_ms": 2593,
+      "pass_elapsed_ms": 35750,
+      "actions": [
+        {
+          "action": "highlight-0",
+          "elapsed_ms": 833,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-1",
+          "elapsed_ms": 5304,
+          "retries": 1,
+          "error": null
+        },
+        {
+          "action": "highlight-2",
+          "elapsed_ms": 161,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-3",
+          "elapsed_ms": 152,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-4",
+          "elapsed_ms": 145,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-5",
+          "elapsed_ms": 152,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-6",
+          "elapsed_ms": 133,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-7",
+          "elapsed_ms": 191,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-8",
+          "elapsed_ms": 163,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-9",
+          "elapsed_ms": 136,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-0",
+          "elapsed_ms": 199,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-1",
+          "elapsed_ms": 210,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-2",
+          "elapsed_ms": 108,
+          "retries": 0,
+          "error": null
+        }
+      ],
+      "error": null
+    },
+    {
+      "email": "cram-45c867e0@test.example.edu.au",
+      "workspace_id": "6e398700-df4a-4d05-adc7-9a5b59099735",
+      "annotation_loaded": true,
+      "load_elapsed_ms": 2609,
+      "pass_elapsed_ms": 39779,
+      "actions": [
+        {
+          "action": "highlight-0",
+          "elapsed_ms": 866,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-1",
+          "elapsed_ms": 5330,
+          "retries": 1,
+          "error": null
+        },
+        {
+          "action": "highlight-2",
+          "elapsed_ms": 138,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-3",
+          "elapsed_ms": 151,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-4",
+          "elapsed_ms": 206,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-5",
+          "elapsed_ms": 213,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-6",
+          "elapsed_ms": 5251,
+          "retries": 1,
+          "error": null
+        },
+        {
+          "action": "highlight-7",
+          "elapsed_ms": 194,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-8",
+          "elapsed_ms": 175,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-9",
+          "elapsed_ms": 143,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-0",
+          "elapsed_ms": 183,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-1",
+          "elapsed_ms": 157,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-2",
+          "elapsed_ms": 109,
+          "retries": 0,
+          "error": null
+        }
+      ],
+      "error": null
+    },
+    {
+      "email": "cram-4d8f6475@test.example.edu.au",
+      "workspace_id": "1e8d57f4-b3fe-49b9-bc05-cdf34c685eed",
+      "annotation_loaded": true,
+      "load_elapsed_ms": 2526,
+      "pass_elapsed_ms": 30017,
+      "actions": [
+        {
+          "action": "highlight-0",
+          "elapsed_ms": 991,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-1",
+          "elapsed_ms": 280,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-2",
+          "elapsed_ms": 148,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-3",
+          "elapsed_ms": 134,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-4",
+          "elapsed_ms": 181,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-5",
+          "elapsed_ms": 174,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-6",
+          "elapsed_ms": 205,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-7",
+          "elapsed_ms": 170,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-8",
+          "elapsed_ms": 118,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-9",
+          "elapsed_ms": 163,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-0",
+          "elapsed_ms": 250,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-1",
+          "elapsed_ms": 112,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-2",
+          "elapsed_ms": 174,
+          "retries": 0,
+          "error": null
+        }
+      ],
+      "error": null
+    },
+    {
+      "email": "cram-b7753cb5@test.example.edu.au",
+      "workspace_id": "cad5e84c-f07a-4815-8382-8dbada7c305e",
+      "annotation_loaded": true,
+      "load_elapsed_ms": 2556,
+      "pass_elapsed_ms": 38510,
+      "actions": [
+        {
+          "action": "highlight-0",
+          "elapsed_ms": 1115,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-1",
+          "elapsed_ms": 204,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-2",
+          "elapsed_ms": 160,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-3",
+          "elapsed_ms": 175,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-4",
+          "elapsed_ms": 161,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-5",
+          "elapsed_ms": 7251,
+          "retries": 1,
+          "error": null
+        },
+        {
+          "action": "highlight-6",
+          "elapsed_ms": 5297,
+          "retries": 1,
+          "error": null
+        },
+        {
+          "action": "highlight-7",
+          "elapsed_ms": 158,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-8",
+          "elapsed_ms": 161,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-9",
+          "elapsed_ms": 162,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-0",
+          "elapsed_ms": 211,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-1",
+          "elapsed_ms": 115,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-2",
+          "elapsed_ms": 110,
+          "retries": 0,
+          "error": null
+        }
+      ],
+      "error": null
+    },
+    {
+      "email": "cram-0b1d3ef5@test.example.edu.au",
+      "workspace_id": "b21e56ec-f0a3-4062-a59a-01ba3babf74a",
+      "annotation_loaded": true,
+      "load_elapsed_ms": 2542,
+      "pass_elapsed_ms": 31008,
+      "actions": [
+        {
+          "action": "highlight-0",
+          "elapsed_ms": 1205,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-1",
+          "elapsed_ms": 245,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-2",
+          "elapsed_ms": 132,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-3",
+          "elapsed_ms": 148,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-4",
+          "elapsed_ms": 192,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-5",
+          "elapsed_ms": 156,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-6",
+          "elapsed_ms": 176,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-7",
+          "elapsed_ms": 147,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-8",
+          "elapsed_ms": 154,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-9",
+          "elapsed_ms": 190,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-0",
+          "elapsed_ms": 197,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-1",
+          "elapsed_ms": 134,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-2",
+          "elapsed_ms": 173,
+          "retries": 0,
+          "error": null
+        }
+      ],
+      "error": null
+    },
+    {
+      "email": "cram-dca7961f@test.example.edu.au",
+      "workspace_id": "6cb8664f-d26a-4b84-80c0-a3ab8de0c3e1",
+      "annotation_loaded": true,
+      "load_elapsed_ms": 2594,
+      "pass_elapsed_ms": 41827,
+      "actions": [
+        {
+          "action": "highlight-0",
+          "elapsed_ms": 1265,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-1",
+          "elapsed_ms": 5394,
+          "retries": 1,
+          "error": null
+        },
+        {
+          "action": "highlight-2",
+          "elapsed_ms": 225,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-3",
+          "elapsed_ms": 124,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-4",
+          "elapsed_ms": 202,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-5",
+          "elapsed_ms": 178,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-6",
+          "elapsed_ms": 152,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-7",
+          "elapsed_ms": 5366,
+          "retries": 1,
+          "error": null
+        },
+        {
+          "action": "highlight-8",
+          "elapsed_ms": 143,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-9",
+          "elapsed_ms": 126,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-0",
+          "elapsed_ms": 283,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-1",
+          "elapsed_ms": 208,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-2",
+          "elapsed_ms": 188,
+          "retries": 0,
+          "error": null
+        }
+      ],
+      "error": null
+    },
+    {
+      "email": "cram-0223b7de@test.example.edu.au",
+      "workspace_id": "1f44a040-0973-49b4-9a17-c7590e7b9a4e",
+      "annotation_loaded": true,
+      "load_elapsed_ms": 2558,
+      "pass_elapsed_ms": 27133,
+      "actions": [
+        {
+          "action": "highlight-0",
+          "elapsed_ms": 1469,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-1",
+          "elapsed_ms": 255,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-2",
+          "elapsed_ms": 250,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-3",
+          "elapsed_ms": 166,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-4",
+          "elapsed_ms": 140,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-5",
+          "elapsed_ms": 208,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-6",
+          "elapsed_ms": 199,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-7",
+          "elapsed_ms": 170,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-8",
+          "elapsed_ms": 183,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-9",
+          "elapsed_ms": 153,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-0",
+          "elapsed_ms": 220,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-1",
+          "elapsed_ms": 135,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-2",
+          "elapsed_ms": 145,
+          "retries": 0,
+          "error": null
+        }
+      ],
+      "error": null
+    },
+    {
+      "email": "cram-aa72719c@test.example.edu.au",
+      "workspace_id": "644d1430-4831-4be9-a38b-53e50fe1144c",
+      "annotation_loaded": true,
+      "load_elapsed_ms": 2630,
+      "pass_elapsed_ms": 26876,
+      "actions": [
+        {
+          "action": "highlight-0",
+          "elapsed_ms": 1097,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-1",
+          "elapsed_ms": 205,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-2",
+          "elapsed_ms": 142,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-3",
+          "elapsed_ms": 171,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-4",
+          "elapsed_ms": 205,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-5",
+          "elapsed_ms": 196,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-6",
+          "elapsed_ms": 184,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-7",
+          "elapsed_ms": 185,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-8",
+          "elapsed_ms": 195,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-9",
+          "elapsed_ms": 195,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-0",
+          "elapsed_ms": 198,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-1",
+          "elapsed_ms": 120,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-2",
+          "elapsed_ms": 124,
+          "retries": 0,
+          "error": null
+        }
+      ],
+      "error": null
+    },
+    {
+      "email": "cram-5daec535@test.example.edu.au",
+      "workspace_id": "21736163-237c-483a-a7bc-0a2bed212e9d",
+      "annotation_loaded": true,
+      "load_elapsed_ms": 2546,
+      "pass_elapsed_ms": 35351,
+      "actions": [
+        {
+          "action": "highlight-0",
+          "elapsed_ms": 6324,
+          "retries": 1,
+          "error": null
+        },
+        {
+          "action": "highlight-1",
+          "elapsed_ms": 169,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-2",
+          "elapsed_ms": 218,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-3",
+          "elapsed_ms": 198,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-4",
+          "elapsed_ms": 187,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-5",
+          "elapsed_ms": 168,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-6",
+          "elapsed_ms": 159,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-7",
+          "elapsed_ms": 257,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-8",
+          "elapsed_ms": 152,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-9",
+          "elapsed_ms": 128,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-0",
+          "elapsed_ms": 219,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-1",
+          "elapsed_ms": 152,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-2",
+          "elapsed_ms": 107,
+          "retries": 0,
+          "error": null
+        }
+      ],
+      "error": null
+    },
+    {
+      "email": "cram-fe5a5782@test.example.edu.au",
+      "workspace_id": "a7961161-4698-485f-8888-8ac763bd60b0",
+      "annotation_loaded": true,
+      "load_elapsed_ms": 2651,
+      "pass_elapsed_ms": 28076,
+      "actions": [
+        {
+          "action": "highlight-0",
+          "elapsed_ms": 1198,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-1",
+          "elapsed_ms": 194,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-2",
+          "elapsed_ms": 155,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-3",
+          "elapsed_ms": 149,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-4",
+          "elapsed_ms": 164,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-5",
+          "elapsed_ms": 199,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-6",
+          "elapsed_ms": 195,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-7",
+          "elapsed_ms": 188,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-8",
+          "elapsed_ms": 196,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-9",
+          "elapsed_ms": 202,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-0",
+          "elapsed_ms": 181,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-1",
+          "elapsed_ms": 150,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-2",
+          "elapsed_ms": 134,
+          "retries": 0,
+          "error": null
+        }
+      ],
+      "error": null
+    },
+    {
+      "email": "cram-235bd700@test.example.edu.au",
+      "workspace_id": "224eb987-2cee-4e28-acd4-798ff595e16f",
+      "annotation_loaded": true,
+      "load_elapsed_ms": 2642,
+      "pass_elapsed_ms": 35915,
+      "actions": [
+        {
+          "action": "highlight-0",
+          "elapsed_ms": 1012,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-1",
+          "elapsed_ms": 272,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-2",
+          "elapsed_ms": 150,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-3",
+          "elapsed_ms": 200,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-4",
+          "elapsed_ms": 7203,
+          "retries": 1,
+          "error": null
+        },
+        {
+          "action": "highlight-5",
+          "elapsed_ms": 123,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-6",
+          "elapsed_ms": 267,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-7",
+          "elapsed_ms": 152,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-8",
+          "elapsed_ms": 148,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-9",
+          "elapsed_ms": 143,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-0",
+          "elapsed_ms": 219,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-1",
+          "elapsed_ms": 137,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-2",
+          "elapsed_ms": 131,
+          "retries": 0,
+          "error": null
+        }
+      ],
+      "error": null
+    },
+    {
+      "email": "cram-438bd888@test.example.edu.au",
+      "workspace_id": "bf7ebd0f-bacb-4fec-bb55-aee01d9e924c",
+      "annotation_loaded": true,
+      "load_elapsed_ms": 2592,
+      "pass_elapsed_ms": 35922,
+      "actions": [
+        {
+          "action": "highlight-0",
+          "elapsed_ms": 856,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-1",
+          "elapsed_ms": 203,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-2",
+          "elapsed_ms": 124,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-3",
+          "elapsed_ms": 123,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-4",
+          "elapsed_ms": 223,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-5",
+          "elapsed_ms": 158,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-6",
+          "elapsed_ms": 170,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-7",
+          "elapsed_ms": 5289,
+          "retries": 1,
+          "error": null
+        },
+        {
+          "action": "highlight-8",
+          "elapsed_ms": 179,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-9",
+          "elapsed_ms": 164,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-0",
+          "elapsed_ms": 302,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-1",
+          "elapsed_ms": 219,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-2",
+          "elapsed_ms": 111,
+          "retries": 0,
+          "error": null
+        }
+      ],
+      "error": null
+    },
+    {
+      "email": "cram-08f0d97b@test.example.edu.au",
+      "workspace_id": "81cd2b4a-5c0e-49ea-ac8c-a05706320aab",
+      "annotation_loaded": true,
+      "load_elapsed_ms": 2619,
+      "pass_elapsed_ms": 41188,
+      "actions": [
+        {
+          "action": "highlight-0",
+          "elapsed_ms": 863,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-1",
+          "elapsed_ms": 5323,
+          "retries": 1,
+          "error": null
+        },
+        {
+          "action": "highlight-2",
+          "elapsed_ms": 188,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-3",
+          "elapsed_ms": 5323,
+          "retries": 1,
+          "error": null
+        },
+        {
+          "action": "highlight-4",
+          "elapsed_ms": 263,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-5",
+          "elapsed_ms": 131,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-6",
+          "elapsed_ms": 155,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-7",
+          "elapsed_ms": 5243,
+          "retries": 1,
+          "error": null
+        },
+        {
+          "action": "highlight-8",
+          "elapsed_ms": 116,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-9",
+          "elapsed_ms": 151,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-0",
+          "elapsed_ms": 204,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-1",
+          "elapsed_ms": 137,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-2",
+          "elapsed_ms": 187,
+          "retries": 0,
+          "error": null
+        }
+      ],
+      "error": null
+    },
+    {
+      "email": "cram-6ce7a662@test.example.edu.au",
+      "workspace_id": "6745b543-241b-4488-a4a8-9cc16c47348e",
+      "annotation_loaded": true,
+      "load_elapsed_ms": 2593,
+      "pass_elapsed_ms": 30393,
+      "actions": [
+        {
+          "action": "highlight-0",
+          "elapsed_ms": 1140,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-1",
+          "elapsed_ms": 155,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-2",
+          "elapsed_ms": 210,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-3",
+          "elapsed_ms": 155,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-4",
+          "elapsed_ms": 176,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-5",
+          "elapsed_ms": 178,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-6",
+          "elapsed_ms": 144,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-7",
+          "elapsed_ms": 175,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-8",
+          "elapsed_ms": 148,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-9",
+          "elapsed_ms": 161,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-0",
+          "elapsed_ms": 245,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-1",
+          "elapsed_ms": 133,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-2",
+          "elapsed_ms": 160,
+          "retries": 0,
+          "error": null
+        }
+      ],
+      "error": null
+    },
+    {
+      "email": "cram-2c288c42@test.example.edu.au",
+      "workspace_id": "295d2215-8a4e-4fb9-8dcf-bd532a886664",
+      "annotation_loaded": true,
+      "load_elapsed_ms": 2627,
+      "pass_elapsed_ms": 25789,
+      "actions": [
+        {
+          "action": "highlight-0",
+          "elapsed_ms": 1136,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-1",
+          "elapsed_ms": 220,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-2",
+          "elapsed_ms": 242,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-3",
+          "elapsed_ms": 147,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-4",
+          "elapsed_ms": 206,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-5",
+          "elapsed_ms": 191,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-6",
+          "elapsed_ms": 147,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-7",
+          "elapsed_ms": 187,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-8",
+          "elapsed_ms": 164,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-9",
+          "elapsed_ms": 159,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-0",
+          "elapsed_ms": 232,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-1",
+          "elapsed_ms": 152,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-2",
+          "elapsed_ms": 161,
+          "retries": 0,
+          "error": null
+        }
+      ],
+      "error": null
+    },
+    {
+      "email": "cram-0a487ef6@test.example.edu.au",
+      "workspace_id": "25d76a90-1748-4179-a867-fa40fd578fdf",
+      "annotation_loaded": true,
+      "load_elapsed_ms": 2595,
+      "pass_elapsed_ms": 34567,
+      "actions": [
+        {
+          "action": "highlight-0",
+          "elapsed_ms": 1381,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-1",
+          "elapsed_ms": 257,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-2",
+          "elapsed_ms": 141,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-3",
+          "elapsed_ms": 5354,
+          "retries": 1,
+          "error": null
+        },
+        {
+          "action": "highlight-4",
+          "elapsed_ms": 205,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-5",
+          "elapsed_ms": 164,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-6",
+          "elapsed_ms": 194,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-7",
+          "elapsed_ms": 196,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-8",
+          "elapsed_ms": 173,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-9",
+          "elapsed_ms": 156,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-0",
+          "elapsed_ms": 297,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-1",
+          "elapsed_ms": 175,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-2",
+          "elapsed_ms": 131,
+          "retries": 0,
+          "error": null
+        }
+      ],
+      "error": null
+    },
+    {
+      "email": "cram-3b6b2c2e@test.example.edu.au",
+      "workspace_id": "15c80a19-eae5-4cdd-9678-40dbb6c56d58",
+      "annotation_loaded": true,
+      "load_elapsed_ms": 2643,
+      "pass_elapsed_ms": 28290,
+      "actions": [
+        {
+          "action": "highlight-0",
+          "elapsed_ms": 861,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-1",
+          "elapsed_ms": 211,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-2",
+          "elapsed_ms": 214,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-3",
+          "elapsed_ms": 161,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-4",
+          "elapsed_ms": 176,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-5",
+          "elapsed_ms": 160,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-6",
+          "elapsed_ms": 177,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-7",
+          "elapsed_ms": 197,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-8",
+          "elapsed_ms": 185,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-9",
+          "elapsed_ms": 152,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-0",
+          "elapsed_ms": 240,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-1",
+          "elapsed_ms": 144,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-2",
+          "elapsed_ms": 127,
+          "retries": 0,
+          "error": null
+        }
+      ],
+      "error": null
+    },
+    {
+      "email": "cram-be02fe97@test.example.edu.au",
+      "workspace_id": "0a679602-c1b1-47f6-ba02-7294409347de",
+      "annotation_loaded": true,
+      "load_elapsed_ms": 2630,
+      "pass_elapsed_ms": 35334,
+      "actions": [
+        {
+          "action": "highlight-0",
+          "elapsed_ms": 1122,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-1",
+          "elapsed_ms": 194,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-2",
+          "elapsed_ms": 221,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-3",
+          "elapsed_ms": 5319,
+          "retries": 1,
+          "error": null
+        },
+        {
+          "action": "highlight-4",
+          "elapsed_ms": 214,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-5",
+          "elapsed_ms": 106,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-6",
+          "elapsed_ms": 144,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-7",
+          "elapsed_ms": 153,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-8",
+          "elapsed_ms": 149,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-9",
+          "elapsed_ms": 5376,
+          "retries": 1,
+          "error": null
+        },
+        {
+          "action": "comment-0",
+          "elapsed_ms": 281,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-1",
+          "elapsed_ms": 148,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-2",
+          "elapsed_ms": 157,
+          "retries": 0,
+          "error": null
+        }
+      ],
+      "error": null
+    },
+    {
+      "email": "cram-0a80d7af@test.example.edu.au",
+      "workspace_id": "bfe04e29-6ce0-4996-845f-491097e1b8c4",
+      "annotation_loaded": true,
+      "load_elapsed_ms": 2627,
+      "pass_elapsed_ms": 31616,
+      "actions": [
+        {
+          "action": "highlight-0",
+          "elapsed_ms": 1101,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-1",
+          "elapsed_ms": 211,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-2",
+          "elapsed_ms": 249,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-3",
+          "elapsed_ms": 156,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-4",
+          "elapsed_ms": 174,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-5",
+          "elapsed_ms": 197,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-6",
+          "elapsed_ms": 177,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-7",
+          "elapsed_ms": 153,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-8",
+          "elapsed_ms": 5420,
+          "retries": 1,
+          "error": null
+        },
+        {
+          "action": "highlight-9",
+          "elapsed_ms": 151,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-0",
+          "elapsed_ms": 227,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-1",
+          "elapsed_ms": 182,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-2",
+          "elapsed_ms": 190,
+          "retries": 0,
+          "error": null
+        }
+      ],
+      "error": null
+    },
+    {
+      "email": "cram-d3704c8d@test.example.edu.au",
+      "workspace_id": "0432d900-c6e3-437c-8396-d016bf5f6f4b",
+      "annotation_loaded": true,
+      "load_elapsed_ms": 2539,
+      "pass_elapsed_ms": 27890,
+      "actions": [
+        {
+          "action": "highlight-0",
+          "elapsed_ms": 885,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-1",
+          "elapsed_ms": 203,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-2",
+          "elapsed_ms": 196,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-3",
+          "elapsed_ms": 123,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-4",
+          "elapsed_ms": 154,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-5",
+          "elapsed_ms": 157,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-6",
+          "elapsed_ms": 217,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-7",
+          "elapsed_ms": 208,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-8",
+          "elapsed_ms": 127,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-9",
+          "elapsed_ms": 189,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-0",
+          "elapsed_ms": 217,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-1",
+          "elapsed_ms": 154,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-2",
+          "elapsed_ms": 178,
+          "retries": 0,
+          "error": null
+        }
+      ],
+      "error": null
+    },
+    {
+      "email": "cram-59d0d9da@test.example.edu.au",
+      "workspace_id": "4866b095-d36a-486d-88f4-33819dc8af44",
+      "annotation_loaded": true,
+      "load_elapsed_ms": 2645,
+      "pass_elapsed_ms": 41121,
+      "actions": [
+        {
+          "action": "highlight-0",
+          "elapsed_ms": 1329,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-1",
+          "elapsed_ms": 5265,
+          "retries": 1,
+          "error": null
+        },
+        {
+          "action": "highlight-2",
+          "elapsed_ms": 164,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-3",
+          "elapsed_ms": 198,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-4",
+          "elapsed_ms": 156,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-5",
+          "elapsed_ms": 146,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-6",
+          "elapsed_ms": 184,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-7",
+          "elapsed_ms": 148,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-8",
+          "elapsed_ms": 147,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-9",
+          "elapsed_ms": 5300,
+          "retries": 1,
+          "error": null
+        },
+        {
+          "action": "comment-0",
+          "elapsed_ms": 307,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-1",
+          "elapsed_ms": 109,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-2",
+          "elapsed_ms": 140,
+          "retries": 0,
+          "error": null
+        }
+      ],
+      "error": null
+    },
+    {
+      "email": "cram-82750c4a@test.example.edu.au",
+      "workspace_id": "c6c52c02-cd15-4440-b2ac-9827d476b498",
+      "annotation_loaded": true,
+      "load_elapsed_ms": 2595,
+      "pass_elapsed_ms": 45085,
+      "actions": [
+        {
+          "action": "highlight-0",
+          "elapsed_ms": 1350,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-1",
+          "elapsed_ms": 252,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-2",
+          "elapsed_ms": 213,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-3",
+          "elapsed_ms": 161,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-4",
+          "elapsed_ms": 179,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-5",
+          "elapsed_ms": 7249,
+          "retries": 1,
+          "error": null
+        },
+        {
+          "action": "highlight-6",
+          "elapsed_ms": 186,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-7",
+          "elapsed_ms": 150,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-8",
+          "elapsed_ms": 5317,
+          "retries": 1,
+          "error": null
+        },
+        {
+          "action": "highlight-9",
+          "elapsed_ms": 103,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-0",
+          "elapsed_ms": 225,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-1",
+          "elapsed_ms": 138,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-2",
+          "elapsed_ms": 184,
+          "retries": 0,
+          "error": null
+        }
+      ],
+      "error": null
+    },
+    {
+      "email": "cram-ac75333c@test.example.edu.au",
+      "workspace_id": "8020cf40-1c21-48c2-8765-1c07b39e938f",
+      "annotation_loaded": true,
+      "load_elapsed_ms": 2627,
+      "pass_elapsed_ms": 25852,
+      "actions": [
+        {
+          "action": "highlight-0",
+          "elapsed_ms": 1314,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-1",
+          "elapsed_ms": 259,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-2",
+          "elapsed_ms": 167,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-3",
+          "elapsed_ms": 190,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-4",
+          "elapsed_ms": 165,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-5",
+          "elapsed_ms": 244,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-6",
+          "elapsed_ms": 206,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-7",
+          "elapsed_ms": 192,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-8",
+          "elapsed_ms": 135,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-9",
+          "elapsed_ms": 163,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-0",
+          "elapsed_ms": 226,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-1",
+          "elapsed_ms": 171,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-2",
+          "elapsed_ms": 134,
+          "retries": 0,
+          "error": null
+        }
+      ],
+      "error": null
+    },
+    {
+      "email": "cram-364b5988@test.example.edu.au",
+      "workspace_id": "630ab259-ec89-4f7f-9c00-3e2cf89707e5",
+      "annotation_loaded": true,
+      "load_elapsed_ms": 2525,
+      "pass_elapsed_ms": 38751,
+      "actions": [
+        {
+          "action": "highlight-0",
+          "elapsed_ms": 1308,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-1",
+          "elapsed_ms": 302,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-2",
+          "elapsed_ms": 138,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-3",
+          "elapsed_ms": 155,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-4",
+          "elapsed_ms": 7217,
+          "retries": 1,
+          "error": null
+        },
+        {
+          "action": "highlight-5",
+          "elapsed_ms": 194,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-6",
+          "elapsed_ms": 181,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-7",
+          "elapsed_ms": 155,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-8",
+          "elapsed_ms": 146,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-9",
+          "elapsed_ms": 135,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-0",
+          "elapsed_ms": 207,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-1",
+          "elapsed_ms": 155,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-2",
+          "elapsed_ms": 156,
+          "retries": 0,
+          "error": null
+        }
+      ],
+      "error": null
+    },
+    {
+      "email": "cram-328637fb@test.example.edu.au",
+      "workspace_id": "258f29c2-2750-4ab8-a030-d7d7a1d27ee6",
+      "annotation_loaded": true,
+      "load_elapsed_ms": 2659,
+      "pass_elapsed_ms": 41627,
+      "actions": [
+        {
+          "action": "highlight-0",
+          "elapsed_ms": 1138,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-1",
+          "elapsed_ms": 5348,
+          "retries": 1,
+          "error": null
+        },
+        {
+          "action": "highlight-2",
+          "elapsed_ms": 169,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-3",
+          "elapsed_ms": 5252,
+          "retries": 1,
+          "error": null
+        },
+        {
+          "action": "highlight-4",
+          "elapsed_ms": 144,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-5",
+          "elapsed_ms": 143,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-6",
+          "elapsed_ms": 168,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-7",
+          "elapsed_ms": 169,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-8",
+          "elapsed_ms": 110,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-9",
+          "elapsed_ms": 159,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-0",
+          "elapsed_ms": 223,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-1",
+          "elapsed_ms": 144,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-2",
+          "elapsed_ms": 122,
+          "retries": 0,
+          "error": null
+        }
+      ],
+      "error": null
+    },
+    {
+      "email": "cram-8bf68a53@test.example.edu.au",
+      "workspace_id": "78985737-9640-4d3e-8d1a-8de20635dd72",
+      "annotation_loaded": true,
+      "load_elapsed_ms": 2509,
+      "pass_elapsed_ms": 41392,
+      "actions": [
+        {
+          "action": "highlight-0",
+          "elapsed_ms": 782,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-1",
+          "elapsed_ms": 10483,
+          "retries": 2,
+          "error": null
+        },
+        {
+          "action": "highlight-2",
+          "elapsed_ms": 160,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-3",
+          "elapsed_ms": 271,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-4",
+          "elapsed_ms": 169,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-5",
+          "elapsed_ms": 114,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-6",
+          "elapsed_ms": 167,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-7",
+          "elapsed_ms": 170,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-8",
+          "elapsed_ms": 143,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-9",
+          "elapsed_ms": 111,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-0",
+          "elapsed_ms": 208,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-1",
+          "elapsed_ms": 101,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-2",
+          "elapsed_ms": 134,
+          "retries": 0,
+          "error": null
+        }
+      ],
+      "error": null
+    },
+    {
+      "email": "cram-81d7dacb@test.example.edu.au",
+      "workspace_id": "8dcd8029-de8b-420b-bf91-3ffc40558622",
+      "annotation_loaded": true,
+      "load_elapsed_ms": 2585,
+      "pass_elapsed_ms": 31851,
+      "actions": [
+        {
+          "action": "highlight-0",
+          "elapsed_ms": 1484,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-1",
+          "elapsed_ms": 201,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-2",
+          "elapsed_ms": 185,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-3",
+          "elapsed_ms": 163,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-4",
+          "elapsed_ms": 163,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-5",
+          "elapsed_ms": 172,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-6",
+          "elapsed_ms": 326,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-7",
+          "elapsed_ms": 187,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-8",
+          "elapsed_ms": 141,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-9",
+          "elapsed_ms": 197,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-0",
+          "elapsed_ms": 203,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-1",
+          "elapsed_ms": 136,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-2",
+          "elapsed_ms": 127,
+          "retries": 0,
+          "error": null
+        }
+      ],
+      "error": null
+    },
+    {
+      "email": "cram-cf3a1618@test.example.edu.au",
+      "workspace_id": "9208e1e2-caf4-4751-88d2-081fe8b6e3e1",
+      "annotation_loaded": true,
+      "load_elapsed_ms": 2629,
+      "pass_elapsed_ms": 34504,
+      "actions": [
+        {
+          "action": "highlight-0",
+          "elapsed_ms": 1266,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-1",
+          "elapsed_ms": 5437,
+          "retries": 1,
+          "error": null
+        },
+        {
+          "action": "highlight-2",
+          "elapsed_ms": 137,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-3",
+          "elapsed_ms": 177,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-4",
+          "elapsed_ms": 168,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-5",
+          "elapsed_ms": 162,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-6",
+          "elapsed_ms": 144,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-7",
+          "elapsed_ms": 136,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-8",
+          "elapsed_ms": 134,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-9",
+          "elapsed_ms": 117,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-0",
+          "elapsed_ms": 223,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-1",
+          "elapsed_ms": 182,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-2",
+          "elapsed_ms": 116,
+          "retries": 0,
+          "error": null
+        }
+      ],
+      "error": null
+    },
+    {
+      "email": "cram-a4571f7d@test.example.edu.au",
+      "workspace_id": "cda55afe-a131-46a9-b5dc-7823c658c89c",
+      "annotation_loaded": true,
+      "load_elapsed_ms": 2622,
+      "pass_elapsed_ms": 37040,
+      "actions": [
+        {
+          "action": "highlight-0",
+          "elapsed_ms": 722,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-1",
+          "elapsed_ms": 252,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-2",
+          "elapsed_ms": 181,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-3",
+          "elapsed_ms": 144,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-4",
+          "elapsed_ms": 7136,
+          "retries": 1,
+          "error": null
+        },
+        {
+          "action": "highlight-5",
+          "elapsed_ms": 143,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-6",
+          "elapsed_ms": 181,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-7",
+          "elapsed_ms": 163,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-8",
+          "elapsed_ms": 163,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-9",
+          "elapsed_ms": 189,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-0",
+          "elapsed_ms": 217,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-1",
+          "elapsed_ms": 147,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-2",
+          "elapsed_ms": 114,
+          "retries": 0,
+          "error": null
+        }
+      ],
+      "error": null
+    },
+    {
+      "email": "cram-f0ab1b0c@test.example.edu.au",
+      "workspace_id": "9729796c-1387-4e8b-a33a-89fa3a4fa6f8",
+      "annotation_loaded": true,
+      "load_elapsed_ms": 2659,
+      "pass_elapsed_ms": 28932,
+      "actions": [
+        {
+          "action": "highlight-0",
+          "elapsed_ms": 1210,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-1",
+          "elapsed_ms": 252,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-2",
+          "elapsed_ms": 144,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-3",
+          "elapsed_ms": 154,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-4",
+          "elapsed_ms": 187,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-5",
+          "elapsed_ms": 168,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-6",
+          "elapsed_ms": 122,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-7",
+          "elapsed_ms": 182,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-8",
+          "elapsed_ms": 179,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-9",
+          "elapsed_ms": 165,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-0",
+          "elapsed_ms": 200,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-1",
+          "elapsed_ms": 161,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-2",
+          "elapsed_ms": 140,
+          "retries": 0,
+          "error": null
+        }
+      ],
+      "error": null
+    },
+    {
+      "email": "cram-75e01970@test.example.edu.au",
+      "workspace_id": "f9cec7da-b8ef-4db8-8c31-e49f95ebb2d1",
+      "annotation_loaded": true,
+      "load_elapsed_ms": 2580,
+      "pass_elapsed_ms": 28962,
+      "actions": [
+        {
+          "action": "highlight-0",
+          "elapsed_ms": 1262,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-1",
+          "elapsed_ms": 171,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-2",
+          "elapsed_ms": 187,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-3",
+          "elapsed_ms": 191,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-4",
+          "elapsed_ms": 162,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-5",
+          "elapsed_ms": 236,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-6",
+          "elapsed_ms": 199,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-7",
+          "elapsed_ms": 137,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-8",
+          "elapsed_ms": 150,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-9",
+          "elapsed_ms": 185,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-0",
+          "elapsed_ms": 190,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-1",
+          "elapsed_ms": 135,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-2",
+          "elapsed_ms": 129,
+          "retries": 0,
+          "error": null
+        }
+      ],
+      "error": null
+    },
+    {
+      "email": "cram-c836cc4b@test.example.edu.au",
+      "workspace_id": "508f39e2-56c1-4d9e-8b0e-d02b60521e88",
+      "annotation_loaded": true,
+      "load_elapsed_ms": 2594,
+      "pass_elapsed_ms": 39200,
+      "actions": [
+        {
+          "action": "highlight-0",
+          "elapsed_ms": 6692,
+          "retries": 1,
+          "error": null
+        },
+        {
+          "action": "highlight-1",
+          "elapsed_ms": 166,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-2",
+          "elapsed_ms": 191,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-3",
+          "elapsed_ms": 182,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-4",
+          "elapsed_ms": 170,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-5",
+          "elapsed_ms": 175,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-6",
+          "elapsed_ms": 159,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-7",
+          "elapsed_ms": 154,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-8",
+          "elapsed_ms": 160,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-9",
+          "elapsed_ms": 5216,
+          "retries": 1,
+          "error": null
+        },
+        {
+          "action": "comment-0",
+          "elapsed_ms": 226,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-1",
+          "elapsed_ms": 124,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-2",
+          "elapsed_ms": 133,
+          "retries": 0,
+          "error": null
+        }
+      ],
+      "error": null
+    },
+    {
+      "email": "cram-70dadba4@test.example.edu.au",
+      "workspace_id": "46a94b27-bb44-43af-9d05-308d3473d5d9",
+      "annotation_loaded": true,
+      "load_elapsed_ms": 2555,
+      "pass_elapsed_ms": 31927,
+      "actions": [
+        {
+          "action": "highlight-0",
+          "elapsed_ms": 1152,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-1",
+          "elapsed_ms": 226,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-2",
+          "elapsed_ms": 186,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-3",
+          "elapsed_ms": 5284,
+          "retries": 1,
+          "error": null
+        },
+        {
+          "action": "highlight-4",
+          "elapsed_ms": 285,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-5",
+          "elapsed_ms": 184,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-6",
+          "elapsed_ms": 189,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-7",
+          "elapsed_ms": 135,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-8",
+          "elapsed_ms": 151,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-9",
+          "elapsed_ms": 180,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-0",
+          "elapsed_ms": 241,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-1",
+          "elapsed_ms": 116,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-2",
+          "elapsed_ms": 143,
+          "retries": 0,
+          "error": null
+        }
+      ],
+      "error": null
+    },
+    {
+      "email": "cram-c67fa7e0@test.example.edu.au",
+      "workspace_id": "637685fc-ed8b-4dde-b878-eb2cac8c6ae9",
+      "annotation_loaded": true,
+      "load_elapsed_ms": 2568,
+      "pass_elapsed_ms": 29834,
+      "actions": [
+        {
+          "action": "highlight-0",
+          "elapsed_ms": 1109,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-1",
+          "elapsed_ms": 244,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-2",
+          "elapsed_ms": 109,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-3",
+          "elapsed_ms": 178,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-4",
+          "elapsed_ms": 157,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-5",
+          "elapsed_ms": 190,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-6",
+          "elapsed_ms": 168,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-7",
+          "elapsed_ms": 197,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-8",
+          "elapsed_ms": 138,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-9",
+          "elapsed_ms": 161,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-0",
+          "elapsed_ms": 234,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-1",
+          "elapsed_ms": 150,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-2",
+          "elapsed_ms": 130,
+          "retries": 0,
+          "error": null
+        }
+      ],
+      "error": null
+    },
+    {
+      "email": "cram-bffba963@test.example.edu.au",
+      "workspace_id": "e8ee27cf-899a-444b-9468-7314f630790d",
+      "annotation_loaded": true,
+      "load_elapsed_ms": 2513,
+      "pass_elapsed_ms": 31447,
+      "actions": [
+        {
+          "action": "highlight-0",
+          "elapsed_ms": 1389,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-1",
+          "elapsed_ms": 210,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-2",
+          "elapsed_ms": 169,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-3",
+          "elapsed_ms": 187,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-4",
+          "elapsed_ms": 243,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-5",
+          "elapsed_ms": 165,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-6",
+          "elapsed_ms": 146,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-7",
+          "elapsed_ms": 163,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-8",
+          "elapsed_ms": 137,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-9",
+          "elapsed_ms": 155,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-0",
+          "elapsed_ms": 213,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-1",
+          "elapsed_ms": 145,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-2",
+          "elapsed_ms": 127,
+          "retries": 0,
+          "error": null
+        }
+      ],
+      "error": null
+    },
+    {
+      "email": "cram-69a3eb0d@test.example.edu.au",
+      "workspace_id": "8310a213-fed7-4f24-afc7-c9e20e2055c8",
+      "annotation_loaded": true,
+      "load_elapsed_ms": 2545,
+      "pass_elapsed_ms": 29401,
+      "actions": [
+        {
+          "action": "highlight-0",
+          "elapsed_ms": 984,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-1",
+          "elapsed_ms": 213,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-2",
+          "elapsed_ms": 147,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-3",
+          "elapsed_ms": 159,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-4",
+          "elapsed_ms": 156,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-5",
+          "elapsed_ms": 249,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-6",
+          "elapsed_ms": 197,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-7",
+          "elapsed_ms": 175,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-8",
+          "elapsed_ms": 154,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-9",
+          "elapsed_ms": 160,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-0",
+          "elapsed_ms": 233,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-1",
+          "elapsed_ms": 124,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-2",
+          "elapsed_ms": 164,
+          "retries": 0,
+          "error": null
+        }
+      ],
+      "error": null
+    },
+    {
+      "email": "cram-3096aa6e@test.example.edu.au",
+      "workspace_id": "1d51663d-c645-41b2-bc24-0e2fe715b879",
+      "annotation_loaded": true,
+      "load_elapsed_ms": 2625,
+      "pass_elapsed_ms": 39030,
+      "actions": [
+        {
+          "action": "highlight-0",
+          "elapsed_ms": 1495,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-1",
+          "elapsed_ms": 261,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-2",
+          "elapsed_ms": 182,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-3",
+          "elapsed_ms": 172,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-4",
+          "elapsed_ms": 174,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-5",
+          "elapsed_ms": 166,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-6",
+          "elapsed_ms": 129,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-7",
+          "elapsed_ms": 172,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-8",
+          "elapsed_ms": 5410,
+          "retries": 1,
+          "error": null
+        },
+        {
+          "action": "highlight-9",
+          "elapsed_ms": 195,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-0",
+          "elapsed_ms": 221,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-1",
+          "elapsed_ms": 113,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-2",
+          "elapsed_ms": 156,
+          "retries": 0,
+          "error": null
+        }
+      ],
+      "error": null
+    },
+    {
+      "email": "cram-e8a25732@test.example.edu.au",
+      "workspace_id": "608b9287-40d0-4830-a84c-75b2bba25f6d",
+      "annotation_loaded": true,
+      "load_elapsed_ms": 2511,
+      "pass_elapsed_ms": 31662,
+      "actions": [
+        {
+          "action": "highlight-0",
+          "elapsed_ms": 1171,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-1",
+          "elapsed_ms": 256,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-2",
+          "elapsed_ms": 173,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-3",
+          "elapsed_ms": 173,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-4",
+          "elapsed_ms": 147,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-5",
+          "elapsed_ms": 211,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-6",
+          "elapsed_ms": 173,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-7",
+          "elapsed_ms": 170,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-8",
+          "elapsed_ms": 175,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-9",
+          "elapsed_ms": 169,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-0",
+          "elapsed_ms": 297,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-1",
+          "elapsed_ms": 164,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-2",
+          "elapsed_ms": 131,
+          "retries": 0,
+          "error": null
+        }
+      ],
+      "error": null
+    },
+    {
+      "email": "cram-9baed62f@test.example.edu.au",
+      "workspace_id": "5cebb570-7060-418a-b4d2-8aaeab7c9dbc",
+      "annotation_loaded": true,
+      "load_elapsed_ms": 2630,
+      "pass_elapsed_ms": 42939,
+      "actions": [
+        {
+          "action": "highlight-0",
+          "elapsed_ms": 1258,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-1",
+          "elapsed_ms": 210,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-2",
+          "elapsed_ms": 134,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-3",
+          "elapsed_ms": 5304,
+          "retries": 1,
+          "error": null
+        },
+        {
+          "action": "highlight-4",
+          "elapsed_ms": 174,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-5",
+          "elapsed_ms": 7195,
+          "retries": 1,
+          "error": null
+        },
+        {
+          "action": "highlight-6",
+          "elapsed_ms": 143,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-7",
+          "elapsed_ms": 194,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-8",
+          "elapsed_ms": 163,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-9",
+          "elapsed_ms": 132,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-0",
+          "elapsed_ms": 203,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-1",
+          "elapsed_ms": 120,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-2",
+          "elapsed_ms": 122,
+          "retries": 0,
+          "error": null
+        }
+      ],
+      "error": null
+    },
+    {
+      "email": "cram-42270678@test.example.edu.au",
+      "workspace_id": "b184074a-e521-4f7e-9449-69915a550705",
+      "annotation_loaded": true,
+      "load_elapsed_ms": 2626,
+      "pass_elapsed_ms": 39986,
+      "actions": [
+        {
+          "action": "highlight-0",
+          "elapsed_ms": 1328,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-1",
+          "elapsed_ms": 5308,
+          "retries": 1,
+          "error": null
+        },
+        {
+          "action": "highlight-2",
+          "elapsed_ms": 183,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-3",
+          "elapsed_ms": 151,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-4",
+          "elapsed_ms": 176,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-5",
+          "elapsed_ms": 197,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-6",
+          "elapsed_ms": 156,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-7",
+          "elapsed_ms": 151,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-8",
+          "elapsed_ms": 5320,
+          "retries": 1,
+          "error": null
+        },
+        {
+          "action": "highlight-9",
+          "elapsed_ms": 181,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-0",
+          "elapsed_ms": 181,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-1",
+          "elapsed_ms": 132,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-2",
+          "elapsed_ms": 190,
+          "retries": 0,
+          "error": null
+        }
+      ],
+      "error": null
+    },
+    {
+      "email": "cram-90afe15b@test.example.edu.au",
+      "workspace_id": "af86ee1f-7de6-471f-ab5e-3fc20fcdce48",
+      "annotation_loaded": true,
+      "load_elapsed_ms": 2591,
+      "pass_elapsed_ms": 28483,
+      "actions": [
+        {
+          "action": "highlight-0",
+          "elapsed_ms": 1075,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-1",
+          "elapsed_ms": 228,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-2",
+          "elapsed_ms": 191,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-3",
+          "elapsed_ms": 178,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-4",
+          "elapsed_ms": 178,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-5",
+          "elapsed_ms": 133,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-6",
+          "elapsed_ms": 207,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-7",
+          "elapsed_ms": 193,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-8",
+          "elapsed_ms": 170,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-9",
+          "elapsed_ms": 140,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-0",
+          "elapsed_ms": 229,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-1",
+          "elapsed_ms": 123,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-2",
+          "elapsed_ms": 125,
+          "retries": 0,
+          "error": null
+        }
+      ],
+      "error": null
+    },
+    {
+      "email": "cram-6293faa8@test.example.edu.au",
+      "workspace_id": "981db36c-896d-449a-bd1c-7426da5d9e8b",
+      "annotation_loaded": true,
+      "load_elapsed_ms": 2596,
+      "pass_elapsed_ms": 26950,
+      "actions": [
+        {
+          "action": "highlight-0",
+          "elapsed_ms": 1170,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-1",
+          "elapsed_ms": 203,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-2",
+          "elapsed_ms": 181,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-3",
+          "elapsed_ms": 152,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-4",
+          "elapsed_ms": 166,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-5",
+          "elapsed_ms": 201,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-6",
+          "elapsed_ms": 161,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-7",
+          "elapsed_ms": 150,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-8",
+          "elapsed_ms": 138,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-9",
+          "elapsed_ms": 182,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-0",
+          "elapsed_ms": 225,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-1",
+          "elapsed_ms": 214,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-2",
+          "elapsed_ms": 133,
+          "retries": 0,
+          "error": null
+        }
+      ],
+      "error": null
+    },
+    {
+      "email": "cram-ac86eb08@test.example.edu.au",
+      "workspace_id": "c7995f80-60fc-47b2-94ce-bca9133d0535",
+      "annotation_loaded": true,
+      "load_elapsed_ms": 2615,
+      "pass_elapsed_ms": 33010,
+      "actions": [
+        {
+          "action": "highlight-0",
+          "elapsed_ms": 854,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-1",
+          "elapsed_ms": 205,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-2",
+          "elapsed_ms": 260,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-3",
+          "elapsed_ms": 123,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-4",
+          "elapsed_ms": 167,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-5",
+          "elapsed_ms": 188,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-6",
+          "elapsed_ms": 179,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-7",
+          "elapsed_ms": 198,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-8",
+          "elapsed_ms": 162,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-9",
+          "elapsed_ms": 280,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-0",
+          "elapsed_ms": 208,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-1",
+          "elapsed_ms": 138,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-2",
+          "elapsed_ms": 109,
+          "retries": 0,
+          "error": null
+        }
+      ],
+      "error": null
+    },
+    {
+      "email": "cram-15c6556a@test.example.edu.au",
+      "workspace_id": "88232095-4d51-467b-8eaa-16814b9a953c",
+      "annotation_loaded": true,
+      "load_elapsed_ms": 2504,
+      "pass_elapsed_ms": 34159,
+      "actions": [
+        {
+          "action": "highlight-0",
+          "elapsed_ms": 1003,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-1",
+          "elapsed_ms": 5297,
+          "retries": 1,
+          "error": null
+        },
+        {
+          "action": "highlight-2",
+          "elapsed_ms": 201,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-3",
+          "elapsed_ms": 154,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-4",
+          "elapsed_ms": 149,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-5",
+          "elapsed_ms": 128,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-6",
+          "elapsed_ms": 168,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-7",
+          "elapsed_ms": 149,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-8",
+          "elapsed_ms": 133,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-9",
+          "elapsed_ms": 157,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-0",
+          "elapsed_ms": 221,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-1",
+          "elapsed_ms": 125,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-2",
+          "elapsed_ms": 224,
+          "retries": 0,
+          "error": null
+        }
+      ],
+      "error": null
+    },
+    {
+      "email": "cram-acbc5696@test.example.edu.au",
+      "workspace_id": "32ac66f7-62a2-4ab0-b209-447ad363d298",
+      "annotation_loaded": true,
+      "load_elapsed_ms": 2545,
+      "pass_elapsed_ms": 32928,
+      "actions": [
+        {
+          "action": "highlight-0",
+          "elapsed_ms": 1072,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-1",
+          "elapsed_ms": 233,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-2",
+          "elapsed_ms": 166,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-3",
+          "elapsed_ms": 184,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-4",
+          "elapsed_ms": 186,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-5",
+          "elapsed_ms": 145,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-6",
+          "elapsed_ms": 204,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-7",
+          "elapsed_ms": 195,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-8",
+          "elapsed_ms": 154,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "highlight-9",
+          "elapsed_ms": 5301,
+          "retries": 1,
+          "error": null
+        },
+        {
+          "action": "comment-0",
+          "elapsed_ms": 220,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-1",
+          "elapsed_ms": 179,
+          "retries": 0,
+          "error": null
+        },
+        {
+          "action": "comment-2",
+          "elapsed_ms": 144,
+          "retries": 0,
+          "error": null
+        }
+      ],
+      "error": null
+    }
+  ]
+}

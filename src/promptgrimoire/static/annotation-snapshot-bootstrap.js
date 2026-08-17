@@ -17,23 +17,38 @@
 // after a successful mount — readiness follows the bundle, not the
 // skeleton.
 
+async function fetchSnapshotBundle(url) {
+  var response = await fetch(url);
+  if (!response.ok) {
+    throw new Error('snapshot fetch failed: HTTP ' + response.status);
+  }
+  return response.json();
+}
+
 async function loadAnnotationSnapshot(cfg) {
   var container = document.getElementById(cfg.containerId);
   if (!container) return false;
 
+  // One silent retry covers a service restart blip or a dropped
+  // connection without the student ever seeing an error.
+  var retryDelay = cfg.retryDelayMs === undefined ? 1500 : cfg.retryDelayMs;
   var bundle;
   try {
-    var response = await fetch(cfg.url);
-    if (!response.ok) {
-      throw new Error('snapshot fetch failed: HTTP ' + response.status);
+    try {
+      bundle = await fetchSnapshotBundle(cfg.url);
+    } catch (firstErr) {
+      console.warn('snapshot bundle fetch failed, retrying once', firstErr);
+      await new Promise(function (resolve) { setTimeout(resolve, retryDelay); });
+      bundle = await fetchSnapshotBundle(cfg.url);
     }
-    bundle = await response.json();
   } catch (err) {
     console.error('snapshot bundle load failed', err);
     container.dataset.snapshotState = 'error';
     var failed = document.createElement('div');
     failed.setAttribute('data-testid', 'snapshot-error');
-    failed.textContent = 'Failed to load the document. Reload the page to retry.';
+    failed.textContent =
+      'The document could not be loaded. ' +
+      'Reload the page to try again — your annotations are safe on the server.';
     container.replaceChildren(failed);
     return false;
   }
@@ -93,11 +108,19 @@ function scanSnapshotContainers() {
 // Self-initialise: pick up containers already in the DOM, then watch
 // for ones rendered later (deferred tab panels).  Guard against double
 // initialisation if the script is evaluated twice.
+//
+// attributes+attributeFilter is load-bearing: NiceGUI can flush the
+// container element in one WS patch and its data-snapshot-url props in
+// a later one, so arming can arrive as an attribute-only mutation on an
+// already-attached node.  childList alone misses that (observed as a 4%
+// never-loads cliff at 100-way cram load).
 if (typeof window !== 'undefined' && !window._snapshotObserver) {
   scanSnapshotContainers();
   window._snapshotObserver = new MutationObserver(scanSnapshotContainers);
   window._snapshotObserver.observe(document.body, {
     childList: true,
     subtree: true,
+    attributes: true,
+    attributeFilter: ['data-snapshot-url'],
   });
 }

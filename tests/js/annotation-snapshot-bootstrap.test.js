@@ -86,13 +86,18 @@ describe('loadAnnotationSnapshot', () => {
     );
   });
 
-  test('fetch failure shows error state and never claims readiness', async () => {
+  test('fetch failure retries once, then shows error, never claims readiness', async () => {
     const container = mountContainer();
     mockFetch({ ok: false, status: 403 });
 
-    const ok = await loadAnnotationSnapshot({ url: 'u', containerId: container.id });
+    const ok = await loadAnnotationSnapshot({
+      url: 'u',
+      containerId: container.id,
+      retryDelayMs: 0,
+    });
 
     expect(ok).toBe(false);
+    expect(globalThis.fetch).toHaveBeenCalledTimes(2);
     expect(
       container.querySelector('[data-testid="snapshot-error"]'),
     ).not.toBeNull();
@@ -101,16 +106,40 @@ describe('loadAnnotationSnapshot', () => {
     ).toBeNull();
   });
 
-  test('network rejection shows error state', async () => {
+  test('transient failure recovers on the silent retry', async () => {
+    const container = mountContainer();
+    globalThis.fetch = vi
+      .fn()
+      .mockRejectedValueOnce(new TypeError('offline'))
+      .mockResolvedValue({ ok: true, json: async () => BUNDLE });
+
+    const ok = await loadAnnotationSnapshot({
+      url: 'u',
+      containerId: container.id,
+      retryDelayMs: 0,
+    });
+
+    expect(ok).toBe(true);
+    expect(globalThis.fetch).toHaveBeenCalledTimes(2);
+    expect(container.textContent).toContain('quick brown fox');
+    expect(container.querySelector('[data-testid="snapshot-error"]')).toBeNull();
+  });
+
+  test('network rejection shows a calm, honest error message', async () => {
     const container = mountContainer();
     globalThis.fetch = vi.fn().mockRejectedValue(new TypeError('offline'));
 
-    const ok = await loadAnnotationSnapshot({ url: 'u', containerId: container.id });
+    const ok = await loadAnnotationSnapshot({
+      url: 'u',
+      containerId: container.id,
+      retryDelayMs: 0,
+    });
 
     expect(ok).toBe(false);
-    expect(
-      container.querySelector('[data-testid="snapshot-error"]'),
-    ).not.toBeNull();
+    const error = container.querySelector('[data-testid="snapshot-error"]');
+    expect(error).not.toBeNull();
+    expect(error.textContent).toContain('annotations are safe');
+    expect(error.textContent).not.toContain('Failed');
   });
 
   test('missing container returns false without touching the DOM', async () => {
@@ -157,6 +186,23 @@ describe('scanSnapshotContainers (declarative discovery)', () => {
     scanSnapshotContainers();
 
     expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  test('observer picks up a container armed AFTER it was attached', async () => {
+    // NiceGUI can flush the element in one WS patch and its
+    // data-snapshot-url props in a later one; discovery must fire on the
+    // attribute mutation, not only on childList.
+    mockFetch({ ok: true, json: async () => BUNDLE });
+    const container = mountContainer('doc-container-late-armed');
+
+    // Attached bare; armed later — attribute-only mutation.
+    container.dataset.snapshotUrl = 'http://snapshot.test/snapshot?t=tok';
+    container.dataset.snapshotMenuId = 'hl-menu-late';
+
+    await vi.waitFor(() =>
+      expect(container.dataset.snapshotState).toBe('done'),
+    );
+    expect(container.textContent).toContain('quick brown fox');
   });
 
   test('observer picks up a container rendered after script load', async () => {

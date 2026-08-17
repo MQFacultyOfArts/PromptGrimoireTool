@@ -23,6 +23,9 @@ from typing import Any
 
 from docx import Document  # type: ignore[import-untyped]
 
+# argv[0] is the script path; an input directory is the minimum required arg.
+_MIN_ARGV_WITH_INPUT_DIR = 2
+
 
 def extract_source(docx_path: Path) -> str:
     """Join all paragraphs from a docx into one Python source string."""
@@ -75,7 +78,7 @@ def extract_messages_and_params(source: str) -> dict[str, Any]:
 
 
 def main() -> None:
-    if len(sys.argv) < 2:
+    if len(sys.argv) < _MIN_ARGV_WITH_INPUT_DIR:
         sys.exit(f"Usage: {sys.argv[0]} <input_dir>")
 
     input_dir = Path(sys.argv[1])

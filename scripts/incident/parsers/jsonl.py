@@ -42,6 +42,57 @@ _COLUMN_FIELDS = frozenset(
 )
 
 
+def _event_from_record(record: dict, ts_normalised: str) -> dict:
+    """Build the ``jsonl_events`` row dict for one already-validated record."""
+    # extra_json holds all keys NOT in the dedicated column set.
+    extra = {k: v for k, v in record.items() if k not in _COLUMN_FIELDS}
+    return {
+        "ts_utc": ts_normalised,
+        "level": record.get("level"),
+        "event": record.get("event"),
+        "user_id": record.get("user_id"),
+        "workspace_id": record.get("workspace_id"),
+        "request_path": record.get("request_path"),
+        "exc_info": record.get("exc_info"),  # None if absent or JSON null — AC3.5
+        "extra_json": json.dumps(extra) if extra else None,
+    }
+
+
+def _parse_line(
+    line: str,
+    window_start_utc: str,
+    window_end_utc: str,
+) -> tuple[dict | None, bool]:
+    """Parse one JSONL line into ``(event, skipped)``.
+
+    ``event`` is ``None`` when the line produced no row (blank, malformed,
+    missing/unparseable timestamp, or simply outside the window). ``skipped``
+    is ``True`` only for malformed/incomplete lines — blank lines and lines
+    that parsed fine but fell outside the window are not counted as skipped.
+    """
+    if not line.strip():
+        return None, False
+
+    try:
+        record = json.loads(line)
+    except json.JSONDecodeError:
+        logger.warning("Skipping malformed JSONL line")
+        return None, True
+
+    ts_normalised = _extract_timestamp(record)
+    if ts_normalised is None:
+        return None, True
+
+    try:
+        if not in_window(ts_normalised, window_start_utc, window_end_utc):
+            return None, False
+    except ValueError, TypeError:
+        logger.warning("Skipping JSONL line with unparseable timestamp")
+        return None, True
+
+    return _event_from_record(record, ts_normalised), False
+
+
 def parse_jsonl(
     data: bytes,
     window_start_utc: str,
@@ -59,47 +110,10 @@ def parse_jsonl(
     skipped = 0
 
     for line in data.decode("utf-8").split("\n"):
-        if not line.strip():
-            continue
-
-        try:
-            record = json.loads(line)
-        except json.JSONDecodeError:
-            skipped += 1
-            logger.warning("Skipping malformed JSONL line")
-            continue
-
-        ts_normalised = _extract_timestamp(record)
-        if ts_normalised is None:
-            skipped += 1
-            continue
-
-        try:
-            if not in_window(ts_normalised, window_start_utc, window_end_utc):
-                continue
-        except ValueError, TypeError:
-            skipped += 1
-            logger.warning("Skipping JSONL line with unparseable timestamp")
-            continue
-
-        # Build extra_json from all keys NOT in the dedicated column set.
-        extra = {k: v for k, v in record.items() if k not in _COLUMN_FIELDS}
-        extra_json = json.dumps(extra) if extra else None
-
-        results.append(
-            {
-                "ts_utc": ts_normalised,
-                "level": record.get("level"),
-                "event": record.get("event"),
-                "user_id": record.get("user_id"),
-                "workspace_id": record.get("workspace_id"),
-                "request_path": record.get("request_path"),
-                "exc_info": record.get(
-                    "exc_info"
-                ),  # None if absent or JSON null — AC3.5
-                "extra_json": extra_json,
-            }
-        )
+        event, was_skipped = _parse_line(line, window_start_utc, window_end_utc)
+        skipped += was_skipped
+        if event is not None:
+            results.append(event)
 
     if skipped:
         logger.warning("Skipped %d malformed/incomplete JSONL lines", skipped)

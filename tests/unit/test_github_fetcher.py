@@ -89,6 +89,7 @@ class TestFetchGithubPrs:
         title: str,
         merged_at: str | None,
         updated_at: str,
+        *,
         user: str = "alice",
         merge_commit_sha: str = "abc123",
         html_url: str = "https://github.com/org/repo/pull/1",

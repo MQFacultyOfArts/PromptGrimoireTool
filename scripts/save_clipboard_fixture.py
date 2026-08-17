@@ -23,6 +23,9 @@ from pathlib import Path
 
 FIXTURES_DIR = Path(__file__).parent.parent / "tests" / "fixtures" / "conversations"
 
+# argv[0] is the script path; a fixture name is the minimum required arg.
+_MIN_ARGV_WITH_NAME = 2
+
 LOREM_WORDS = [
     "lorem",
     "ipsum",
@@ -146,7 +149,7 @@ def get_clipboard() -> str:
 
 
 def main() -> None:
-    if len(sys.argv) < 2:
+    if len(sys.argv) < _MIN_ARGV_WITH_NAME:
         print("Usage: save_clipboard_fixture.py <name> [--lipsum]")
         print("  e.g., save_clipboard_fixture.py claude --lipsum")
         sys.exit(1)

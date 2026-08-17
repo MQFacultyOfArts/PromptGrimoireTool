@@ -36,6 +36,7 @@ import json
 import statistics
 import sys
 import time
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -45,6 +46,12 @@ from playwright.sync_api import Page, sync_playwright
 from promptgrimoire.docs.helpers import select_chars
 
 app = typer.Typer(help="Profile annotation page load and interaction latency.")
+
+# Fewer than this many text nodes means the document didn't render enough
+# content to meaningfully measure selection/highlight interaction latency.
+_MIN_TEXT_NODES_FOR_INTERACTION = 10
+# statistics.stdev requires at least two data points.
+_MIN_VALUES_FOR_STDEV = 2
 
 # JavaScript to inject before navigation that sets up LCP observation.
 # LCP is reported asynchronously via PerformanceObserver -- we stash
@@ -242,7 +249,7 @@ def _measure_interactions(
     text_nodes_count = page.evaluate(
         "() => window._textNodes ? window._textNodes.length : 0"
     )
-    if text_nodes_count < 10:
+    if text_nodes_count < _MIN_TEXT_NODES_FOR_INTERACTION:
         results["error"] = "not enough text nodes"
         return results
 
@@ -312,7 +319,7 @@ def _compute_stats(
         "mean": round(statistics.mean(values), 1),
         "median": round(statistics.median(values), 1),
     }
-    if len(values) >= 2:
+    if len(values) >= _MIN_VALUES_FOR_STDEV:
         result["stdev"] = round(statistics.stdev(values), 1)
     return result
 
@@ -399,14 +406,20 @@ def _print_summary(summary: dict[str, Any], label: str = "PAGE LOAD") -> None:
     print(f"{'=' * 70}\n")
 
 
+@dataclass(frozen=True, slots=True)
+class _IterationConfig:
+    """Parameters held constant across every profiling iteration of one run."""
+
+    server_url: str
+    workspace_url: str
+    total_iterations: int
+    measure_interactions: bool
+
+
 def _run_single_iteration(
     browser: Any,
-    server_url: str,
-    workspace_url: str,
-    *,
+    config: _IterationConfig,
     iteration: int,
-    total_iterations: int,
-    measure_interactions: bool,
 ) -> tuple[dict[str, Any], dict[str, Any] | None]:
     """Run a single profiling iteration.
 
@@ -416,20 +429,20 @@ def _run_single_iteration(
     page = context.new_page()
 
     print(
-        f"  Iteration {iteration + 1}/{total_iterations}...",
+        f"  Iteration {iteration + 1}/{config.total_iterations}...",
         end="",
         flush=True,
     )
 
-    _authenticate(page, server_url)
-    result = _measure_page_load(page, workspace_url, iteration=iteration)
+    _authenticate(page, config.server_url)
+    result = _measure_page_load(page, config.workspace_url, iteration=iteration)
 
     total = result["timing"]["wallClockTotalMs"]
     ready = "ready" if result["walkerReady"] else "TIMEOUT"
     print(f" {total}ms [{ready}]", end="")
 
     interaction = None
-    if measure_interactions and result["walkerReady"]:
+    if config.measure_interactions and result["walkerReady"]:
         interaction = _measure_interactions(page, iteration=iteration)
         if "highlightMenuMs" in interaction:
             print(f" menu={interaction['highlightMenuMs']}ms", end="")
@@ -458,19 +471,18 @@ def _run_profiling(
     """
     load_results: list[dict[str, Any]] = []
     interaction_results: list[dict[str, Any]] = []
+    config = _IterationConfig(
+        server_url=server_url,
+        workspace_url=workspace_url,
+        total_iterations=iterations,
+        measure_interactions=measure_interactions,
+    )
 
     with sync_playwright() as pw:
         browser = pw.chromium.launch(headless=not headed)
 
         for i in range(iterations):
-            result, interaction = _run_single_iteration(
-                browser,
-                server_url,
-                workspace_url,
-                iteration=i,
-                total_iterations=iterations,
-                measure_interactions=measure_interactions,
-            )
+            result, interaction = _run_single_iteration(browser, config, i)
             load_results.append(result)
             if interaction is not None:
                 interaction_results.append(interaction)
@@ -510,7 +522,7 @@ def _emit_results(
 
 
 @app.command()
-def profile(
+def profile(  # noqa: PLR0913, PLR0917 -- Typer CLI options, one per flag by design
     url: str = typer.Option(..., help="Server URL (e.g. http://localhost:8080)"),
     workspace_id: str = typer.Option(..., help="UUID of the workspace to profile"),
     iterations: int = typer.Option(5, help="Number of page load iterations"),

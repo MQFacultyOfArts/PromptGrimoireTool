@@ -35,6 +35,8 @@ from pathlib import Path
 
 SERVICE_NAME = "promptgrimoire.service"
 EXPORT_PREFIX = "promptgrimoire_export_"
+# Workspace UUIDs are truncated to their first 8 hex chars in export dir names.
+WORKSPACE_ID_PREFIX_LEN = 8
 
 
 def find_private_tmp() -> Path | None:
@@ -85,7 +87,11 @@ def format_dir_info(export_dir: Path) -> str:
     # Format: promptgrimoire_export_<ws_id_8>_<random>
     dir_suffix = export_dir.name[len(EXPORT_PREFIX) :]
     parts = dir_suffix.split("_", 1)
-    ws_prefix = parts[0] if len(parts) > 1 and len(parts[0]) == 8 else "unknown"
+    ws_prefix = (
+        parts[0]
+        if len(parts) > 1 and len(parts[0]) == WORKSPACE_ID_PREFIX_LEN
+        else "unknown"
+    )
 
     # Find tex/log files
     tex_files = list(export_dir.glob("*.tex"))

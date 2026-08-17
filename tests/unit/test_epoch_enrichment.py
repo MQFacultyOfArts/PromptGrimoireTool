@@ -76,6 +76,7 @@ def _insert_journal(
 def _insert_github(
     conn: sqlite3.Connection,
     ts_utc: str,
+    *,
     pr_number: int,
     title: str,
     author: str,

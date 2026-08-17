@@ -9,7 +9,8 @@ from __future__ import annotations
 import json
 import re
 import time
-from typing import TYPE_CHECKING, Any
+from collections.abc import Mapping
+from typing import Any
 from uuid import UUID
 
 import structlog
@@ -25,9 +26,6 @@ from promptgrimoire.pages.annotation import (
     _workspace_presence,
 )
 from promptgrimoire.pages.annotation.css import _build_highlight_pseudo_css
-
-if TYPE_CHECKING:
-    from collections.abc import Mapping
 
 logger = structlog.get_logger()
 
@@ -223,12 +221,33 @@ async def _delete_highlight(
         await state.broadcast_update()
 
 
-def _validate_highlight_state(state: PageState) -> str | None:
+def _parse_selection_payload(
+    selection: Mapping[str, Any] | None,
+) -> tuple[int, int] | None:
+    """Normalise an event-carried selection payload to ``(start, end)``.
+
+    The payload comes from the browser (``window._annotSel`` captured by
+    a ``js_handler`` at trigger time), so validate strictly: both offsets
+    must be ints and the selection must be non-empty.  Returns ``None``
+    for anything invalid.
+    """
+    if not isinstance(selection, Mapping):
+        return None
+    start = selection.get("start_char")
+    end = selection.get("end_char")
+    if not isinstance(start, int) or not isinstance(end, int) or start == end:
+        return None
+    return min(start, end), max(start, end)
+
+
+def _validate_highlight_state(
+    state: PageState, selection: tuple[int, int] | None
+) -> str | None:
     """Check preconditions for adding a highlight.
 
     Returns an error message if invalid, or None if ready to proceed.
     """
-    if state.selection_start is None or state.selection_end is None:
+    if selection is None:
         logger.debug("[HIGHLIGHT] No selection - returning early")
         return "No selection"
     if state.document_id is None:
@@ -238,12 +257,23 @@ def _validate_highlight_state(state: PageState) -> str | None:
     return None
 
 
-async def _add_highlight(state: PageState, tag: str) -> None:
-    """Add a highlight from current selection to CRDT.
+async def _add_highlight(
+    state: PageState, tag: str, selection: Mapping[str, Any] | None
+) -> None:
+    """Add a highlight to CRDT from the selection carried by the event.
+
+    The offsets ride the triggering event itself (captured client-side
+    at click/keydown time) rather than being read from
+    ``state.selection_*``, because python-socketio dispatches events as
+    concurrent tasks and the apply can be processed before its
+    ``selection_made`` arrives (#502).
 
     Args:
-        state: Page state with selection and CRDT document.
+        state: Page state with CRDT document.
         tag: Tag key string (UUID) for the highlight.
+        selection: ``{start_char, end_char}`` payload from the
+            triggering event, or ``None`` when the browser had no
+            selection.
     """
     # Guard against duplicate calls (e.g., rapid keyboard events)
     if state.processing_highlight:
@@ -251,22 +281,22 @@ async def _add_highlight(state: PageState, tag: str) -> None:
         return
     state.processing_highlight = True
 
+    parsed = _parse_selection_payload(selection)
     logger.debug(
-        "[HIGHLIGHT] called: start=%s, end=%s, tag=%s",
-        state.selection_start,
-        state.selection_end,
+        "[HIGHLIGHT] called: selection=%s, tag=%s",
+        parsed,
         tag,
     )
-    error = _validate_highlight_state(state)
+    error = _validate_highlight_state(state, parsed)
     if error:
         state.processing_highlight = False
         ui.notify(error, type="warning")
         return
 
     # Type narrowing — _validate_highlight_state guarantees these are not None
-    assert state.selection_start is not None  # noqa: S101
-    assert state.selection_end is not None  # noqa: S101
+    assert parsed is not None  # noqa: S101
     assert state.crdt_doc is not None  # noqa: S101
+    start, end = parsed
 
     _t_pipeline = time.monotonic()
     try:
@@ -274,11 +304,9 @@ async def _add_highlight(state: PageState, tag: str) -> None:
         if state.save_status:
             state.save_status.text = "Saving..."
 
-        # Add highlight to CRDT (end_char is exclusive).
-        # The JS text walker's setupAnnotationSelection() already returns
-        # exclusive end_char (per Range API semantics), so no +1 needed.
-        start = min(state.selection_start, state.selection_end)
-        end = max(state.selection_start, state.selection_end)
+        # end_char is exclusive: the JS text walker's
+        # setupAnnotationSelection() returns exclusive end_char (per
+        # Range API semantics), so no +1 needed.
 
         # Extract highlighted text from document characters
         highlighted_text = ""
@@ -343,12 +371,16 @@ async def _add_highlight(state: PageState, tag: str) -> None:
             elapsed_ms=round((time.monotonic() - _t) * 1000, 1),
         )
 
-        # Clear browser selection (fire-and-forget — void return, no ordering
-        # dependency on subsequent server-side cleanup).  Previously awaited
-        # with 1.0s timeout, causing ~3,400 TimeoutErrors when the browser
-        # could not respond in time (queued behind NiceGUI element batch).
-        # See #377.
-        ui.run_javascript("window.getSelection().removeAllRanges();")
+        # Clear browser selection and the client-side selection capture
+        # (fire-and-forget — void return, no ordering dependency on
+        # subsequent server-side cleanup).  Previously awaited with 1.0s
+        # timeout, causing ~3,400 TimeoutErrors when the browser could
+        # not respond in time (queued behind NiceGUI element batch).
+        # See #377.  window._annotSel mirrors state.selection_* so a
+        # second tag click without a new selection stays a no-op (#502).
+        ui.run_javascript(
+            "window.getSelection().removeAllRanges(); window._annotSel = null;"
+        )
     finally:
         # Always release processing lock -- prevents permanent lockout if any
         # step above raises (e.g. JS relay failure, persistence error).

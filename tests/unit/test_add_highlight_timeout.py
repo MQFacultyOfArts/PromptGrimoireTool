@@ -93,7 +93,7 @@ async def test_no_exception_escapes() -> None:
     ):
         from promptgrimoire.pages.annotation.highlights import _add_highlight
 
-        await _add_highlight(state, "test-tag")
+        await _add_highlight(state, "test-tag", {"start_char": 10, "end_char": 50})
 
 
 @pytest.mark.asyncio
@@ -112,7 +112,7 @@ async def test_selection_cleared() -> None:
     ):
         from promptgrimoire.pages.annotation.highlights import _add_highlight
 
-        await _add_highlight(state, "test-tag")
+        await _add_highlight(state, "test-tag", {"start_char": 10, "end_char": 50})
 
     assert state.selection_start is None, (
         f"selection_start should be None, got {state.selection_start}"
@@ -138,7 +138,7 @@ async def test_highlight_menu_hidden() -> None:
     ):
         from promptgrimoire.pages.annotation.highlights import _add_highlight
 
-        await _add_highlight(state, "test-tag")
+        await _add_highlight(state, "test-tag", {"start_char": 10, "end_char": 50})
 
     mock_menu = cast("MagicMock", state.highlight_menu)
     mock_menu.set_visibility.assert_called_with(False)
@@ -160,6 +160,6 @@ async def test_processing_highlight_released() -> None:
     ):
         from promptgrimoire.pages.annotation.highlights import _add_highlight
 
-        await _add_highlight(state, "test-tag")
+        await _add_highlight(state, "test-tag", {"start_char": 10, "end_char": 50})
 
     assert state.processing_highlight is False

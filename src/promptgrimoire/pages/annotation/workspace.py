@@ -36,7 +36,10 @@ from promptgrimoire.pages.annotation.broadcast import (
     _replay_existing_cursors,
     _setup_client_sync,
 )
-from promptgrimoire.pages.annotation.css import _build_tag_toolbar
+from promptgrimoire.pages.annotation.css import (
+    DocumentRenderCallbacks,
+    _build_tag_toolbar,
+)
 from promptgrimoire.pages.annotation.header import (
     _wrap_refresh_with_stale_download_clear,
     inject_copy_protection,
@@ -132,15 +135,18 @@ def _create_tag_callbacks(
             )
             state.toolbar_container.clear()
 
-            async def _tag_click(key: str) -> None:
-                await _add_highlight(state, key)
+            async def _tag_click(key: str, selection: dict[str, Any] | None) -> None:
+                await _add_highlight(state, key, selection)
 
             _build_tag_toolbar(
                 state.tag_info_list or [],
                 _tag_click,
-                on_add_click=(on_add_tag if can_create_tags else None),
-                on_manage_click=on_manage_tags,
-                footer=state.toolbar_container,
+                state,
+                DocumentRenderCallbacks(
+                    on_add_click=(on_add_tag if can_create_tags else None),
+                    on_manage_click=on_manage_tags,
+                    footer=state.toolbar_container,
+                ),
             )
 
     state.refresh_toolbar = _rebuild_toolbar

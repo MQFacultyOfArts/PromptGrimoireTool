@@ -1,5 +1,13 @@
 # ty SQLAlchemy Typing Cleanup Design
 
+> **Superseded in mechanism, 2026-08-17.** This design was never executed.
+> Its direction (raw SQL over `col()`, DR1) is confirmed by
+> [ADR 0004](../decisions/0004-raw-sql-for-reads.md), which updates the idiom
+> to `tstring()` on SQLAlchemy 2.1 ([ADR 0005](../decisions/0005-sqlalchemy-21-beta-override.md))
+> and drops the bundled index phase. DR3 (hold ty at 0.0.24) is reversed by
+> [ADR 0006](../decisions/0006-toolchain-single-sourced-in-uv-lock.md); ty is now a
+> uv-locked dev dependency. Diagnostic counts below reflect ty 0.0.32 and no longer match.
+
 **GitHub Issue:** None
 
 ## Summary

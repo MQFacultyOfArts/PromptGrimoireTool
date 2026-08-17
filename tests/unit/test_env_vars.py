@@ -272,6 +272,11 @@ _ALLOWED_TEST_OS_ENVIRON_GET = {
     _TESTS_DIR / "e2e" / "test_pdf_export_filename.py",
     # Perf probe tuning/output paths are runner flags, not app config
     _TESTS_DIR / "e2e" / "test_independent_workspace_load.py",
+    # Cram probe E2E_CRAM_* knobs are runner flags, not app config
+    _TESTS_DIR / "e2e" / "test_assessment_cram_load.py",
+    # Snapshot E2E reads SNAPSHOT__ENABLED (runner flag gating the file)
+    # and E2E_BASE_URL (set by the test runner) pre-launch, not app config
+    _TESTS_DIR / "e2e" / "test_snapshot_delivery.py",
     _TESTS_DIR / "e2e" / "test_cjk_export.py",
     # make_docs test captures DEV__AUTH_MOCK env state at mock call time
     _TESTS_DIR / "unit" / "test_make_docs.py",

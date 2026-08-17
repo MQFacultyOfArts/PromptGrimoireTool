@@ -290,7 +290,7 @@ async def _cmd_ban(
                     json={"user_id": str(user.id)},
                     headers={"Authorization": f"Bearer {secret}"},
                 )
-                if resp.status_code != 200:
+                if resp.status_code != httpx.codes.OK:
                     con.print(
                         f"[green]Banned[/] '{email}'. "
                         f"[yellow]Warning:[/] kick endpoint returned "
@@ -398,7 +398,7 @@ async def _cmd_duplicates(
     con.print("[yellow]Automated deletion is unsafe — review each case manually.[/]")
 
 
-async def _cmd_enroll_bulk(
+async def _cmd_enroll_bulk(  # noqa: PLR0913 -- mirrors Typer CLI options, one per flag by design
     xlsx_file: Path,
     code: str,
     semester: str,

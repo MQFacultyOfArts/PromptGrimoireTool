@@ -403,65 +403,62 @@ class TestDispatchProgressLine:
     """_dispatch_progress_line routes lines through collecting/running/summary."""
 
     def test_summary_phase_passthrough(self, capsys) -> None:
+        from typing import cast
         from unittest.mock import MagicMock
 
-        from rich.progress import TaskID
+        from rich.progress import Progress, TaskID
 
-        from promptgrimoire.cli.testing import _dispatch_progress_line
+        from promptgrimoire.cli.testing import _dispatch_progress_line, _ProgressState
 
-        progress = MagicMock()
-        phase, _count, _done = _dispatch_progress_line(
+        progress = cast("Progress", MagicMock())
+        state = _dispatch_progress_line(
             "summary line",
             "summary line\n",
-            "summary",
-            None,
-            0,
+            _ProgressState("summary", None, 0),
             progress,
             TaskID(0),
         )
-        assert phase == "summary"
+        assert state.phase == "summary"
         out = capsys.readouterr().out
         assert "summary line" in out
 
     def test_collecting_to_running_transition(self) -> None:
+        from typing import cast
         from unittest.mock import MagicMock
 
-        from rich.progress import TaskID
+        from rich.progress import Progress, TaskID
 
-        from promptgrimoire.cli.testing import _dispatch_progress_line
+        from promptgrimoire.cli.testing import _dispatch_progress_line, _ProgressState
 
-        progress = MagicMock()
-        phase, count, _done = _dispatch_progress_line(
+        progress = cast("Progress", MagicMock())
+        state = _dispatch_progress_line(
             "collected 42 items",
             "collected 42 items\n",
-            "collecting",
-            None,
-            0,
+            _ProgressState("collecting", None, 0),
             progress,
             TaskID(0),
         )
-        assert phase == "running"
-        assert count == 42
+        assert state.phase == "running"
+        assert state.count == 42
 
     def test_running_to_summary_transition(self) -> None:
+        from typing import cast
         from unittest.mock import MagicMock
 
-        from rich.progress import TaskID
+        from rich.progress import Progress, TaskID
 
-        from promptgrimoire.cli.testing import _dispatch_progress_line
+        from promptgrimoire.cli.testing import _dispatch_progress_line, _ProgressState
 
-        progress = MagicMock()
-        phase, _count, _done = _dispatch_progress_line(
+        progress = cast("Progress", MagicMock())
+        state = _dispatch_progress_line(
             "=" * 20,
             "=" * 20 + "\n",
-            "running",
-            10,
-            5,
+            _ProgressState("running", 10, 5),
             progress,
             TaskID(0),
         )
-        assert phase == "summary"
-        progress.stop.assert_called_once()
+        assert state.phase == "summary"
+        cast("MagicMock", progress).stop.assert_called_once()
 
 
 # ---------------------------------------------------------------------------

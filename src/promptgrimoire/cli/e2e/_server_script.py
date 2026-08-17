@@ -40,6 +40,64 @@ import threading
 
 _watchdog_logger = structlog.get_logger("e2e.watchdog")
 _watchdog_loop_ref: asyncio.AbstractEventLoop | None = None
+_WATCHDOG_SLOW_THRESHOLD_S = 0.5
+
+
+def _ping_event_loop(
+    loop: asyncio.AbstractEventLoop, *, timeout: float
+) -> tuple[bool, float]:
+    """Schedule a no-op callback on *loop* and time the round trip.
+
+    Returns (responded, elapsed_seconds). May raise RuntimeError if the
+    loop is already closed.
+    """
+    import time
+
+    event = threading.Event()
+    t0 = time.monotonic()
+
+    def _ping():
+        event.set()
+
+    loop.call_soon_threadsafe(_ping)
+    responded = event.wait(timeout=timeout)
+    return responded, time.monotonic() - t0
+
+
+def _dump_watchdog_stacks(dump_path: str) -> None:
+    """Best-effort dump of every thread's stack to *dump_path*."""
+    import sys as _sys
+    import traceback as _tb
+
+    try:
+        import datetime as _dt
+
+        fd = os.open(dump_path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o644)
+
+        def _w(s):
+            os.write(fd, s.encode())
+
+        _w(f"\n=== BLOCKED at {_dt.datetime.now()} ===\n")
+        frames = _sys._current_frames()
+        _w(f"Threads: {len(frames)}\n")
+        for tid, frame in frames.items():
+            tname = "unknown"
+            for t in threading.enumerate():
+                if t.ident == tid:
+                    tname = t.name
+                    break
+            _w(f"--- {tname} (tid={tid}) ---\n")
+            for entry in _tb.extract_stack(frame):
+                _w(f"  {entry.filename}:{entry.lineno} in {entry.name}: {entry.line}\n")
+        _w("=== END ===\n")
+        os.close(fd)
+    except Exception as exc:
+        try:
+            efd = os.open(dump_path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o644)
+            os.write(efd, f"DUMP FAILED: {exc}\n".encode())
+            os.close(efd)
+        except Exception:
+            pass
 
 
 def _watchdog_loop():
@@ -53,26 +111,13 @@ def _watchdog_loop():
         if loop is None:
             continue
 
-        # Schedule a callback on the event loop and measure how long it takes
-        event = threading.Event()
-        t0 = time.monotonic()
-
-        def _ping():
-            event.set()
-
         try:
-            loop.call_soon_threadsafe(_ping)
+            responded, elapsed = _ping_event_loop(loop, timeout=5.0)
         except RuntimeError:
             _watchdog_logger.warning("WATCHDOG: event loop closed")
             break
 
-        responded = event.wait(timeout=5.0)
-        elapsed = time.monotonic() - t0
-
         if not responded:
-            import sys as _sys
-            import traceback as _tb
-
             _watchdog_logger.warning(
                 "WATCHDOG: event loop DID NOT RESPOND in 5.0s"
                 " — BLOCKED. Dumping stacks to file."
@@ -80,52 +125,8 @@ def _watchdog_loop():
             # Canary: does code after the log message run?
             with open("/tmp/wd-canary.txt", "w") as _f:
                 _f.write("reached")
-            dump_path = "/tmp/watchdog-stacks.log"
-            try:
-                import datetime as _dt
-
-                fd = os.open(
-                    dump_path,
-                    os.O_WRONLY | os.O_CREAT | os.O_APPEND,
-                    0o644,
-                )
-
-                def _w(s):
-                    os.write(fd, s.encode())
-
-                _w(f"\n=== BLOCKED at {_dt.datetime.now()} ===\n")
-                frames = _sys._current_frames()
-                _w(f"Threads: {len(frames)}\n")
-                for tid, frame in frames.items():
-                    tname = "unknown"
-                    for t in threading.enumerate():
-                        if t.ident == tid:
-                            tname = t.name
-                            break
-                    _w(f"--- {tname} (tid={tid}) ---\n")
-                    for entry in _tb.extract_stack(frame):
-                        _w(
-                            f"  {entry.filename}:{entry.lineno}"
-                            f" in {entry.name}:"
-                            f" {entry.line}\n"
-                        )
-                _w("=== END ===\n")
-                os.close(fd)
-            except Exception as exc:
-                try:
-                    efd = os.open(
-                        dump_path,
-                        os.O_WRONLY | os.O_CREAT | os.O_APPEND,
-                        0o644,
-                    )
-                    os.write(
-                        efd,
-                        f"DUMP FAILED: {exc}\n".encode(),
-                    )
-                    os.close(efd)
-                except Exception:
-                    pass
-        elif elapsed > 0.5:
+            _dump_watchdog_stacks("/tmp/watchdog-stacks.log")
+        elif elapsed > _WATCHDOG_SLOW_THRESHOLD_S:
             _watchdog_logger.warning(
                 "WATCHDOG: event loop slow — responded in %.3fs", elapsed
             )
@@ -147,14 +148,25 @@ _wd_thread.start()
 # Set E2E_SKIP_LATEXMK=0 for full PDF compilation (test-e2e-slow).
 if os.environ.get("E2E_SKIP_LATEXMK", "1") == "1":
 
-    async def _compile_latex_noop(tex_path, output_dir=None):
+    async def _compile_latex_noop(
+        tex_path: Path, output_dir: Path | None = None
+    ) -> Path:
         return tex_path
 
     import promptgrimoire.export.pdf as _pdf_mod
     import promptgrimoire.export.pdf_export as _pdf_export_mod
 
-    _pdf_mod.compile_latex = _compile_latex_noop  # type: ignore[assignment]  # intentional monkey-patch
-    _pdf_export_mod.compile_latex = _compile_latex_noop  # type: ignore[assignment]  # intentional monkey-patch
+    # setattr() rather than attribute assignment: ty pins a module-level
+    # `async def`'s inferred attribute type to that specific function
+    # definition, so a same-signature replacement is rejected even though
+    # it is runtime-identical to `_pdf_mod.compile_latex = _compile_latex_noop`.
+    # setattr() isn't attribute-type-checked, so it expresses the same
+    # intentional monkey-patch without a false-positive diagnostic. B010
+    # (ruff's setattr-with-constant-name lint) would "fix" this straight
+    # back to the assignment form ruff and ty disagree on -- suppressed here,
+    # not on a type diagnostic.
+    setattr(_pdf_mod, "compile_latex", _compile_latex_noop)  # noqa: B010
+    setattr(_pdf_export_mod, "compile_latex", _compile_latex_noop)  # noqa: B010
 # --- End monkey-patch ---
 
 from nicegui import app, ui
@@ -168,6 +180,8 @@ if os.environ.get("E2E_INSTRUMENT_OUTBOX") == "1":
     from nicegui.outbox import Outbox as _Outbox
 
     from promptgrimoire.diagnostics import record_load_metric as _record_load_metric
+
+    _LARGE_SEND_THRESHOLD_BYTES = 100_000
 
     _original_enqueue_update = _Outbox.enqueue_update
     _original_emit = _Outbox._emit
@@ -206,7 +220,7 @@ if os.environ.get("E2E_INSTRUMENT_OUTBOX") == "1":
         finally:
             elapsed_ms = round((_time.monotonic() - started) * 1000, 1)
             _record_load_metric("engineio_websocket_send_ms", elapsed_ms)
-            if size >= 100_000:
+            if size >= _LARGE_SEND_THRESHOLD_BYTES:
                 _record_load_metric("engineio_large_send_ms", elapsed_ms)
                 _record_load_metric("engineio_large_send_bytes", size)
 
@@ -436,6 +450,9 @@ async def _diagnostics():
     }
 
 
+_QUALNAME_TAIL_SEGMENTS = 2
+
+
 def _task_summary(tasks):
     # Summarise asyncio tasks by coroutine/callback name.
     from collections import Counter
@@ -449,8 +466,12 @@ def _task_summary(tasks):
             name = t.get_name()
         # Keep last two segments for disambiguation (e.g. Event.wait vs
         # websocket_wait) instead of just the final name.
-        parts = name.rsplit(".", 2)
-        name = ".".join(parts[-2:]) if len(parts) >= 2 else name
+        parts = name.rsplit(".", _QUALNAME_TAIL_SEGMENTS)
+        name = (
+            ".".join(parts[-_QUALNAME_TAIL_SEGMENTS:])
+            if len(parts) >= _QUALNAME_TAIL_SEGMENTS
+            else name
+        )
         names.append(name)
     return dict(Counter(names).most_common(10))
 
@@ -464,9 +485,74 @@ def _task_summary(tasks):
 #   clients_only  — force-delete NiceGUI clients + their SIDs only
 #   eio_only      — disconnect orphan engine.io sessions only
 #   events_only   — cancel orphan Event.wait tasks only
+
+
+async def _cleanup_stale_clients() -> tuple[int, int]:
+    """Force-delete stale NiceGUI clients and their socket.io SIDs.
+
+    Returns (deleted, sids_closed).
+    """
+    from nicegui import Client, core
+
+    deleted = 0
+    sids_closed = 0
+    stale_ids = list(Client.instances.keys())
+    for cid in stale_ids:
+        c = Client.instances.get(cid)
+        if c is not None:
+            for sid in list(c._socket_to_document_id.keys()):
+                try:
+                    await core.sio.disconnect(sid)
+                    sids_closed += 1
+                except Exception:
+                    pass
+            c.delete()
+            deleted += 1
+            await asyncio.sleep(0)
+    return deleted, sids_closed
+
+
+async def _cleanup_orphan_eio_sessions() -> int:
+    """Disconnect orphan engine.io sessions (WebSocket receive tasks from
+    connections whose NiceGUI client was already deleted via the normal
+    disconnect→delete_content→delete path).
+
+    Returns eio_closed.
+    """
+    from nicegui import core
+
+    eio_closed = 0
+    for eio_sid in list(core.sio.eio.sockets.keys()):
+        try:
+            await core.sio.eio.disconnect(eio_sid)
+            eio_closed += 1
+        except Exception:
+            pass
+    return eio_closed
+
+
+def _cleanup_orphan_event_waits() -> int:
+    """Cancel orphan Event.wait tasks leaked by NiceGUI's page handler.
+
+    See handle_handshake() which CLEARS _waiting_for_connection (not sets
+    it), leaving the wait() task orphaned. Returns orphan_wait.
+    """
+    from nicegui import background_tasks as _bt
+
+    orphan_wait = 0
+    for t in list(_bt.running_tasks):
+        if not t.done():
+            coro = t.get_coro()
+            qn = getattr(coro, "__qualname__", "") if coro else ""
+            if qn == "Event.wait":
+                t.cancel()
+                orphan_wait += 1
+    return orphan_wait
+
+
 @app.post("/api/test/cleanup")
 async def _cleanup(mode: str = "all"):
-    from nicegui import Client, core
+    from nicegui import Client
 
     _cleanup_logger = structlog.get_logger("e2e.cleanup")
     before = len(Client.instances)
@@ -477,46 +563,14 @@ async def _cleanup(mode: str = "all"):
     eio_closed = 0
     orphan_wait = 0
 
-    # Action 1: Force-delete NiceGUI clients and their socket.io SIDs
     if mode in ("all", "clients_only"):
-        stale_ids = list(Client.instances.keys())
-        for cid in stale_ids:
-            c = Client.instances.get(cid)
-            if c is not None:
-                for sid in list(c._socket_to_document_id.keys()):
-                    try:
-                        await core.sio.disconnect(sid)
-                        sids_closed += 1
-                    except Exception:
-                        pass
-                c.delete()
-                deleted += 1
-                await asyncio.sleep(0)
+        deleted, sids_closed = await _cleanup_stale_clients()
 
-    # Action 2: Disconnect orphan engine.io sessions (WebSocket receive
-    # tasks from connections whose NiceGUI client was already deleted
-    # via the normal disconnect→delete_content→delete path).
     if mode in ("all", "eio_only"):
-        for eio_sid in list(core.sio.eio.sockets.keys()):
-            try:
-                await core.sio.eio.disconnect(eio_sid)
-                eio_closed += 1
-            except Exception:
-                pass
+        eio_closed = await _cleanup_orphan_eio_sessions()
 
-    # Action 3: Cancel orphan Event.wait tasks leaked by NiceGUI's page
-    # handler. See handle_handshake() which CLEARS _waiting_for_connection
-    # (not sets it), leaving the wait() task orphaned.
     if mode in ("all", "events_only"):
-        from nicegui import background_tasks as _bt
-
-        for t in list(_bt.running_tasks):
-            if not t.done():
-                coro = t.get_coro()
-                qn = getattr(coro, "__qualname__", "") if coro else ""
-                if qn == "Event.wait":
-                    t.cancel()
-                    orphan_wait += 1
+        orphan_wait = _cleanup_orphan_event_waits()
 
     await asyncio.sleep(0)  # let cancellations propagate
     elapsed_total = _time.monotonic() - t_total

@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -82,6 +83,10 @@ test_app = typer.Typer(
 @test_app.callback()
 def _apply_test_resource_policy() -> None:
     """Apply the inherited resource policy before any test subcommand."""
+    # Help output must never queue on the cross-worktree test lock or the
+    # host-load gate (observed: `test run --help` blocked 70+ minutes).
+    if any(flag in sys.argv for flag in ("--help", "-h")):
+        return
     _configure_test_run_resources()
 
 
@@ -190,6 +195,14 @@ def _handle_running_phase(
 # ---------------------------------------------------------------------------
 
 
+# Pytest prints its second `====` separator when results end and the
+# post-results summary section begins.
+_SUMMARY_SEPARATOR_COUNT = 2
+
+# A structurally valid PDF (header + one page + xref) can't be smaller.
+_MIN_VALID_PDF_BYTES = 1000
+
+
 def _stream_plain(
     process: subprocess.Popen[str],
     log_file: IO[str],
@@ -210,7 +223,7 @@ def _stream_plain(
 
         if not in_summary and _SEPARATOR_RE.match(stripped):
             separator_count += 1
-            if separator_count >= 2:
+            if separator_count >= _SUMMARY_SEPARATOR_COUNT:
                 in_summary = True
 
         if in_summary:
@@ -224,39 +237,42 @@ def _stream_plain(
     return process.returncode
 
 
+@dataclass
+class _ProgressState:
+    """Streaming-phase state threaded through the pytest progress parser."""
+
+    phase: str = "collecting"
+    count: int | None = None
+    done: int = 0
+
+
 def _dispatch_progress_line(
     stripped: str,
     raw_line: str,
-    phase: str,
-    count: int | None,
-    done: int,
+    state: _ProgressState,
     progress: Progress,
     task_id: TaskID,
-) -> tuple[str, int | None, int]:
-    """Dispatch a single line through the phase state machine.
-
-    Returns:
-        (new_phase, new_count, new_done) tuple.
-    """
-    if phase == "summary":
+) -> _ProgressState:
+    """Dispatch a single line through the phase state machine."""
+    if state.phase == "summary":
         print(raw_line, end="")
-        return phase, count, done
+        return state
 
-    if phase == "collecting":
-        count, start_running = _handle_collecting_phase(stripped, count)
+    if state.phase == "collecting":
+        count, start_running = _handle_collecting_phase(stripped, state.count)
         if start_running:
             _activate_running_phase(count, progress, task_id)
-            return "running", count, done
-        return "collecting", count, done
+            return _ProgressState("running", count, state.done)
+        return _ProgressState("collecting", count, state.done)
 
     done, enter_summary = _handle_running_phase(
-        stripped, progress, task_id, count, done
+        stripped, progress, task_id, state.count, state.done
     )
     if enter_summary:
         progress.stop()
         print(raw_line, end="")
-        return "summary", count, done
-    return "running", count, done
+        return _ProgressState("summary", state.count, done)
+    return _ProgressState("running", state.count, done)
 
 
 def _stream_with_progress(
@@ -264,9 +280,7 @@ def _stream_with_progress(
     log_file: IO[str],
 ) -> int:
     """Stream pytest output with a Rich progress bar -- for interactive TTY use."""
-    phase = "collecting"
-    count: int | None = None
-    done = 0
+    state = _ProgressState()
 
     progress = Progress(
         SpinnerColumn(),
@@ -283,11 +297,11 @@ def _stream_with_progress(
         for raw_line in process.stdout or []:
             log_file.write(raw_line)
             log_file.flush()
-            phase, count, done = _dispatch_progress_line(
-                raw_line.rstrip(), raw_line, phase, count, done, progress, task_id
+            state = _dispatch_progress_line(
+                raw_line.rstrip(), raw_line, state, progress, task_id
             )
     finally:
-        if phase != "summary":
+        if state.phase != "summary":
             progress.stop()
 
     process.wait()
@@ -474,23 +488,30 @@ _NICEGUI_UI_FILES: frozenset[str] = frozenset(
 )
 
 
-def _detect_test_type(args: list[str]) -> str:
-    """Classify test paths as 'e2e', 'nicegui', or 'unit'.
+def _partition_test_args(args: list[str]) -> tuple[dict[str, list[str]], list[str]]:
+    """Split *args* into per-lane path lists plus shared flags.
 
-    Scans *args* for anything that looks like a test path (not a flag).
-    Returns the detected type, defaulting to 'unit' when no paths match
-    a special category.
+    Every path is classified individually ('e2e', 'nicegui', or 'unit') so a
+    mixed invocation runs every lane it names. The old first-match-wins
+    classification routed the whole invocation down one lane, and that lane's
+    runner silently dropped the foreign paths — a false-green.
     """
+    lanes: dict[str, list[str]] = {"e2e": [], "nicegui": [], "unit": []}
+    flags: list[str] = []
     for arg in args:
-        if arg.startswith("-"):
+        # Values consumed by flags (`-k foo`, `-m blns`) must stay with the
+        # flags in original order; only path-shaped args are lane paths.
+        if arg.startswith("-") or not ("/" in arg or ".py" in arg):
+            flags.append(arg)
             continue
         normalised = arg.split("::")[0]
         if "tests/e2e" in normalised or normalised.startswith("tests/e2e"):
-            return "e2e"
-        filename = Path(normalised).name
-        if filename in _NICEGUI_UI_FILES:
-            return "nicegui"
-    return "unit"
+            lanes["e2e"].append(arg)
+        elif Path(normalised).name in _NICEGUI_UI_FILES:
+            lanes["nicegui"].append(arg)
+        else:
+            lanes["unit"].append(arg)
+    return lanes, flags
 
 
 @test_app.command(
@@ -516,36 +537,42 @@ def run_tests(
     from promptgrimoire.cli._shared import _prepend_filter
 
     args = _prepend_filter(ctx.args, filter_expr)
-    test_type = _detect_test_type(args)
+    lanes, flags = _partition_test_args(args)
 
-    if test_type == "e2e":
+    exit_code = 0
+    if lanes["e2e"]:
         from promptgrimoire.cli.e2e import run_playwright_noretry_lane
 
-        sys.exit(run_playwright_noretry_lane(args))
+        exit_code = run_playwright_noretry_lane(lanes["e2e"] + flags) or exit_code
 
-    if test_type == "nicegui":
+    if lanes["nicegui"]:
         from promptgrimoire.cli.e2e import run_nicegui_lane
 
-        sys.exit(run_nicegui_lane(args))
+        exit_code = run_nicegui_lane(lanes["nicegui"] + flags) or exit_code
 
     # Unit / integration — serial, no retries, fail-fast for targeted runs.
     # Exclude nicegui_ui and e2e markers so directory-level runs
     # (e.g. tests/integration/) don't collect NiceGUI tests that
     # need the user_simulation harness.
-    sys.exit(
-        _run_pytest(
-            title="Targeted Tests (no retries, fail-fast)",
-            log_path=Path("test-run.log"),
-            default_args=[
-                "-x",
-                "-v",
-                "--tb=short",
-                "-m",
-                _NON_UI_MARKER_EXPRESSION,
-            ],
-            extra_args=args,
+    # A bare `grimoire test run` (paths in no lane) still lands here so the
+    # marker-scoped default collection is preserved.
+    if lanes["unit"] or not (lanes["e2e"] or lanes["nicegui"]):
+        exit_code = (
+            _run_pytest(
+                title="Targeted Tests (no retries, fail-fast)",
+                log_path=Path("test-run.log"),
+                default_args=[
+                    "-x",
+                    "-v",
+                    "--tb=short",
+                    "-m",
+                    _NON_UI_MARKER_EXPRESSION,
+                ],
+                extra_args=lanes["unit"] + flags,
+            )
+            or exit_code
         )
-    )
+    sys.exit(exit_code)
 
 
 def _depper_base_ref() -> str:
@@ -834,7 +861,7 @@ def smoke_export() -> None:
 
     size = pdf_path.stat().st_size
 
-    if size < 1000:
+    if size < _MIN_VALID_PDF_BYTES:
         print(f"FAIL: PDF too small ({size} bytes): {pdf_path}")
         sys.exit(1)
 

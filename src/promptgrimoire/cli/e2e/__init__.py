@@ -8,6 +8,7 @@ import os
 import sys
 import tempfile
 import time
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, TextIO
 
@@ -51,6 +52,21 @@ def _apply_e2e_resource_policy() -> None:
 
 _PLAYWRIGHT_TEST_PATH = str(PLAYWRIGHT_LANE.test_paths[0])
 _perf_lock_files: list[TextIO] = []
+_QUIET_LOAD_SAMPLES_REQUIRED = 4
+_PYTEST_NO_TESTS_COLLECTED = 5
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class PlaywrightRunOptions:
+    """Runtime knobs for one Playwright pytest invocation against a managed server."""
+
+    use_pyspy: bool = False
+    worker_count: int = 1
+    fail_fast: bool = False
+    browser: str | None = None
+    marker_expr: str = PLAYWRIGHT_DEFAULT_MARKER_EXPR
+    test_timeout: int | None = None
+    log_file: Path | None = None
 
 
 def _playwright_worker_count() -> int:
@@ -82,13 +98,14 @@ def _wait_for_idle_perf_host() -> None:
 
     limit = float(os.environ.get("E2E_PERF_MAX_LOAD", "4"))
     quiet_samples = 0
-    while quiet_samples < 4:
+    while quiet_samples < _QUIET_LOAD_SAMPLES_REQUIRED:
         load_1m = os.getloadavg()[0]
         quiet_samples = quiet_samples + 1 if load_1m <= limit else 0
-        if quiet_samples == 4:
+        if quiet_samples == _QUIET_LOAD_SAMPLES_REQUIRED:
             return
         console.print(
-            f"[yellow]Host load {load_1m:.1f}; need {4 - quiet_samples} more "
+            f"[yellow]Host load {load_1m:.1f}; need "
+            f"{_QUIET_LOAD_SAMPLES_REQUIRED - quiet_samples} more "
             f"quiet sample(s) at ≤{limit:.1f}. Waiting 15s...[/]"
         )
         time.sleep(15)
@@ -162,18 +179,19 @@ def run_playwright_lane(
     if parallel:
         return _run_shared_playwright_e2e(
             user_args,
-            use_pyspy=py_spy,
-            worker_count=_playwright_worker_count(),
-            fail_fast=fail_fast,
-            browser=browser,
+            PlaywrightRunOptions(
+                use_pyspy=py_spy,
+                worker_count=_playwright_worker_count(),
+                fail_fast=fail_fast,
+                browser=browser,
+            ),
         )
 
     return _run_shared_playwright_e2e(
         user_args,
-        use_pyspy=py_spy,
-        worker_count=1,
-        fail_fast=fail_fast,
-        browser=browser,
+        PlaywrightRunOptions(
+            use_pyspy=py_spy, worker_count=1, fail_fast=fail_fast, browser=browser
+        ),
     )
 
 
@@ -350,7 +368,7 @@ def _run_all_lane_steps(user_args: list[str]) -> list[LaneResult]:
         extra_args=user_args,
     )
     # Exit code 5 = no tests collected — legitimate for optional lanes
-    if extra_exit == 5:
+    if extra_exit == _PYTEST_NO_TESTS_COLLECTED:
         extra_exit = 0
     lane_results.append(LaneResult("blns+extra", extra_exit, log_path=extra_log))
 
@@ -372,7 +390,7 @@ def run_all_lanes(user_args: list[str]) -> int:
 
 def _normalise_optional_lane_exit(exit_code: int, user_args: list[str]) -> int:
     """Treat filtered no-test outcomes as non-fatal for umbrella commands."""
-    return 0 if user_args and exit_code == 5 else exit_code
+    return 0 if user_args and exit_code == _PYTEST_NO_TESTS_COLLECTED else exit_code
 
 
 def _run_latexmk_full_suite(user_args: list[str]) -> int:
@@ -416,10 +434,11 @@ def run_slow_lanes(user_args: list[str]) -> int:
         pw_latexmk_exit = _normalise_optional_lane_exit(
             _run_serial_playwright_e2e(
                 user_args,
-                use_pyspy=False,
-                marker_expr=PLAYWRIGHT_SLOW_MARKER_EXPR,
-                test_timeout=120,
-                log_file=pw_latexmk_log,
+                PlaywrightRunOptions(
+                    marker_expr=PLAYWRIGHT_SLOW_MARKER_EXPR,
+                    test_timeout=120,
+                    log_file=pw_latexmk_log,
+                ),
             ),
             user_args,
         )
@@ -459,7 +478,11 @@ def run_slow_lanes(user_args: list[str]) -> int:
         "allow_interspersed_args": False,
     },
 )
-def run(
+# PLR0913/PLR0917 (too many arguments): each parameter is an independent
+# Typer CLI flag with its own --help text; Typer maps one Python parameter
+# per flag, so there is no param-object form to bundle these into without
+# adopting a codebase-wide Typer pattern this project doesn't otherwise use.
+def run(  # noqa: PLR0913, PLR0917
     ctx: typer.Context,
     serial: bool = typer.Option(
         False, "--serial", help="Run in serial mode (single server)"
@@ -516,7 +539,9 @@ def _check_firefox_installed(exit_code: int) -> None:
         "allow_interspersed_args": False,
     },
 )
-def firefox(
+# PLR0913/PLR0917: same Typer CLI flag surface as `run` above -- see the
+# comment on that command's suppression.
+def firefox(  # noqa: PLR0913, PLR0917
     ctx: typer.Context,
     serial: bool = typer.Option(
         False, "--serial", help="Run in serial mode (single server)"
@@ -769,10 +794,11 @@ def latexmk(
     try:
         exit_code = _run_serial_playwright_e2e(
             args,
-            use_pyspy=False,
-            marker_expr=PLAYWRIGHT_SLOW_MARKER_EXPR,
-            test_timeout=120,
-            log_file=Path("test-playwright-latexmk.log"),
+            PlaywrightRunOptions(
+                marker_expr=PLAYWRIGHT_SLOW_MARKER_EXPR,
+                test_timeout=120,
+                log_file=Path("test-playwright-latexmk.log"),
+            ),
         )
     finally:
         if previous_skip_latexmk is None:
@@ -974,14 +1000,7 @@ def _clear_lastfailed_cache() -> None:
 
 def _run_shared_playwright_e2e(
     extra_args: list[str],
-    *,
-    use_pyspy: bool,
-    worker_count: int,
-    fail_fast: bool = False,
-    browser: str | None = None,
-    marker_expr: str = PLAYWRIGHT_DEFAULT_MARKER_EXPR,
-    test_timeout: int | None = None,
-    log_file: Path | None = None,
+    options: PlaywrightRunOptions,
 ) -> int:
     """Run concurrent Playwright clients against one server and database."""
     from promptgrimoire.config import get_settings
@@ -992,7 +1011,7 @@ def _run_shared_playwright_e2e(
     # never failures cached by an earlier lane.
     _clear_lastfailed_cache()
 
-    if use_pyspy:
+    if options.use_pyspy:
         _check_ptrace_scope()
 
     _pre_test_db_cleanup()
@@ -1004,37 +1023,39 @@ def _run_shared_playwright_e2e(
     console.print(f"[green]Server ready at {url}[/]")
 
     os.environ["E2E_BASE_URL"] = url
-    if worker_count > 1:
+    if options.worker_count > 1:
         os.environ["E2E_SHARED_SERVER"] = "1"
 
     pyspy_process: subprocess.Popen[bytes] | None = None
-    if use_pyspy:
+    if options.use_pyspy:
         pyspy_process = _start_pyspy(server_process.pid)
 
     default_args = [
         "-m",
-        marker_expr,
+        options.marker_expr,
         "--ff",
         "-v",
         "--tb=short",
         "--log-cli-level=WARNING",
     ]
-    if worker_count > 1:
-        default_args += ["-n", str(worker_count), "--dist", "loadscope"]
-    if fail_fast:
+    if options.worker_count > 1:
+        default_args += ["-n", str(options.worker_count), "--dist", "loadscope"]
+    if options.fail_fast:
         default_args.append("-x")
-    if test_timeout is not None:
-        default_args += ["--timeout", str(test_timeout)]
-    if browser is not None:
-        default_args += ["--browser", browser]
+    if options.test_timeout is not None:
+        default_args += ["--timeout", str(options.test_timeout)]
+    if options.browser is not None:
+        default_args += ["--browser", options.browser]
     if not _has_test_path(extra_args):
         default_args.insert(0, _PLAYWRIGHT_TEST_PATH)
 
     exit_code = 1
     try:
-        log_path = log_file or Path("test-e2e.log")
+        log_path = options.log_file or Path("test-e2e.log")
         exit_code = _run_pytest(
-            title=(f"Playwright Test Suite ({worker_count} clients) — server {url}"),
+            title=(
+                f"Playwright Test Suite ({options.worker_count} clients) — server {url}"
+            ),
             log_path=log_path,
             default_args=default_args,
             extra_args=extra_args,
@@ -1052,20 +1073,7 @@ def _run_shared_playwright_e2e(
 
 def _run_serial_playwright_e2e(
     extra_args: list[str],
-    *,
-    use_pyspy: bool,
-    browser: str | None = None,
-    marker_expr: str = PLAYWRIGHT_DEFAULT_MARKER_EXPR,
-    test_timeout: int | None = None,
-    log_file: Path | None = None,
+    options: PlaywrightRunOptions,
 ) -> int:
     """Run Playwright tests against one server with one pytest worker."""
-    return _run_shared_playwright_e2e(
-        extra_args,
-        use_pyspy=use_pyspy,
-        worker_count=1,
-        browser=browser,
-        marker_expr=marker_expr,
-        test_timeout=test_timeout,
-        log_file=log_file,
-    )
+    return _run_shared_playwright_e2e(extra_args, replace(options, worker_count=1))

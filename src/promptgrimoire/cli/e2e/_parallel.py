@@ -8,6 +8,7 @@ import hashlib
 import os
 import shutil
 import time
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -43,6 +44,38 @@ if TYPE_CHECKING:
 logger = structlog.get_logger()
 
 _POSTGRES_IDENTIFIER_MAX_BYTES = 63
+
+
+@dataclass(frozen=True, slots=True)
+class LaneRunContext:
+    """Constants shared by every worker dispatched within one lane run."""
+
+    lane: LaneSpec
+    worker: Callable[..., Awaitable[WorkerResult]]
+    user_args: list[str]
+    browser: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class WorkerFleet:
+    """Per-file collections threaded through parallel lane orchestration.
+
+    ``files[i]`` pairs positionally with ``ports[i]`` and ``worker_dbs[i]``;
+    ``worker_dirs`` is keyed by file path.
+    """
+
+    files: list[Path]
+    ports: list[int]
+    worker_dbs: list[tuple[str, str]]
+    worker_dirs: dict[Path, Path]
+
+
+@dataclass(frozen=True, slots=True)
+class SourceDatabase:
+    """The template database a lane run clones per-worker databases from."""
+
+    url: str
+    name: str
 
 
 def _drop_database_with_debug(db_url: str, *, context: str) -> None:
@@ -93,7 +126,15 @@ def _all_results_passed(results: list[WorkerResult]) -> bool:
     return len(results) > 0 and all(result.exit_code in (0, 5) for result in results)
 
 
-async def _run_worker_for_lane(
+# PLR0913 (too many arguments): every keyword here is part of the
+# `run_worker_for_lane` callback contract that `_retry.py::
+# retry_failed_files_in_isolation` invokes by this exact keyword shape
+# (see test_retry_forwards_browser_to_run_worker_for_lane in
+# tests/unit/test_cli_e2e_runner.py) -- `_retry.py` is owned by a different
+# workstream in this cleanup, so its calling convention is not renegotiable
+# here. Bundling these into a param object would have to happen on both
+# sides at once.
+async def _run_worker_for_lane(  # noqa: PLR0913
     lane: LaneSpec,
     worker: Callable[..., Awaitable[WorkerResult]],
     *,
@@ -121,51 +162,45 @@ async def _run_worker_for_lane(
 
 
 async def _run_all_workers(
-    lane: LaneSpec,
-    worker: Callable[..., Awaitable[WorkerResult]],
-    files: list[Path],
-    ports: list[int],
-    worker_dbs: list[tuple[str, str]],
-    worker_dirs: dict[Path, Path],
-    user_args: list[str],
+    ctx: LaneRunContext,
+    fleet: WorkerFleet,
     *,
     worker_count: int,
-    browser: str | None = None,
 ) -> list[WorkerResult]:
     """Run all lane workers with bounded concurrency and per-file progress."""
-    total = len(files)
+    total = len(fleet.files)
     results: list[WorkerResult] = []
     semaphore = asyncio.Semaphore(worker_count)
 
     async def _tracked_worker(i: int) -> WorkerResult:
         async with semaphore:
             return await _run_worker_for_lane(
-                lane,
-                worker,
-                test_file=files[i],
-                db_url=worker_dbs[i][0],
-                worker_dir=worker_dirs[files[i]],
-                user_args=user_args,
-                port=ports[i] if lane.needs_server else None,
-                browser=browser,
+                ctx.lane,
+                ctx.worker,
+                test_file=fleet.files[i],
+                db_url=fleet.worker_dbs[i][0],
+                worker_dir=fleet.worker_dirs[fleet.files[i]],
+                user_args=ctx.user_args,
+                port=fleet.ports[i] if ctx.lane.needs_server else None,
+                browser=ctx.browser,
             )
 
     tasks: list[asyncio.Task[WorkerResult]] = [
         asyncio.create_task(_tracked_worker(i), name=f"e2e-{f.stem}")
-        for i, f in enumerate(files)
+        for i, f in enumerate(fleet.files)
     ]
 
     for done_count, future in enumerate(asyncio.as_completed(tasks), 1):
         try:
             result = await future
         except Exception as exc:
-            fpath = _resolve_failed_task_file(tasks, exc, files)
+            fpath = _resolve_failed_task_file(tasks, exc, fleet.files)
             console.print(f"[red]Worker {fpath.name} raised: {exc}[/]")
             result = WorkerResult(
                 file=fpath,
                 exit_code=1,
                 duration_s=0.0,
-                artifact_dir=worker_dirs[fpath],
+                artifact_dir=fleet.worker_dirs[fpath],
             )
 
         results.append(result)
@@ -206,16 +241,10 @@ async def _cancel_and_drain_tasks(
 
 
 async def _run_fail_fast_workers(
-    lane: LaneSpec,
-    worker: Callable[..., Awaitable[WorkerResult]],
-    files: list[Path],
-    ports: list[int],
-    worker_dbs: list[tuple[str, str]],
-    worker_dirs: dict[Path, Path],
-    user_args: list[str],
+    ctx: LaneRunContext,
+    fleet: WorkerFleet,
     *,
     worker_count: int,
-    browser: str | None = None,
 ) -> list[WorkerResult]:
     """Run E2E workers with fail-fast: cancel remaining on first failure."""
     semaphore = asyncio.Semaphore(worker_count)
@@ -223,22 +252,22 @@ async def _run_fail_fast_workers(
     async def _tracked_worker(i: int) -> WorkerResult:
         async with semaphore:
             return await _run_worker_for_lane(
-                lane,
-                worker,
-                test_file=files[i],
-                db_url=worker_dbs[i][0],
-                worker_dir=worker_dirs[files[i]],
-                user_args=user_args,
-                port=ports[i] if lane.needs_server else None,
-                browser=browser,
+                ctx.lane,
+                ctx.worker,
+                test_file=fleet.files[i],
+                db_url=fleet.worker_dbs[i][0],
+                worker_dir=fleet.worker_dirs[fleet.files[i]],
+                user_args=ctx.user_args,
+                port=fleet.ports[i] if ctx.lane.needs_server else None,
+                browser=ctx.browser,
             )
 
     tasks: list[asyncio.Task[WorkerResult]] = [
         asyncio.create_task(_tracked_worker(i), name=f"e2e-{f.stem}")
-        for i, f in enumerate(files)
+        for i, f in enumerate(fleet.files)
     ]
 
-    total = len(files)
+    total = len(fleet.files)
     results: list[WorkerResult] = []
     completed_files: set[Path] = set()
     done_count = 0
@@ -249,13 +278,13 @@ async def _run_fail_fast_workers(
         except asyncio.CancelledError:
             continue
         except Exception as exc:
-            fpath = _resolve_failed_task_file(tasks, exc, files)
+            fpath = _resolve_failed_task_file(tasks, exc, fleet.files)
             console.print(f"[red]Worker {fpath.name} raised: {exc}[/]")
             result = WorkerResult(
                 file=fpath,
                 exit_code=1,
                 duration_s=0.0,
-                artifact_dir=worker_dirs[fpath],
+                artifact_dir=fleet.worker_dirs[fpath],
             )
 
         results.append(result)
@@ -265,7 +294,7 @@ async def _run_fail_fast_workers(
 
         if result.exit_code not in (0, 5):
             cancelled = await _cancel_and_drain_tasks(
-                tasks, completed_files, files, worker_dirs
+                tasks, completed_files, fleet.files, fleet.worker_dirs
             )
             results.extend(cancelled)
             break
@@ -299,8 +328,7 @@ def _advertise_failed_workers(
 def _cleanup_parallel_results(
     all_passed: bool,
     had_flaky: bool,
-    worker_dbs: list[tuple[str, str]],
-    files: list[Path],
+    fleet: WorkerFleet,
     run_dir: Path,
     results: list[WorkerResult],
 ) -> None:
@@ -310,7 +338,8 @@ def _cleanup_parallel_results(
     the rest.  On flaky-pass, preserves the artifact directory but
     drops all databases.
     """
-    file_db_map = dict(zip(files, worker_dbs, strict=False))
+    worker_dbs = fleet.worker_dbs
+    file_db_map = dict(zip(fleet.files, worker_dbs, strict=False))
 
     if all_passed and not had_flaky:
         _drop_all_worker_dbs(worker_dbs, context="parallel result cleanup")
@@ -353,15 +382,10 @@ def _print_retry_summary(
 
 
 async def _retry_parallel_failures(
-    lane: LaneSpec,
-    worker: Callable[..., Awaitable[WorkerResult]],
+    ctx: LaneRunContext,
     failed_results: list[WorkerResult],
-    template_db_url: str,
-    source_db_name: str,
+    source_db: SourceDatabase,
     run_dir: Path,
-    user_args: list[str],
-    *,
-    browser: str | None = None,
 ) -> tuple[list[Path], list[Path]]:
     """Re-run failed E2E files with fresh servers and databases.
 
@@ -376,25 +400,25 @@ async def _retry_parallel_failures(
 
     retry_ports = (
         _allocate_ports(len(failed_results))
-        if lane.needs_server
+        if ctx.lane.needs_server
         else [0] * len(failed_results)
     )
     retry_dbs = _create_worker_databases(
-        template_db_url, source_db_name, len(failed_results), suffix="retry"
+        source_db.url, source_db.name, len(failed_results), suffix="retry"
     )
     failed_files = [result.file for result in failed_results]
 
     try:
         genuine_failures, flaky_files = await retry_failed_files_in_isolation(
-            lane,
-            worker,
+            ctx.lane,
+            ctx.worker,
             failed_files=failed_files,
             result_root=run_dir,
-            user_args=user_args,
+            user_args=ctx.user_args,
             retry_dbs=retry_dbs,
             retry_ports=retry_ports,
             run_worker_for_lane=_run_worker_for_lane,
-            browser=browser,
+            browser=ctx.browser,
         )
         _print_retry_summary(genuine_failures, flaky_files)
         return genuine_failures, flaky_files
@@ -442,16 +466,11 @@ def _create_worker_databases(
 
 
 async def _finalise_parallel_results(
-    lane: LaneSpec,
-    worker: Callable[..., Awaitable[WorkerResult]],
+    ctx: LaneRunContext,
     results: list[WorkerResult],
     wall_start: float,
-    test_db_url: str,
-    source_db_name: str,
+    source_db: SourceDatabase,
     run_dir: Path,
-    user_args: list[str],
-    *,
-    browser: str | None = None,
 ) -> tuple[bool, bool]:
     """Summarise, retry failures, merge JUnit XML.
 
@@ -469,14 +488,7 @@ async def _finalise_parallel_results(
         ]
         if failed_results:
             genuine_failures, flaky_files = await _retry_parallel_failures(
-                lane,
-                worker,
-                failed_results,
-                test_db_url,
-                source_db_name,
-                run_dir,
-                user_args,
-                browser=browser,
+                ctx, failed_results, source_db, run_dir
             )
             # Retries are diagnostic only; preserve the initial failing result.
 
@@ -486,7 +498,7 @@ async def _finalise_parallel_results(
         logger.debug("Failed to merge JUnit XML in %s", run_dir, exc_info=True)
     write_summary_metadata(
         run_dir,
-        lane.name,
+        ctx.lane.name,
         results,
         wall_clock_s=wall_clock,
         flaky_files=flaky_files,
@@ -501,7 +513,15 @@ def _default_worker_count(file_count: int) -> int:
     return max(1, min(file_count, 4, max(1, (os.cpu_count() or 4) // 2)))
 
 
-async def run_lane_files(
+# PLR0913 (6 > 5): this is the public entry point for both the parallel
+# Playwright lane and the NiceGUI lane, called from e2e/__init__.py and
+# tested only via a full monkeypatch replacement (test_cli_e2e_runner.py::
+# test_run_nicegui_e2e_routes_command_to_nicegui_lane) rather than through
+# its real body. Bundling worker_count/fail_fast/browser into a param
+# object would touch this load-bearing signature and its mocked test for a
+# one-argument reduction; left as-is per the harness caution in this
+# cleanup's brief (conservative mechanical extraction only, flag the rest).
+async def run_lane_files(  # noqa: PLR0913
     lane: LaneSpec,
     worker: Callable[..., Awaitable[WorkerResult]],
     *,
@@ -550,6 +570,12 @@ async def run_lane_files(
     console.print(f"  artifacts: {run_dir}")
     console.print(f"  workers:   {bounded_worker_count}  files: {len(files)}")
 
+    ctx = LaneRunContext(lane=lane, worker=worker, user_args=user_args, browser=browser)
+    fleet = WorkerFleet(
+        files=files, ports=ports, worker_dbs=worker_dbs, worker_dirs=worker_dirs
+    )
+    source_db = SourceDatabase(url=test_db_url, name=source_db_name)
+
     wall_start = time.monotonic()
     results: list[WorkerResult] = []
     all_passed = False
@@ -558,46 +584,20 @@ async def run_lane_files(
     try:
         if fail_fast:
             results = await _run_fail_fast_workers(
-                lane,
-                worker,
-                files,
-                ports,
-                worker_dbs,
-                worker_dirs,
-                user_args,
-                worker_count=bounded_worker_count,
-                browser=browser,
+                ctx, fleet, worker_count=bounded_worker_count
             )
         else:
             results = await _run_all_workers(
-                lane,
-                worker,
-                files,
-                ports,
-                worker_dbs,
-                worker_dirs,
-                user_args,
-                worker_count=bounded_worker_count,
-                browser=browser,
+                ctx, fleet, worker_count=bounded_worker_count
             )
 
         all_passed, had_flaky = await _finalise_parallel_results(
-            lane,
-            worker,
-            results,
-            wall_start,
-            test_db_url,
-            source_db_name,
-            run_dir,
-            user_args,
-            browser=browser,
+            ctx, results, wall_start, source_db, run_dir
         )
         return 0 if all_passed else 1
 
     finally:
-        _cleanup_parallel_results(
-            all_passed, had_flaky, worker_dbs, files, run_dir, results
-        )
+        _cleanup_parallel_results(all_passed, had_flaky, fleet, run_dir, results)
 
 
 async def _run_parallel_e2e(

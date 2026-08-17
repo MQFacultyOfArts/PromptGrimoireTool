@@ -308,6 +308,7 @@ async def test_finalise_parallel_results_keeps_initial_failure_red(
     """A passing diagnostic retry never rescues the initial failure."""
     from promptgrimoire.cli.e2e import _parallel
     from promptgrimoire.cli.e2e._lanes import PLAYWRIGHT_LANE, WorkerResult
+    from promptgrimoire.cli.e2e._parallel import LaneRunContext, SourceDatabase
 
     run_dir = tmp_path / "run"
     run_dir.mkdir()
@@ -333,15 +334,16 @@ async def test_finalise_parallel_results_keeps_initial_failure_red(
         _parallel, "_merge_junit_xml", lambda _run_dir: _run_dir / "combined.xml"
     )
 
+    ctx = LaneRunContext(lane=PLAYWRIGHT_LANE, worker=_unused_worker, user_args=[])
+    source_db = SourceDatabase(
+        url="postgresql+asyncpg://user:pass@localhost/test_db", name="test_db"
+    )
     all_passed, had_flaky = await _parallel._finalise_parallel_results(
-        PLAYWRIGHT_LANE,
-        _unused_worker,
+        ctx,
         [failed_result],
         0.0,
-        "postgresql+asyncpg://user:pass@localhost/test_db",
-        "test_db",
+        source_db,
         run_dir,
-        [],
     )
 
     assert all_passed is False
@@ -356,6 +358,7 @@ async def test_finalise_parallel_results_keeps_cancelled_workers_as_failure(
     """Cancelled workers are not retried and keep the lane in a failing state."""
     from promptgrimoire.cli.e2e import _parallel
     from promptgrimoire.cli.e2e._lanes import PLAYWRIGHT_LANE, WorkerResult
+    from promptgrimoire.cli.e2e._parallel import LaneRunContext, SourceDatabase
 
     run_dir = tmp_path / "run"
     run_dir.mkdir()
@@ -387,15 +390,16 @@ async def test_finalise_parallel_results_keeps_cancelled_workers_as_failure(
         _parallel, "_merge_junit_xml", lambda _run_dir: _run_dir / "combined.xml"
     )
 
+    ctx = LaneRunContext(lane=PLAYWRIGHT_LANE, worker=_unused_worker, user_args=[])
+    source_db = SourceDatabase(
+        url="postgresql+asyncpg://user:pass@localhost/test_db", name="test_db"
+    )
     all_passed, had_flaky = await _parallel._finalise_parallel_results(
-        PLAYWRIGHT_LANE,
-        _unused_worker,
+        ctx,
         [failed_result, cancelled_result],
         0.0,
-        "postgresql+asyncpg://user:pass@localhost/test_db",
-        "test_db",
+        source_db,
         run_dir,
-        [],
     )
 
     assert all_passed is False
@@ -410,6 +414,7 @@ async def test_finalise_parallel_results_forwards_browser_to_retry(
     """browser= must reach _retry_parallel_failures."""
     from promptgrimoire.cli.e2e import _parallel
     from promptgrimoire.cli.e2e._lanes import PLAYWRIGHT_LANE, WorkerResult
+    from promptgrimoire.cli.e2e._parallel import LaneRunContext, SourceDatabase
 
     run_dir = tmp_path / "run"
     run_dir.mkdir()
@@ -423,17 +428,12 @@ async def test_finalise_parallel_results_forwards_browser_to_retry(
     captured_browser: list[str | None] = []
 
     async def _spy_retry(
-        _lane: object,
-        _worker: object,
+        ctx: LaneRunContext,
         _failed: object,
-        _db_url: object,
         _src_db: object,
         _run_dir: object,
-        _user_args: object,
-        *,
-        browser: str | None = None,
     ) -> tuple[list[Path], list[Path]]:
-        captured_browser.append(browser)
+        captured_browser.append(ctx.browser)
         return [], [failed_result.file]
 
     async def _unused_worker(
@@ -454,16 +454,18 @@ async def test_finalise_parallel_results_forwards_browser_to_retry(
         lambda _run_dir: _run_dir / "combined.xml",
     )
 
+    ctx = LaneRunContext(
+        lane=PLAYWRIGHT_LANE, worker=_unused_worker, user_args=[], browser="firefox"
+    )
+    source_db = SourceDatabase(
+        url="postgresql+asyncpg://user:pass@localhost/test_db", name="test_db"
+    )
     await _parallel._finalise_parallel_results(
-        PLAYWRIGHT_LANE,
-        _unused_worker,
+        ctx,
         [failed_result],
         0.0,
-        "postgresql+asyncpg://user:pass@localhost/test_db",
-        "test_db",
+        source_db,
         run_dir,
-        [],
-        browser="firefox",
     )
 
     assert captured_browser == ["firefox"], (

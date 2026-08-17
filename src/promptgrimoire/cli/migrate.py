@@ -161,21 +161,29 @@ async def _backfill_tags(
     """Scan workspaces with tags and backfill CRDT state from DB."""
     from uuid import UUID
 
-    from sqlmodel import select
+    from sqlalchemy import tstring
 
     from promptgrimoire.db.engine import get_session, init_db
-    from promptgrimoire.db.models import Tag, Workspace
+    from promptgrimoire.db.models import Workspace
 
     await init_db()
 
     async with get_session() as session:
-        query = select(Workspace.id).where(
-            Workspace.id.in_(select(Tag.workspace_id).distinct())  # type: ignore[union-attr]  -- Column has .in_()
+        # Query-shaped read migrated to raw SQL per ADR 0004/0005 --
+        # Workspace.id.in_(select(Tag.workspace_id)) does not type-check
+        # under ty (astral-sh/ty#3421).
+        target_id = UUID(single_workspace_id) if single_workspace_id else None
+        rows = await session.execute(
+            tstring(
+                t"""
+                SELECT DISTINCT w.id
+                FROM workspace w
+                WHERE w.id IN (SELECT DISTINCT workspace_id FROM tag)
+                  AND ({target_id}::uuid IS NULL OR w.id = {target_id})
+                """
+            )
         )
-        if single_workspace_id:
-            query = query.where(Workspace.id == UUID(single_workspace_id))
-        result = await session.exec(query)
-        workspace_ids = list(result.all())
+        workspace_ids = [row[0] for row in rows.all()]
 
     if not workspace_ids:
         console.print("[yellow]No workspaces with tags found.[/]")

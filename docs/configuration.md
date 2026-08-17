@@ -23,6 +23,7 @@ All configuration is managed through `src/promptgrimoire/config.py` using pydant
 | `ADMISSION__` | `AdmissionConfig` | `enabled`, `initial_cap`, `batch_size`, `lag_increase_ms`, `lag_decrease_ms`, `queue_timeout_seconds`, `ticket_validity_seconds` |
 | `HELP__` | `HelpConfig` | `help_enabled`, `help_backend`, `algolia_app_id`, `algolia_search_api_key`, `algolia_index_name` |
 | `IDLE__` | `IdleConfig` | `enabled`, `timeout_seconds`, `warning_seconds` |
+| `SNAPSHOT__` | `SnapshotConfig` | `enabled`, `base_url`, `port`, `allow_origin` |
 
 ## Environment Variables
 

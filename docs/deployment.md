@@ -1308,6 +1308,84 @@ EXPORT__MAX_CONCURRENT_COMPILATIONS=1
 
 `FEATURES__WORKER_IN_PROCESS=false` tells the app not to spawn the worker in-process (the separate systemd service handles it). `EXPORT__MAX_CONCURRENT_COMPILATIONS=1` limits concurrent LaTeX compilations — the standalone worker's `MemoryMax=3G` only supports one concurrent lualatex process (each uses 200-500 MB).
 
+## 10b. Snapshot Delivery Service (flag off by default)
+
+The snapshot service delivers the initial annotation bundle (document HTML, highlights, tags, sidebar items) from its own process, so the NiceGUI event loop never constructs or transmits it. The app only mints a short-lived HMAC token (60 s TTL, keyed from `APP__STORAGE_SECRET`); the browser fetches the bundle directly from the service. Design and evidence: [docs/design-notes/2026-08-16-initial-snapshot-delivery.md](design-notes/2026-08-16-initial-snapshot-delivery.md).
+
+**`SNAPSHOT__ENABLED` defaults to `false` everywhere.** With the flag off, nothing here needs to exist — no service, no HAProxy route, no config. Deploy this section only when graduating the feature. The measured win scales with document size (−19% p50 / −22% p95 page load at 100-way on large documents); small documents gain nothing, and interaction latency is unaffected either way.
+
+### Installation
+
+```bash
+sudo cp deploy/promptgrimoire-snapshot.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable promptgrimoire-snapshot
+sudo systemctl start promptgrimoire-snapshot
+
+# Verify (service binds 127.0.0.1 only)
+curl -fsS http://127.0.0.1:8210/healthz
+```
+
+Unlike the export worker, the unit has **no `WatchdogSec`** — the service sends `READY`/`STOPPING` but no periodic heartbeat, so a watchdog would restart a healthy process. It also keeps **normal CPU/IO scheduling**: it serves page loads, so the worker's `Nice=19`/idle-IO settings must not be copied to it.
+
+> **Not yet wired into `deploy/restart.sh`.** The zero-downtime deploy script manages the app and export worker only. Until restart.sh grows a snapshot stage, a full deploy requires a manual `sudo systemctl restart promptgrimoire-snapshot` after the app is healthy (the unit's `PartOf=promptgrimoire.service` covers stops via systemd, not restart.sh's flow).
+
+### Configure `.env`
+
+```bash
+# Enable bundle delivery via the snapshot service
+SNAPSHOT__ENABLED=true
+
+# What the BROWSER fetches from. With the HAProxy path route below this is
+# the app's own origin (same-origin fetch, no CORS in play):
+SNAPSHOT__BASE_URL=https://grimoire.drbbs.org
+
+# Where the service binds on 127.0.0.1
+SNAPSHOT__PORT=8210
+
+# CORS origin allowed on the bundle endpoint. Redundant when the fetch is
+# same-origin via HAProxy, but set it to the app origin regardless:
+SNAPSHOT__ALLOW_ORIGIN=https://grimoire.drbbs.org
+```
+
+The app and service read the same `.env`; the token is minted and verified from the shared `APP__STORAGE_SECRET`. Both processes must see the same value or every bundle fetch 403s.
+
+### HAProxy route
+
+The service is loopback-only; the browser reaches it through HAProxy. Add to `fe_https` (before `default_backend`) and a new backend in `/etc/haproxy/haproxy.cfg`:
+
+```haproxy
+    # In frontend fe_https:
+    acl is_snapshot path /snapshot
+    use_backend be_snapshot if is_snapshot
+
+backend be_snapshot
+    server snapshot 127.0.0.1:8210 check
+    http-request set-header X-Forwarded-Proto https
+```
+
+Then `sudo haproxy -c -f /etc/haproxy/haproxy.cfg && sudo systemctl reload haproxy`. The app never serves a `/snapshot` route, so the path is free. `/healthz` on the service is deliberately not routed — probe it from localhost.
+
+### Connection pooling — mandatory
+
+The service opens its own database connections via the app's engine configuration. **It must go through PgBouncer exactly like the app** (same `DATABASE__URL`, QueuePool, `DATABASE__USE_NULL_POOL` unset). The Phase 11 load test demonstrated the failure mode: with NullPool, ~100 concurrent page loads each opened a direct PostgreSQL connection from the service and exhausted `max_connections` — surfacing to students as documents that never load, while the app itself stayed healthy. Budget the service's pool into the PgBouncer `default_pool_size` arithmetic in § 7a alongside the app and worker.
+
+### Logs
+
+```bash
+# Follow service logs
+sudo journalctl -u promptgrimoire-snapshot -f
+
+# Bundle serves and failures (structured log)
+sudo journalctl -u promptgrimoire-snapshot | grep -E "snapshot_served|snapshot_not_found"
+```
+
+Every served bundle logs `snapshot_served` with workspace/document IDs and payload size. Token failures return 403 and log nothing above INFO; a burst of browser-side load failures with a quiet service log means tokens are failing verification — check `APP__STORAGE_SECRET` parity first.
+
+### Client behaviour when the service is down
+
+The annotation page renders a skeleton, the bootstrap script retries the fetch once silently, then shows an unmissable red alert ("Document not loaded") with a reload button. Annotations already on the server are unaffected. Recovery is `systemctl start promptgrimoire-snapshot` + the student clicking reload; no app restart needed. Killing the service mid-session does not affect already-loaded pages — post-load collaboration flows over the app's WebSocket as before.
+
 ## 11. HAProxy
 
 HAProxy terminates TLS and reverse-proxies to the app. WebSocket upgrade is handled natively.

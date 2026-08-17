@@ -257,9 +257,18 @@ def _inject_highlight_scripts(state: PageState) -> None:
     dynamic loader for SPA navigations where ``add_body_html`` scripts are
     absent.
     """
-    ui.add_body_html('<script src="/static/annotation-highlight.js"></script>')
-    ui.add_body_html('<script src="/static/annotation-card-sync.js"></script>')
-    ui.add_body_html('<script src="/static/annotation-copy-protection.js"></script>')
+    from urllib.parse import quote  # noqa: PLC0415
+
+    from promptgrimoire import get_version_string  # noqa: PLC0415
+
+    # Version query busts browser caches on deploy: an unversioned URL
+    # leaves clients running stale annotation JS across fixes.
+    v = quote(get_version_string())
+    ui.add_body_html(f'<script src="/static/annotation-highlight.js?v={v}"></script>')
+    ui.add_body_html(f'<script src="/static/annotation-card-sync.js?v={v}"></script>')
+    ui.add_body_html(
+        f'<script src="/static/annotation-copy-protection.js?v={v}"></script>'
+    )
 
     highlight_json = _RawJS(_build_highlight_json(state))
     init_js = _render_js(

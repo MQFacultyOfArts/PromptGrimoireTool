@@ -66,17 +66,21 @@
 - [ ] **P11 Docs & housekeeping** — convention doc gotchas (Row attribute
   access, to_jsonb/bytea), CLAUDE.md hook-section accuracy, update
   `.notes/project_session-state-2026-08-17-ty-bump.md`, prune docs/_index.
-- [ ] **P12 Commits & stacking** — merge order SETTLED (Brian, 2026-08-17):
-  snapshot branch merges first; this branch rebases on top as a stacked PR.
-  Commit split by concern (toolchain / ADRs+docs / db migration / refactor
-  clusters / tests), match `git log` style, tests with implementation.
-  Post-rebase additions: (a) re-derive tags.py/items_serialise.py edits
-  against their new annotation_core module (serialise_items keyword-only
-  carries over — their side has adopted it); (b) extend the quality pass
-  over their new modules (annotation_core, snapshot, service) so the
-  mechanical pass covers the final architecture; (c) full gate re-run on
-  the stacked result; (d) snapshot session runs one 100-way perf
-  re-attachment leg after the raw-SQL resolve_annotation_context lands.
+- [x] **P12 Commits & stacking** — DONE 2026-08-17: seven-commit split
+  landed, then rebased onto origin/perf/initial-snapshot-delivery @
+  f1f7f177 via `--onto` (backup ref ty-bump-pre-stack-backup). (a) tags.py
+  / items_serialise.py resolved to their re-export shims; the typing +
+  keyword-only fixes re-derived into annotation_core.py (their relocated
+  copies still carried the 5 ty errors and the positional signature —
+  now 0 diagnostics, `*` after tag_colours, all call sites verified
+  keyword-safe). (b) Quality pass over their modules: one PLR0917 in
+  test_assessment_cram_load.py fixed keyword-only (30f86001); snapshot
+  modules read via existing db helpers, so ADR 0004-compliant by
+  construction; stacked tree fully static-green. Bonus: Alembic
+  c9d1e7a40b21 adds the four promoted partial indices (817cb8e7),
+  if_not_exists, up+down round-tripped on dev. (c) `test all` green on
+  the stack (4090 unit); `e2e all` result recorded under P13 evidence.
+  (d) 100-way leg: peer waits for the PR ping.
   Their session state: .notes/project_session-state-2026-08-17-snapshot-spike.md.
 - [ ] **P13 UAT** — Brian reviews; PR description tells the ADR story.
   PR-notes flag (from initial-snapshot-delivery session): that branch pins
@@ -184,3 +188,20 @@
 16. **[resolved]** JS lane vacuous pass ("vitest not installed" + exit 0) —
     npm ci restored it; the runner's exit-0-on-missing-vitest behaviour is
     part of finding 3/4's fix pass.
+17. **[PARKED for tonight's test-quality layer, found 2026-08-17 stacked
+    e2e all]** Week-create form value-capture race (pre-existing,
+    courses.py ~1501): `submit()` reads `title.value` server-side instead
+    of using `ui_helpers.on_submit_with_value` — the exact race pattern 2
+    in CLAUDE.md exists to prevent. Under socketio task reordering the
+    click precedes the value update, the "Title is required" guard
+    early-returns, no navigation happens, and any E2E waiting on the
+    redirect times out. Fingerprint: test_instructor_marking failed at
+    add_week in 1 of 4 parallel playwright-lane runs; isolation retry and
+    full lane rerun both green; my commits touch only noqa comments in
+    courses.py. Mechanism is a strong hypothesis (guard-return fits the
+    no-navigation timeout exactly) — confirm by capturing the notify in a
+    repro before fixing. Sibling forms in courses.py (add-activity,
+    course-create) likely share the pattern; sweep them in the same fix.
+    Single-input `on_submit_with_value` suffices for the title guard;
+    week_number keeps its server-side read (numeric default, not
+    guard-relevant).

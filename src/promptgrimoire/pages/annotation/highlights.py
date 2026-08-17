@@ -9,12 +9,12 @@ from __future__ import annotations
 import json
 import re
 import time
-from typing import Any
 from uuid import UUID
 
 import structlog
 from nicegui import ui
 
+from promptgrimoire.annotation_core import group_highlights_by_tag
 from promptgrimoire.crdt.persistence import get_persistence_manager
 from promptgrimoire.input_pipeline.paragraph_map import lookup_para_ref
 from promptgrimoire.pages.annotation import (
@@ -121,18 +121,7 @@ def _build_highlight_json(state: PageState) -> str:
     else:
         highlights = state.crdt_doc.get_all_highlights()
 
-    # Group by tag
-    by_tag: dict[str, list[dict[str, Any]]] = {}
-    for hl in highlights:
-        tag = hl.get("tag", "highlight")
-        entry = {
-            "start_char": int(hl.get("start_char", 0)),
-            "end_char": int(hl.get("end_char", 0)),
-            "id": hl.get("id", ""),
-        }
-        by_tag.setdefault(tag, []).append(entry)
-
-    return json.dumps(by_tag)
+    return json.dumps(group_highlights_by_tag(highlights))
 
 
 def _push_highlights_to_client(state: PageState) -> None:

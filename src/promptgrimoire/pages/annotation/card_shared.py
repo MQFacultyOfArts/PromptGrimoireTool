@@ -6,12 +6,14 @@ card modules (cards.py, organise.py, respond.py).
 
 from __future__ import annotations
 
-import re
 from typing import TYPE_CHECKING
 
 from nicegui import ui
 
+from promptgrimoire.annotation_core import author_initials
 from promptgrimoire.auth.anonymise import anonymise_author
+
+__all__ = ["anonymise_display_author", "author_initials", "build_expandable_text"]
 
 if TYPE_CHECKING:
     from promptgrimoire.pages.annotation import PageState
@@ -38,16 +40,6 @@ def anonymise_display_author(
             user_id is not None and user_id in state.privileged_user_ids
         ),
     )
-
-
-def author_initials(name: str) -> str:
-    """Derive compact initials from a display name.
-
-    Splits on whitespace and hyphens, takes first char of each segment,
-    joins with dots.  "Brian Ballsun-Stanton" -> "B.B.S.", "Ada" -> "A."
-    """
-    segments = re.split(r"[\s\-]+", name)
-    return ".".join(s[0].upper() for s in segments if s) + "."
 
 
 def build_expandable_text(full_text: str) -> None:

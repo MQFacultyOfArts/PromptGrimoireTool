@@ -80,7 +80,13 @@
   c9d1e7a40b21 adds the four promoted partial indices (817cb8e7),
   if_not_exists, up+down round-tripped on dev. (c) `test all` green on
   the stack (4090 unit); `e2e all` result recorded under P13 evidence.
-  (d) 100-way leg: peer waits for the PR ping.
+  (d) 100-way leg: RAN 2026-08-17 (peer, flag on, --queue-pool, stacked
+  annotation path at 437cec36): 100/100 loaded, highlights_ready_ms
+  p50 8424 / p95 9678, identical ws payload to Phase 10 — no
+  regression, possibly a small (~500ms p50) win from the raw-SQL
+  resolve_annotation_context; peer reads it conservatively (1.7× the
+  within-arm spread). Evidence: perf-results/snapshot-stacked-100.json,
+  banked with the peer's #533 branch. Perf-clear for merge.
   Their session state: .notes/project_session-state-2026-08-17-snapshot-spike.md.
 - [ ] **P13 UAT** — Brian reviews; PR description tells the ADR story.
   PR-notes flag (from initial-snapshot-delivery session): that branch pins
@@ -188,8 +194,17 @@
 16. **[resolved]** JS lane vacuous pass ("vitest not installed" + exit 0) —
     npm ci restored it; the runner's exit-0-on-missing-vitest behaviour is
     part of finding 3/4's fix pass.
-17. **[PARKED for tonight's test-quality layer, found 2026-08-17 stacked
-    e2e all]** Week-create form value-capture race (pre-existing,
+17. **[FIXED on branch value-capture-courses, Brian's "you find it, you
+    fix it" 2026-08-17]** All six courses.py forms now capture client-side:
+    `on_submit_with_values` (multi-field dict variant of the hardening
+    helper) wires course/week/activity create and edit; enrolment email
+    uses the single-value helper. The guard now traces closure variables
+    bound to `ui.input/textarea/number` constructor chains (red→green
+    verified: 24 flags before the fix, 0 after). NiceGUI User-harness
+    clicks read the trigger's `_value_capture_inputs` simulation hook so
+    fill+click tests stay faithful without a racy server-side fallback in
+    production. Original finding below.
+    Week-create form value-capture race (pre-existing,
     courses.py ~1501): `submit()` reads `title.value` server-side instead
     of using `ui_helpers.on_submit_with_value` — the exact race pattern 2
     in CLAUDE.md exists to prevent. Under socketio task reordering the
@@ -205,3 +220,11 @@
     Single-input `on_submit_with_value` suffices for the title guard;
     week_number keeps its server-side read (numeric default, not
     guard-relevant).
+18. **[OPEN — feed into the test-codepath-tracing audit]** `grimoire e2e
+    changed` deselected all 233 E2E tests for a courses.py edit (observed
+    2026-08-17): the AST dependency analysis follows imports, but E2E
+    tests reach page code through URLs and data-testids, so page-module
+    changes select nothing. A change-selection run that deselects
+    everything is a vacuous pass, not evidence — the tracing audit should
+    give the selector a page-route/testid mapping or make all-deselected
+    runs fail loudly.

@@ -109,6 +109,72 @@ def _find_input_param_names(func: ast.AsyncFunctionDef) -> set[str]:
     return names
 
 
+# Text-entry constructors whose captured value can be stale in a
+# concurrently-dispatched handler.  ui.number renders a native <input>
+# and races identically.  Selects/switches/checkboxes are excluded:
+# their value updates are the interaction itself, not a keystroke
+# stream racing a submit click.
+_INPUT_CTORS = frozenset({"input", "textarea", "number"})
+
+
+def _is_input_ctor_chain(node: ast.expr) -> bool:
+    """Is this expression a ``ui.input(...)`` call, possibly chained?
+
+    Unwraps fluent chains like ``ui.input(...).classes(...).props(...)``
+    down to the root call and checks it constructs a text-entry element.
+    """
+    while isinstance(node, ast.Call):
+        func = node.func
+        if not isinstance(func, ast.Attribute):
+            return False
+        if (
+            func.attr in _INPUT_CTORS
+            and isinstance(func.value, ast.Name)
+            and func.value.id == "ui"
+        ):
+            return True
+        node = func.value
+    return False
+
+
+def _find_bound_input_names(func: ast.AST) -> set[str]:
+    """Names assigned from ui.input/textarea/number chains in *func*.
+
+    Only looks at *func*'s own statements, not nested functions —
+    callers union the enclosing chain to model closure visibility.
+    """
+    names: set[str] = set()
+    for node in ast.walk(func):
+        if isinstance(node, ast.Assign) and _is_input_ctor_chain(node.value):
+            for target in node.targets:
+                if isinstance(target, ast.Name):
+                    names.add(target.id)
+        elif (
+            isinstance(node, ast.AnnAssign)
+            and node.value is not None
+            and _is_input_ctor_chain(node.value)
+            and isinstance(node.target, ast.Name)
+        ):
+            names.add(node.target.id)
+    return names
+
+
+def _closure_input_names(
+    func: ast.AsyncFunctionDef,
+    parent_map: dict[int, ast.AST],
+) -> set[str]:
+    """Input-bound names visible to *func* through its enclosing scopes."""
+    names: set[str] = set()
+    current = parent_map.get(id(func))
+    while current is not None:
+        if isinstance(current, ast.FunctionDef | ast.AsyncFunctionDef):
+            names |= _find_bound_input_names(current)
+        current = parent_map.get(id(current))
+    # A parameter of the handler shadows any enclosing binding.
+    own_params = {a.arg for a in func.args.args + func.args.kwonlyargs}
+    return names - own_params
+
+
 def _find_violations_in_func(
     func: ast.AsyncFunctionDef,
     parent_map: dict[int, ast.AST],
@@ -122,6 +188,8 @@ def _find_violations_in_func(
 
     # Params with input type annotations
     annotated_inputs = _find_input_param_names(func)
+    # Closure variables bound to ui.input(...) chains in enclosing scopes
+    closure_inputs = _closure_input_names(func, parent_map)
 
     for node in ast.walk(func):
         if not isinstance(node, ast.Attribute):
@@ -156,6 +224,17 @@ def _find_violations_in_func(
                     var_name,
                     node.lineno,
                     "name matches input convention",
+                )
+            )
+            continue
+
+        # Flag if bound to a ui.input(...) chain in an enclosing scope
+        if var_name in closure_inputs:
+            violations.append(
+                (
+                    var_name,
+                    node.lineno,
+                    "closure variable bound to ui input constructor",
                 )
             )
 

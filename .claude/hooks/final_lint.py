@@ -98,7 +98,7 @@ def main() -> int:
 
     # Step 4: ty check on all modified files
     result = subprocess.run(
-        ["uvx", "ty", "check", *files],
+        ["uvx", "ty@0.0.24", "check", *files],
         capture_output=True,
         text=True,
         cwd=project_dir,

@@ -188,8 +188,17 @@
 16. **[resolved]** JS lane vacuous pass ("vitest not installed" + exit 0) —
     npm ci restored it; the runner's exit-0-on-missing-vitest behaviour is
     part of finding 3/4's fix pass.
-17. **[PARKED for tonight's test-quality layer, found 2026-08-17 stacked
-    e2e all]** Week-create form value-capture race (pre-existing,
+17. **[FIXED on branch value-capture-courses, Brian's "you find it, you
+    fix it" 2026-08-17]** All six courses.py forms now capture client-side:
+    `on_submit_with_values` (multi-field dict variant of the hardening
+    helper) wires course/week/activity create and edit; enrolment email
+    uses the single-value helper. The guard now traces closure variables
+    bound to `ui.input/textarea/number` constructor chains (red→green
+    verified: 24 flags before the fix, 0 after). NiceGUI User-harness
+    clicks read the trigger's `_value_capture_inputs` simulation hook so
+    fill+click tests stay faithful without a racy server-side fallback in
+    production. Original finding below.
+    Week-create form value-capture race (pre-existing,
     courses.py ~1501): `submit()` reads `title.value` server-side instead
     of using `ui_helpers.on_submit_with_value` — the exact race pattern 2
     in CLAUDE.md exists to prevent. Under socketio task reordering the
@@ -205,3 +214,11 @@
     Single-input `on_submit_with_value` suffices for the title guard;
     week_number keeps its server-side read (numeric default, not
     guard-relevant).
+18. **[OPEN — feed into the test-codepath-tracing audit]** `grimoire e2e
+    changed` deselected all 233 E2E tests for a courses.py edit (observed
+    2026-08-17): the AST dependency analysis follows imports, but E2E
+    tests reach page code through URLs and data-testids, so page-module
+    changes select nothing. A change-selection run that deselects
+    everything is a vacuous pass, not evidence — the tracing audit should
+    give the selector a page-route/testid mapping or make all-deselected
+    runs fail loudly.

@@ -7,7 +7,6 @@ setting up JS-based text selection detection, and keyboard shortcuts.
 from __future__ import annotations
 
 import time
-from dataclasses import dataclass
 from html import escape
 from typing import Any
 from urllib.parse import urlencode
@@ -20,6 +19,7 @@ from promptgrimoire.input_pipeline.html_input import extract_text_from_html
 from promptgrimoire.input_pipeline.paragraph_map import inject_paragraph_attributes
 from promptgrimoire.pages.annotation import PageState, _RawJS, _render_js
 from promptgrimoire.pages.annotation.css import (
+    DocumentRenderCallbacks,
     _build_highlight_pseudo_css,
     _build_tag_toolbar,
 )
@@ -27,6 +27,7 @@ from promptgrimoire.pages.annotation.highlights import (
     _add_highlight,
     _build_highlight_json,
 )
+from promptgrimoire.ui_helpers import on_click_with_selection
 
 logger = structlog.get_logger()
 
@@ -59,7 +60,12 @@ def _handle_cursor_move(state: PageState, e: Any) -> None:
 
 
 async def _handle_keydown(state: PageState, e: Any) -> None:
-    """Handle keyboard shortcut for tag selection (1-0 keys map to tags)."""
+    """Handle keyboard shortcut for tag selection (1-0 keys map to tags).
+
+    The event args carry the selection captured client-side at keydown
+    time (``window._annotSel``), so the apply cannot race the separate
+    ``selection_made`` event (#502).
+    """
     key = e.args.get("key")
     if not key or not state.tag_info_list:
         return
@@ -68,33 +74,40 @@ async def _handle_keydown(state: PageState, e: Any) -> None:
     }
     if key in key_to_index:
         ti = state.tag_info_list[key_to_index[key]]
-        await _add_highlight(state, ti.raw_key)
+        await _add_highlight(state, ti.raw_key, e.args.get("selection"))
 
 
 # fmt: off
-_SELECTION_CLICK_AND_KEYBOARD_JS = (
+_SELECTION_CLICK_JS = (
     "setTimeout(function() {"
     "  document.addEventListener('click', function(e) {"
     "    if (e.target.closest('[data-testid=\"tag-toolbar\"]')) return;"
     "    setTimeout(function() {"
     "      var s = window.getSelection();"
-    "      if (!s || s.isCollapsed) emitEvent('selection_cleared', {});"
+    "      if (!s || s.isCollapsed) {"
+    "        window._annotSel = null;"
+    "        emitEvent('selection_cleared', {});"
+    "      }"
     "    }, 50);"
     "  });"
-    "  var lastKeyTime = 0;"
-    "  document.addEventListener('keydown', function(e) {"
-    "    if (e.repeat) return;"
-    "    var tag = e.target.tagName;"
-    "    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT'"
-    "        || e.target.isContentEditable) return;"
-    "    var now = Date.now();"
-    "    if (now - lastKeyTime < 300) return;"
-    "    lastKeyTime = now;"
-    "    if ('1234567890'.indexOf(e.key) >= 0) {"
-    "      emitEvent('keydown', {key: e.key});"
-    "    }"
-    "  });"
     "}, 100);"
+)
+
+# Client-side capture for the keyboard tag shortcut (#502): the keydown
+# event itself carries the selection (window._annotSel, written by
+# setupAnnotationSelection on mouseup), so the apply cannot race the
+# separate selection_made socket event.  Guards keep shortcuts out of
+# text inputs and held-key repeats.
+_KEYDOWN_CAPTURE_JS = (
+    "(e) => {"
+    "  if (e.repeat) return;"
+    "  const t = e.target || {};"
+    "  const tag = t.tagName;"
+    "  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT'"
+    "      || t.isContentEditable) return;"
+    "  if ('1234567890'.indexOf(e.key) < 0) return;"
+    "  emit({key: e.key, selection: window._annotSel || null});"
+    "}"
 )
 # fmt: on
 
@@ -110,8 +123,16 @@ def _setup_selection_handlers(state: PageState) -> None:
     ui.on("selection_made", lambda e: _handle_selection(state, e))
     ui.on("selection_cleared", lambda e: _handle_selection_cleared(state, e))
     ui.on("cursor_move", lambda e: _handle_cursor_move(state, e))
-    ui.on("keydown", lambda e: _handle_keydown(state, e))
-    ui.run_javascript(_SELECTION_CLICK_AND_KEYBOARD_JS)
+    # Keyboard shortcuts ride the layout's native keydown forwarding
+    # (the channel ui.on("keydown") subscribes to) with a js_handler
+    # that captures the selection at keydown time (#502).  ui.on() does
+    # not expose js_handler, so go through the layout element directly.
+    ui.context.client.layout.on(
+        "keydown",
+        lambda e: _handle_keydown(state, e),
+        js_handler=_KEYDOWN_CAPTURE_JS,
+    )
+    ui.run_javascript(_SELECTION_CLICK_JS)
 
 
 def _render_new_tag_button(on_add_click: Any) -> None:
@@ -121,18 +142,21 @@ def _render_new_tag_button(on_add_click: Any) -> None:
     ).classes("text-sm").tooltip("Create a new tag and apply it to your selection")
 
 
-def _render_highlight_menu_tag_button(ti: Any, on_tag_click: Any) -> None:
+def _render_highlight_menu_tag_button(ti: Any, on_tag_click: Any, state: Any) -> None:
     """Render a single abbreviated tag button inside the floating highlight menu."""
     abbrev = ti.name[:6]
 
-    async def _apply(tag_key: str = ti.raw_key) -> None:
-        await on_tag_click(tag_key)
+    async def _apply(
+        selection: dict[str, Any] | None, tag_key: str = ti.raw_key
+    ) -> None:
+        await on_tag_click(tag_key, selection)
 
     btn = (
-        ui.button(abbrev, on_click=_apply)
+        ui.button(abbrev)
         .classes("text-xs compact-btn")
         .props('data-testid="highlight-menu-tag-btn"')
     )
+    on_click_with_selection(btn, state, _apply)
     btn.style(
         f"background-color: {ti.colour} !important; "
         "color: white !important; "
@@ -150,7 +174,10 @@ def _render_highlight_menu_tag_button(ti: Any, on_tag_click: Any) -> None:
 
 
 def _render_tag_groups(
-    tag_info_list: list[Any], on_tag_click: Any, on_add_click: Any | None
+    tag_info_list: list[Any],
+    on_tag_click: Any,
+    on_add_click: Any | None,
+    state: Any,
 ) -> None:
     """Render tag buttons grouped by tag group, with optional '+ New' button."""
     groups: dict[str | None, list[Any]] = {}
@@ -161,7 +188,7 @@ def _render_tag_groups(
         for members in groups.values():
             with ui.row().classes("gap-1 items-center"):
                 for ti in members:
-                    _render_highlight_menu_tag_button(ti, on_tag_click)
+                    _render_highlight_menu_tag_button(ti, on_tag_click, state)
 
         if on_add_click is not None:
             _render_new_tag_button(on_add_click)
@@ -196,7 +223,7 @@ def _populate_highlight_menu(
     menu.clear()
     with menu:
         if state.tag_info_list:
-            _render_tag_groups(state.tag_info_list, on_tag_click, on_add_click)
+            _render_tag_groups(state.tag_info_list, on_tag_click, on_add_click, state)
         else:
             _render_empty_tag_state(on_add_click)
 
@@ -486,15 +513,6 @@ def _create_annotation_sidebar(state: PageState) -> Any:
     )
 
 
-@dataclass(frozen=True, slots=True)
-class DocumentRenderCallbacks:
-    """Optional toolbar/menu callbacks and footer for document rendering."""
-
-    on_add_click: Any | None = None
-    on_manage_click: Any | None = None
-    footer: Any | None = None
-
-
 def _render_document_content(doc: Any) -> None:
     """Emit the paragraph-injected document HTML into the current slot.
 
@@ -576,18 +594,17 @@ async def _render_document_with_highlights(
     state.highlight_style = ui.element("style")
     state.highlight_style._props["innerHTML"] = initial_css
 
-    # Tag toolbar handler
-    async def handle_tag_click(tag_key: str) -> None:
-        await _add_highlight(state, tag_key)
+    # Tag toolbar handler — selection rides the click/keydown event (#502)
+    async def handle_tag_click(tag_key: str, selection: dict[str, Any] | None) -> None:
+        await _add_highlight(state, tag_key, selection)
 
     # Tag toolbar — only for users who can annotate
     if state.can_annotate:
         state.toolbar_container = _build_tag_toolbar(
             state.tag_info_list or [],
             handle_tag_click,
-            on_add_click=cb.on_add_click,
-            on_manage_click=cb.on_manage_click,
-            footer=cb.footer,
+            state,
+            cb,
         )
 
     # Highlight creation menu (popup with abbreviated tag buttons)

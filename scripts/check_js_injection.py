@@ -88,6 +88,12 @@ ALLOWED_JS_FILES = {
     # to locate text node bounding rects for mouse selection and to
     # introspect CSS.highlights entries (no Playwright API for either).
     "test_annotation_highlight_api.py",
+    # #502 reorder regression: the bug is a server-side task-ordering race
+    # (tag-apply click processed before selection_made). No behavioural
+    # driver can force that ordering deterministically, so evaluate()
+    # suppresses selection_made delivery as the reproducible limiting
+    # case. CSS.highlights offset readback also requires evaluate().
+    "test_selection_capture_502.py",
     # Remote presence rendering tests: CSS.highlights introspection has no
     # Playwright native API. Custom JS functions (renderRemoteCursor,
     # renderRemoteSelection, removeAllRemotePresence) can only be invoked

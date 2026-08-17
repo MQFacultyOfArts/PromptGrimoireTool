@@ -107,6 +107,8 @@ class TestTextSelection:
                     ? tn[tn.length - 1].endChar : 0;
                 // Select from char 10 to char 30 (spans boundary)
                 const end = Math.min(30, total);
+                // A real mouseup writes the click-time capture too (#502)
+                window._annotSel = {start_char: 10, end_char: end};
                 emitEvent('selection_made', {
                     start_char: 10, end_char: end
                 });

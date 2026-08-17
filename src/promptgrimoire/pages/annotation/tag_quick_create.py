@@ -128,9 +128,14 @@ async def _quick_create_save(
             _add_highlight,
         )
 
-        state.selection_start = saved_selection.start
-        state.selection_end = saved_selection.end
-        await _add_highlight(state, str(tag_id))
+        await _add_highlight(
+            state,
+            str(tag_id),
+            {
+                "start_char": saved_selection.start,
+                "end_char": saved_selection.end,
+            },
+        )
 
     return True
 

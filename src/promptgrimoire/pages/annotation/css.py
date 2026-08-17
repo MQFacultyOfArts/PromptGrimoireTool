@@ -6,13 +6,26 @@ page style setup, and tag toolbar builder.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from html import escape
 from typing import TYPE_CHECKING, Any
 
 from nicegui import ui
 
+from promptgrimoire.ui_helpers import on_click_with_selection
+
 if TYPE_CHECKING:
     from promptgrimoire.pages.annotation.tags import TagInfo
+
+
+@dataclass(frozen=True, slots=True)
+class DocumentRenderCallbacks:
+    """Optional toolbar/menu callbacks and footer for document rendering."""
+
+    on_add_click: Any | None = None
+    on_manage_click: Any | None = None
+    footer: Any | None = None
+
 
 _COMPACT_THRESHOLD = 5
 """Tag count at or above which toolbar buttons use compact icon-only style."""
@@ -372,14 +385,19 @@ def _setup_page_styles() -> None:
     ui.add_css(_PAGE_CSS)
 
 
-def _render_tag_button(ti: TagInfo, shortcut: str, on_tag_click: Any) -> None:
+def _render_tag_button(
+    ti: TagInfo, shortcut: str, on_tag_click: Any, state: Any
+) -> None:
     """Render a single tag button inside the toolbar."""
     label = f"[{shortcut}] {ti.name}" if shortcut else ti.name
 
-    async def apply_tag(tag_key: str = ti.raw_key) -> None:
-        await on_tag_click(tag_key)
+    async def apply_tag(
+        selection: dict[str, Any] | None, tag_key: str = ti.raw_key
+    ) -> None:
+        await on_tag_click(tag_key, selection)
 
-    btn = ui.button(label, on_click=apply_tag).classes("text-xs compact-btn")
+    btn = ui.button(label).classes("text-xs compact-btn")
+    on_click_with_selection(btn, state, apply_tag)
     btn.props(f'data-tag-id="{ti.raw_key}" data-testid="tag-btn-{ti.raw_key}"')
     btn.style(
         f"background-color: {ti.colour} !important; "
@@ -466,6 +484,7 @@ def _render_tag_group(
     group_name: str | None,
     members: list[tuple[int, TagInfo]],
     on_tag_click: Any,
+    state: Any,
 ) -> None:
     """Render a single tag group column in the toolbar.
 
@@ -494,16 +513,14 @@ def _render_tag_group(
                     if idx < _MAX_KEYBOARD_SHORTCUT_TAGS
                     else ""
                 )
-                _render_tag_button(ti, shortcut, on_tag_click)
+                _render_tag_button(ti, shortcut, on_tag_click, state)
 
 
 def _build_tag_toolbar(
     tag_info_list: list[TagInfo],
     on_tag_click: Any,
-    *,
-    on_add_click: Any | None = None,
-    on_manage_click: Any | None = None,
-    footer: Any | None = None,
+    state: Any,
+    callbacks: DocumentRenderCallbacks | None = None,
 ) -> Any:
     """Build tag toolbar from DB-backed tag list.
 
@@ -521,15 +538,21 @@ def _build_tag_toolbar(
 
     Args:
         tag_info_list: List of TagInfo instances to render as buttons.
-        on_tag_click: Async callback receiving a tag key string.
-        on_add_click: Optional callback for the "+" quick-create button.
-            Hidden when ``None`` (tag creation not allowed).
-        on_manage_click: Optional callback for the gear (manage) button.
-        footer: Optional Quasar footer element to render inside.
+        on_tag_click: Async callback receiving a tag key string and the
+            event-carried selection payload (or ``None``).
+        state: Annotation ``PageState`` — passed to the selection-capture
+            wiring (User-harness simulation hook).
+        callbacks: Optional add/manage callbacks and Quasar footer
+            (``footer=None`` falls back to a fixed-position wrapper div).
 
     Returns:
         The toolbar container element.
     """
+    cb = callbacks or DocumentRenderCallbacks()
+    footer = cb.footer
+    on_add_click = cb.on_add_click
+    on_manage_click = cb.on_manage_click
+
     # Partition tags into groups preserving order
     groups: dict[str | None, list[tuple[int, TagInfo]]] = {}
     for i, ti in enumerate(tag_info_list):
@@ -555,7 +578,7 @@ def _build_tag_toolbar(
         .props('data-testid="tag-toolbar"'),
     ):
         for group_name, members in groups.items():
-            _render_tag_group(group_name, members, on_tag_click)
+            _render_tag_group(group_name, members, on_tag_click, state)
 
         # Action buttons (+ and gear) aligned with tag button baseline
         if on_add_click is not None or on_manage_click is not None:

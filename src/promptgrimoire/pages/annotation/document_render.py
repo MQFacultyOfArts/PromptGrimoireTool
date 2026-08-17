@@ -115,13 +115,16 @@ def render_empty_template_toolbar(
     """
     logger.debug("[RENDER] no documents, showing toolbar + add content form")
 
-    async def handle_tag_click(tag_key: str) -> None:
-        await _add_highlight(state, tag_key)
+    async def handle_tag_click(tag_key: str, selection: dict[str, Any] | None) -> None:
+        await _add_highlight(state, tag_key, selection)
 
     state.toolbar_container = _build_tag_toolbar(
         state.tag_info_list or [],
         handle_tag_click,
-        on_add_click=(on_add_tag if can_create_tags else None),
-        on_manage_click=on_manage_tags,
-        footer=footer,
+        state,
+        DocumentRenderCallbacks(
+            on_add_click=(on_add_tag if can_create_tags else None),
+            on_manage_click=on_manage_tags,
+            footer=footer,
+        ),
     )

@@ -139,6 +139,8 @@ class TestHighlightRendering:
                 const totalChars = textNodes.length
                     ? textNodes[textNodes.length - 1].endChar : 0;
                 const endChar = Math.min(30, totalChars);
+                // A real mouseup writes the click-time capture too (#502)
+                window._annotSel = {start_char: 10, end_char: endChar};
                 emitEvent('selection_made', {start_char: 10, end_char: endChar});
             }"""
         )

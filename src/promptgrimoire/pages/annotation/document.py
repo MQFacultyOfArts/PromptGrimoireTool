@@ -9,6 +9,7 @@ from __future__ import annotations
 import time
 from html import escape
 from typing import Any
+from urllib.parse import urlencode
 
 import structlog
 from nicegui import ui
@@ -299,6 +300,45 @@ def _inject_highlight_scripts(state: PageState) -> None:
     ui.run_javascript(init_js)
 
 
+def _arm_snapshot_container(state: PageState) -> None:
+    """Arm the skeleton doc container for declarative snapshot delivery.
+
+    Mints the bundle token and exposes it as ``data-snapshot-*``
+    attributes on the container.  annotation-snapshot-bootstrap.js
+    (added to the initial page HTML by ``annotation_page``) discovers
+    armed containers via an initial scan plus a MutationObserver and
+    mounts the bundle — no JavaScript is constructed in Python.
+    See docs/design-notes/2026-08-16-initial-snapshot-delivery.md.
+    """
+    from promptgrimoire.config import get_settings  # noqa: PLC0415, I001 -- lazy: matches sibling render helpers
+    from promptgrimoire.snapshot import (  # noqa: PLC0415 -- keep annotation import light
+        SnapshotClaims,
+        mint_snapshot_token,
+    )
+
+    settings = get_settings()
+    claims = SnapshotClaims(
+        workspace_id=str(state.workspace_id),
+        document_id=str(state.document_id),
+        user_id=state.user_id,
+        viewer_is_privileged=state.viewer_is_privileged,
+        can_annotate=state.can_annotate,
+        anonymous_sharing=state.is_anonymous,
+    )
+    token = mint_snapshot_token(
+        claims, secret=settings.app.storage_secret.get_secret_value()
+    )
+    bundle_url = f"{settings.snapshot.base_url}/snapshot?{urlencode({'t': token})}"
+
+    if state.doc_container is None:  # pragma: no cover -- caller sets it just above
+        msg = "snapshot container armed before doc_container was created"
+        raise RuntimeError(msg)
+    state.doc_container.props(
+        f'data-snapshot-url="{bundle_url}" '
+        f'data-snapshot-menu-id="{state.highlight_menu_id}"'
+    )
+
+
 async def _persist_and_broadcast(
     state: PageState,
     *,
@@ -436,6 +476,65 @@ def _create_annotation_sidebar(state: PageState) -> Any:
     )
 
 
+def _render_document_content(doc: Any) -> None:
+    """Emit the paragraph-injected document HTML into the current slot.
+
+    Non-snapshot path: the full document payload rides the NiceGUI
+    element tree.
+    """
+    # Inject data-para attributes for paragraph number margin display.
+    # paragraph_map comes from WorkspaceDocument; empty map is a no-op.
+    para_map = getattr(doc, "paragraph_map", None) or {}
+    _t = time.monotonic()
+    rendered_html = inject_paragraph_attributes(doc.content, para_map)
+    logger.debug(
+        "render_phase",
+        phase="inject_paragraph_attributes",
+        elapsed_ms=round((time.monotonic() - _t) * 1000, 1),
+        content_len=len(doc.content),
+        para_map_size=len(para_map),
+    )
+    _t = time.monotonic()
+    ui.html(rendered_html, sanitize=False)
+    logger.debug(
+        "render_phase",
+        phase="ui_html",
+        elapsed_ms=round((time.monotonic() - _t) * 1000, 1),
+        html_len=len(rendered_html),
+    )
+
+
+def _build_doc_container(state: PageState, doc: Any, *, use_snapshot: bool) -> None:
+    """Build the document container: real content, or a snapshot skeleton.
+
+    In snapshot mode the NiceGUI element tree never carries the document
+    payload — the container is armed with data attributes and the
+    standalone service delivers the bundle to the bootstrap JS.
+    """
+    container_classes = "doc-container"
+    if hasattr(doc, "source_type") and doc.source_type == "text":
+        container_classes += " source-text"
+    doc_container = (
+        ui.element("div")
+        .classes(container_classes)
+        .style("flex: 2; min-width: 600px; max-width: 900px;")
+        .props(f'id="{state.doc_container_id}" data-testid="doc-container"')
+    )
+    state.doc_container = doc_container
+    with doc_container:
+        if use_snapshot:
+            ui.label("Loading document…").props(
+                'data-testid="snapshot-loading"'
+            ).classes("text-gray-500")
+        else:
+            _render_document_content(doc)
+
+    if use_snapshot:
+        _arm_snapshot_container(state)
+    else:
+        _inject_highlight_scripts(state)
+
+
 async def _render_document_with_highlights(
     state: PageState,
     doc: Any,
@@ -446,7 +545,10 @@ async def _render_document_with_highlights(
     footer: Any | None = None,
 ) -> None:
     """Render a document with highlight support."""
+    from promptgrimoire.config import get_settings  # noqa: PLC0415, I001 -- lazy: matches sibling render helpers
+
     _t_render = time.monotonic()
+    use_snapshot = get_settings().snapshot.enabled
     _init_document_state(state, doc, crdt_doc)
 
     # Static ::highlight() CSS for all tags -- actual highlight ranges are
@@ -495,39 +597,7 @@ async def _render_document_with_highlights(
         # Document content - proper readable width (~65% of layout)
         # Needs ID for scroll-sync JavaScript positioning
         # Add source-text class for monospace rendering of plain text
-        container_classes = "doc-container"
-        if hasattr(doc, "source_type") and doc.source_type == "text":
-            container_classes += " source-text"
-        doc_container = (
-            ui.element("div")
-            .classes(container_classes)
-            .style("flex: 2; min-width: 600px; max-width: 900px;")
-            .props(f'id="{state.doc_container_id}" data-testid="doc-container"')
-        )
-        state.doc_container = doc_container
-        with doc_container:
-            # Inject data-para attributes for paragraph number margin display.
-            # paragraph_map comes from WorkspaceDocument; empty map is a no-op.
-            para_map = getattr(doc, "paragraph_map", None) or {}
-            _t = time.monotonic()
-            rendered_html = inject_paragraph_attributes(doc.content, para_map)
-            logger.debug(
-                "render_phase",
-                phase="inject_paragraph_attributes",
-                elapsed_ms=round((time.monotonic() - _t) * 1000, 1),
-                content_len=len(doc.content),
-                para_map_size=len(para_map),
-            )
-            _t = time.monotonic()
-            ui.html(rendered_html, sanitize=False)
-            logger.debug(
-                "render_phase",
-                phase="ui_html",
-                elapsed_ms=round((time.monotonic() - _t) * 1000, 1),
-                html_len=len(rendered_html),
-            )
-
-        _inject_highlight_scripts(state)
+        _build_doc_container(state, doc, use_snapshot=use_snapshot)
 
         # Annotations sidebar (~35% of layout) — Vue component
         state.annotations_container = (
@@ -549,9 +619,12 @@ async def _render_document_with_highlights(
 
     state.refresh_annotations = refresh_annotations
 
-    # Push initial items to the Vue sidebar
+    # Push initial items to the Vue sidebar.  In snapshot mode the bundle
+    # carries the initial items; the first genuine server push (any later
+    # refresh) then becomes authoritative in the component.
     _t_cards = time.monotonic()
-    sidebar.refresh_from_state(state)
+    if not use_snapshot:
+        sidebar.refresh_from_state(state)
     _t_cards_done = time.monotonic()
 
     # Set up selection detection (viewers get read-only view)

@@ -11,6 +11,7 @@ const files = [
   'annotation-highlight.js',     // Must be first (others depend on it)
   'annotation-card-sync.js',
   'annotation-copy-protection.js',
+  'annotation-snapshot-bootstrap.js',
   'idle-tracker.js',
 ];
 
@@ -63,7 +64,7 @@ const functionNames = [
   'rangePointToCharOffset', '_boundaryFromSiblings', 'countCollapsed',
   'renderRemoteCursor', 'removeRemoteCursor', 'updateRemoteCursorPositions',
   'renderRemoteSelection', 'removeRemoteSelection', 'removeAllRemotePresence',
-  'initIdleTracker', 'cleanupIdleTracker'
+  'initIdleTracker', 'cleanupIdleTracker', 'loadAnnotationSnapshot'
 ];
 
 for (const name of functionNames) {

@@ -29,6 +29,42 @@ export default {
     const rootRef = ref(null);
     const MIN_GAP = 8;
 
+    // --- Snapshot bundle state (initial delivery outside NiceGUI) ---
+    // Bundle-provided props are used until the first genuine server push,
+    // after which the server is authoritative and bundle state is dropped
+    // (server-push-wins: a stale bundle can never clobber a fresher push).
+    // See docs/design-notes/2026-08-16-initial-snapshot-delivery.md.
+    const bundleItems = ref(null);
+    const bundleTagOptions = ref(null);
+    const bundlePermissions = ref(null);
+    let serverPushed = false;
+
+    const effectiveItems = computed(() => bundleItems.value ?? props.items);
+    const effectiveTagOptions = computed(
+      () => bundleTagOptions.value ?? props.tag_options
+    );
+    const effectivePermissions = computed(
+      () => bundlePermissions.value ?? props.permissions
+    );
+
+    function bumpEpoch() {
+      renderCount.value++;
+      window.__annotationCardsEpoch = (window.__annotationCardsEpoch || 0) + 1;
+      if (props.doc_container_id) {
+        window.__cardEpochs = window.__cardEpochs || {};
+        window.__cardEpochs[props.doc_container_id] = window.__annotationCardsEpoch;
+      }
+    }
+
+    function applyBundle(bundle) {
+      if (serverPushed) return;  // server already authoritative
+      bundleItems.value = bundle.items || [];
+      bundleTagOptions.value = bundle.tag_options || {};
+      bundlePermissions.value = bundle.permissions || {};
+      bumpEpoch();
+      nextTick(function() { requestAnimationFrame(positionCards); });
+    }
+
     // --- Expand/collapse state (sidebar-level, keyed by highlight ID) ---
     const expandedIds = reactive(new Set(props.expanded_ids));
     const detailBuiltIds = reactive(new Set(props.expanded_ids));
@@ -107,7 +143,7 @@ export default {
 
     function finishParaRefEdit(id) {
       var newValue = (paraRefDrafts.get(id) || '').trim();
-      var item = props.items.find(function(i) { return i.id === id; });
+      var item = effectiveItems.value.find(function(i) { return i.id === id; });
       var oldValue = item ? item.para_ref : '';
       paraRefEditMode.delete(id);
       paraRefDrafts.delete(id);
@@ -241,6 +277,17 @@ export default {
         window._positionCardsMap[dcId] = positionCards;
         window._positionCards = positionCards;
         window._activeDocContainerId = dcId;
+
+        // Snapshot bundle hook: accept a bundle delivered by the
+        // bootstrap, whichever of the two mounted first.
+        window._sidebarBundleApply = window._sidebarBundleApply || {};
+        window._sidebarBundleApply[dcId] = applyBundle;
+        var pending = window.__pendingSidebarBundle
+          && window.__pendingSidebarBundle[dcId];
+        if (pending) {
+          delete window.__pendingSidebarBundle[dcId];
+          applyBundle(pending);
+        }
       }
 
       // If highlights already applied before mount, position now
@@ -258,6 +305,9 @@ export default {
       if (dcId && window._positionCardsMap) {
         delete window._positionCardsMap[dcId];
       }
+      if (dcId && window._sidebarBundleApply) {
+        delete window._sidebarBundleApply[dcId];
+      }
       if (window._activeDocContainerId === dcId) {
         window._activeDocContainerId = null;
       }
@@ -265,17 +315,21 @@ export default {
 
     // --- Watch items for repositioning after DOM update ---
 
+    let itemsWatchFires = 0;
     watch(
       () => props.items,
       () => {
-        renderCount.value++;
-        // Global epoch for E2E test synchronisation
-        window.__annotationCardsEpoch = (window.__annotationCardsEpoch || 0) + 1;
-        // Per-document epoch
-        if (props.doc_container_id) {
-          window.__cardEpochs = window.__cardEpochs || {};
-          window.__cardEpochs[props.doc_container_id] = window.__annotationCardsEpoch;
+        itemsWatchFires++;
+        if (itemsWatchFires > 1) {
+          // Genuine server push (the immediate fire at mount is #1):
+          // server becomes authoritative, bundle state is dropped.
+          serverPushed = true;
+          bundleItems.value = null;
+          bundleTagOptions.value = null;
+          bundlePermissions.value = null;
         }
+        // Global + per-document epoch for E2E test synchronisation
+        bumpEpoch();
         // Reposition after DOM update (flush: 'post' ensures DOM is ready)
         requestAnimationFrame(positionCards);
       },
@@ -284,6 +338,7 @@ export default {
 
     return {
       renderCount, rootRef,
+      effectiveItems, effectiveTagOptions, effectivePermissions,
       expandedIds, detailBuiltIds,
       commentDrafts,
       paraRefEditMode, paraRefDrafts,
@@ -297,7 +352,7 @@ export default {
   template: `
     <div ref="rootRef" data-testid="annotation-sidebar-root" style="position: relative;">
       <div
-        v-for="item in items"
+        v-for="item in effectiveItems"
         :key="item.id"
         class="q-card ann-card-positioned"
         data-testid="annotation-card"
@@ -359,13 +414,13 @@ export default {
         >
           <!-- Tag select (annotators only) -->
           <q-select
-            v-if="permissions.can_annotate"
+            v-if="effectivePermissions.can_annotate"
             dense borderless
             data-testid="tag-select"
             class="text-sm text-bold"
             :style="{ color: item.color, minWidth: '120px' }"
             :model-value="item.tag_key"
-            :options="Object.entries(tag_options).map(([k,v]) => ({ label: v, value: k }))"
+            :options="Object.entries(effectiveTagOptions).map(([k,v]) => ({ label: v, value: k }))"
             option-label="label"
             option-value="value"
             emit-value map-options
@@ -375,13 +430,13 @@ export default {
           <!-- Author and para_ref row -->
           <div class="row items-center" style="gap: 0.5rem;">
             <span data-testid="display-author" class="text-xs text-grey-7">by {{ item.display_author }}</span>
-            <span v-if="!paraRefEditMode.get(item.id) && permissions.can_annotate"
+            <span v-if="!paraRefEditMode.get(item.id) && effectivePermissions.can_annotate"
                   @click="startParaRefEdit(item.id, item.para_ref)"
                   data-testid="para-ref-label"
                   class="text-xs font-mono text-grey-5 cursor-pointer">
               {{ item.para_ref || '(no ref)' }}
             </span>
-            <span v-if="!permissions.can_annotate && item.para_ref"
+            <span v-if="!effectivePermissions.can_annotate && item.para_ref"
                   data-testid="para-ref-label"
                   class="text-xs font-mono text-grey-5">
               {{ item.para_ref }}
@@ -421,7 +476,7 @@ export default {
           <span data-testid="comment-count" class="hidden">{{ item.comments.length }}</span>
 
           <!-- Comment input (annotators only) -->
-          <template v-if="permissions.can_annotate">
+          <template v-if="effectivePermissions.can_annotate">
             <input
               data-testid="comment-input"
               class="q-field__native q-mt-sm full-width"

@@ -18,6 +18,7 @@ import structlog
 from nicegui import app, ui
 
 from promptgrimoire.auth import is_privileged_user
+from promptgrimoire.config import get_settings
 from promptgrimoire.db.acl import (
     grant_permission,
 )
@@ -297,6 +298,18 @@ def _log_page_load_profile(
     )
 
 
+def _mark_page_ready(title: str | None, documents: list[Any]) -> None:
+    """Update the skeleton title and signal readiness in one browser op.
+
+    Snapshot mode: the bootstrap appends the annotation-ready marker only
+    after the bundle mounts — readiness must follow the bundle, not the
+    skeleton.  Empty workspaces have no bundle, so they mark ready here.
+    """
+    _update_page_title(title)
+    if not (get_settings().snapshot.enabled and documents):
+        ui.element("div").props('data-testid="annotation-ready" style="display:none"')
+
+
 async def _load_workspace_content(
     workspace_id: UUID,
     client: Client,
@@ -407,12 +420,7 @@ async def _load_workspace_content(
             if protect:
                 inject_copy_protection()
 
-            # Update the generic skeleton title and signal readiness in one
-            # browser operation so observers cannot see completion first.
-            _update_page_title(context.workspace.title)
-            ui.element("div").props(
-                'data-testid="annotation-ready" style="display:none"'
-            )
+            _mark_page_ready(context.workspace.title, documents)
 
             _t_done = time.monotonic()
             _log_page_load_profile(

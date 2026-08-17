@@ -53,4 +53,38 @@ describe('annotationsidebar.js', () => {
       /immediate:\s*true/,
     );
   });
+
+  // --- Snapshot bundle contract (initial delivery outside NiceGUI) ---
+  // See docs/design-notes/2026-08-16-initial-snapshot-delivery.md.
+
+  test('applyBundle bumps the epoch so E2E waits observe bundle mount', () => {
+    const match = source.match(/function applyBundle\(bundle\) \{[\s\S]*?\n    \}/);
+    expect(match, 'applyBundle not found').toBeTruthy();
+    expect(match[0]).toMatch(/bumpEpoch\(\)/);
+    expect(match[0], 'stale bundle must not clobber a server push').toMatch(
+      /if \(serverPushed\) return/,
+    );
+  });
+
+  test('items watch drops bundle state on a genuine server push', () => {
+    const match = source.match(
+      /watch\(\s*\(\)\s*=>\s*props\.items([\s\S]*?)\},\s*\{[^}]*\}\s*\);/,
+    );
+    expect(match, 'items-watch body not found').toBeTruthy();
+    const body = match[1];
+    expect(body).toMatch(/serverPushed = true/);
+    expect(body).toMatch(/bundleItems\.value = null/);
+  });
+
+  test('component registers the per-document bundle hook on mount', () => {
+    expect(source).toMatch(/window\._sidebarBundleApply\[dcId\] = applyBundle/);
+    expect(source, 'pending bundle delivered before mount must apply').toMatch(
+      /__pendingSidebarBundle/,
+    );
+  });
+
+  test('template renders from effectiveItems, not raw props', () => {
+    expect(source).toMatch(/v-for="item in effectiveItems"/);
+    expect(source).not.toMatch(/v-for="item in items"/);
+  });
 });

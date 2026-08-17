@@ -144,7 +144,7 @@ def remove_highlight(page: Page, overlay_ids: list[str] | None) -> None:
     )
 
 
-def capture_screenshot(
+def capture_screenshot(  # noqa: PLR0913 -- param-object migration: tracker ledger 8
     page: Page,
     path: Path,
     *,

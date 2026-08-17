@@ -122,10 +122,52 @@ async def _run_cleanup() -> None:
         logger.info("export_worker_cleanup", deleted_count=count)
 
 
+async def _run_cleanup_safely() -> None:
+    """Run cleanup, logging (not raising) on failure."""
+    try:
+        await _run_cleanup()
+    except Exception:
+        logger.exception("export_worker_cleanup_failed")
+
+
+async def _run_poll_iteration(iteration: int, *, cleanup_interval: int) -> int:
+    """Claim and process one job; run cleanup every ``cleanup_interval`` iterations.
+
+    Returns the incremented iteration count. ``asyncio.CancelledError``
+    propagates uncancelled so the caller's loop can exit; any other
+    exception is logged and swallowed so polling continues.
+    """
+    iteration += 1
+    try:
+        job = await claim_next_job()
+        if job is not None:
+            await _process_job(job)
+
+        if iteration % cleanup_interval == 0:
+            await _run_cleanup_safely()
+
+    except asyncio.CancelledError:
+        raise
+    except Exception:
+        logger.exception("export_worker_iteration_failed")
+
+    return iteration
+
+
+def _fire_poll_cycle_callback(on_poll_cycle: Callable[[], object] | None) -> None:
+    """Invoke the optional poll-cycle callback, logging (not raising) on failure."""
+    if on_poll_cycle is None:
+        return
+    try:
+        on_poll_cycle()
+    except Exception:
+        logger.warning("on_poll_cycle_failed", exc_info=True)
+
+
 async def start_export_worker(
     poll_interval: float = 5.0,
     cleanup_interval: int = 60,
-    on_poll_cycle: Callable[[], None] | None = None,
+    on_poll_cycle: Callable[[], object] | None = None,
 ) -> None:
     """Start the background export polling worker.
 
@@ -156,28 +198,8 @@ async def start_export_worker(
     )
     iteration = 0
     while True:
-        try:
-            iteration += 1
-
-            job = await claim_next_job()
-            if job is not None:
-                await _process_job(job)
-
-            if iteration % cleanup_interval == 0:
-                try:
-                    await _run_cleanup()
-                except Exception:
-                    logger.exception("export_worker_cleanup_failed")
-
-        except asyncio.CancelledError:
-            raise
-        except Exception:
-            logger.exception("export_worker_iteration_failed")
-
-        if on_poll_cycle is not None:
-            try:
-                on_poll_cycle()
-            except Exception:
-                logger.warning("on_poll_cycle_failed", exc_info=True)
-
+        iteration = await _run_poll_iteration(
+            iteration, cleanup_interval=cleanup_interval
+        )
+        _fire_poll_cycle_callback(on_poll_cycle)
         await asyncio.sleep(poll_interval)

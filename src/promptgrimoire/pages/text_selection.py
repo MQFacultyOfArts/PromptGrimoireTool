@@ -26,10 +26,103 @@ _CSS_FILE = Path(__file__).parent.parent / "static" / "annotations.css"
 SELECTION_DEBOUNCE_MS = 10  # Debounce to let browser finalize selection
 MAX_DISPLAY_LENGTH = 50  # Truncate displayed text for readability
 
+_CREATE_HIGHLIGHT_JS = """
+    if (window._savedRange) {
+        const span = document.createElement('span');
+        span.className = 'annotation-highlight';
+        span.setAttribute('data-testid', 'highlight');
+        try {
+            window._savedRange.surroundContents(span);
+            window._savedRange = null;
+            return {success: true};
+        } catch (e) {
+            // surroundContents fails if range spans multiple elements
+            console.warn('surroundContents failed:', e.message);
+            try {
+                // Fall back to extractContents approach
+                const fragment = window._savedRange.extractContents();
+                span.appendChild(fragment);
+                window._savedRange.insertNode(span);
+                window._savedRange = null;
+                return {success: true};
+            } catch (e2) {
+                console.error('Highlight fallback failed:', e2.message);
+                return {success: false, error: e2.message};
+            }
+        }
+    }
+    return {success: false, error: 'No saved range'};
+"""
+
 
 def _get_session_user() -> dict | None:
     """Get the current user from session storage."""
     return app.storage.user.get("auth_user")
+
+
+async def _create_highlight_from_selection(
+    selection_data: dict[str, str | int],
+) -> None:
+    """Apply highlight CSS to the saved selection range via client-side JS."""
+    if not selection_data.get("text"):
+        ui.notify("No text selected", type="warning")
+        return
+
+    result = await ui.run_javascript(_CREATE_HIGHLIGHT_JS)
+    if result and result.get("success"):
+        ui.notify("Highlight created!")
+    else:
+        error = result.get("error", "Unknown error") if result else "No result"
+        ui.notify(f"Highlight failed: {error}", type="warning")
+
+
+def _validate_selection_args(
+    text: object, start: object, end: object
+) -> tuple[str, int, int, str] | None:
+    """Validate raw ``text_selected`` event args and compute the display string.
+
+    Returns None when the event should be ignored: wrong argument types, an
+    invalid (negative or inverted) range, or empty text. Otherwise returns
+    ``(text, start, end, display)``.
+    """
+    if (
+        not isinstance(text, str)
+        or not isinstance(start, int)
+        or not isinstance(end, int)
+    ):
+        return None
+    if start < 0 or end < 0 or start > end:
+        return None
+    if not text:
+        return None
+    display = (
+        f'"{text[:MAX_DISPLAY_LENGTH]}..."'
+        if len(text) > MAX_DISPLAY_LENGTH
+        else f'"{text}"'
+    )
+    return text, start, end, display
+
+
+def _handle_text_selected_event(
+    e: GenericEventArguments, selection_data: dict[str, str | int]
+) -> None:
+    """Update ``selection_data`` and notify from a ``text_selected`` event.
+
+    Expected e.args:
+        text (str): Selected text content
+        start (int): Start offset within container
+        end (int): End offset within container
+    """
+    parsed = _validate_selection_args(
+        e.args.get("text", ""), e.args.get("start", 0), e.args.get("end", 0)
+    )
+    if parsed is None:
+        return
+    text, start, end, display = parsed
+    selection_data.update(
+        {"text": text, "start": start, "end": end, "display": display}
+    )
+    ui.notify(f"Selected: {display}")
 
 
 @page_route(
@@ -113,80 +206,15 @@ async def text_selection_demo_page() -> None:
 
             async def create_highlight() -> None:
                 """Apply highlight CSS to saved selection range."""
-                if not selection_data.get("text"):
-                    ui.notify("No text selected", type="warning")
-                    return
-
-                result = await ui.run_javascript("""
-                    if (window._savedRange) {
-                        const span = document.createElement('span');
-                        span.className = 'annotation-highlight';
-                        span.setAttribute('data-testid', 'highlight');
-                        try {
-                            window._savedRange.surroundContents(span);
-                            window._savedRange = null;
-                            return {success: true};
-                        } catch (e) {
-                            // surroundContents fails if range spans multiple elements
-                            console.warn('surroundContents failed:', e.message);
-                            try {
-                                // Fall back to extractContents approach
-                                const fragment = window._savedRange.extractContents();
-                                span.appendChild(fragment);
-                                window._savedRange.insertNode(span);
-                                window._savedRange = null;
-                                return {success: true};
-                            } catch (e2) {
-                                console.error('Highlight fallback failed:', e2.message);
-                                return {success: false, error: e2.message};
-                            }
-                        }
-                    }
-                    return {success: false, error: 'No saved range'};
-                """)
-                if result and result.get("success"):
-                    ui.notify("Highlight created!")
-                else:
-                    error = (
-                        result.get("error", "Unknown error") if result else "No result"
-                    )
-                    ui.notify(f"Highlight failed: {error}", type="warning")
+                await _create_highlight_from_selection(selection_data)
 
             ui.button("Create Highlight", on_click=create_highlight).props(
                 'data-testid="create-highlight-btn"'
             ).classes("mt-4")
 
     def handle_selection(e: GenericEventArguments) -> None:
-        """Handle text selection from browser.
-
-        Expected e.args:
-            text (str): Selected text content
-            start (int): Start offset within container
-            end (int): End offset within container
-        """
-        text = e.args.get("text", "")
-        start = e.args.get("start", 0)
-        end = e.args.get("end", 0)
-
-        # Validate input types and constraints
-        if (
-            not isinstance(text, str)
-            or not isinstance(start, int)
-            or not isinstance(end, int)
-        ):
-            return
-        if start < 0 or end < 0 or start > end:
-            return
-
-        if text:
-            if len(text) > MAX_DISPLAY_LENGTH:
-                display = f'"{text[:MAX_DISPLAY_LENGTH]}..."'
-            else:
-                display = f'"{text}"'
-            selection_data.update(
-                {"text": text, "start": start, "end": end, "display": display}
-            )
-            ui.notify(f"Selected: {display}")
+        """Handle text selection from browser."""
+        _handle_text_selected_event(e, selection_data)
 
     ui.on("text_selected", handle_selection)
 

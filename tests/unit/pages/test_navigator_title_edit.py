@@ -14,8 +14,12 @@ from re-reading the code under test.
 from __future__ import annotations
 
 from types import SimpleNamespace
+from typing import TYPE_CHECKING, cast
 from unittest.mock import AsyncMock, patch
 from uuid import uuid4
+
+if TYPE_CHECKING:
+    from nicegui.elements.input import Input
 
 
 async def test_none_value_persists_as_none() -> None:
@@ -34,7 +38,7 @@ async def test_none_value_persists_as_none() -> None:
     ) as mock_update:
         await _persist_title_change(
             workspace_id=workspace_id,
-            title_input=title_input,  # type: ignore[arg-type]  -- structural stand-in for Input
+            title_input=cast("Input", title_input),
             fallback_title="Untitled Workspace",
             original_title="Untitled Workspace",
             page_state=None,
@@ -59,7 +63,7 @@ async def test_whitespace_only_value_persists_as_none() -> None:
     ) as mock_update:
         await _persist_title_change(
             workspace_id=workspace_id,
-            title_input=title_input,  # type: ignore[arg-type]  -- structural stand-in for Input
+            title_input=cast("Input", title_input),
             fallback_title="Untitled Workspace",
             original_title="Untitled Workspace",
             page_state=None,
@@ -85,7 +89,7 @@ async def test_real_title_is_stripped_and_persisted() -> None:
     ) as mock_update:
         await _persist_title_change(
             workspace_id=workspace_id,
-            title_input=title_input,  # type: ignore[arg-type]  -- structural stand-in for Input
+            title_input=cast("Input", title_input),
             fallback_title="Untitled Workspace",
             original_title="Untitled Workspace",
             page_state=None,

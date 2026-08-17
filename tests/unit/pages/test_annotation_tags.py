@@ -31,7 +31,7 @@ class TestTagInfo:
         """TagInfo instances are immutable (frozen dataclass)."""
         ti = TagInfo(name="Test", colour="#000000", raw_key="key")
         try:
-            ti.name = "Changed"  # type: ignore[misc]  -- testing frozen
+            setattr(ti, "name", "Changed")  # noqa: B010  -- testing frozen
             raise AssertionError("Expected FrozenInstanceError")
         except AttributeError:
             pass

@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import html as _html
 import time
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 import structlog
@@ -46,6 +47,23 @@ _UNTAGGED_COLOUR = "#999999"
 
 # Raw key for the untagged pseudo-tag (empty string in CRDT)
 _UNTAGGED_RAW_KEY = ""
+
+
+@dataclass(frozen=True, slots=True)
+class TagDisplay:
+    """Display metadata for a tag column and its cards."""
+
+    name: str
+    colour: str
+    raw_key: str = ""
+
+
+@dataclass(frozen=True, slots=True)
+class TagHighlights:
+    """A tag's highlights plus their CRDT tags-Map ordering."""
+
+    highlights: list[dict[str, Any]]
+    ordered_ids: list[str]
 
 
 def _render_organise_card_html(
@@ -189,10 +207,8 @@ def _build_highlight_card_html(
 
 
 def _render_ordered_cards(
-    highlights: list[dict[str, Any]],
-    ordered_ids: list[str],
-    tag_colour: str,
-    tag_name: str,
+    tag: TagDisplay,
+    hl: TagHighlights,
     state: PageState,
     on_locate: Callable[..., Any] | None,
 ) -> None:
@@ -203,40 +219,35 @@ def _render_ordered_cards(
     when the column has no highlights at all.
 
     Args:
-        highlights: All highlights assigned to this tag.
-        ordered_ids: Ordered highlight IDs from CRDT tags Map.
-        tag_colour: Hex colour for card left borders.
-        tag_name: Display name for card tag label.
+        tag: Display metadata (name, colour) for card tag labels.
+        hl: The tag's highlights plus their CRDT tags-Map ordering.
         state: Page state for anonymisation context.
         on_locate: Optional locate callback for Tab 1 warp.
     """
-    hl_by_id = {h.get("id", ""): h for h in highlights}
+    hl_by_id = {h.get("id", ""): h for h in hl.highlights}
     rendered_ids: set[str] = set()
 
-    for hid in ordered_ids:
+    for hid in hl.ordered_ids:
         if hid in hl_by_id:
             _build_highlight_card_html(
-                hl_by_id[hid], tag_colour, tag_name, state, on_locate
+                hl_by_id[hid], tag.colour, tag.name, state, on_locate
             )
             rendered_ids.add(hid)
 
-    for hl in highlights:
-        hid = hl.get("id", "")
+    for h in hl.highlights:
+        hid = h.get("id", "")
         if hid not in rendered_ids:
-            _build_highlight_card_html(hl, tag_colour, tag_name, state, on_locate)
+            _build_highlight_card_html(h, tag.colour, tag.name, state, on_locate)
 
-    if not highlights:
+    if not hl.highlights:
         ui.label("No highlights").classes(
             "text-xs text-gray-400 italic p-2 sortable-ignore"
         )
 
 
 def _build_tag_column(
-    tag_name: str,
-    tag_colour: str,
-    raw_key: str,
-    highlights: list[dict[str, Any]],
-    ordered_ids: list[str],
+    tag: TagDisplay,
+    hl: TagHighlights,
     on_sort_end: Callable[[GenericEventArguments], Any] | None,
     state: PageState,
     on_locate: Callable[..., Any] | None = None,
@@ -248,11 +259,8 @@ def _build_tag_column(
     in a SortableJS container enabling drag reorder and cross-column moves.
 
     Args:
-        tag_name: Display name for column header.
-        tag_colour: Hex colour for header background and card borders.
-        raw_key: Raw tag key for CRDT operations.
-        highlights: All highlights assigned to this tag.
-        ordered_ids: Ordered highlight IDs from CRDT tags Map.
+        tag: Display metadata (name, colour, raw CRDT key) for the column.
+        hl: The tag's highlights plus their CRDT tags-Map ordering.
         on_sort_end: Callback for sort-end events (None to disable drag).
         state: Page state for anonymisation context.
         on_locate: Optional async callback(start_char, end_char) to warp to
@@ -264,14 +272,14 @@ def _build_tag_column(
     column = (
         ui.column()
         .classes("min-w-64 max-w-80 flex-shrink-0 self-stretch")
-        .props(f'data-testid="tag-column" data-tag-name="{tag_name}"')
+        .props(f'data-testid="tag-column" data-tag-name="{tag.name}"')
     )
 
     with column:
         # Coloured header
-        ui.label(tag_name).classes(
+        ui.label(tag.name).classes(
             "text-white font-bold text-sm px-3 py-1 rounded-t w-full text-center"
-        ).style(f"background-color: {tag_colour};")
+        ).style(f"background-color: {tag.colour};")
 
         # Create Sortable container for cards
         sortable = Sortable(
@@ -283,19 +291,17 @@ def _build_tag_column(
             on_end=on_sort_end,
         )
         # Set HTML id so event handler can identify the tag
-        sortable_id = f"sort-{raw_key}" if raw_key else "sort-untagged"
+        sortable_id = f"sort-{tag.raw_key}" if tag.raw_key else "sort-untagged"
         sortable.props(f'id="{sortable_id}"')
         sortable.classes("w-full flex-grow min-h-24 pb-4")
 
         with sortable:
-            _render_ordered_cards(
-                highlights, ordered_ids, tag_colour, tag_name, state, on_locate
-            )
+            _render_ordered_cards(tag, hl, state, on_locate)
 
     return column
 
 
-def render_organise_tab(
+def render_organise_tab(  # noqa: PLR0913 -- param-object migration: tracker ledger 8
     panel: ui.element,
     tags: list[TagInfo],
     crdt_doc: AnnotationDocument,
@@ -359,11 +365,12 @@ def render_organise_tab(
             highlights_for_tag = tagged_highlights[tag_info.name]
             ordered_ids = crdt_doc.get_tag_highlights(tag_info.raw_key)
             _build_tag_column(
-                tag_info.name,
-                tag_info.colour,
-                tag_info.raw_key,
-                highlights_for_tag,
-                ordered_ids,
+                TagDisplay(
+                    name=tag_info.name,
+                    colour=tag_info.colour,
+                    raw_key=tag_info.raw_key,
+                ),
+                TagHighlights(highlights=highlights_for_tag, ordered_ids=ordered_ids),
                 on_sort_end,
                 state,
                 on_locate,
@@ -374,11 +381,10 @@ def render_organise_tab(
         if untagged_highlights:
             ordered_ids = crdt_doc.get_tag_highlights(_UNTAGGED_RAW_KEY)
             _build_tag_column(
-                "Untagged",
-                _UNTAGGED_COLOUR,
-                _UNTAGGED_RAW_KEY,
-                untagged_highlights,
-                ordered_ids,
+                TagDisplay(
+                    name="Untagged", colour=_UNTAGGED_COLOUR, raw_key=_UNTAGGED_RAW_KEY
+                ),
+                TagHighlights(highlights=untagged_highlights, ordered_ids=ordered_ids),
                 on_sort_end,
                 state,
                 on_locate,

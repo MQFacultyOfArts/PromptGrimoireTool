@@ -114,7 +114,7 @@ def _cancel_pending_timers(
             timer = row.get("_pending_timer")
             if timer is not None:
                 timer.active = False
-                row["_pending_timer"] = None  # type: ignore[literal-required]  # runtime-only key not in TypedDict
+                row["_pending_timer"] = None
 
 
 async def _create_tag_or_notify(
@@ -151,7 +151,7 @@ async def _create_tag_or_notify(
         return None
 
 
-async def _save_all_modified_rows(
+async def _save_all_modified_rows(  # noqa: PLR0913 -- called positionally from tag_management; param-object migration: tracker ledger 8
     tag_row_inputs: dict[UUID, TagRowInputs] | dict[UUID, dict[str, Any]],
     group_row_inputs: dict[UUID, dict[str, Any]],
     update_tag: Callable[..., Awaitable[object]],

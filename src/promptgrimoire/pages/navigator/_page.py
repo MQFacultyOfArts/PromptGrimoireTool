@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import functools
 from pathlib import Path
 from typing import TYPE_CHECKING
 from uuid import UUID
@@ -13,7 +14,7 @@ from promptgrimoire.auth import is_privileged_user
 from promptgrimoire.config import get_settings
 from promptgrimoire.db.courses import list_user_enrollments
 from promptgrimoire.db.engine import init_db
-from promptgrimoire.db.navigator import NavigatorRow, load_navigator_page
+from promptgrimoire.db.navigator import load_navigator_page
 from promptgrimoire.pages.layout import page_layout
 from promptgrimoire.pages.navigator._search import setup_search
 from promptgrimoire.pages.navigator._sections import (
@@ -33,15 +34,69 @@ logger = structlog.get_logger()
 
 _CSS_FILE = Path(__file__).resolve().parent.parent.parent / "static" / "navigator.css"
 
+# Scroll payload is [scrollTop, scrollHeight, clientHeight]; see the
+# js_handler passed to scroll_container.on(...) in _build_navigator_ui.
+_SCROLL_EVENT_ARG_COUNT = 3
+# Fraction of scrollHeight past which we treat the user as "near the
+# bottom" and prefetch the next page.
+_SCROLL_NEAR_BOTTOM_RATIO = 0.9
+
+
+async def _handle_scroll_event(e: object, *, page_state: PageState) -> None:
+    """Load more rows when the user scrolls near the bottom.
+
+    ``user_id``/``is_privileged``/``enrolled_course_ids`` are read from
+    ``page_state`` rather than taken as separate parameters; see
+    ``_build_navigator_ui`` for why.
+    """
+    if (
+        page_state["loading"]
+        or page_state["next_cursor"] is None
+        or page_state["search_active"]
+        or page_state["editing_active"]
+    ):
+        return
+
+    event_args = getattr(e, "args", None)
+    if (
+        not event_args
+        or not isinstance(event_args, (list, tuple))
+        or len(event_args) < _SCROLL_EVENT_ARG_COUNT
+    ):
+        return
+    scroll_top, scroll_height, client_height = event_args[:_SCROLL_EVENT_ARG_COUNT]
+    if not scroll_height or client_height >= scroll_height:
+        return
+    if (scroll_top + client_height) / scroll_height < _SCROLL_NEAR_BOTTOM_RATIO:
+        return
+
+    page_state["loading"] = True
+    try:
+        accumulated_rows = page_state["rows"]
+        cursor = page_state["next_cursor"]
+        new_rows, new_cursor = await load_navigator_page(
+            user_id=page_state["user_id"],
+            is_privileged=page_state["is_privileged"],
+            enrolled_course_ids=page_state["enrolled_course_ids"],
+            cursor=cursor,
+            limit=50,
+        )
+        accumulated_rows.extend(new_rows)
+        page_state["next_cursor"] = new_cursor
+        sections_container = page_state["sections_container"]
+        await append_new_rows(
+            new_rows,
+            page_state=page_state,
+            sections_container=sections_container,
+        )
+    finally:
+        page_state["loading"] = False
+
 
 async def _build_navigator_ui(
     *,
     page_state: PageState,
     handle_scroll: Callable[..., object],
-    rows: list[NavigatorRow],
-    user_id: UUID,
-    is_privileged: bool,
-    enrolled_course_ids: list[UUID],
 ) -> None:
     """Build the navigator page DOM.
 
@@ -49,7 +104,12 @@ async def _build_navigator_ui(
     The scroll event uses ``js_handler`` with ``emit()`` to extract
     ``scrollTop``, ``scrollHeight``, and ``clientHeight`` from the
     event target.
+
+    ``rows`` is read from ``page_state`` rather than taken as a separate
+    parameter -- it is a required key already populated by the caller, so
+    passing it again would only duplicate what ``page_state`` carries.
     """
+    rows = page_state["rows"]
     with page_layout("Home"):
         ui.add_css(_CSS_FILE)
 
@@ -97,13 +157,7 @@ async def _build_navigator_ui(
             else:
                 reset_header_tracking(page_state)
                 with sections_container:
-                    await render_sections(
-                        rows=rows,
-                        user_id=user_id,
-                        is_privileged=is_privileged,
-                        enrolled_course_ids=enrolled_course_ids,
-                        page_state=page_state,
-                    )
+                    await render_sections(rows=rows, page_state=page_state)
                 record_rendered_headers(rows, page_state)
 
 
@@ -157,59 +211,9 @@ async def navigator_page() -> None:
         "editing_active": False,
     }
 
-    async def _handle_scroll(e: object) -> None:
-        """Load more rows when the user scrolls near the bottom."""
-        if (
-            page_state["loading"]
-            or page_state["next_cursor"] is None
-            or page_state["search_active"]
-            or page_state["editing_active"]
-        ):
-            return
-
-        event_args = getattr(e, "args", None)
-        if (
-            not event_args
-            or not isinstance(event_args, (list, tuple))
-            or len(event_args) < 3
-        ):
-            return
-        scroll_top, scroll_height, client_height = event_args[:3]
-        if not scroll_height or client_height >= scroll_height:
-            return
-        if (scroll_top + client_height) / scroll_height < 0.9:
-            return
-
-        page_state["loading"] = True
-        try:
-            accumulated_rows = page_state["rows"]
-            cursor = page_state["next_cursor"]
-            new_rows, new_cursor = await load_navigator_page(
-                user_id=user_id,
-                is_privileged=is_privileged,
-                enrolled_course_ids=enrolled_course_ids,
-                cursor=cursor,
-                limit=50,
-            )
-            accumulated_rows.extend(new_rows)
-            page_state["next_cursor"] = new_cursor
-            sections_container = page_state["sections_container"]
-            await append_new_rows(
-                new_rows,
-                user_id=user_id,
-                is_privileged=is_privileged,
-                enrolled_course_ids=enrolled_course_ids,
-                page_state=page_state,
-                sections_container=sections_container,
-            )
-        finally:
-            page_state["loading"] = False
+    handle_scroll = functools.partial(_handle_scroll_event, page_state=page_state)
 
     await _build_navigator_ui(
         page_state=page_state,
-        handle_scroll=_handle_scroll,
-        rows=rows,
-        user_id=user_id,
-        is_privileged=is_privileged,
-        enrolled_course_ids=enrolled_course_ids,
+        handle_scroll=handle_scroll,
     )

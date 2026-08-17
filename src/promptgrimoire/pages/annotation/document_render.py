@@ -17,6 +17,7 @@ from nicegui import ui
 from promptgrimoire.pages.annotation.content_form import _render_add_content_form
 from promptgrimoire.pages.annotation.css import _build_tag_toolbar
 from promptgrimoire.pages.annotation.document import (
+    DocumentRenderCallbacks,
     _render_document_with_highlights,
 )
 from promptgrimoire.pages.annotation.highlights import _add_highlight
@@ -65,7 +66,7 @@ def render_content_form_outside_refreshable(
         return wrapper
 
 
-async def render_document_container(
+async def render_document_container(  # noqa: PLR0913 -- param-object migration: tracker ledger 8
     state: PageState,
     doc: Any,
     crdt_doc: Any,
@@ -80,9 +81,11 @@ async def render_document_container(
         state,
         doc,
         crdt_doc,
-        on_add_click=on_add_tag,
-        on_manage_click=on_manage_tags,
-        footer=footer,
+        DocumentRenderCallbacks(
+            on_add_click=on_add_tag,
+            on_manage_click=on_manage_tags,
+            footer=footer,
+        ),
     )
     logger.debug("[RENDER] document rendered")
 

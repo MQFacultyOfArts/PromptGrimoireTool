@@ -1,6 +1,9 @@
 """Tests for HTML normaliser that wraps styled <p> tags for Pandoc."""
 
-from promptgrimoire.export.html_normaliser import normalise_styled_paragraphs
+from promptgrimoire.export.html_normaliser import (
+    normalise_styled_paragraphs,
+    strip_scripts_and_styles,
+)
 
 
 class TestNormaliseStyledParagraphs:
@@ -139,3 +142,73 @@ class TestNormaliseStyledParagraphs:
         assert 'lang="en-AU"' in result
         # Content should be preserved
         assert "(a) the injured person; or" in result
+
+
+class TestStripScriptsAndStyles:
+    """Characterisation tests for strip_scripts_and_styles, written before
+    decomposing it -- it previously had no dedicated coverage of the
+    script/style/noscript removal, tail-text preservation, or event-handler
+    stripping branches that drive most of its cognitive complexity.
+    """
+
+    def test_removes_script_and_content(self):
+        html = "<div><p>keep</p><script>alert(1)</script></div>"
+        result = strip_scripts_and_styles(html)
+        assert "<script" not in result
+        assert "alert" not in result
+        assert "<p>keep</p>" in result
+
+    def test_removes_style_and_content(self):
+        html = "<div><style>.x{color:red}</style><p>keep</p></div>"
+        result = strip_scripts_and_styles(html)
+        assert "<style" not in result
+        assert "color:red" not in result
+        assert "<p>keep</p>" in result
+
+    def test_removes_noscript_and_content(self):
+        html = "<div><noscript>fallback text</noscript><p>keep</p></div>"
+        result = strip_scripts_and_styles(html)
+        assert "<noscript" not in result
+        assert "fallback text" not in result
+        assert "<p>keep</p>" in result
+
+    def test_tail_text_preserved_with_no_previous_sibling(self):
+        """Text after the removed element, with no preceding sibling,
+        is reattached to the parent's own text (parent.text branch)."""
+        html = "<div><script>alert(1)</script>after</div>"
+        result = strip_scripts_and_styles(html)
+        assert result == "<div>after</div>"
+
+    def test_tail_text_preserved_with_previous_sibling(self):
+        """Text after the removed element, with a preceding sibling,
+        is reattached to that sibling's tail (prev.tail branch)."""
+        html = "<div><p>before</p><script>alert(1)</script>after</div>"
+        result = strip_scripts_and_styles(html)
+        assert result == "<div><p>before</p>after</div>"
+
+    def test_removes_inline_event_handlers_case_insensitively(self):
+        html = '<button onclick="doThing()" ONLOAD="x()" class="btn">Click</button>'
+        result = strip_scripts_and_styles(html)
+        assert "onclick" not in result.lower()
+        assert "onload" not in result.lower()
+        assert 'class="btn"' in result
+
+    def test_preserves_non_event_attributes(self):
+        html = '<a href="https://example.com" title="ok">link</a>'
+        result = strip_scripts_and_styles(html)
+        assert 'href="https://example.com"' in result
+        assert 'title="ok"' in result
+
+    def test_empty_string_passthrough(self):
+        assert strip_scripts_and_styles("") == ""
+
+    def test_whitespace_only_passthrough(self):
+        assert strip_scripts_and_styles("   ") == "   "
+
+    def test_parse_failure_falls_back_to_regex(self):
+        """A document lxml cannot parse at all (e.g. a lone HTML comment,
+        which lxml.html.fromstring rejects with 'Document is empty') falls
+        back to the regex-based stripper rather than raising."""
+        html = "<!-- just a comment -->"
+        result = strip_scripts_and_styles(html)
+        assert result == html

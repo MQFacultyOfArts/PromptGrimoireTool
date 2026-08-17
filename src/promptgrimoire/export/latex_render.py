@@ -70,6 +70,34 @@ def latex_cmd(name: str, *args: str | NoEscape) -> NoEscape:
     return NoEscape("".join(parts))
 
 
+def _apply_conversion(value: object, conversion: str | None) -> object:
+    """Apply an f-string-style conversion specifier (``!r``, ``!s``, ``!a``).
+
+    Returns *value* unchanged when *conversion* is ``None`` or unrecognised.
+    """
+    if conversion == "r":
+        return repr(value)
+    if conversion == "s":
+        return str(value)
+    if conversion == "a":
+        return ascii(value)
+    return value
+
+
+def _render_interpolation(item: Interpolation) -> str:
+    """Render one t-string interpolation: conversion, format spec, escaping.
+
+    Matches Python's f-string evaluation order -- conversion first, then
+    format spec, then (unless the result is ``NoEscape``) LaTeX escaping.
+    """
+    value = _apply_conversion(item.value, item.conversion)
+    if item.format_spec:
+        value = format(value, item.format_spec)
+    if isinstance(value, NoEscape):
+        return str(value)
+    return str(escape_latex(str(value)))
+
+
 def render_latex(template: Template) -> str:
     """Render a t-string template with auto-escaping of interpolations.
 
@@ -85,20 +113,5 @@ def render_latex(template: Template) -> str:
         if isinstance(item, str):
             parts.append(item)
         elif isinstance(item, Interpolation):
-            value = item.value
-            # Apply conversion (!r, !s, !a) if specified
-            if item.conversion == "r":
-                value = repr(value)
-            elif item.conversion == "s":
-                value = str(value)
-            elif item.conversion == "a":
-                value = ascii(value)
-            # Apply format_spec if specified
-            if item.format_spec:
-                value = format(value, item.format_spec)
-            # Auto-escape unless NoEscape
-            if isinstance(value, NoEscape):
-                parts.append(str(value))
-            else:
-                parts.append(str(escape_latex(str(value))))
+            parts.append(_render_interpolation(item))
     return "".join(parts)

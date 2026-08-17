@@ -33,12 +33,13 @@ def _adjective_animal_label(user_id: str) -> str:
     return slug.replace("-", " ").title()
 
 
-def anonymise_author(
+def anonymise_author(  # noqa: PLR0913 -- param-object migration: tracker ledger 8
     author: str,
     user_id: str | None,
     viewing_user_id: str | None,
     anonymous_sharing: bool,
     viewer_is_privileged: bool,
+    *,
     author_is_privileged: bool = False,
 ) -> str:
     """Return the display name for an annotation author.

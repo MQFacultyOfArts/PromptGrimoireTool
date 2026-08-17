@@ -15,7 +15,10 @@ import pytest
 
 def _render(**kwargs: object) -> str:
     """Shortcut to import and call the function under test."""
-    from promptgrimoire.pages.annotation.respond import _render_reference_card_html
+    from promptgrimoire.pages.annotation.respond import (
+        ReferenceCardContent,
+        _render_reference_card_html,
+    )
 
     defaults: dict[str, object] = {
         "tag_display": "Jurisdiction",
@@ -26,7 +29,7 @@ def _render(**kwargs: object) -> str:
         "comments": [],
     }
     defaults.update(kwargs)
-    return _render_reference_card_html(**defaults)
+    return _render_reference_card_html(ReferenceCardContent(**defaults))
 
 
 class TestReferenceCardHtml:

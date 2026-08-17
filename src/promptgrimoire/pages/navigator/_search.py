@@ -46,19 +46,9 @@ async def rerender_all(
     page_state["editing_active"] = False
     no_results_container.clear()
     sections_container.clear()
-    user_id = page_state["user_id"]
-    is_privileged = page_state["is_privileged"]
-    enrolled_course_ids = page_state["enrolled_course_ids"]
     reset_header_tracking(page_state)
     with sections_container:
-        await render_sections(
-            rows=rows,
-            user_id=user_id,
-            is_privileged=is_privileged,
-            enrolled_course_ids=enrolled_course_ids,
-            snippets=snippets,
-            page_state=page_state,
-        )
+        await render_sections(rows=rows, page_state=page_state, snippets=snippets)
     record_rendered_headers(rows, page_state)
 
 

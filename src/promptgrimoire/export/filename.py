@@ -7,7 +7,7 @@ side-effect-free so they can be tested in isolation.
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING
 
 from slugify import slugify
@@ -62,33 +62,35 @@ def _safe_segment(value: str) -> str:
     return result
 
 
-def _assemble_stem(
-    course: str,
-    last: str,
-    first: str,
-    activity: str,
-    workspace: str,
-    date_part: str,
-) -> str:
+@dataclass(frozen=True, slots=True)
+class _FilenameSegments:
+    """Sanitised filename segments that travel together through assembly
+    and truncation. Grouped into one param object (rather than passed as
+    six positional arguments) because every function in this module that
+    touches one segment needs all six to reconstruct the assembled stem.
+    """
+
+    course: str
+    last: str
+    first: str
+    activity: str
+    workspace: str
+    date_part: str
+
+
+def _assemble_stem(segments: _FilenameSegments) -> str:
     """Join non-empty segments with underscores."""
-    parts = [course, last, first]
-    if activity:
-        parts.append(activity)
-    if workspace:
-        parts.append(workspace)
-    parts.append(date_part)
+    parts = [segments.course, segments.last, segments.first]
+    if segments.activity:
+        parts.append(segments.activity)
+    if segments.workspace:
+        parts.append(segments.workspace)
+    parts.append(segments.date_part)
     return "_".join(parts)
 
 
-def _truncate_for_budget(
-    course: str,
-    last: str,
-    first: str,
-    activity: str,
-    workspace: str,
-    date_part: str,
-) -> tuple[str, str, str]:
-    """Return trimmed (first, activity, workspace) under the filename budget.
+def _truncate_for_budget(segments: _FilenameSegments) -> _FilenameSegments:
+    """Return *segments* with first/activity/workspace trimmed to fit the budget.
 
     Truncation order:
     1. workspace (right-truncated)
@@ -101,38 +103,37 @@ def _truncate_for_budget(
     pathological overflow to stand.
     """
     budget = _MAX_FILENAME_LENGTH - len(_PDF_SUFFIX)
+    first, activity, workspace = segments.first, segments.activity, segments.workspace
 
-    def _current_len(f: str, a: str, w: str) -> int:
-        return len(_assemble_stem(course, last, f, a, w, date_part))
+    def _fits(f: str, a: str, w: str) -> bool:
+        candidate = replace(segments, first=f, activity=a, workspace=w)
+        return len(_assemble_stem(candidate)) <= budget
 
     # Already fits?
-    if _current_len(first, activity, workspace) <= budget:
-        return (first, activity, workspace)
+    if _fits(first, activity, workspace):
+        return replace(segments, first=first, activity=activity, workspace=workspace)
 
     # Step 1: trim workspace
-    while workspace and _current_len(first, activity, workspace) > budget:
+    while workspace and not _fits(first, activity, workspace):
         workspace = workspace[:-1]
 
-    if _current_len(first, activity, workspace) <= budget:
-        return (first, activity, workspace)
+    if _fits(first, activity, workspace):
+        return replace(segments, first=first, activity=activity, workspace=workspace)
 
     # Step 2: trim activity
-    while activity and _current_len(first, activity, workspace) > budget:
+    while activity and not _fits(first, activity, workspace):
         activity = activity[:-1]
 
-    if _current_len(first, activity, workspace) <= budget:
-        return (first, activity, workspace)
+    if _fits(first, activity, workspace):
+        return replace(segments, first=first, activity=activity, workspace=workspace)
 
     # Step 3: trim first name to 1-char initial
     if len(first) > 1:
         first = first[0]
 
-    if _current_len(first, activity, workspace) <= budget:
-        return (first, activity, workspace)
-
     # AC3.6: overflow is legal only after every trimmable segment has already
     # been exhausted and the first-name segment is down to one character.
-    return (first, activity, workspace)
+    return replace(segments, first=first, activity=activity, workspace=workspace)
 
 
 def build_pdf_export_stem(ctx: PdfExportFilenameContext) -> str:
@@ -158,21 +159,16 @@ def build_pdf_export_stem(ctx: PdfExportFilenameContext) -> str:
     if ctx.workspace_title and ctx.workspace_title == ctx.activity_title:
         workspace = ""
 
-    # Truncate to fit budget
-    first, activity, workspace = _truncate_for_budget(
-        course,
-        last,
-        first,
-        activity,
-        workspace,
-        date_part,
+    segments = _FilenameSegments(
+        course=course,
+        last=last,
+        first=first,
+        activity=activity,
+        workspace=workspace,
+        date_part=date_part,
     )
 
-    return _assemble_stem(
-        course,
-        last,
-        first,
-        activity,
-        workspace,
-        date_part,
-    )
+    # Truncate to fit budget
+    segments = _truncate_for_budget(segments)
+
+    return _assemble_stem(segments)

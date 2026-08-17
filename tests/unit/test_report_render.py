@@ -2,7 +2,12 @@
 
 from __future__ import annotations
 
-from scripts.incident.analysis import _fmt_gap_duration, _md_table, render_review_report
+from scripts.incident.analysis import (
+    ReportData,
+    _fmt_gap_duration,
+    _md_table,
+    render_review_report,
+)
 
 
 class TestMdTable:
@@ -43,11 +48,13 @@ class TestExplanatoryProse:
     def test_report_header_prose(self) -> None:
         """Introductory prose about epochs and normalisation appears after header."""
         report = render_review_report(
-            sources=_mock_sources(),
-            epochs=_mock_epochs(),
-            epoch_analyses=_mock_analyses(),
-            summative_users=_mock_summative(),
-            trends=_mock_trends(),
+            ReportData(
+                sources=_mock_sources(),
+                epochs=_mock_epochs(),
+                epoch_analyses=_mock_analyses(),
+                summative_users=_mock_summative(),
+                trends=_mock_trends(),
+            )
         )
         assert "epochs" in report.lower()
         assert "SRE" in report
@@ -55,11 +62,13 @@ class TestExplanatoryProse:
     def test_timeline_prose(self) -> None:
         """Epoch Timeline section includes explanatory prose."""
         report = render_review_report(
-            sources=_mock_sources(),
-            epochs=_mock_epochs(),
-            epoch_analyses=_mock_analyses(),
-            summative_users=_mock_summative(),
-            trends=_mock_trends(),
+            ReportData(
+                sources=_mock_sources(),
+                epochs=_mock_epochs(),
+                epoch_analyses=_mock_analyses(),
+                summative_users=_mock_summative(),
+                trends=_mock_trends(),
+            )
         )
         assert "deploy" in report
         assert "crash" in report.lower()
@@ -67,11 +76,13 @@ class TestExplanatoryProse:
     def test_trend_prose(self) -> None:
         """Trend Analysis section includes metric explanation prose."""
         report = render_review_report(
-            sources=_mock_sources(),
-            epochs=_mock_epochs(),
-            epoch_analyses=_mock_analyses(),
-            summative_users=_mock_summative(),
-            trends=_mock_trends(),
+            ReportData(
+                sources=_mock_sources(),
+                epochs=_mock_epochs(),
+                epoch_analyses=_mock_analyses(),
+                summative_users=_mock_summative(),
+                trends=_mock_trends(),
+            )
         )
         assert "5xx Ratio" in report
         assert "Error Ratio" in report
@@ -235,11 +246,13 @@ class TestRenderReviewReport:
     def test_all_sections_present(self) -> None:
         """AC6.1: All expected section headers appear in the report."""
         report = render_review_report(
-            sources=_mock_sources(),
-            epochs=_mock_epochs(),
-            epoch_analyses=_mock_analyses(),
-            summative_users=_mock_summative(),
-            trends=_mock_trends(),
+            ReportData(
+                sources=_mock_sources(),
+                epochs=_mock_epochs(),
+                epoch_analyses=_mock_analyses(),
+                summative_users=_mock_summative(),
+                trends=_mock_trends(),
+            )
         )
 
         assert "Source Inventory" in report
@@ -251,11 +264,13 @@ class TestRenderReviewReport:
     def test_data_included(self) -> None:
         """Report includes key data from the provided mock data."""
         report = render_review_report(
-            sources=_mock_sources(),
-            epochs=_mock_epochs(),
-            epoch_analyses=_mock_analyses(),
-            summative_users=_mock_summative(),
-            trends=_mock_trends(),
+            ReportData(
+                sources=_mock_sources(),
+                epochs=_mock_epochs(),
+                epoch_analyses=_mock_analyses(),
+                summative_users=_mock_summative(),
+                trends=_mock_trends(),
+            )
         )
 
         # Epoch commit hash
@@ -276,12 +291,14 @@ class TestRenderReviewReport:
     def test_static_counts_omitted_when_none(self) -> None:
         """AC6.2: static_counts=None produces no Static DB Counts section."""
         report = render_review_report(
-            sources=_mock_sources(),
-            epochs=_mock_epochs(),
-            epoch_analyses=_mock_analyses(),
-            summative_users=_mock_summative(),
-            trends=_mock_trends(),
-            static_counts=None,
+            ReportData(
+                sources=_mock_sources(),
+                epochs=_mock_epochs(),
+                epoch_analyses=_mock_analyses(),
+                summative_users=_mock_summative(),
+                trends=_mock_trends(),
+                static_counts=None,
+            )
         )
 
         assert "Static DB Counts" not in report
@@ -290,12 +307,14 @@ class TestRenderReviewReport:
         """Static DB Counts section appears when data is provided."""
         counts = {"users": 42, "workspaces": 100}
         report = render_review_report(
-            sources=_mock_sources(),
-            epochs=_mock_epochs(),
-            epoch_analyses=_mock_analyses(),
-            summative_users=_mock_summative(),
-            trends=_mock_trends(),
-            static_counts=counts,
+            ReportData(
+                sources=_mock_sources(),
+                epochs=_mock_epochs(),
+                epoch_analyses=_mock_analyses(),
+                summative_users=_mock_summative(),
+                trends=_mock_trends(),
+                static_counts=counts,
+            )
         )
 
         assert "Static DB Counts" in report
@@ -305,11 +324,13 @@ class TestRenderReviewReport:
     def test_empty_epochs(self) -> None:
         """Handles empty epochs list without error."""
         report = render_review_report(
-            sources=_mock_sources(),
-            epochs=[],
-            epoch_analyses=[],
-            summative_users=_mock_summative(),
-            trends=[],
+            ReportData(
+                sources=_mock_sources(),
+                epochs=[],
+                epoch_analyses=[],
+                summative_users=_mock_summative(),
+                trends=[],
+            )
         )
 
         assert "Epoch Timeline" in report
@@ -323,11 +344,13 @@ class TestRenderReviewReport:
         analyses[0]["haproxy"]["p99_ms"] = None
 
         report = render_review_report(
-            sources=_mock_sources(),
-            epochs=_mock_epochs(),
-            epoch_analyses=analyses,
-            summative_users=_mock_summative(),
-            trends=[],
+            ReportData(
+                sources=_mock_sources(),
+                epochs=_mock_epochs(),
+                epoch_analyses=analyses,
+                summative_users=_mock_summative(),
+                trends=[],
+            )
         )
 
         assert "N/A" in report
@@ -338,11 +361,13 @@ class TestRenderReviewReport:
         epochs[0]["is_crash_bounce"] = True
 
         report = render_review_report(
-            sources=_mock_sources(),
-            epochs=epochs,
-            epoch_analyses=_mock_analyses(),
-            summative_users=_mock_summative(),
-            trends=[],
+            ReportData(
+                sources=_mock_sources(),
+                epochs=epochs,
+                epoch_analyses=_mock_analyses(),
+                summative_users=_mock_summative(),
+                trends=[],
+            )
         )
 
         # Should have some crash bounce indicator
@@ -351,11 +376,13 @@ class TestRenderReviewReport:
     def test_trend_ratio_formatting(self) -> None:
         """Trend ratios are formatted as percentages with pp deltas."""
         report = render_review_report(
-            sources=_mock_sources(),
-            epochs=_mock_epochs(),
-            epoch_analyses=_mock_analyses(),
-            summative_users=_mock_summative(),
-            trends=_mock_trends(),
+            ReportData(
+                sources=_mock_sources(),
+                epochs=_mock_epochs(),
+                epoch_analyses=_mock_analyses(),
+                summative_users=_mock_summative(),
+                trends=_mock_trends(),
+            )
         )
 
         # Ratios should be displayed as percentages
@@ -373,11 +400,13 @@ class TestNosrvRendering:
         analyses[0]["haproxy"]["nosrv_first_60s"] = 72
 
         report = render_review_report(
-            sources=_mock_sources(),
-            epochs=_mock_epochs(),
-            epoch_analyses=analyses,
-            summative_users=_mock_summative(),
-            trends=[],
+            ReportData(
+                sources=_mock_sources(),
+                epochs=_mock_epochs(),
+                epoch_analyses=analyses,
+                summative_users=_mock_summative(),
+                trends=[],
+            )
         )
 
         assert "NOSRV" in report
@@ -387,11 +416,13 @@ class TestNosrvRendering:
     def test_nosrv_omitted_when_zero(self) -> None:
         """AC1.3: Zero NOSRV events omit the NOSRV per-epoch line."""
         report = render_review_report(
-            sources=_mock_sources(),
-            epochs=_mock_epochs(),
-            epoch_analyses=_mock_analyses(),
-            summative_users=_mock_summative(),
-            trends=[],
+            ReportData(
+                sources=_mock_sources(),
+                epochs=_mock_epochs(),
+                epoch_analyses=_mock_analyses(),
+                summative_users=_mock_summative(),
+                trends=[],
+            )
         )
 
         assert "Restart 503s (NOSRV)" not in report
@@ -408,11 +439,13 @@ class TestErrorLandscapeRendering:
         }
 
         report = render_review_report(
-            sources=_mock_sources(),
-            epochs=_mock_epochs(),
-            epoch_analyses=analyses,
-            summative_users=_mock_summative(),
-            trends=[],
+            ReportData(
+                sources=_mock_sources(),
+                epochs=_mock_epochs(),
+                epoch_analyses=analyses,
+                summative_users=_mock_summative(),
+                trends=[],
+            )
         )
 
         assert "Appeared" in report
@@ -430,11 +463,13 @@ class TestErrorLandscapeRendering:
         }
 
         report = render_review_report(
-            sources=_mock_sources(),
-            epochs=_mock_epochs(),
-            epoch_analyses=analyses,
-            summative_users=_mock_summative(),
-            trends=[],
+            ReportData(
+                sources=_mock_sources(),
+                epochs=_mock_epochs(),
+                epoch_analyses=analyses,
+                summative_users=_mock_summative(),
+                trends=[],
+            )
         )
 
         assert "No errors" in report
@@ -444,11 +479,13 @@ class TestMethodology:
     def test_key_terms_present(self) -> None:
         """AC5.1: Methodology contains key terms."""
         report = render_review_report(
-            sources=_mock_sources(),
-            epochs=_mock_epochs(),
-            epoch_analyses=_mock_analyses(),
-            summative_users=_mock_summative(),
-            trends=[],
+            ReportData(
+                sources=_mock_sources(),
+                epochs=_mock_epochs(),
+                epoch_analyses=_mock_analyses(),
+                summative_users=_mock_summative(),
+                trends=[],
+            )
         )
         lower = report.lower()
         assert "epoch" in lower
@@ -462,11 +499,13 @@ class TestMethodology:
     def test_citations_present(self) -> None:
         """AC5.2: SRE Workbook and playbook cited."""
         report = render_review_report(
-            sources=_mock_sources(),
-            epochs=_mock_epochs(),
-            epoch_analyses=_mock_analyses(),
-            summative_users=_mock_summative(),
-            trends=[],
+            ReportData(
+                sources=_mock_sources(),
+                epochs=_mock_epochs(),
+                epoch_analyses=_mock_analyses(),
+                summative_users=_mock_summative(),
+                trends=[],
+            )
         )
         assert "SRE Workbook" in report
         assert "incident-analysis-playbook" in report
@@ -496,11 +535,13 @@ class TestPoolConfigRendering:
         analyses[0]["pool_config"] = {"pool_size": 10, "max_overflow": 20}
 
         report = render_review_report(
-            sources=_mock_sources(),
-            epochs=_mock_epochs(),
-            epoch_analyses=analyses,
-            summative_users=_mock_summative(),
-            trends=[],
+            ReportData(
+                sources=_mock_sources(),
+                epochs=_mock_epochs(),
+                epoch_analyses=analyses,
+                summative_users=_mock_summative(),
+                trends=[],
+            )
         )
 
         assert "size=10, overflow=20" in report
@@ -511,11 +552,13 @@ class TestPoolConfigRendering:
         analyses[0]["pool_config"] = None
 
         report = render_review_report(
-            sources=_mock_sources(),
-            epochs=_mock_epochs(),
-            epoch_analyses=analyses,
-            summative_users=_mock_summative(),
-            trends=[],
+            ReportData(
+                sources=_mock_sources(),
+                epochs=_mock_epochs(),
+                epoch_analyses=analyses,
+                summative_users=_mock_summative(),
+                trends=[],
+            )
         )
 
         assert "not observed" in report
@@ -540,11 +583,13 @@ class TestRestartGapRendering:
         analyses = [_mock_analyses()[0], _mock_analyses()[0]]
 
         report = render_review_report(
-            sources=_mock_sources(),
-            epochs=epochs,
-            epoch_analyses=analyses,
-            summative_users=_mock_summative(),
-            trends=[],
+            ReportData(
+                sources=_mock_sources(),
+                epochs=epochs,
+                epoch_analyses=analyses,
+                summative_users=_mock_summative(),
+                trends=[],
+            )
         )
 
         assert "Gap" in report
@@ -555,11 +600,13 @@ class TestRestartGapRendering:
         epochs = [{**_mock_epochs()[0], "restart_gap_seconds": None}]
 
         report = render_review_report(
-            sources=_mock_sources(),
-            epochs=epochs,
-            epoch_analyses=_mock_analyses(),
-            summative_users=_mock_summative(),
-            trends=[],
+            ReportData(
+                sources=_mock_sources(),
+                epochs=epochs,
+                epoch_analyses=_mock_analyses(),
+                summative_users=_mock_summative(),
+                trends=[],
+            )
         )
 
         assert "Gap" in report
@@ -580,11 +627,13 @@ class TestRestartGapRendering:
         analyses = [_mock_analyses()[0], _mock_analyses()[0]]
 
         report = render_review_report(
-            sources=_mock_sources(),
-            epochs=epochs,
-            epoch_analyses=analyses,
-            summative_users=_mock_summative(),
-            trends=[],
+            ReportData(
+                sources=_mock_sources(),
+                epochs=epochs,
+                epoch_analyses=analyses,
+                summative_users=_mock_summative(),
+                trends=[],
+            )
         )
 
         assert "0s" in report

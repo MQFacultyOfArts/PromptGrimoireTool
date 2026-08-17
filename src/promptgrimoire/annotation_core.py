@@ -24,6 +24,7 @@ if TYPE_CHECKING:
     from uuid import UUID
 
     from promptgrimoire.crdt.annotation_doc import AnnotationDocument
+    from promptgrimoire.db.models import Tag
 
 _TEXT_PREVIEW_LIMIT = 80
 _DEFAULT_COLOUR = "#999999"
@@ -109,29 +110,26 @@ async def workspace_tags(workspace_id: UUID) -> list[TagInfo]:
     # matches toolbar display order.  Ungrouped tags sort last.
     max_order = float("inf")
 
-    def _sort_key(tag: object) -> tuple[float, int]:
-        # tag is always a Tag SQLModel instance; typed as object to satisfy
-        # sorted()'s homogeneous key-callable signature without a runtime import.
-        grp = group_map.get(tag.group_id) if tag.group_id else None  # type: ignore[attr-defined]  -- see above
-        return (grp.order_index if grp else max_order, tag.order_index)  # type: ignore[attr-defined, return-value]  -- see above
+    def _sort_key(tag: Tag) -> tuple[float, int]:
+        grp = group_map.get(tag.group_id) if tag.group_id else None
+        return (grp.order_index if grp else max_order, tag.order_index)
 
     sorted_tags = sorted(tags, key=_sort_key)
 
-    return [
-        TagInfo(
-            name=tag.name,
-            colour=tag.color,
-            raw_key=str(tag.id),
-            group_name=group_map[tag.group_id].name
-            if tag.group_id in group_map
-            else None,
-            group_colour=group_map[tag.group_id].color
-            if tag.group_id in group_map
-            else None,
-            description=tag.description,
+    result: list[TagInfo] = []
+    for tag in sorted_tags:
+        grp = group_map.get(tag.group_id) if tag.group_id else None
+        result.append(
+            TagInfo(
+                name=tag.name,
+                colour=tag.color,
+                raw_key=str(tag.id),
+                group_name=grp.name if grp else None,
+                group_colour=grp.color if grp else None,
+                description=tag.description,
+            )
         )
-        for tag in sorted_tags
-    ]
+    return result
 
 
 def author_initials(name: str) -> str:
@@ -164,10 +162,11 @@ def group_highlights_by_tag(
     return by_tag
 
 
-def serialise_items(
+def serialise_items(  # noqa: PLR0913 -- param-object migration: tracker ledger 8
     highlights: list[dict[str, Any]],
     tag_info_map: dict[str, TagInfo],
     tag_colours: dict[str, str],
+    *,
     user_id: str | None,
     viewer_is_privileged: bool,
     privileged_user_ids: frozenset[str],

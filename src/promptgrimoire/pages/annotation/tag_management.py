@@ -8,7 +8,8 @@ save logic from ``tag_management_save``, and import section from
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, TypedDict
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any, NotRequired, TypedDict
 
 import structlog
 from nicegui import ui
@@ -18,6 +19,9 @@ from promptgrimoire.pages.annotation.tag_import import (
     _render_import_section,
 )
 from promptgrimoire.pages.annotation.tag_management_rows import (
+    TagListCallbacks,
+    TagListCollectors,
+    TagListRenderContext,
     _open_confirm_delete,
     _render_tag_list_content,
 )
@@ -32,6 +36,9 @@ if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
     from uuid import UUID
 
+    from nicegui.elements.timer import Timer
+
+    from promptgrimoire.crdt.annotation_doc import AnnotationDocument
     from promptgrimoire.db.models import Tag
     from promptgrimoire.db.workspaces import PlacementContext
     from promptgrimoire.pages.annotation import PageState
@@ -82,10 +89,43 @@ class TagRowInputs(TypedDict):
     color: str
     description: str
     group_id: str | None
+    # Runtime-only slot: _setup_color_debounce parks its pending Timer here so
+    # _cancel_pending_timers can cancel it before a batch save.
+    _pending_timer: NotRequired[Timer | None]
     orig_name: str
     orig_color: str
     orig_desc: str
     orig_group: str | None
+
+
+@dataclass(slots=True)
+class TagDbOps:
+    """DB mutation callables shared by the management dialog's callback
+    builders (PLR0913).
+    """
+
+    update_tag: Callable[..., Awaitable[object]]
+    update_tag_group: Callable[..., Awaitable[object]]
+    create_tag: Callable[..., Awaitable[object]]
+    create_tag_group: Callable[..., Awaitable[object]]
+    reorder_tags: Callable[..., Awaitable[None]]
+    reorder_tag_groups: Callable[..., Awaitable[None]]
+
+
+@dataclass(slots=True)
+class TagOrderState:
+    """Mutable per-render drag-order tracking for reorder callbacks (PLR0913)."""
+
+    tag_id_lists: dict[UUID | None, list[UUID]]
+    group_id_list: list[UUID]
+
+
+@dataclass(slots=True)
+class TagRowInputCollectors:
+    """Batch-save model-dict collectors read by the Done button (PLR0913)."""
+
+    tag_row_inputs: dict[UUID, TagRowInputs]
+    group_row_inputs: dict[UUID, dict[str, Any]]
 
 
 _PRESET_PALETTE: list[str] = [
@@ -122,21 +162,17 @@ def _unique_tag_name(existing_names: set[str]) -> str:
 
 
 def _highlight_count_for_tag(
-    crdt_doc: object | None,
+    crdt_doc: AnnotationDocument | None,
     tag_id: UUID,
 ) -> int:
     """Count CRDT highlights referencing *tag_id*.
 
     Returns 0 if *crdt_doc* is None or has no highlights.
     """
-    if not crdt_doc:
+    if crdt_doc is None:
         return 0
     tag_str = str(tag_id)
-    return sum(
-        1
-        for hl in crdt_doc.get_all_highlights()  # type: ignore[union-attr]
-        if hl.get("tag") == tag_str
-    )
+    return sum(1 for hl in crdt_doc.get_all_highlights() if hl.get("tag") == tag_str)
 
 
 def _delete_confirmation_body(highlight_count: int) -> str:
@@ -184,10 +220,8 @@ def _build_done_button(
     *,
     dialog: ui.dialog,
     state: PageState,
-    tag_row_inputs: dict[UUID, TagRowInputs],
-    group_row_inputs: dict[UUID, dict[str, Any]],
-    update_tag: Callable[..., Awaitable[object]],
-    update_tag_group: Callable[..., Awaitable[object]],
+    row_inputs: TagRowInputCollectors,
+    db_ops: TagDbOps,
     is_instructor: bool,
 ) -> None:
     """Render a Done button that batch-saves and shows a spinner during save.
@@ -200,6 +234,11 @@ def _build_done_button(
         _cancel_pending_timers,
         _save_all_modified_rows,
     )
+
+    tag_row_inputs = row_inputs.tag_row_inputs
+    group_row_inputs = row_inputs.group_row_inputs
+    update_tag = db_ops.update_tag
+    update_tag_group = db_ops.update_tag_group
 
     done_btn = ui.button("Done", icon="check").props(
         'color=primary data-testid="tag-management-done-btn"'
@@ -257,6 +296,15 @@ async def open_tag_management(
         update_tag_group,
     )
 
+    db_ops = TagDbOps(
+        update_tag=update_tag,
+        update_tag_group=update_tag_group,
+        create_tag=create_tag,
+        create_tag_group=create_tag_group,
+        reorder_tags=reorder_tags,
+        reorder_tag_groups=reorder_tag_groups,
+    )
+
     # Instructor = template workspace owner OR org-level admin.
     # Students never access templates (ACL gate in workspace.py), so
     # is_template reliably identifies instructor context.  Org admins
@@ -309,13 +357,11 @@ async def open_tag_management(
             callbacks = _build_management_callbacks(
                 state=state,
                 render_tag_list=_render_tag_list,
-                update_tag=update_tag,
-                create_tag=create_tag,
-                create_tag_group=create_tag_group,
-                reorder_tags=reorder_tags,
-                reorder_tag_groups=reorder_tag_groups,
-                tag_id_lists=tag_id_lists,
-                group_id_list=group_id_list,
+                db_ops=db_ops,
+                order_state=TagOrderState(
+                    tag_id_lists=tag_id_lists,
+                    group_id_list=group_id_list,
+                ),
                 is_instructor=is_instructor,
             )
 
@@ -344,24 +390,32 @@ async def open_tag_management(
                 _render_tag_list_content(
                     groups=groups,
                     tags_by_group=tags_by_group,
-                    group_options=group_options,
-                    is_instructor=is_instructor,
-                    on_delete_tag=callbacks["delete_tag"],
-                    on_delete_group=callbacks["delete_group"],
-                    on_add_tag=callbacks["add_tag"],
-                    on_add_group=callbacks["add_group"],
-                    on_lock_toggle=callbacks["lock_toggle"] if is_instructor else None,
-                    on_tag_reorder_for_group=callbacks["tag_reorder"],
-                    on_group_reorder=callbacks["group_reorder"],
-                    on_move_group=callbacks["move_group"],
-                    on_move_tag=callbacks["move_tag"],
-                    tag_id_lists=tag_id_lists,
-                    group_id_list=group_id_list,
-                    tag_row_collector=tag_row_inputs,
-                    group_row_collector=group_row_inputs,
-                    on_field_save=_save_tag_field,
-                    on_group_field_save=_save_group_field,
-                    highlight_counts=highlight_counts,
+                    render_ctx=TagListRenderContext(
+                        group_options=group_options,
+                        is_instructor=is_instructor,
+                        highlight_counts=highlight_counts,
+                    ),
+                    callbacks=TagListCallbacks(
+                        on_delete_tag=callbacks["delete_tag"],
+                        on_delete_group=callbacks["delete_group"],
+                        on_add_tag=callbacks["add_tag"],
+                        on_add_group=callbacks["add_group"],
+                        on_lock_toggle=(
+                            callbacks["lock_toggle"] if is_instructor else None
+                        ),
+                        on_tag_reorder_for_group=callbacks["tag_reorder"],
+                        on_group_reorder=callbacks["group_reorder"],
+                        on_move_group=callbacks["move_group"],
+                        on_move_tag=callbacks["move_tag"],
+                        on_field_save=_save_tag_field,
+                        on_group_field_save=_save_group_field,
+                    ),
+                    collectors=TagListCollectors(
+                        tag_id_lists=tag_id_lists,
+                        group_id_list=group_id_list,
+                        tag_row_collector=tag_row_inputs,
+                        group_row_collector=group_row_inputs,
+                    ),
                 )
 
                 # Import section -- available to all users (AC3.6)
@@ -377,10 +431,11 @@ async def open_tag_management(
             _build_done_button(
                 dialog=dialog,
                 state=state,
-                tag_row_inputs=tag_row_inputs,
-                group_row_inputs=group_row_inputs,
-                update_tag=update_tag,
-                update_tag_group=update_tag_group,
+                row_inputs=TagRowInputCollectors(
+                    tag_row_inputs=tag_row_inputs,
+                    group_row_inputs=group_row_inputs,
+                ),
+                db_ops=db_ops,
                 is_instructor=is_instructor,
             )
 
@@ -480,6 +535,40 @@ def _build_group_callbacks(
     }
 
 
+def _reordered_group_for_move(
+    tag_id: UUID,
+    tag_id_lists: dict[UUID | None, list[UUID]],
+    direction: int,
+) -> list[UUID] | None:
+    """Compute the reordered tag list for a move-up/move-down click.
+
+    Finds which group's list contains *tag_id* and returns that group's
+    ordering with the tag shifted by *direction* (-1 up, +1 down).
+    Returns ``None`` if the tag is not found in any group, or if the
+    move would go out of bounds (already first/last).
+
+    Pure -- performs no I/O. Extracted from ``_move_tag`` to keep the
+    reorder-callback factory's cognitive complexity low.
+    """
+    for id_list in tag_id_lists.values():
+        if tag_id not in id_list:
+            continue
+        try:
+            old_idx = id_list.index(tag_id)
+        except ValueError:
+            logger.warning(
+                "tag_not_found_for_move",
+                operation="move_tag",
+                tag_id=str(tag_id),
+            )
+            return None
+        new_idx = old_idx + direction
+        if new_idx < 0 or new_idx >= len(id_list):
+            return None
+        return _reorder_list(id_list, old_idx, new_idx)
+    return None
+
+
 def _build_tag_reorder_callbacks(
     *,
     state: PageState,
@@ -500,25 +589,12 @@ def _build_tag_reorder_callbacks(
 
     async def _move_tag(tag_id: UUID, direction: int) -> None:
         """Move a tag up (-1) or down (+1) within its group."""
-        for _gid, id_list in tag_id_lists.items():
-            if tag_id in id_list:
-                try:
-                    old_idx = id_list.index(tag_id)
-                except ValueError:
-                    logger.warning(
-                        "tag_not_found_for_move",
-                        operation="move_tag",
-                        tag_id=str(tag_id),
-                    )
-                    return
-                new_idx = old_idx + direction
-                if new_idx < 0 or new_idx >= len(id_list):
-                    return
-                new_order = _reorder_list(id_list, old_idx, new_idx)
-                await reorder_tags(new_order, crdt_doc=state.crdt_doc)
-                await _refresh_tag_state(state)
-                await render_tag_list()
-                return
+        new_order = _reordered_group_for_move(tag_id, tag_id_lists, direction)
+        if new_order is None:
+            return
+        await reorder_tags(new_order, crdt_doc=state.crdt_doc)
+        await _refresh_tag_state(state)
+        await render_tag_list()
 
     return {
         "tag_reorder": _tag_reorder,
@@ -605,19 +681,22 @@ def _build_management_callbacks(
     *,
     state: PageState,
     render_tag_list: Callable[[], Awaitable[None]],
-    update_tag: Callable[..., Awaitable[object]],
-    create_tag: Callable[..., Awaitable[object]],
-    create_tag_group: Callable[..., Awaitable[object]],
-    reorder_tags: Callable[..., Awaitable[None]],
-    reorder_tag_groups: Callable[..., Awaitable[None]],
-    tag_id_lists: dict[UUID | None, list[UUID]],
-    group_id_list: list[UUID],
+    db_ops: TagDbOps,
+    order_state: TagOrderState,
     is_instructor: bool,
 ) -> ManagementCallbacks:
     """Build all management dialog callbacks as a dict.
 
     Delegates to sub-builders for group, reorder, and tag CRUD callbacks.
     """
+    update_tag = db_ops.update_tag
+    create_tag = db_ops.create_tag
+    create_tag_group = db_ops.create_tag_group
+    reorder_tags = db_ops.reorder_tags
+    reorder_tag_groups = db_ops.reorder_tag_groups
+    tag_id_lists = order_state.tag_id_lists
+    group_id_list = order_state.group_id_list
+
     group_cbs = _build_group_callbacks(
         state=state,
         render_tag_list=render_tag_list,

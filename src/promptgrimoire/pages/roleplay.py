@@ -89,7 +89,7 @@ def _render_messages(session: Session, chat_container, scroll_area: ScrollArea) 
     scroll_area.scroll_to(percent=1.0)
 
 
-async def _handle_send(
+async def _handle_send(  # noqa: PLR0913, PLR0917 -- caller passes positionally; param-object migration: tracker ledger 8
     user_message: str,
     session: Session,
     client: ClaudeClient,

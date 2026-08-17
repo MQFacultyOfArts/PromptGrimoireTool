@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import concurrent.futures
 import contextlib
+from typing import TYPE_CHECKING
 
 import structlog
 from sqlmodel import select
@@ -18,6 +19,9 @@ from promptgrimoire.db.courses import DuplicateEnrollmentError, enroll_user
 from promptgrimoire.db.engine import get_session, init_db
 from promptgrimoire.db.models import Course
 from promptgrimoire.db.users import create_user, get_user_by_email
+
+if TYPE_CHECKING:
+    from collections.abc import Coroutine
 
 logger = structlog.get_logger()
 
@@ -69,7 +73,7 @@ async def _seed_user_and_enrol(
     logger.debug("[SEED] done: %s", email)
 
 
-def _run_in_thread(coro: object) -> None:
+def _run_in_thread(coro: Coroutine[object, object, object]) -> None:
     """Run an async coroutine in a new thread with its own event loop.
 
     The NiceGUI server occupies the main event loop, so ``asyncio.run()``
@@ -81,7 +85,7 @@ def _run_in_thread(coro: object) -> None:
     def target() -> None:
         nonlocal exc
         try:
-            asyncio.run(coro)  # type: ignore[arg-type]
+            asyncio.run(coro)
         except BaseException as e:
             exc = e  # Deferred re-raise after thread cleanup (line 94)
 

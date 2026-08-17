@@ -36,7 +36,7 @@ if TYPE_CHECKING:
 logger = structlog.get_logger()
 
 
-def resolve_broadcast_label(
+def resolve_broadcast_label(  # noqa: PLR0913 -- param-object migration: tracker ledger 8
     *,
     sender_name: str,
     sender_user_id: str | None,

@@ -7,6 +7,7 @@ and comment threads across multiple connected clients.
 
 from __future__ import annotations
 
+import dataclasses
 from contextvars import ContextVar
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
@@ -221,13 +222,14 @@ class AnnotationDocument:
 
     # --- Highlight operations ---
 
-    def add_highlight(
+    def add_highlight(  # noqa: PLR0913 -- param-object migration: tracker ledger 8
         self,
         start_char: int,
         end_char: int,
         tag: str,
         text: str,
         author: str,
+        *,
         para_ref: str = "",
         origin_client_id: str | None = None,
         document_id: str | None = None,
@@ -486,7 +488,7 @@ class AnnotationDocument:
 
     # --- Tag CRUD operations ---
 
-    def set_tag(
+    def set_tag(  # noqa: PLR0913 -- param-object migration: tracker ledger 8
         self,
         tag_id: str | UUID,
         name: str,
@@ -834,18 +836,29 @@ def _hydrate_crdt_from_db(
     )
 
 
+@dataclasses.dataclass
+class _TagReconciliationState:
+    """DB-side and CRDT-side tag/tag-group snapshots being reconciled."""
+
+    db_tags: list[Any]
+    db_groups: list[Any]
+    crdt_tags: dict[str, Any]
+    crdt_groups: dict[str, Any]
+
+
 def _reconcile_crdt_with_db(
     doc: AnnotationDocument,
-    db_tags: list[Any],
-    db_groups: list[Any],
-    crdt_tags: dict[str, Any],
-    crdt_groups: dict[str, Any],
+    state: _TagReconciliationState,
     workspace_id: UUID,
 ) -> bool:
     """Add missing DB entries to CRDT and remove orphans (AC1.6).
 
     Returns True if any changes were made.
     """
+    db_tags = state.db_tags
+    db_groups = state.db_groups
+    crdt_tags = state.crdt_tags
+    crdt_groups = state.crdt_groups
     db_tag_ids = {str(t.id) for t in db_tags}
     db_group_ids = {str(g.id) for g in db_groups}
     changed = False
@@ -944,7 +957,9 @@ async def _ensure_crdt_tag_consistency(
         changed = True
     else:
         changed = _reconcile_crdt_with_db(
-            doc, db_tags, db_groups, crdt_tags, crdt_groups, workspace_id
+            doc,
+            _TagReconciliationState(db_tags, db_groups, crdt_tags, crdt_groups),
+            workspace_id,
         )
 
     if changed:

@@ -66,8 +66,8 @@ def _extract_body(html: str) -> str:
     tree = LexborHTMLParser(html)
     body = tree.body
     if body is not None:
-        # selectolax .html stub returns str|None but body check above
-        return body.html  # type: ignore[no-any-return]  # selectolax stub
+        # selectolax .html is str | None; fall back to the input on None
+        return body.html or html
     return html
 
 

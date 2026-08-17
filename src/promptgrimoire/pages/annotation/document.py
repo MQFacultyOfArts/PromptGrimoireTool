@@ -7,6 +7,7 @@ setting up JS-based text selection detection, and keyboard shortcuts.
 from __future__ import annotations
 
 import time
+from dataclasses import dataclass
 from html import escape
 from typing import Any
 from urllib.parse import urlencode
@@ -485,6 +486,15 @@ def _create_annotation_sidebar(state: PageState) -> Any:
     )
 
 
+@dataclass(frozen=True, slots=True)
+class DocumentRenderCallbacks:
+    """Optional toolbar/menu callbacks and footer for document rendering."""
+
+    on_add_click: Any | None = None
+    on_manage_click: Any | None = None
+    footer: Any | None = None
+
+
 def _render_document_content(doc: Any) -> None:
     """Emit the paragraph-injected document HTML into the current slot.
 
@@ -548,14 +558,12 @@ async def _render_document_with_highlights(
     state: PageState,
     doc: Any,
     crdt_doc: Any,
-    *,
-    on_add_click: Any | None = None,
-    on_manage_click: Any | None = None,
-    footer: Any | None = None,
+    callbacks: DocumentRenderCallbacks | None = None,
 ) -> None:
     """Render a document with highlight support."""
     from promptgrimoire.config import get_settings  # noqa: PLC0415, I001 -- lazy: matches sibling render helpers
 
+    cb = callbacks or DocumentRenderCallbacks()
     _t_render = time.monotonic()
     use_snapshot = get_settings().snapshot.enabled
     _init_document_state(state, doc, crdt_doc)
@@ -577,21 +585,21 @@ async def _render_document_with_highlights(
         state.toolbar_container = _build_tag_toolbar(
             state.tag_info_list or [],
             handle_tag_click,
-            on_add_click=on_add_click,
-            on_manage_click=on_manage_click,
-            footer=footer,
+            on_add_click=cb.on_add_click,
+            on_manage_click=cb.on_manage_click,
+            footer=cb.footer,
         )
 
     # Highlight creation menu (popup with abbreviated tag buttons)
     # Only built for users who can annotate
     if state.can_annotate:
-        _build_highlight_menu(state, handle_tag_click, on_add_click=on_add_click)
+        _build_highlight_menu(state, handle_tag_click, on_add_click=cb.on_add_click)
 
     # Two-column layout: document (70%) + sidebar (30%)
     # Takes up 80-90% of screen width for comfortable reading
     # When using Quasar footer, q-page handles padding automatically.
     # Fallback: manual padding-bottom for fixed-position toolbar.
-    pb = "" if footer is not None else "padding-bottom: 60px; "
+    pb = "" if cb.footer is not None else "padding-bottom: 60px; "
     layout_wrapper = (
         ui.element("div")
         .props(f'id="ann-layout-{doc.id}"')

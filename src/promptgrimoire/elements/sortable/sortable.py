@@ -29,7 +29,7 @@ class Sortable(
         weakref.WeakValueDictionary()
     )
 
-    def __init__(
+    def __init__(  # noqa: PLR0913 -- NiceGUI element callback options, one per event by design
         self,
         options: dict[str, Any] | None = None,
         *,

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 import structlog
@@ -23,28 +24,51 @@ from promptgrimoire.db.workspaces import update_workspace_sharing
 
 logger = structlog.get_logger()
 
+# An email address splits into exactly local-part and domain around "@".
+_EMAIL_PARTS = 2
+
+
+@dataclass(frozen=True, slots=True)
+class SharingUiFlags:
+    """Flags controlling which sharing controls render, and their state."""
+
+    allow_sharing: bool
+    shared_with_class: bool
+    can_manage_sharing: bool
+    viewer_is_privileged: bool
+
+    @property
+    def shows_class_toggle(self) -> bool:
+        """Share-with-class toggle: activity allows sharing AND viewer manages."""
+        return self.allow_sharing and self.can_manage_sharing
+
+    @property
+    def shows_share_button(self) -> bool:
+        """Share-with-user button: sharing allowed or staff bypass, AND manages.
+
+        Staff (viewer_is_privileged) can share even when the activity
+        disallows it; nobody shares without manage rights.
+        """
+        return (
+            self.allow_sharing or self.viewer_is_privileged
+        ) and self.can_manage_sharing
+
 
 def render_sharing_controls(
     *,
     workspace_id: UUID,
-    allow_sharing: bool,
-    shared_with_class: bool,
-    can_manage_sharing: bool,
-    viewer_is_privileged: bool,
     grantor_id: UUID | None,
+    flags: SharingUiFlags,
 ) -> None:
     """Render sharing toggle and share button in the workspace header.
 
     Args:
         workspace_id: Workspace UUID.
-        allow_sharing: Whether the placement context allows sharing.
-        shared_with_class: Current workspace shared_with_class state.
-        can_manage_sharing: Whether the user can toggle sharing.
-        viewer_is_privileged: Whether the viewer is an instructor/admin.
         grantor_id: The local User UUID for the current session, or None.
+        flags: Sharing permission/state flags (see SharingUiFlags).
     """
     # "Share with class" toggle -- only when activity allows sharing
-    if allow_sharing and can_manage_sharing:
+    if flags.shows_class_toggle:
 
         async def _handle_share_toggle(value: bool) -> None:
             try:
@@ -59,12 +83,12 @@ def render_sharing_controls(
 
         ui.switch(
             "Share with class",
-            value=shared_with_class,
+            value=flags.shared_with_class,
             on_change=lambda e: _handle_share_toggle(e.value),
         ).props('data-testid="share-with-class-toggle"')
 
     # "Share with user" button -- visible when sharing allowed, or staff bypass
-    if (allow_sharing or viewer_is_privileged) and can_manage_sharing:
+    if flags.shows_share_button:
 
         async def _open_share_dialog() -> None:
             if grantor_id is None:
@@ -72,8 +96,8 @@ def render_sharing_controls(
             await open_sharing_dialog(
                 workspace_id=workspace_id,
                 grantor_id=grantor_id,
-                sharing_allowed=allow_sharing,
-                grantor_is_staff=viewer_is_privileged,
+                sharing_allowed=flags.allow_sharing,
+                grantor_is_staff=flags.viewer_is_privileged,
             )
 
         ui.button(
@@ -91,7 +115,7 @@ def _is_plausible_email(email: str) -> bool:
     round-trip to the database.
     """
     parts = email.split("@")
-    if len(parts) != 2 or not parts[0]:
+    if len(parts) != _EMAIL_PARTS or not parts[0]:
         return False
     domain = parts[1]
     return "." in domain and not domain.startswith(".") and not domain.endswith(".")

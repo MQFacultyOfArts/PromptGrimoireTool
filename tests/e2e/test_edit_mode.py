@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import json
 import re
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, TypedDict
 
 import pytest
 from playwright.sync_api import expect
@@ -40,7 +40,15 @@ if TYPE_CHECKING:
     from pytest_subtests import SubTests
 
 
-def _fetch_document_db_state(workspace_id: str) -> dict[str, object]:
+class _DocumentDbState(TypedDict):
+    """DB state of a workspace_document row, as fetched for E2E assertions."""
+
+    doc_id: str
+    content: str
+    paragraph_map: dict[str, int]
+
+
+def _fetch_document_db_state(workspace_id: str) -> _DocumentDbState:
     """Query the DB for the first document in a workspace.
 
     Returns a dict with ``content`` (str), ``paragraph_map`` (dict[str, int]),
@@ -369,8 +377,8 @@ class TestEditMode:
             expect(doc).to_contain_text("Second paragraph text", timeout=10000)
 
             db_state = _fetch_document_db_state(workspace_id)
-            saved_content: str = db_state["content"]  # type: ignore[assignment]
-            stored_map: dict[str, int] = db_state["paragraph_map"]  # type: ignore[assignment]
+            saved_content = db_state["content"]
+            stored_map = db_state["paragraph_map"]
 
             # Recompute from saved HTML — same function used by update_document_content
             expected_map = build_paragraph_map_for_json(saved_content, auto_number=True)
@@ -385,7 +393,7 @@ class TestEditMode:
             )
 
         with subtests.test(msg="paragraph_map_has_sequential_numbers"):
-            stored_map = db_state["paragraph_map"]  # type: ignore[assignment]
+            stored_map = db_state["paragraph_map"]
             para_numbers = sorted(stored_map.values())
             assert para_numbers, "paragraph_map should not be empty after save"
             assert para_numbers[0] == 1, (

@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import json
 import time
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 from urllib.parse import urlencode
 from uuid import UUID
 
@@ -57,7 +57,6 @@ from promptgrimoire.pages.annotation.tag_quick_create import open_quick_create
 if TYPE_CHECKING:
     from nicegui import Client
 
-    from promptgrimoire.pages.annotation import PermissionLevel
 
 logger = structlog.get_logger()
 
@@ -256,7 +255,7 @@ async def _resolve_db_context(
     return None if client._deleted else (context, documents, first_doc)
 
 
-def _log_page_load_profile(
+def _log_page_load_profile(  # noqa: PLR0913, PLR0917 -- flat signature pinned by test_diagnostics positional-call guard; param-object migration: tracker ledger 8
     workspace_id: UUID,
     t_total: float,
     t_db: float,
@@ -350,7 +349,7 @@ async def _load_workspace_content(
             workspace_id=workspace_id,
             user_name=_get_current_username(),
             user_id=auth_user.get("user_id"),
-            effective_permission=cast("PermissionLevel", context.permission),
+            effective_permission=context.permission,
             is_anonymous=ctx.anonymous_sharing,
             viewer_is_privileged=privileged,
             privileged_user_ids=context.privileged_user_ids,

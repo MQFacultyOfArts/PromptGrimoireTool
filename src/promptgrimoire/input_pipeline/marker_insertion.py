@@ -11,6 +11,7 @@ client-side JS text walker (Issue #129).
 
 from __future__ import annotations
 
+import dataclasses
 import html as html_module
 from typing import Any
 
@@ -25,6 +26,11 @@ from promptgrimoire.input_pipeline.text_extraction import (
     walk_and_map,
 )
 
+# Upper bound on how far past "&" to scan for the terminating ";" of an
+# HTML entity reference (e.g. "&#x10FFFF;" is 10 chars; a few chars of
+# margin keeps this from mistaking a stray ";" in plain text for one).
+_MAX_ENTITY_REF_LEN = 12
+
 
 def _try_entity_match(
     html: str, html_pos: int, decoded_text: str, decoded_pos: int
@@ -35,7 +41,7 @@ def _try_entity_match(
     if the entity does not match.
     """
     semicolon = html.find(";", html_pos + 1)
-    if semicolon == -1 or semicolon - html_pos >= 12:
+    if semicolon == -1 or semicolon - html_pos >= _MAX_ENTITY_REF_LEN:
         return None
     entity_text = html[html_pos : semicolon + 1]
     decoded_entity = html_module.unescape(entity_text)
@@ -175,7 +181,7 @@ def _html_char_length(html_text: str, html_pos: int, decoded_char: str) -> int:
                 return len(entity)
         # Try numeric entity &#NNN; or &#xHHH;
         semicolon = html_text.find(";", html_pos + 1)
-        if semicolon != -1 and semicolon - html_pos < 12:
+        if semicolon != -1 and semicolon - html_pos < _MAX_ENTITY_REF_LEN:
             return semicolon - html_pos + 1
     return 1
 
@@ -218,11 +224,18 @@ def collapsed_to_html_offset(
     return html_pos
 
 
+@dataclasses.dataclass(frozen=True)
+class _CharSpan:
+    """A single highlight's [start, end) character range."""
+
+    start: int
+    end: int
+
+
 def _add_marker_insertions(
     text_nodes: list[TextNodeInfo],
     byte_offsets: list[int],
-    start_char: int,
-    end_char: int,
+    span: _CharSpan,
     marker_idx: int,
     insertions: list[tuple[int, str]],
 ) -> None:
@@ -230,6 +243,8 @@ def _add_marker_insertions(
 
     Handles boundary cases where markers fall outside all text nodes.
     """
+    start_char, end_char = span.start, span.end
+
     # Find start position
     start_node_found = False
     for i, node_info in enumerate(text_nodes):
@@ -343,7 +358,11 @@ def insert_markers_into_dom(
         marker_to_highlight.append(hl)
 
         _add_marker_insertions(
-            text_nodes, byte_offsets, start_char, end_char, marker_idx, insertions
+            text_nodes,
+            byte_offsets,
+            _CharSpan(start_char, end_char),
+            marker_idx,
+            insertions,
         )
 
     # Sort insertions by byte offset descending -- insert back-to-front

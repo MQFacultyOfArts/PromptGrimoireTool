@@ -17,6 +17,10 @@ if TYPE_CHECKING:
 # Platform detection pattern
 _DETECTION_PATTERN = re.compile(r'data-testid="playground-container"', re.IGNORECASE)
 
+# Index of the assistant message's content-wrapper child among its direct
+# children; all other direct children (chrome) are removed.
+_CONTENT_WRAPPER_CHILD_INDEX = 2
+
 
 def _element_children(node: LexborNode) -> list[LexborNode]:
     """Collect direct element children, skipping text nodes."""
@@ -80,7 +84,7 @@ class OpenRouterHandler:
         # Remove all direct children except child 2 (content wrapper)
         children = _element_children(msg)
         for i, ch in enumerate(children):
-            if i != 2:
+            if i != _CONTENT_WRAPPER_CHILD_INDEX:
                 ch.decompose()
 
         # Inside content wrapper, keep only the last child

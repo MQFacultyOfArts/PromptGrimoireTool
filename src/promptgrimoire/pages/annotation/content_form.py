@@ -27,6 +27,10 @@ if TYPE_CHECKING:
 
     from nicegui.events import GenericEventArguments
 
+# Index of the editor-content entry in the [paste, platform, editor] array
+# emitted by the client-side capture script (see js_capture below).
+_ARG_EDITOR_INDEX = 2
+
 
 def _render_add_content_form(
     workspace_id: UUID,
@@ -99,7 +103,11 @@ def _render_add_content_form(
         args = e.args if isinstance(e.args, list) else [None, None, ""]
         paste_html: str | None = args[0] if len(args) > 0 else None
         platform_hint_val: str | None = args[1] if len(args) > 1 else None
-        editor_val: str = str(args[2]) if len(args) > 2 and args[2] else ""
+        editor_val: str = (
+            str(args[_ARG_EDITOR_INDEX])
+            if len(args) > _ARG_EDITOR_INDEX and args[_ARG_EDITOR_INDEX]
+            else ""
+        )
 
         success = await handle_add_document_submission(
             workspace_id=workspace_id,

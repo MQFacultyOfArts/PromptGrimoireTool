@@ -157,12 +157,13 @@ def _get_session_user() -> dict | None:
         return None
 
 
-def _set_session_user(
+def _set_session_user(  # noqa: PLR0913 -- param-object migration: tracker ledger 8
     email: str,
     member_id: str,
     organization_id: str,
     session_token: str,
     roles: list[str],
+    *,
     name: str | None = None,
     auth_method: str = "unknown",
     user_id: UUID | None = None,

@@ -200,6 +200,23 @@ class IdleConfig(BaseModel):
     enabled: bool = True
 
 
+class SnapshotConfig(BaseModel):
+    """Initial annotation snapshot delivery (standalone service).
+
+    See docs/design-notes/2026-08-16-initial-snapshot-delivery.md.  When
+    enabled, the annotation page delivers the initial document/highlight/
+    sidebar bundle from the standalone snapshot service instead of the
+    NiceGUI element tree.  ``base_url`` is what the browser fetches from;
+    ``port`` is where the service binds; ``allow_origin`` is the CORS
+    origin granted to the bundle endpoint (the NiceGUI app's origin).
+    """
+
+    enabled: bool = False
+    base_url: str = "http://localhost:8210"
+    port: int = 8210
+    allow_origin: str = "http://localhost:8080"
+
+
 # ---------------------------------------------------------------------------
 # Branch detection for per-worktree database isolation
 # ---------------------------------------------------------------------------
@@ -336,6 +353,7 @@ class Settings(BaseSettings):
     help: HelpConfig = HelpConfig()
     admission: AdmissionConfig = AdmissionConfig()
     idle: IdleConfig = IdleConfig()
+    snapshot: SnapshotConfig = SnapshotConfig()
 
     @model_validator(mode="after")
     def _apply_branch_db_suffix(self) -> Settings:

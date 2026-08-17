@@ -141,6 +141,7 @@ When adding new UI elements, add `data-testid` in the source and use `get_by_tes
 - Elements may be off-screen in headless mode — always scroll into view before assertions
 - NiceGUI pages may need time to hydrate — use `expect().to_be_visible()` with appropriate timeouts
 - **Value-Capture Race**: When Playwright calls `fill()` and then immediately `click()`s a button, the server's `click` task can race the `input` task. To fix this, use the `ui_helpers.py:on_submit_with_value` pattern to extract the exact DOM string on the client during the click.
+- **Selection-Capture Race (#502)**: The same event-reordering class for tag application — the apply could be processed before its `selection_made`. Tag triggers are wired via `ui_helpers.py:on_click_with_selection`, whose `js_handler` emits `window._annotSel` (written by `setupAnnotationSelection()` on mouseup) so the apply event carries the offsets. Tests that emit a synthetic `selection_made` and then click a tag must also set `window._annotSel` in the same `evaluate()`. Regression tests: `tests/e2e/test_selection_capture_502.py`.
 - **Rebuild Epoch Race**: When the Vue sidebar re-renders after a prop update, the DOM is destroyed and recreated. Playwright `expect` assertions might pass against a dying DOM node. To fix this, use the **Epoch Pattern**:
   1.  The Vue `watch` on `items` (annotationsidebar.js, `flush: 'post'`) increments `window.__annotationCardsEpoch` after each re-render.
   2.  Test: Capture `old_epoch = page.evaluate("() => window.__annotationCardsEpoch || 0")`.

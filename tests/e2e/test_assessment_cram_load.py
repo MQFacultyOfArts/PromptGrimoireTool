@@ -41,11 +41,20 @@ from contextlib import suppress
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 import pytest
 
 from promptgrimoire.config import get_settings
+from tests.e2e.assessment_fixtures import (
+    CASE_BRIEF_TAG_COUNT,
+    NARAYAN_FIXTURE,
+    create_template_activity,
+    ensure_fixture_workspace,
+    fixture_document_words,
+    provision_clone_for_email,
+    restore_template_binding,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -63,12 +72,6 @@ pytestmark = [
         reason="DEV__TEST_DATABASE_URL not configured",
     ),
 ]
-
-NARAYAN_WORKSPACE_ID = "c7cf540f-53df-407e-b043-cc6f6e30cf5b"
-NARAYAN_FIXTURE_JSON = (
-    Path(__file__).parent.parent / "fixtures" / "narayan_workspace.json"
-)
-CASE_BRIEF_TAG_COUNT = 10
 
 N_CRAM_SESSIONS = int(os.environ.get("E2E_CRAM_SESSIONS", "25"))
 N_CRAM_HIGHLIGHTS = int(os.environ.get("E2E_CRAM_HIGHLIGHTS", "10"))
@@ -110,122 +113,6 @@ def _fetch_json(url: str) -> dict:
     """Fetch JSON from a localhost E2E helper endpoint."""
     with urllib.request.urlopen(url, timeout=30) as resp:
         return json.loads(resp.read().decode())
-
-
-def _ensure_narayan_workspace() -> str:
-    """Rehydrate the Narayan assessment template into the test DB.
-
-    The rehydrate script deletes then re-inserts, so calling this
-    unconditionally is safe. Returns the workspace ID.
-    """
-    if not NARAYAN_FIXTURE_JSON.exists():
-        pytest.skip(
-            f"Workspace JSON not found at {NARAYAN_FIXTURE_JSON}. "
-            "Extract from prod with scripts/extract_workspace.py first."
-        )
-
-    from scripts.rehydrate_workspace import rehydrate
-
-    db_url = get_settings().database.url
-    if not db_url:
-        msg = "DATABASE__URL not configured"
-        raise RuntimeError(msg)
-    result = rehydrate(NARAYAN_FIXTURE_JSON, db_url)
-    assert result["workspace_id"] == NARAYAN_WORKSPACE_ID
-    return NARAYAN_WORKSPACE_ID
-
-
-async def _create_narayan_template_activity() -> tuple[str, str]:
-    """Create an Activity whose template workspace is the Narayan fixture."""
-    from promptgrimoire.db.activities import create_activity
-    from promptgrimoire.db.courses import create_course
-    from promptgrimoire.db.engine import get_session
-    from promptgrimoire.db.models import Activity, Workspace
-    from promptgrimoire.db.weeks import create_week, publish_week
-
-    suffix = uuid4().hex[:8]
-    course = await create_course(
-        code=f"CR{suffix[:6].upper()}",
-        name="Assessment Cram Probe",
-        semester="2026-S2",
-    )
-    week = await create_week(course_id=course.id, week_number=5, title="Week 5")
-    await publish_week(week.id)
-    activity = await create_activity(week_id=week.id, title=f"Cram Load {suffix}")
-
-    async with get_session() as session:
-        db_activity = await session.get(Activity, activity.id)
-        assert db_activity is not None
-        old_template_id = str(db_activity.template_workspace_id)
-        db_activity.template_workspace_id = UUID(NARAYAN_WORKSPACE_ID)
-        session.add(db_activity)
-
-        old_template = await session.get(Workspace, UUID(old_template_id))
-        if old_template is not None:
-            old_template.activity_id = None
-            session.add(old_template)
-
-        narayan = await session.get(Workspace, UUID(NARAYAN_WORKSPACE_ID))
-        assert narayan is not None
-        narayan.activity_id = activity.id
-        session.add(narayan)
-
-    return str(activity.id), old_template_id
-
-
-async def _restore_narayan_template_binding(
-    activity_id: str,
-    old_template_id: str,
-) -> None:
-    """Restore the Narayan fixture to loose-workspace state after the probe."""
-    from promptgrimoire.db.engine import get_session
-    from promptgrimoire.db.models import Activity, Workspace
-
-    async with get_session() as session:
-        activity = await session.get(Activity, UUID(activity_id))
-        if activity is not None:
-            activity.template_workspace_id = UUID(old_template_id)
-            session.add(activity)
-
-        narayan = await session.get(Workspace, UUID(NARAYAN_WORKSPACE_ID))
-        if narayan is not None:
-            narayan.activity_id = None
-            session.add(narayan)
-
-        old_template = await session.get(Workspace, UUID(old_template_id))
-        if old_template is not None:
-            old_template.activity_id = UUID(activity_id)
-            session.add(old_template)
-
-
-async def _provision_clone_for_email(activity_id: str, email: str) -> str:
-    """Create or reuse a user, then clone the assessment template for them."""
-    from promptgrimoire.db.users import find_or_create_user
-    from promptgrimoire.db.workspaces import clone_workspace_from_activity
-
-    user, _ = await find_or_create_user(email, display_name=email.split("@", 1)[0])
-    clone, _ = await clone_workspace_from_activity(UUID(activity_id), user.id)
-    return str(clone.id)
-
-
-def _fixture_document_words() -> list[str]:
-    """Extract the assessment document's words from the fixture JSON.
-
-    The browser's text walker collapses whitespace, so a needle built
-    from single-space-joined words matches what ``find_text_range``
-    searches. Reading the fixture (rather than the browser) keeps the
-    probe file free of page.evaluate.
-    """
-    from selectolax.lexbor import LexborHTMLParser
-
-    data = json.loads(NARAYAN_FIXTURE_JSON.read_text(encoding="utf-8"))
-    html = data["documents"][0]["content"]
-    words = LexborHTMLParser(html).text(separator=" ").split()
-    min_words_needed = 200
-    if len(words) < min_words_needed:
-        msg = f"fixture document too short ({len(words)} words)"
-        raise RuntimeError(msg)
-    return words
 
 
 def _plan_highlight_needles(
@@ -336,7 +223,7 @@ def _run_annotation_pass(
     from tests.e2e.card_helpers import add_comment_to_highlight
 
     pass_start = time.perf_counter()
-    words = _fixture_document_words()
+    words = fixture_document_words(NARAYAN_FIXTURE)
     # Extra candidates cover needles the walker's whitespace collapsing
     # renders unfindable (e.g. words joined across a <br>).
     # 4x pool: retries and unfindable needles both consume candidates.
@@ -539,12 +426,16 @@ def _maybe_write_diag(
 @pytest.fixture(scope="module")
 def narayan_activity_template() -> Iterator[str]:
     """Create a temporary activity using the Narayan fixture as template."""
-    _ensure_narayan_workspace()
-    activity_id, old_template_id = asyncio.run(_create_narayan_template_activity())
+    ensure_fixture_workspace(NARAYAN_FIXTURE)
+    activity_id, old_template_id = asyncio.run(
+        create_template_activity(NARAYAN_FIXTURE, course_name="Assessment Cram Probe")
+    )
     try:
         yield activity_id
     finally:
-        asyncio.run(_restore_narayan_template_binding(activity_id, old_template_id))
+        asyncio.run(
+            restore_template_binding(NARAYAN_FIXTURE, activity_id, old_template_id)
+        )
 
 
 class TestAssessmentCramLoad:
@@ -560,7 +451,7 @@ class TestAssessmentCramLoad:
         for _ in range(N_CRAM_SESSIONS):
             email = f"cram-{uuid4().hex[:8]}@test.example.edu.au"
             workspace_id = asyncio.run(
-                _provision_clone_for_email(narayan_activity_template, email)
+                provision_clone_for_email(narayan_activity_template, email)
             )
             observations.append(CramObservation(email=email, workspace_id=workspace_id))
 

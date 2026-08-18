@@ -51,13 +51,16 @@ def _close_management_dialog(page: Page) -> None:
 
 
 def _set_tag_colour(page: Page, tag_id: str, new_colour: str) -> None:
-    """Set a tag's colour via the Quasar colour picker popup.
+    """Set a tag's colour by JS: native value setter + synthetic events.
 
-    Opens the colour picker by clicking the colorize button in the
-    ``ui.color_input``'s append slot, then types the hex value into
-    Quasar's ``QColor`` component's hex input field.  This follows the
-    real user interaction path: button click → picker popup → hex input
-    → ``change`` event → NiceGUI ``set_value()`` → debounced save.
+    NOT the real user path (corrected 2026-08-17 — the previous
+    docstring claimed picker-popup interaction this code never does).
+    ``ui.color_input`` renders its text field with ``input-class=
+    "hidden"``, so Playwright ``fill()`` cannot reach it; this sets the
+    value via the native ``HTMLInputElement`` setter and dispatches
+    ``input``/``change`` so Vue reactivity fires. Driving the actual
+    QColor picker popup is tracked in #235 (see the skip notes below —
+    plain JS value injection does not update the picker widget itself).
     """
     testid = f"tag-color-input-{tag_id}"
     page.evaluate(

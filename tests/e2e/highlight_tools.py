@@ -212,8 +212,12 @@ def create_highlight_with_tag(
 def select_text_range(page: Page, text: str) -> None:
     """Select a text substring in the document container by evaluating JS.
 
-    Uses the browser's native selection API to select the given text
-    within the doc-container. This approach works without char spans.
+    INPUT-FAKE (js-injection audit 2026-08-17): builds a Range via the
+    browser's selection API and dispatches a synthetic mouseup, instead
+    of real pointer selection. Tolerated because coordinate-based mouse
+    selection is unreliable for arbitrary substrings (wrapped lines,
+    sub-pixel glyph bounds); issue #154 tracks the real-pointer rewrite.
+    Prefer ``select_chars`` (real ``page.mouse``) where offsets are known.
 
     Args:
         page: Playwright page.
@@ -250,9 +254,13 @@ def select_text_range(page: Page, text: str) -> None:
 def scroll_to_char(page: Page, char_offset: int) -> None:
     """Scroll the document so that the given character offset is visible.
 
-    Uses ``scrollToCharOffset()`` from annotation-highlight.js.
-    After scrolling, waits briefly for card positioning to update
-    (cards are hidden when their highlight is off-screen).
+    Calls the app's ``scrollToCharOffset()`` (annotation-highlight.js)
+    directly — a char offset has no DOM element to ``scroll_into_view``
+    on and no fixed pixel position for ``mouse.wheel``, so the app's own
+    offset→position mapping is the only precise route (js-injection
+    audit 2026-08-17). After scrolling, waits briefly for card
+    positioning to update (cards are hidden when their highlight is
+    off-screen).
 
     Args:
         page: Playwright page.

@@ -1,121 +1,77 @@
-"""Verify E2E tests comply with CLAUDE.md guidelines."""
+"""Verify E2E tests comply with CLAUDE.md guidelines.
 
-import ast
+The JS-injection policy and its allowlist live in
+``scripts/check_js_injection.py`` (single source, also run by
+pre-commit on changed files). This test enforces it whole-tree in the
+unit lane and falsification-checks that the guard actually fires.
+"""
+
+from __future__ import annotations
+
+import importlib.util
 from pathlib import Path
 
-# Tests that are allowed to use page.evaluate() for legitimate technical reasons.
-# Each exception requires justification.
-ALLOWED_JS_FILES = {
-    # Clipboard API (navigator.clipboard.write) has no Playwright equivalent.
-    # HTML paste simulation requires JavaScript to write text/html MIME type.
-    # Bounding box measurements for visual regression also require evaluate().
-    "test_html_paste_whitespace.py",
-    # Fixture screenshot tests use clipboard paste simulation (same as above)
-    # and DOM introspection (data-speaker element counts, scroll positions).
-    "test_fixture_screenshots.py",
-    # Paragraph screenshot tests use clipboard paste simulation and
-    # DOM introspection (data-para elements, scroll-to-landmark positions).
-    "test_para_screenshot.py",
-    # Browser feature gate test: Playwright only ships supported browsers
-    # (Chromium, Firefox, WebKit all support CSS.highlights). Simulating an
-    # unsupported browser requires deleting CSS.highlights via evaluate().
-    "test_browser_gate.py",
-    # Highlight rendering tests: AC1.4 validates JS error handling (invalid
-    # offsets logged as warning, no crash) by calling applyHighlights()
-    # directly with crafted inputs — no user action produces these inputs.
-    # Other tests use evaluate() for CSS.highlights introspection and
-    # text selection simulation (no Playwright API for CSS.highlights).
-    "test_highlight_rendering.py",
-    # Text selection tests: AC2.1 uses evaluate() to locate text node
-    # bounding rects for precise mouse selection. AC2.2 uses evaluate()
-    # to emit synthetic selection events spanning block boundaries.
-    # CSS.highlights introspection requires evaluate() (no Playwright API).
-    "test_text_selection.py",
-    # Selection-capture regression tests (#502): the race under test is a
-    # server-side task-ordering hazard (tag-apply processed before its
-    # selection_made).  No behavioural driver can force that ordering
-    # deterministically, so evaluate() suppresses selection_made delivery
-    # as the reproducible limiting case.  CSS.highlights offset readback
-    # also requires evaluate() (no Playwright API).
-    "test_selection_capture_502.py",
-    # Integration test for full CSS Highlight API flow: uses evaluate()
-    # to locate text node bounding rects for mouse selection and to
-    # introspect CSS.highlights entries (no Playwright API for either).
-    "test_annotation_highlight_api.py",
-    # Remote presence rendering tests: CSS.highlights introspection has no
-    # Playwright native API. Custom JS functions (renderRemoteCursor,
-    # renderRemoteSelection, removeAllRemotePresence) can only be invoked
-    # via page.evaluate() — no Playwright equivalent exists.
-    "test_remote_presence_rendering.py",
-    # Remote presence E2E smoke test: CSS.highlights.has() and DOM element
-    # inspection for remote presence indicators require page.evaluate() — no
-    # Playwright native API exists for CSS Custom Highlight API introspection.
-    "test_remote_presence_e2e.py",
-    # Navigator infinite scroll tests: Playwright has no native API to
-    # set scrollTop on a scrollable div. evaluate() is needed to scroll
-    # the navigator container to trigger the infinite scroll handler.
-    "test_navigator.py",
-    # Quasar dropdown menu items detach from DOM during NiceGUI re-renders.
-    # page.locator().click() races against detachment; evaluate() finds and
-    # clicks in a single synchronous frame — no Playwright-native alternative.
-    "test_history_tutorial.py",
-    "test_law_student.py",
-    # Card layout tests read inline style.top (no Playwright-native API)
-    # and programmatically scroll doc-container for positioning assertions.
-    "test_card_layout.py",
-    # Colour input uses input-class="hidden", so Playwright fill() cannot
-    # interact with it. JS native setter injection is the only reliable way
-    # to programmatically set the colour value and trigger Vue reactivity.
-    "test_tag_colour.py",
-    # Performance instrumentation (#377): evaluate() reads
-    # window.__annotationCardsEpoch for rebuild-epoch pattern.
-    "test_browser_perf_377.py",
-    # Idle tab eviction (#471): visibilitychange simulation requires
-    # evaluate() — Playwright has no native API for tab visibility.
-    "test_idle_tab_eviction.py",
-    # Cross-tab Vue sidebar test: reads inline style.top values and
-    # checks card positioning — no Playwright-native API for this.
-    "test_vue_sidebar_cross_tab.py",
-}
+_SCRIPT = Path(__file__).parent.parent.parent / "scripts" / "check_js_injection.py"
+_spec = importlib.util.spec_from_file_location("check_js_injection", _SCRIPT)
+assert _spec is not None and _spec.loader is not None
+_mod = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(_mod)
+
+
+def _swap_e2e_dir(fake_dir: Path, files: list[Path]) -> list[str]:
+    """Run find_violations with E2E_DIR pointed at *fake_dir*."""
+    original = getattr(_mod, "E2E_DIR")  # noqa: B009 -- dynamic module loaded via importlib
+    setattr(_mod, "E2E_DIR", fake_dir)  # noqa: B010 -- dynamic module loaded via importlib
+    try:
+        return list(_mod.find_violations(files))
+    finally:
+        setattr(_mod, "E2E_DIR", original)  # noqa: B010 -- dynamic module loaded via importlib
 
 
 def test_no_js_injection_in_e2e_tests() -> None:
-    """E2E tests must not use page.evaluate or ui.run_javascript.
+    """E2E test code must not execute browser JS without a listed reason.
 
-    Per CLAUDE.md: "NEVER inject JavaScript in E2E tests."
-    Tests must simulate real user behavior through Playwright events.
-
-    Exceptions: Files listed in ALLOWED_JS_FILES with documented justification.
-
-    Note: This only checks actual code, not comments or docstrings.
+    Per CLAUDE.md: E2E tests simulate real user behaviour through
+    Playwright events. Exceptions require a documented reason in
+    ``ALLOWED_JS_FILES`` (scripts/check_js_injection.py). Helper
+    modules are scanned too — the pattern concentrates there.
     """
-    e2e_dir = Path(__file__).parent.parent / "e2e"
-    violations: list[str] = []
-
-    # Forbidden method calls
-    forbidden_methods = {"evaluate", "run_javascript"}
-
-    for test_file in e2e_dir.glob("test_*.py"):
-        # Skip files with documented exceptions
-        if test_file.name in ALLOWED_JS_FILES:
-            continue
-
-        content = test_file.read_text()
-        try:
-            tree = ast.parse(content)
-        except SyntaxError:
-            continue
-
-        for node in ast.walk(tree):
-            # Check for method calls like page.evaluate() or ui.run_javascript()
-            if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
-                method_name = node.func.attr
-                if method_name in forbidden_methods:
-                    violations.append(
-                        f"{test_file.name}:{node.lineno} - {method_name}()"
-                    )
-
+    violations = _mod.find_violations()
     assert not violations, (
-        "E2E tests must not inject JavaScript (CLAUDE.md):\n"
+        "JS injection in E2E test code without a listed reason.\n"
+        "Fix the site or add the file to ALLOWED_JS_FILES with a specific "
+        "written reason (scripts/check_js_injection.py):\n"
         + "\n".join(f"  {v}" for v in violations)
     )
+
+
+def test_guard_fires_on_injection_shapes(tmp_path: Path) -> None:
+    """Falsification: the guard flags spy/injection shapes it exists to catch.
+
+    Writes a file containing the emitEvent-spy shape (caught in the wild
+    2026-08-17) plus an add_init_script into a fake e2e dir and asserts
+    the checker reports both. Guards the guard: if the scan logic or
+    method list regresses, this goes red.
+    """
+    probe = tmp_path / "test_probe.py"
+    probe.write_text(
+        "def test_spy(page):\n"
+        '    page.evaluate("() => { window.emitEvent = function(){}; }")\n'
+        '    page.add_init_script("window.__x = 1;")\n'
+    )
+    violations = _swap_e2e_dir(tmp_path, [probe])
+
+    assert any("evaluate()" in v for v in violations)
+    assert any("add_init_script()" in v for v in violations)
+
+
+def test_allowlisted_file_is_exempt(tmp_path: Path) -> None:
+    """An ALLOWED_JS_FILES entry sanctions its file — and only its file."""
+    allowed = tmp_path / "test_tag_colour.py"  # real allowlist name
+    allowed.write_text('def test_x(page):\n    page.evaluate("() => 1")\n')
+    other = tmp_path / "test_other.py"
+    other.write_text('def test_y(page):\n    page.evaluate("() => 1")\n')
+
+    violations = _swap_e2e_dir(tmp_path, [allowed, other])
+
+    assert violations == ["test_other.py:2 - evaluate()"]

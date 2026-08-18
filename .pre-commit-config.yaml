@@ -43,6 +43,14 @@ repos:
   # Docs index regeneration
   - repo: local
     hooks:
+      - id: js-injection-guard
+        name: no JS injection in E2E tests (unlisted)
+        entry: uv run python scripts/check_js_injection.py
+        language: system
+        files: ^tests/e2e/.*\.py$
+
+  - repo: local
+    hooks:
       - id: docs-index
         name: regenerate docs/_index.md
         entry: uv run python scripts/generate_docs_index.py

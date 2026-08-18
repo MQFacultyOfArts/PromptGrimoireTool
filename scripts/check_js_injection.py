@@ -58,6 +58,10 @@ ALLOWED_JS_FILES = {
     # Reads window.__annotationCardsEpoch / __cardEpochs (epoch-wait
     # pattern, no DOM surface) plus rAF paint pumps.
     "card_helpers.py",
+    # Soak load probe: reads window.__annotationCardsEpoch (same
+    # epoch-wait pattern as card_helpers, no DOM surface) to sequence
+    # comment deletion against the sidebar rebuild.
+    "test_soak_full_crud_load.py",
     # -- test files (entries predate 2026-08-17 audit; reasons verified) --
     # Clipboard API (navigator.clipboard.write) has no Playwright equivalent.
     # HTML paste simulation requires JavaScript to write text/html MIME type.

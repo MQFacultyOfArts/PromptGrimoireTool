@@ -32,6 +32,7 @@ afterEach(() => {
   document.body.innerHTML = '';
   CSS.highlights.clear();
   delete globalThis.fetch;
+  delete window.__snapshotBundleCache;
   delete window._textNodes;
   delete window._sidebarBundleApply;
   delete window.__pendingSidebarBundle;
@@ -209,6 +210,38 @@ describe('scanSnapshotContainers (declarative discovery)', () => {
       expect(container.dataset.snapshotState).toBe('done'),
     );
     expect(container.textContent).toContain('quick brown fox');
+  });
+
+  test('re-mounted container after token expiry mounts from cache, no re-fetch', async () => {
+    // Quasar destroys the source tab panel DOM on tab switch.  On
+    // return, NiceGUI re-renders the skeleton with the SAME bundle URL,
+    // whose token (TTL 60s) has usually expired — a re-fetch gets 403
+    // and the student loses the document until a full reload.  The
+    // bundle already reached this client once, so a repeat mount must
+    // come from cache without touching the network.
+    const container = mountArmedContainer('doc-container-remount');
+    mockFetch({ ok: true, json: async () => BUNDLE });
+    scanSnapshotContainers();
+    await vi.waitFor(() =>
+      expect(container.dataset.snapshotState).toBe('done'),
+    );
+
+    // Tab away: panel DOM destroyed. Token expires: fetch now 403s.
+    container.remove();
+    mockFetch({ ok: false, status: 403 });
+
+    // Tab back: fresh skeleton, same URL. Observer discovers it.
+    const remounted = mountArmedContainer('doc-container-remount');
+    await vi.waitFor(() =>
+      expect(remounted.dataset.snapshotState).toBe('done'),
+    );
+
+    expect(remounted.textContent).toContain('quick brown fox');
+    expect(remounted.querySelector('[data-testid="snapshot-error"]')).toBeNull();
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+    // The text walker must reference the NEW container's nodes.
+    expect(window._textNodes.length).toBeGreaterThan(0);
+    expect(remounted.contains(window._textNodes[0].node)).toBe(true);
   });
 
   test('observer picks up a container rendered after script load', async () => {

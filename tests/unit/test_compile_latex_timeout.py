@@ -107,24 +107,29 @@ async def test_timeout_kills_process_group(tmp_path: Path) -> None:
     # succeeds on zombies, so /proc/PID/stat is the authoritative check.
     assert child_pid_file.exists(), "Child PID file should have been written"
     child_pid = int(child_pid_file.read_text().strip())
-    proc_stat = Path(f"/proc/{child_pid}/stat")
+
+    def child_state() -> str | None:
+        """Read the child's /proc state field; None once fully reaped.
+
+        The /proc entry can vanish between any existence check and the
+        read (observed on slow CI runners), so the guarded read itself
+        is the only race-free probe.
+        """
+        try:
+            fields = Path(f"/proc/{child_pid}/stat").read_text().split()
+        except FileNotFoundError, ProcessLookupError:
+            return None
+        return fields[2] if len(fields) > 2 else "?"
 
     deadline = asyncio.get_event_loop().time() + 2.0
     while asyncio.get_event_loop().time() < deadline:
-        if not proc_stat.exists():
-            break  # Fully reaped
-        stat_fields = proc_stat.read_text().split()
-        state = stat_fields[2] if len(stat_fields) > 2 else "?"
-        if state == "Z":
-            break  # Zombie — killed but not yet reaped (Docker/tini)
+        state = child_state()
+        if state is None or state == "Z":
+            break  # Reaped, or zombie killed but not yet reaped (Docker/tini)
         await asyncio.sleep(0.05)
     else:
-        state = "?"
-        if proc_stat.exists():
-            stat_fields = proc_stat.read_text().split()
-            state = stat_fields[2] if len(stat_fields) > 2 else "?"
         pytest.fail(
-            f"Child {child_pid} still in state '{state}' after 2s. "
+            f"Child {child_pid} still in state '{child_state()}' after 2s. "
             f"killpg_calls={killpg_calls}"
         )
 

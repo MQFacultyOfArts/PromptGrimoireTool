@@ -275,7 +275,16 @@ async def _run_latexmk(tex_path: Path, output_dir: Path) -> Path:
             operation="compile_latex",
             tex_path=str(tex_path),
         )
-        os.killpg(proc.pid, signal.SIGKILL)
+        try:
+            os.killpg(proc.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            # The group exited at the timeout boundary; the goal (a dead
+            # process group) is already achieved.
+            logger.warning(
+                "latex_process_group_already_dead",
+                operation="compile_latex",
+                tex_path=str(tex_path),
+            )
         raise LaTeXCompilationError(
             "LaTeX compilation timed out after 60s",
             tex_path=tex_path,

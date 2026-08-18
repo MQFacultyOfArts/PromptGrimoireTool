@@ -204,6 +204,17 @@ def create_highlight_with_tag(
         sel_state,
         toolbar_state,
     )
+    # Harness whiff guard (#562): a collapsed selection here means the
+    # select_chars mouse drag produced nothing — the tag click would
+    # silently no-op and the failure would be misbilled to the app.
+    # Assert loudly, never retry.
+    if sel_state["isCollapsed"] is not False:
+        msg = (
+            f"select_chars drag whiffed: selection collapsed/empty after "
+            f"harness mouse drag (chars={start_char}-{end_char}, "
+            f"sel_state={sel_state}). Harness bug (#562), not an app bug."
+        )
+        raise RuntimeError(msg)
 
     tag_button = page.locator("[data-testid='tag-toolbar'] button").nth(tag_index)
     tag_button.click()

@@ -210,8 +210,11 @@ def select_chars(page: Page, start_char: int, end_char: int) -> None:
         [start_char, end_char],
     )
 
-    # Perform mouse-based selection (real user interaction)
-    page.mouse.click(coords["startX"], coords["startY"])
+    # Perform mouse-based selection (real user interaction). No leading
+    # click: a press within the double-click window acquires word-select
+    # semantics, and steps=8 avoids Chromium's single-step teleport-move
+    # selection misses (#562).
+    page.mouse.move(coords["startX"], coords["startY"])
     page.mouse.down()
-    page.mouse.move(coords["endX"], coords["endY"])
+    page.mouse.move(coords["endX"], coords["endY"], steps=8)
     page.mouse.up()

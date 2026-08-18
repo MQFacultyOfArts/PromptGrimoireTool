@@ -549,7 +549,7 @@ app = typer.Typer(add_completion=False, help=__doc__)
 
 
 @app.command()
-def main(
+def main(  # noqa: PLR0913, PLR0917 -- Typer CLI options, one per flag by design
     top: int = typer.Option(3, help="Top examples to show per assessment."),
     min_highlights: int = typer.Option(
         5, help="Minimum highlights for a workspace to qualify as an example."

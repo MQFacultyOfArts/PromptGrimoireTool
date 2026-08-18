@@ -75,6 +75,7 @@ from promptgrimoire.enrol.xlsx_parser import EnrolmentParseError, parse_xlsx
 from promptgrimoire.pages.layout import page_layout
 from promptgrimoire.pages.registry import page_route
 from promptgrimoire.pages.ui_helpers import add_option_testids
+from promptgrimoire.ui_helpers import on_submit_with_value, on_submit_with_values
 
 logger = structlog.get_logger()
 if TYPE_CHECKING:
@@ -378,7 +379,7 @@ def _render_activity_management_controls(
         )
 
 
-def _render_activity_row(
+def _render_activity_row(  # noqa: PLR0913 -- param-object migration: tracker ledger 8
     act: Activity,
     *,
     can_manage: bool,
@@ -485,7 +486,7 @@ def _render_week_management_controls(
         _render_publish_toggle(week, on_publish_toggle=on_publish_toggle)
 
 
-def _render_week_header(
+def _render_week_header(  # noqa: PLR0913 -- param-object migration: tracker ledger 8
     week: Any,
     *,
     can_view_drafts: bool,
@@ -535,7 +536,7 @@ def _render_publish_toggle(
             ).props('outline color=primary dense data-testid="publish-week-btn"')
 
 
-async def _render_week_activities(
+async def _render_week_activities(  # noqa: PLR0913 -- param-object migration: tracker ledger 8
     week: Any,
     *,
     course_id: str,
@@ -950,18 +951,21 @@ async def open_edit_week(
                 'flat data-testid="cancel-edit-week-btn"'
             )
 
-            async def save() -> None:
-                await update_week(
-                    week.id, title=title.value, week_number=int(week_number.value)
-                )
-                week.title = title.value
-                week.week_number = int(week_number.value)
+            async def save(values: dict[str, str]) -> None:
+                new_title = values["title"]
+                new_number = int(float(values["week_number"]))
+                await update_week(week.id, title=new_title, week_number=new_number)
+                week.title = new_title
+                week.week_number = new_number
                 dialog.close()
                 ui.notify("Week updated", type="positive")
                 on_save()
 
-            ui.button("Save", on_click=save).props(
+            save_btn = ui.button("Save").props(
                 'color=primary data-testid="save-edit-week-btn"'
+            )
+            on_submit_with_values(
+                save_btn, {"title": title, "week_number": week_number}, save
             )
 
     dialog.open()
@@ -989,17 +993,21 @@ async def open_edit_activity(
                 'flat data-testid="cancel-edit-activity-btn"'
             )
 
-            async def save() -> None:
-                desc = description.value or None
-                await update_activity(activity.id, title=title.value, description=desc)
-                activity.title = title.value
+            async def save(values: dict[str, str]) -> None:
+                new_title = values["title"]
+                desc = values["description"] or None
+                await update_activity(activity.id, title=new_title, description=desc)
+                activity.title = new_title
                 activity.description = desc
                 dialog.close()
                 ui.notify("Activity updated", type="positive")
                 on_save()
 
-            ui.button("Save", on_click=save).props(
+            save_btn = ui.button("Save").props(
                 'color=primary data-testid="save-edit-activity-btn"'
+            )
+            on_submit_with_values(
+                save_btn, {"title": title, "description": description}, save
             )
 
     dialog.open()
@@ -1146,15 +1154,15 @@ async def create_course_page() -> None:
         .props('data-testid="course-semester-input"')
     )
 
-    async def submit() -> None:
-        if not code.value or not name.value or not semester.value:
+    async def submit(values: dict[str, str]) -> None:
+        if not values["code"] or not values["name"] or not values["semester"]:
             ui.notify("All fields are required", type="negative")
             return
 
         course = await create_course(
-            code=code.value,
-            name=name.value,
-            semester=semester.value,
+            code=values["code"],
+            name=values["name"],
+            semester=values["semester"],
         )
 
         # Auto-enroll creator as coordinator
@@ -1168,7 +1176,10 @@ async def create_course_page() -> None:
         ui.navigate.to(f"/courses/{course.id}")
 
     with ui.row().classes("gap-2 mt-4"):
-        ui.button("Create", on_click=submit).props('data-testid="create-course-btn"')
+        create_btn = ui.button("Create").props('data-testid="create-course-btn"')
+        on_submit_with_values(
+            create_btn, {"code": code, "name": name, "semester": semester}, submit
+        )
         ui.button("Cancel", on_click=lambda: ui.navigate.to("/courses")).props(
             'flat data-testid="cancel-create-course-btn"'
         )
@@ -1499,22 +1510,26 @@ async def create_week_page(course_id: str) -> None:
         .props('data-testid="week-title-input"')
     )
 
-    async def submit() -> None:
-        if not title.value:
+    async def submit(values: dict[str, str]) -> None:
+        if not values["title"]:
             ui.notify("Title is required", type="negative")
             return
 
+        new_number = int(float(values["week_number"]))
         await create_week(
             course_id=cid,
-            week_number=int(week_number.value),
-            title=title.value,
+            week_number=new_number,
+            title=values["title"],
         )
 
-        ui.notify(f"Created Week {int(week_number.value)}", type="positive")
+        ui.notify(f"Created Week {new_number}", type="positive")
         ui.navigate.to(f"/courses/{course_id}")
 
     with ui.row().classes("gap-2 mt-4"):
-        ui.button("Create", on_click=submit).props('data-testid="create-week-btn"')
+        create_btn = ui.button("Create").props('data-testid="create-week-btn"')
+        on_submit_with_values(
+            create_btn, {"title": title, "week_number": week_number}, submit
+        )
         ui.button(
             "Cancel", on_click=lambda: ui.navigate.to(f"/courses/{course_id}")
         ).props('flat data-testid="cancel-create-week-btn"')
@@ -1574,23 +1589,26 @@ async def create_activity_page(course_id: str, week_id: str) -> None:
         .props('data-testid="activity-description-input"')
     )
 
-    async def submit() -> None:
-        if not title.value:
+    async def submit(values: dict[str, str]) -> None:
+        if not values["title"]:
             ui.notify("Title is required", type="negative")
             return
 
         await create_activity(
             week_id=wid,
-            title=title.value,
-            description=description.value or None,
+            title=values["title"],
+            description=values["description"] or None,
         )
 
-        ui.notify(f"Created activity: {title.value}", type="positive")
+        ui.notify(f"Created activity: {values['title']}", type="positive")
         _broadcast_weeks_refresh(cid)
         ui.navigate.to(f"/courses/{course_id}")
 
     with ui.row().classes("gap-2 mt-4"):
-        ui.button("Create", on_click=submit).props('data-testid="create-activity-btn"')
+        create_btn = ui.button("Create").props('data-testid="create-activity-btn"')
+        on_submit_with_values(
+            create_btn, {"title": title, "description": description}, submit
+        )
         ui.button(
             "Cancel", on_click=lambda: ui.navigate.to(f"/courses/{course_id}")
         ).props('flat data-testid="cancel-create-activity-btn"')
@@ -1623,13 +1641,13 @@ async def _render_add_enrollment_form(
                 .props('data-testid="enrollment-role-select"')
             )
 
-            async def add_enrollment() -> None:
-                if not new_email.value:
+            async def add_enrollment(email: str) -> None:
+                if not email:
                     ui.notify("Email is required", type="negative")
                     return
                 new_user, created = await find_or_create_user(
-                    email=new_email.value,
-                    display_name=new_email.value.split("@")[0],
+                    email=email,
+                    display_name=email.split("@", maxsplit=1)[0],
                 )
                 try:
                     await enroll_user(
@@ -1647,9 +1665,8 @@ async def _render_add_enrollment_form(
                     logger.exception("enroll_failed", operation="add_enrollment")
                     ui.notify(f"Failed to enroll: {e}", type="negative")
 
-            ui.button("Add", on_click=add_enrollment).props(
-                'data-testid="add-enrollment-btn"'
-            )
+            add_btn = ui.button("Add").props('data-testid="add-enrollment-btn"')
+            on_submit_with_value(add_btn, new_email, add_enrollment)
 
 
 @ui.page("/courses/{course_id}/enrollments")

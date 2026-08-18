@@ -8,7 +8,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, cast
 
-from sqlalchemy import func
+from sqlalchemy import func, tstring
 from sqlalchemy.orm import QueryableAttribute, defer
 from sqlmodel import select
 
@@ -25,11 +25,12 @@ if TYPE_CHECKING:
     from uuid import UUID
 
 
-async def add_document(
+async def add_document(  # noqa: PLR0913 -- param-object migration: tracker ledger 8
     workspace_id: UUID,
     type: str,
     content: str,
     source_type: str,
+    *,
     title: str | None = None,
     auto_number_paragraphs: bool = True,
     paragraph_map: dict[str, int] | None = None,
@@ -111,9 +112,13 @@ async def list_document_headers(workspace_id: UUID) -> list[WorkspaceDocument]:
             .options(
                 defer(cast("QueryableAttribute[Any]", WorkspaceDocument.content))
             )  # SQLModel exposes str; cast for ty
-            .order_by("order_index")
         )
-        return list(result.all())
+        # Kept ORM (defer() + DetachedInstanceError contract, see
+        # test_document_headers.py). Ordering can't live in SQL here without
+        # a magic-string order_by, so it's applied in Python instead.
+        headers = list(result.all())
+        headers.sort(key=lambda doc: doc.order_index)
+        return headers
 
 
 async def list_documents_with_first_content(
@@ -136,9 +141,12 @@ async def list_documents_with_first_content(
             .options(
                 defer(cast("QueryableAttribute[Any]", WorkspaceDocument.content))
             )  # SQLModel exposes str; cast for ty
-            .order_by("order_index")
         )
+        # Kept ORM (defer() + populate_existing() identity-map refresh below
+        # requires session-attached instances). Ordering applied in Python
+        # rather than a magic-string order_by.
         headers = list(result.all())
+        headers.sort(key=lambda doc: doc.order_index)
         if not headers:
             return headers, None
         # populate_existing refreshes the identity-mapped header instance so
@@ -161,12 +169,19 @@ async def list_documents(workspace_id: UUID) -> list[WorkspaceDocument]:
         List of WorkspaceDocument objects ordered by order_index.
     """
     async with get_session() as session:
-        result = await session.exec(
-            select(WorkspaceDocument)
-            .where(WorkspaceDocument.workspace_id == workspace_id)
-            .order_by("order_index")
+        result = await session.execute(
+            tstring(
+                t"""
+                SELECT id, workspace_id, type, content, source_type,
+                       order_index, title, created_at, auto_number_paragraphs,
+                       paragraph_map, source_document_id
+                FROM workspace_document
+                WHERE workspace_id = {workspace_id}
+                ORDER BY order_index
+                """
+            )
         )
-        return list(result.all())
+        return [WorkspaceDocument(**row._mapping) for row in result.all()]
 
 
 async def workspaces_with_documents(workspace_ids: set[UUID]) -> set[UUID]:
@@ -176,10 +191,13 @@ async def workspaces_with_documents(workspace_ids: set[UUID]) -> set[UUID]:
     """
     if not workspace_ids:
         return set()
+    # ty cannot type ``WorkspaceDocument.workspace_id.in_(...)`` (Model.field
+    # descriptor, astral-sh/ty#3421); use the plain Core Column instead.
+    doc_table = WorkspaceDocument.metadata.tables[WorkspaceDocument.__tablename__]
     async with get_session() as session:
         result = await session.exec(
             select(WorkspaceDocument.workspace_id)
-            .where(WorkspaceDocument.workspace_id.in_(workspace_ids))  # type: ignore[union-attr]  -- SQLAlchemy Column has .in_(); TODO(2026-Q2): Revisit when SQLModel updates type stubs
+            .where(doc_table.c.workspace_id.in_(workspace_ids))
             .distinct()
         )
         return set(result.all())

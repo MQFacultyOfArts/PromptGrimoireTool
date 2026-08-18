@@ -35,6 +35,15 @@ from promptgrimoire.input_pipeline.text_extraction import (
 # not discourse-level paragraphs).
 _PARA_TAGS = frozenset(("p", "li", "blockquote", "div"))
 
+# Number of consecutive <br> elements that starts a new br-br
+# pseudo-paragraph within a block (used by both the mapping walk and the
+# mirrored injection walk).
+_BR_BR_SPLIT_THRESHOLD = 2
+
+# Minimum count of <li value="..."> elements that marks a document as
+# AustLII-style source-numbered (see detect_source_numbering()).
+_MIN_AUSTLII_VALUED_LI = 2
+
 # Known inline/phrasing tags.  Any immediate child element whose tag
 # is NOT in this set is treated as block-level, making the parent a
 # wrapper.  Using an inline allowlist (rather than a block blocklist)
@@ -162,7 +171,7 @@ def _handle_text_node(node: Any, state: _WalkState) -> None:
 
     # After 2+ consecutive <br>, this text starts a new
     # paragraph (br-br split within a block).
-    if state.consecutive_br >= 2 and state.auto_number:
+    if state.consecutive_br >= _BR_BR_SPLIT_THRESHOLD and state.auto_number:
         state.current_para += 1
         state.result[state.char_offset] = state.current_para
         state.block_recorded = True
@@ -333,7 +342,10 @@ def _inject_handle_text(node: Any, state: _InjectState) -> None:
     # br-br pseudo-paragraph: record for post-serialisation wrapping.
     # selectolax escapes HTML when replacing text nodes, so we must
     # do string-level insertion after the DOM is serialised.
-    if state.consecutive_br >= 2 and state.char_offset in state.paragraph_map:
+    if (
+        state.consecutive_br >= _BR_BR_SPLIT_THRESHOLD
+        and state.char_offset in state.paragraph_map
+    ):
         para_num = state.paragraph_map[state.char_offset]
         raw_text = node.html or node.text_content
         state.br_br_wraps.append((raw_text, para_num))
@@ -609,4 +621,4 @@ def detect_source_numbering(html: str) -> bool:
         return False
     tree = LexborHTMLParser(html)
     matches = tree.css("li[value]")
-    return len(matches) >= 2
+    return len(matches) >= _MIN_AUSTLII_VALUED_LI

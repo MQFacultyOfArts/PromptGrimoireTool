@@ -85,7 +85,8 @@ All interactable UI elements must have `data-testid` attributes. E2E tests must 
 Seven patterns prevent NiceGUI-specific race conditions and page-render perf regressions:
 
 - **Fire-and-forget JS** (`run_javascript` without `await`): All `run_javascript()` calls in production code MUST be fire-and-forget (no `await`). `await run_javascript()` blocks the asyncio event loop for a full browser round-trip, serialising all clients. An AST guard test (`test_run_javascript_guard.py`) enforces this structurally -- it will fail if any production file contains `await ...run_javascript(...)`. Spike/demo pages can be added to the guard's allowlist. Data that was previously fetched via JS round-trips (e.g. Milkdown editor markdown) is now included in event payloads instead.
-- **Value-capture** (`ui_helpers.on_submit_with_value`): Reads the input DOM value client-side at click time, preventing `python-socketio` async task reordering from delivering stale values. All Python-rendered submit buttons bound to text inputs must use this helper. Vue components manage their own DOM state and do not require it.
+- **Value-capture** (`ui_helpers.on_submit_with_value`, multi-field `on_submit_with_values`): Reads the input DOM value(s) client-side at click time, preventing `python-socketio` async task reordering from delivering stale values. All Python-rendered submit buttons bound to text inputs must use these helpers — multi-input forms (week/activity/course create and edit) use the `values` dict variant. A closure-tracing AST guard (`test_value_capture_guard.py`) flags server-side `.value` reads in async handlers. NiceGUI User-harness tests can't run the `js_handler`; `_click_testid` in `tests/integration/nicegui_helpers.py` reads the trigger's `_value_capture_inputs` hook to emit what the browser capture would. Vue components manage their own DOM state and do not require it.
+- **Selection-capture** (`ui_helpers.on_click_with_selection`, #502): The tag-application counterpart of value-capture. Every tag trigger (toolbar button, floating-menu button, keyboard shortcut) carries `window._annotSel` — the offsets `setupAnnotationSelection()` wrote on mouseup — in its own event payload; `_add_highlight(state, tag, selection)` validates the payload and never reads `state.selection_*`. The keyboard path wires through `ui.context.client.layout.on("keydown", ..., js_handler=...)` because `ui.on()` receives the layout's native keydown (no selection) and does not expose `js_handler`. The User-harness simulation hook is `_value_capture_selection` (holds the `PageState`).
 - **Rebuild epoch** (`window.__annotationCardsEpoch`): The Vue annotation sidebar increments `window.__annotationCardsEpoch` (and the per-document `window.__cardEpochs` map) on initial mount and whenever its `items` prop changes thereafter. The `immediate: true` watch option at `src/promptgrimoire/static/annotationsidebar.js` is required — without it, the epoch stays `undefined` on cold load and any `epoch >= 1` wait times out (see [docs/investigations/2026-04-24-vue-sidebar-epoch-missing.md](docs/investigations/2026-04-24-vue-sidebar-epoch-missing.md)). Guards: `tests/js/annotationsidebar.test.js` (structural) and `tests/e2e/test_vue_sidebar_mount_contract.py` (behavioural). Tests capture the old epoch, trigger the action, then `wait_for_function` until the epoch advances before reacquiring locators.
 - **Lightweight peer-left callback** (`_RemotePresence.on_peer_left`): CLIENT_DELETE events (peer disconnection) must NOT trigger a full `refresh_annotations()` rebuild. They change zero CRDT state, but a full rebuild races with in-flight user interactions (fill + click), destroying input values and button handlers mid-action. `_RemotePresence` carries a separate `on_peer_left` callback that only updates the user count display.
 - **Side-effects before rebuilds** (`tag_management._on_tag_deleted`): `ui.notify()` and other side-effects that access the current slot context must execute BEFORE `render_tag_list()` or any call that clears/rebuilds a container. Container rebuilds destroy dialog canary elements (via `weakref.finalize` in `nicegui/elements/dialog.py:30-34`), which invalidates the slot context held by NiceGUI's event dispatch wrapper (`events.py:457`). See [postmortem](docs/postmortems/2026-03-20-slot-deletion-investigation-369.md).
@@ -110,11 +111,14 @@ Six failure-mode classes surfaced by the April 2026 independent-workspace load i
 
 Claude Code hooks automatically run on every `.py` file write:
 
-1. `ruff check --fix` - autofix lint issues
-2. `ruff format` - format code
-3. `ty@0.0.24 check` - type checking
+1. `ruff format` - format the file in place
+2. `ruff check --ignore F401` - report issues (no autofix)
+3. `ty check` - type checking (uv-locked version)
 
-All three must pass before code is considered complete.
+The write hook is informational: findings describe the file's state right
+now, which legitimately fails mid-batch or on a TDD red. The gates are the
+Stop hook (final_lint.py), explicit verification runs, and pre-commit — all
+three checks must pass there before code is considered complete.
 
 ### Pre-commit Hooks
 
@@ -192,7 +196,7 @@ uv run grimoire e2e perf
 uv run ruff check .
 
 # Run type checking
-uvx ty@0.0.24 check
+uv run ty check
 
 # Seed development data (idempotent)
 uv run grimoire seed run

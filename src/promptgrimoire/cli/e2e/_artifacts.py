@@ -61,7 +61,7 @@ def write_worker_metadata(
     return worker_json
 
 
-def write_summary_metadata(
+def write_summary_metadata(  # noqa: PLR0913 -- E2E-harness metadata writer, kw-only args; param-object migration: tracker ledger 8
     run_dir: Path,
     lane_name: str,
     results: list[WorkerResult],

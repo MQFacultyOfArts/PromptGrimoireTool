@@ -13,10 +13,12 @@ from __future__ import annotations
 import asyncio
 import random
 import sys
-from typing import TYPE_CHECKING
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, TypedDict
 from urllib.parse import urlencode
 
 from rich.console import Console
+from sqlalchemy import tstring
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import select
 
@@ -32,10 +34,8 @@ from promptgrimoire.db.courses import (
 )
 from promptgrimoire.db.engine import get_session, init_db
 from promptgrimoire.db.models import (
-    ACLEntry,
     Activity,
     Course,
-    CourseEnrollment,
     Tag,
     TagGroup,
     User,
@@ -218,6 +218,8 @@ LOOSE_WORKSPACE_TITLES: list[str] = [
 # CRDT builder helper
 # ---------------------------------------------------------------------------
 
+_MIN_HIGHLIGHT_CONTENT_LENGTH = 20
+
 
 def build_crdt_state(
     document_id: str,
@@ -251,9 +253,11 @@ def build_crdt_state(
     highlight_ids: list[str] = []
 
     for _ in range(num_highlights):
-        if content_length < 20:
+        if content_length < _MIN_HIGHLIGHT_CONTENT_LENGTH:
             break
-        start = random.randint(0, max(0, content_length - 20))
+        start = random.randint(
+            0, max(0, content_length - _MIN_HIGHLIGHT_CONTENT_LENGTH)
+        )
         end = min(start + random.randint(10, 50), content_length)
         tag = random.choice(tag_ids) if tag_ids else ""
         text = f"highlighted text by {student_name}"
@@ -302,7 +306,19 @@ def roll_1d6_minus_2() -> int:
 # Course / user / enrollment data definitions
 # ---------------------------------------------------------------------------
 
-COURSE_DEFS: list[dict[str, object]] = [
+
+class CourseDef(TypedDict):
+    """One load-test course definition."""
+
+    code: str
+    name: str
+    semester: str
+    student_count: int
+    default_allow_sharing: bool
+    default_anonymous_sharing: bool
+
+
+COURSE_DEFS: list[CourseDef] = [
     {
         "code": "LT-LAWS1100",
         "name": "Introduction to Torts (Load Test)",
@@ -556,13 +572,18 @@ async def _ensure_activities_for_course(
     # Check existing activities.
     # Key on (week_id, title) so the same title in two different weeks is not
     # incorrectly treated as already-existing.
+    # Query-shaped read migrated to raw SQL per ADR 0004/0005 -- Column.in_()
+    # does not type-check under ty (astral-sh/ty#3421).
     async with get_session() as session:
-        existing_acts = await session.exec(
-            select(Activity).where(
-                Activity.week_id.in_([w.id for w in week_map.values()])  # type: ignore[union-attr]  # SQLAlchemy column expression
+        week_ids = [w.id for w in week_map.values()]
+        existing_rows = await session.execute(
+            tstring(
+                t"""
+                SELECT week_id, title FROM activity WHERE week_id = ANY({week_ids})
+                """
             )
         )
-        existing_act_keys = {(a.week_id, a.title) for a in existing_acts.all()}
+        existing_act_keys = {(row.week_id, row.title) for row in existing_rows}
 
     for week_num, act_title in activity_defs:
         week = week_map.get(week_num)
@@ -640,18 +661,25 @@ async def _check_workspace_exists(activity_id: UUID, user_id: UUID) -> bool:
 
     Looks for a workspace with the given activity_id that has an owner
     ACL entry for the given user.
+
+    Query-shaped read migrated to raw SQL per ADR 0004/0005 -- .join()
+    does not type-check under ty (astral-sh/ty#3421).
     """
     async with get_session() as session:
-        result = await session.exec(
-            select(Workspace.id)
-            .join(ACLEntry, ACLEntry.workspace_id == Workspace.id)  # type: ignore[arg-type]  # SQLAlchemy join expression, not a plain column
-            .where(
-                Workspace.activity_id == activity_id,
-                ACLEntry.user_id == user_id,
-                ACLEntry.permission == "owner",
+        rows = await session.execute(
+            tstring(
+                t"""
+                SELECT w.id
+                FROM workspace w
+                JOIN acl_entry a ON a.workspace_id = w.id
+                WHERE w.activity_id = {activity_id}
+                  AND a.user_id = {user_id}
+                  AND a.permission = 'owner'
+                LIMIT 1
+                """
             )
         )
-        return result.first() is not None
+        return rows.first() is not None
 
 
 async def _get_template_documents(
@@ -685,6 +713,10 @@ async def _seed_tags_and_crdt_state(
         await save_workspace_crdt_state(workspace_id, crdt_bytes)
 
 
+_SHARED_WITH_CLASS_PROBABILITY = 0.2
+_DOCUMENT_VARIATION_PROBABILITY = 0.3
+
+
 async def _create_student_activity_workspace(
     activity: Activity,
     user: User,
@@ -700,7 +732,7 @@ async def _create_student_activity_workspace(
 
     # Place in activity and set title
     await place_workspace_in_activity(ws_id, activity.id)
-    shared_with_class = random.random() < 0.2  # ~20% chance
+    shared_with_class = random.random() < _SHARED_WITH_CLASS_PROBABILITY  # ~20% chance
     async with get_session() as session:
         ws = await session.get(Workspace, ws_id)
         if ws:
@@ -720,7 +752,7 @@ async def _create_student_activity_workspace(
     for tmpl_doc in template_docs:
         # Swap one paragraph from the pool for variation
         content = tmpl_doc.content
-        if random.random() < 0.3:  # 30% chance of variation
+        if random.random() < _DOCUMENT_VARIATION_PROBABILITY:  # 30% chance
             extra_para = random.choice(DOCUMENT_PARAGRAPHS)
             content = content + "\n" + extra_para
 
@@ -820,6 +852,9 @@ async def _resolve_course_id_for_code(
     a load-test run).
 
     Returns None if the course has no activities or the hierarchy is broken.
+
+    Query-shaped read migrated to raw SQL per ADR 0004/0005 -- .join()
+    does not type-check under ty (astral-sh/ty#3421).
     """
     if course_code in _course_id_cache:
         return _course_id_cache[course_code]
@@ -829,14 +864,20 @@ async def _resolve_course_id_for_code(
         _course_id_cache[course_code] = None
         return None
 
-    activity_for_course = acts[0][0]
+    activity_id = acts[0][0].id
     async with get_session() as session:
-        result = await session.exec(
-            select(Week.course_id)
-            .join(Activity, Activity.week_id == Week.id)  # type: ignore[arg-type]  # SQLAlchemy join expression, not a plain column
-            .where(Activity.id == activity_for_course.id)
+        rows = await session.execute(
+            tstring(
+                t"""
+                SELECT wk.course_id
+                FROM week wk
+                JOIN activity a ON a.week_id = wk.id
+                WHERE a.id = {activity_id}
+                """
+            )
         )
-        course_id = result.first()
+        row = rows.first()
+        course_id = row.course_id if row is not None else None
 
     _course_id_cache[course_code] = course_id
     return course_id
@@ -874,6 +915,78 @@ async def _create_loose_workspaces_for_student(
     return ws_count, doc_count
 
 
+async def _build_template_doc_cache(
+    course_activities: dict[str, list[tuple[Activity, UUID]]],
+) -> dict[UUID, list[WorkspaceDocument]]:
+    """Pre-fetch template documents for every activity, keyed by template id.
+
+    Avoids repeated queries for the same template workspace across students.
+    """
+    template_doc_cache: dict[UUID, list[WorkspaceDocument]] = {}
+    for acts in course_activities.values():
+        for _activity, tmpl_id in acts:
+            if tmpl_id not in template_doc_cache:
+                template_doc_cache[tmpl_id] = await _get_template_documents(tmpl_id)
+    return template_doc_cache
+
+
+_ACTIVITY_WORKSPACE_CREATION_PROBABILITY = 0.7
+
+
+async def _create_activity_workspaces_for_student(
+    user: User,
+    enrolled_codes: list[str],
+    course_activities: dict[str, list[tuple[Activity, UUID]]],
+    template_doc_cache: dict[UUID, list[WorkspaceDocument]],
+) -> tuple[int, int, int]:
+    """Create activity workspaces for one student across their enrolled courses.
+
+    Rolls a 70% chance per activity and skips activities the student
+    already has a workspace for.
+
+    Returns:
+        (activity_workspace_count, document_count, shared_with_class_count)
+    """
+    ws_count = 0
+    doc_count = 0
+    shared_count = 0
+
+    for code in enrolled_codes:
+        activities = course_activities.get(code, [])
+        for activity, tmpl_id in activities:
+            if random.random() > _ACTIVITY_WORKSPACE_CREATION_PROBABILITY:
+                continue
+
+            if await _check_workspace_exists(activity.id, user.id):
+                continue
+
+            _ws_id, docs, is_shared = await _create_student_activity_workspace(
+                activity=activity,
+                user=user,
+                template_docs=template_doc_cache[tmpl_id],
+            )
+            ws_count += 1
+            doc_count += docs
+            if is_shared:
+                shared_count += 1
+
+    return ws_count, doc_count, shared_count
+
+
+def _report_seeding_progress(
+    idx: int,
+    total_students: int,
+    activity_ws_count: int,
+    loose_ws_count: int,
+) -> None:
+    """Print a progress line every 100 students, and on the final student."""
+    if (idx + 1) % 100 == 0 or idx + 1 == total_students:
+        console.print(
+            f"  [green]Progress:[/] {idx + 1}/{total_students} students "
+            f"({activity_ws_count} activity ws, {loose_ws_count} loose ws)"
+        )
+
+
 async def _seed_student_workspaces(
     all_students: dict[str, User],
     student_courses: dict[str, list[str]],
@@ -892,12 +1005,7 @@ async def _seed_student_workspaces(
     total_doc_count = 0
     shared_count = 0
 
-    # Pre-fetch template documents for each activity to avoid repeated queries
-    template_doc_cache: dict[UUID, list[WorkspaceDocument]] = {}
-    for acts in course_activities.values():
-        for _activity, tmpl_id in acts:
-            if tmpl_id not in template_doc_cache:
-                template_doc_cache[tmpl_id] = await _get_template_documents(tmpl_id)
+    template_doc_cache = await _build_template_doc_cache(course_activities)
 
     student_list = list(all_students.items())
     total_students = len(student_list)
@@ -905,41 +1013,20 @@ async def _seed_student_workspaces(
     for idx, (email, user) in enumerate(student_list):
         enrolled_codes = student_courses.get(email, [])
 
-        # Activity workspaces
-        for code in enrolled_codes:
-            activities = course_activities.get(code, [])
-            for activity, tmpl_id in activities:
-                # 70% chance of creating a workspace
-                if random.random() > 0.7:
-                    continue
+        act_ws, act_docs, act_shared = await _create_activity_workspaces_for_student(
+            user, enrolled_codes, course_activities, template_doc_cache
+        )
+        activity_ws_count += act_ws
+        total_doc_count += act_docs
+        shared_count += act_shared
 
-                # Idempotency check
-                if await _check_workspace_exists(activity.id, user.id):
-                    continue
-
-                _ws_id, doc_count, is_shared = await _create_student_activity_workspace(
-                    activity=activity,
-                    user=user,
-                    template_docs=template_doc_cache[tmpl_id],
-                )
-                activity_ws_count += 1
-                total_doc_count += doc_count
-                if is_shared:
-                    shared_count += 1
-
-        # Loose workspaces
         loose, docs = await _create_loose_workspaces_for_student(
             user, enrolled_codes, course_activities
         )
         loose_ws_count += loose
         total_doc_count += docs
 
-        # Progress reporting every 100 students
-        if (idx + 1) % 100 == 0 or idx + 1 == total_students:
-            console.print(
-                f"  [green]Progress:[/] {idx + 1}/{total_students} students "
-                f"({activity_ws_count} activity ws, {loose_ws_count} loose ws)"
-            )
+        _report_seeding_progress(idx, total_students, activity_ws_count, loose_ws_count)
 
     console.print(
         f"  [green]Activity workspaces:[/] {activity_ws_count}\n"
@@ -954,6 +1041,85 @@ async def _seed_student_workspaces(
 # ---------------------------------------------------------------------------
 # ACL shares (Task 4)
 # ---------------------------------------------------------------------------
+
+
+def _build_course_students_map(
+    all_students: dict[str, User],
+    student_courses: dict[str, list[str]],
+    courses: dict[str, Course],
+) -> dict[UUID, list[User]]:
+    """Map course_id -> enrolled student Users."""
+    course_students: dict[UUID, list[User]] = {}
+    for email, codes in student_courses.items():
+        user = all_students[email]
+        for code in codes:
+            if code in courses:
+                cid = courses[code].id
+                course_students.setdefault(cid, []).append(user)
+    return course_students
+
+
+async def _fetch_candidate_workspaces(
+    courses: dict[str, Course],
+) -> list[tuple[UUID, UUID, UUID]]:
+    """Find non-template activity workspaces with an owner, across every course.
+
+    Returns (workspace_id, owner_user_id, course_id) tuples.
+
+    Query-shaped read migrated to raw SQL per ADR 0004/0005 -- .join() does
+    not type-check under ty (astral-sh/ty#3421).
+    """
+    candidate_workspaces: list[tuple[UUID, UUID, UUID]] = []
+    for course in courses.values():
+        course_id = course.id
+        async with get_session() as session:
+            rows = await session.execute(
+                tstring(
+                    t"""
+                    SELECT w.id AS workspace_id,
+                           acl.user_id AS owner_id,
+                           wk.course_id AS course_id
+                    FROM workspace w
+                    JOIN activity act ON act.id = w.activity_id
+                    JOIN week wk ON wk.id = act.week_id
+                    JOIN acl_entry acl ON acl.workspace_id = w.id
+                    WHERE wk.course_id = {course_id}
+                      AND acl.permission = 'owner'
+                      AND w.id != act.template_workspace_id
+                    """
+                )
+            )
+            for row in rows:
+                candidate_workspaces.append(
+                    (row.workspace_id, row.owner_id, row.course_id)
+                )
+    return candidate_workspaces
+
+
+async def _grant_shares_for_workspace(
+    ws_id: UUID,
+    owner_id: UUID,
+    course_id: UUID,
+    course_students: dict[UUID, list[User]],
+) -> int:
+    """Grant editor/viewer access to 1-2 other students in the same course.
+
+    Returns the number of shares granted for this workspace.
+    """
+    students_in_course = course_students.get(course_id, [])
+    eligible = [s for s in students_in_course if s.id != owner_id]
+    if not eligible:
+        return 0
+
+    num_shares = random.randint(1, min(2, len(eligible)))
+    recipients = random.sample(eligible, num_shares)
+
+    granted = 0
+    for recipient in recipients:
+        perm = random.choice(["editor", "viewer"])
+        await grant_permission(ws_id, recipient.id, perm)
+        granted += 1
+    return granted
 
 
 async def _seed_acl_shares(
@@ -971,38 +1137,8 @@ async def _seed_acl_shares(
     """
     console.print("\n[bold cyan]Phase 6: ACL Shares[/]")
 
-    share_count = 0
-
-    # Build course_id -> list of student Users mapping
-    course_students: dict[UUID, list[User]] = {}
-    for email, codes in student_courses.items():
-        user = all_students[email]
-        for code in codes:
-            if code in courses:
-                cid = courses[code].id
-                course_students.setdefault(cid, []).append(user)
-
-    # Collect activity-linked student workspaces (not templates, not loose)
-    candidate_workspaces: list[
-        tuple[UUID, UUID, UUID]
-    ] = []  # (workspace_id, owner_user_id, course_id)
-
-    for _course_code, course in courses.items():
-        async with get_session() as session:
-            # Find non-template activity workspaces in this course
-            result = await session.exec(
-                select(Workspace.id, ACLEntry.user_id, Week.course_id)
-                .join(Activity, Workspace.activity_id == Activity.id)  # type: ignore[arg-type]  # SQLAlchemy join expression, not a plain column
-                .join(Week, Activity.week_id == Week.id)  # type: ignore[arg-type]  # SQLAlchemy join expression, not a plain column
-                .join(ACLEntry, ACLEntry.workspace_id == Workspace.id)  # type: ignore[arg-type]  # SQLAlchemy join expression, not a plain column
-                .where(
-                    Week.course_id == course.id,
-                    ACLEntry.permission == "owner",
-                    Workspace.id != Activity.template_workspace_id,
-                )
-            )
-            for ws_id, owner_id, cid in result.all():
-                candidate_workspaces.append((ws_id, owner_id, cid))
+    course_students = _build_course_students_map(all_students, student_courses, courses)
+    candidate_workspaces = await _fetch_candidate_workspaces(courses)
 
     if not candidate_workspaces:
         console.print("  [yellow]No candidate workspaces for sharing[/]")
@@ -1012,21 +1148,11 @@ async def _seed_acl_shares(
     sample_size = min(50, len(candidate_workspaces))
     selected = random.sample(candidate_workspaces, sample_size)
 
+    share_count = 0
     for ws_id, owner_id, course_id in selected:
-        students_in_course = course_students.get(course_id, [])
-        # Filter out the owner
-        eligible = [s for s in students_in_course if s.id != owner_id]
-        if not eligible:
-            continue
-
-        # Grant to 1-2 other students
-        num_shares = random.randint(1, min(2, len(eligible)))
-        recipients = random.sample(eligible, num_shares)
-
-        for recipient in recipients:
-            perm = random.choice(["editor", "viewer"])
-            await grant_permission(ws_id, recipient.id, perm)
-            share_count += 1
+        share_count += await _grant_shares_for_workspace(
+            ws_id, owner_id, course_id, course_students
+        )
 
     console.print(f"  [green]ACL shares created:[/] {share_count}")
     return share_count
@@ -1037,16 +1163,27 @@ async def _seed_acl_shares(
 # ---------------------------------------------------------------------------
 
 
+@dataclass(frozen=True, slots=True)
+class LoadTestCounts:
+    """Aggregate counters produced by the student-workspace seeding phases."""
+
+    activity_ws_count: int
+    loose_ws_count: int
+    total_doc_count: int
+    share_count: int
+    shared_with_class_count: int
+
+
 async def _print_summary(
     courses: dict[str, Course],
     course_activities: dict[str, list[tuple[Activity, UUID]]],
-    activity_ws_count: int,
-    loose_ws_count: int,
-    total_doc_count: int,
-    share_count: int,
-    shared_with_class_count: int,
+    counts: LoadTestCounts,
 ) -> None:
-    """Print final load-test data summary with counts from the database."""
+    """Print final load-test data summary with counts from the database.
+
+    Query-shaped reads migrated to raw SQL per ADR 0004/0005 -- .like()/
+    .in_() do not type-check under ty (astral-sh/ty#3421).
+    """
     console.print("\n[bold green]Load test data summary:[/]")
 
     # Count from database for accuracy
@@ -1054,19 +1191,20 @@ async def _print_summary(
         # All load-test users share @test.local domain (students: loadtest-*,
         # instructors: lt-instructor-*, admin: lt-admin). Seed data uses
         # @uni.edu and @example.com, so this won't over-count.
-        user_result = await session.exec(
-            select(User.id).where(User.email.like("%@test.local"))  # type: ignore[union-attr]  # SQLAlchemy column expression
+        user_rows = await session.execute(
+            tstring(t"""SELECT id FROM "user" WHERE email LIKE '%@test.local'""")
         )
-        db_user_count = len(user_result.all())
+        db_user_count = len(user_rows.all())
 
-        enrollment_result = await session.exec(
-            select(CourseEnrollment.id).where(
-                CourseEnrollment.course_id.in_(  # type: ignore[union-attr]  # SQLAlchemy column expression
-                    [c.id for c in courses.values()]
-                )
+        course_ids = [c.id for c in courses.values()]
+        enrollment_rows = await session.execute(
+            tstring(
+                t"""
+                SELECT id FROM course_enrollment WHERE course_id = ANY({course_ids})
+                """
             )
         )
-        db_enrollment_count = len(enrollment_result.all())
+        db_enrollment_count = len(enrollment_rows.all())
 
     total_activities = sum(len(acts) for acts in course_activities.values())
 
@@ -1074,11 +1212,13 @@ async def _print_summary(
     console.print(f"  Courses: {len(courses)}")
     console.print(f"  Enrollments: {db_enrollment_count}")
     console.print(f"  Activities: {total_activities}")
-    console.print(f"  Workspaces (activity): {activity_ws_count}")
-    console.print(f"  Workspaces (loose): {loose_ws_count}")
-    console.print(f"  Documents: {total_doc_count}")
-    console.print(f"  ACL shares: {share_count}")
-    console.print(f"  Workspaces with shared_with_class: {shared_with_class_count}")
+    console.print(f"  Workspaces (activity): {counts.activity_ws_count}")
+    console.print(f"  Workspaces (loose): {counts.loose_ws_count}")
+    console.print(f"  Documents: {counts.total_doc_count}")
+    console.print(f"  ACL shares: {counts.share_count}")
+    console.print(
+        f"  Workspaces with shared_with_class: {counts.shared_with_class_count}"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -1182,8 +1322,8 @@ async def _seed_students(
     total_student_count = 0
 
     for cdef in COURSE_DEFS:
-        code = str(cdef["code"])
-        count = int(cdef["student_count"])  # type: ignore[arg-type]  # dict value is typed as object; int() is safe here
+        code = cdef["code"]
+        count = cdef["student_count"]
         s_range = _student_range_for_course(code, count)
 
         enrolled_count = 0
@@ -1283,19 +1423,28 @@ async def _validate_ensure_student_workspace(
 
     Returns:
         The workspace UUID (existing or newly created).
+
+    Query-shaped read migrated to raw SQL per ADR 0004/0005 -- .join() does
+    not type-check under ty (astral-sh/ty#3421).
     """
     if await _check_workspace_exists(activity.id, student.id):
+        activity_id = activity.id
+        student_id = student.id
         async with get_session() as session:
-            result = await session.exec(
-                select(Workspace.id)
-                .join(ACLEntry, ACLEntry.workspace_id == Workspace.id)  # type: ignore[arg-type]  # SQLAlchemy join expression, not a plain column
-                .where(
-                    Workspace.activity_id == activity.id,
-                    ACLEntry.user_id == student.id,
-                    ACLEntry.permission == "owner",
+            rows = await session.execute(
+                tstring(
+                    t"""
+                    SELECT w.id
+                    FROM workspace w
+                    JOIN acl_entry a ON a.workspace_id = w.id
+                    WHERE w.activity_id = {activity_id}
+                      AND a.user_id = {student_id}
+                      AND a.permission = 'owner'
+                    """
                 )
             )
-            ws_id = result.first()
+            row = rows.first()
+            ws_id = row[0] if row is not None else None
         console.print(f"  [yellow]Exists:[/] Student workspace (id={ws_id})")
         return ws_id
 
@@ -1402,11 +1551,13 @@ async def _async_load_test_data() -> None:
     await _print_summary(
         courses=courses,
         course_activities=course_activities,
-        activity_ws_count=activity_ws_count,
-        loose_ws_count=loose_ws_count,
-        total_doc_count=total_doc_count,
-        share_count=share_count,
-        shared_with_class_count=shared_with_class_count,
+        counts=LoadTestCounts(
+            activity_ws_count=activity_ws_count,
+            loose_ws_count=loose_ws_count,
+            total_doc_count=total_doc_count,
+            share_count=share_count,
+            shared_with_class_count=shared_with_class_count,
+        ),
     )
 
 

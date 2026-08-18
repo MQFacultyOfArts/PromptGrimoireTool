@@ -96,7 +96,10 @@ def _collect_violations_from_files(
             desc = checker(node)
             if desc is None or not hasattr(node, "lineno"):
                 continue
-            lineno: int = node.lineno  # type: ignore[union-attr]
+            # ast.walk() yields the base ast.AST type, which has no lineno
+            # attribute -- hasattr() above confirms it exists at runtime for
+            # this node, so getattr() (typed Any) reads it precisely.
+            lineno: int = getattr(node, "lineno")  # noqa: B009
             if not _has_noqa(source_lines, lineno, noqa_code):
                 rel = py_file.relative_to(_REPO_ROOT)
                 violations.append(f"{rel}:{lineno} - {desc}")
@@ -614,7 +617,11 @@ def test_no_unguarded_network_calls_in_unit_tests() -> None:
                     continue
                 if not hasattr(child, "lineno"):
                     continue
-                lineno: int = child.lineno  # type: ignore[assignment]  # AST node has int lineno at runtime
+                # ast.walk() yields the base ast.AST type, which has no
+                # lineno attribute -- hasattr() above confirms it exists at
+                # runtime for this node, so getattr() (typed Any) reads it
+                # precisely.
+                lineno: int = getattr(child, "lineno")  # noqa: B009
                 if _has_noqa(source_lines, lineno, "PG006"):
                     continue
                 rel = py_file.relative_to(_REPO_ROOT)

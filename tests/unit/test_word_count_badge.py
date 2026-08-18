@@ -25,7 +25,7 @@ class TestBadgeStateDataclass:
     def test_frozen(self) -> None:
         state = BadgeState(text="Words: 0", css_classes=_NEUTRAL)
         with pytest.raises(AttributeError):
-            state.text = "changed"  # type: ignore[invalid-assignment]  # intentional: testing runtime immutability
+            setattr(state, "text", "changed")  # noqa: B010  -- intentional: testing runtime immutability
 
 
 class TestFormatWordCountBadge:

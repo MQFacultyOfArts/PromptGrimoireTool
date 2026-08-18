@@ -388,6 +388,29 @@ async def annotation_page(client: Client) -> None:
     # Set up CSS and colors
     _setup_page_styles()
 
+    # Snapshot delivery: the annotation scripts must ride the initial
+    # HTML response — the deferred background build below cannot add
+    # body HTML.  The bootstrap self-initialises (scan + observer) from
+    # data attributes on the doc container; no JS is built in Python.
+    # See docs/design-notes/2026-08-16-initial-snapshot-delivery.md.
+    from promptgrimoire.config import get_settings  # noqa: PLC0415, I001 -- circular at module import
+
+    if get_settings().snapshot.enabled:
+        from urllib.parse import quote  # noqa: PLC0415
+
+        from promptgrimoire import get_version_string  # noqa: PLC0415
+
+        # Version query busts browser caches on deploy: an unversioned URL
+        # left clients running stale bootstrap JS across fixes.
+        v = quote(get_version_string())
+        for script in (
+            "annotation-highlight.js",
+            "annotation-card-sync.js",
+            "annotation-copy-protection.js",
+            "annotation-snapshot-bootstrap.js",
+        ):
+            ui.add_body_html(f'<script src="/static/{script}?v={v}"></script>')
+
     # Get workspace_id from query params if present
     workspace_id_str = client.request.query_params.get("workspace_id")
     workspace_id: UUID | None = None

@@ -30,9 +30,11 @@ from promptgrimoire.input_pipeline.html_input import extract_text_from_html
 def _find_spans(html: str) -> list[dict[str, str]]:
     """Extract all data-hl spans from HTML as dicts of their attributes."""
     tree = LexborHTMLParser(html)
-    spans = []
+    spans: list[dict[str, str]] = []
     for node in tree.css("span[data-hl]"):
-        attrs = dict(node.attributes)
+        # Valueless attributes come back as None; normalise to "" so
+        # callers can use str operations without per-site guards.
+        attrs = {k: v if v is not None else "" for k, v in node.attributes.items()}
         attrs["_text"] = node.text() or ""
         spans.append(attrs)
     return spans
@@ -41,6 +43,7 @@ def _find_spans(html: str) -> list[dict[str, str]]:
 def _make_hl(
     start: int,
     end: int,
+    *,
     tag: str = "jurisdiction",
     author: str = "",
     comments: list | None = None,

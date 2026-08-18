@@ -21,7 +21,7 @@ class TestWordCountViolationDataclass:
     def test_frozen(self) -> None:
         v = WordCountViolation()
         with pytest.raises(AttributeError):
-            v.over_limit = True  # type: ignore[invalid-assignment]  # intentional: testing runtime immutability
+            setattr(v, "over_limit", True)  # noqa: B010  -- intentional: testing runtime immutability
 
     def test_defaults_no_violation(self) -> None:
         v = WordCountViolation()

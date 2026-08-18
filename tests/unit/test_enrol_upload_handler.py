@@ -35,6 +35,7 @@ def _make_upload_event(data: bytes = b"fake xlsx") -> MagicMock:
 
 
 def _make_enrolment_report(
+    *,
     entries_processed: int = 2,
     users_created: int = 1,
     users_existing: int = 1,

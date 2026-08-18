@@ -10,6 +10,7 @@ Covers acceptance criteria from paragraph-numbering-191 Phase 2:
 from __future__ import annotations
 
 import re
+from typing import Any
 
 from selectolax.lexbor import LexborHTMLParser
 
@@ -70,13 +71,13 @@ def _extract_text(html: str) -> str:
         return ""
     chars: list[str] = []
 
-    def _walk(node: object) -> None:
-        tag = node.tag  # type: ignore[attr-defined]
+    def _walk(node: Any) -> None:
+        tag = node.tag
         if tag == "-text":
-            text = node.text_content  # type: ignore[attr-defined]
+            text = node.text_content
             if not text:
                 return
-            parent = node.parent  # type: ignore[attr-defined]
+            parent = node.parent
             if (
                 parent is not None
                 and parent.tag in _BLOCK_TAGS
@@ -91,7 +92,7 @@ def _extract_text(html: str) -> str:
         if tag == "br":
             chars.append("\n")
             return
-        child = node.child  # type: ignore[attr-defined]
+        child = node.child
         while child is not None:
             _walk(child)
             child = child.next

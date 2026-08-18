@@ -24,46 +24,57 @@ from pathlib import Path
 
 FIXTURES_DIR = Path(__file__).parent.parent / "tests" / "fixtures" / "conversations"
 
+# Result caps for the search/context commands -- large fixtures can have
+# thousands of regex hits, so output is truncated for terminal readability.
+_MAX_SEARCH_MATCHES_SHOWN = 20
+_MAX_CONTEXT_OCCURRENCES_SHOWN = 15
 
-def _load_fixture(name_or_path: str) -> tuple[str, str]:
-    """Load a fixture by name or path, handling .html and .html.gz transparently.
 
-    Returns (display_name, html_content).
-    """
-    # Try as direct path first
+def _fixture_stem(path: Path) -> str:
+    """Strip a fixture filename's .html or .html.gz suffix."""
+    return path.name.replace(".html.gz", "").replace(".html", "")
+
+
+def _read_fixture_html(path: Path) -> str:
+    """Read a fixture file's HTML content, decompressing .gz transparently."""
+    if path.suffix == ".gz":
+        with gzip.open(path, "rt", encoding="utf-8") as f:
+            return f.read()
+    return path.read_text(encoding="utf-8")
+
+
+def _load_fixture_by_path(name_or_path: str) -> tuple[str, str] | None:
+    """Load a fixture given as a direct filesystem path, if it exists."""
     path = Path(name_or_path)
-    if path.exists():
-        if path.suffix == ".gz":
-            with gzip.open(path, "rt", encoding="utf-8") as f:
-                return path.stem.replace(".html", ""), f.read()
-        return path.stem, path.read_text(encoding="utf-8")
+    if not path.exists():
+        return None
+    return _fixture_stem(path), _read_fixture_html(path)
 
-    # Try as fixture name (without extension)
-    name = name_or_path.lower()
-    for ext in [".html", ".html.gz"]:
+
+def _load_fixture_by_name(name: str) -> tuple[str, str] | None:
+    """Load a fixture by its exact name (without extension) in FIXTURES_DIR."""
+    for ext in (".html", ".html.gz"):
         candidate = FIXTURES_DIR / f"{name}{ext}"
         if candidate.exists():
-            if ext == ".html.gz":
-                with gzip.open(candidate, "rt", encoding="utf-8") as f:
-                    return name, f.read()
-            return name, candidate.read_text(encoding="utf-8")
+            return name, _read_fixture_html(candidate)
+    return None
 
-    # Try matching as substring
-    matches = []
-    for f in sorted(FIXTURES_DIR.iterdir()):
-        if f.name == "clean" or f.is_dir():
-            continue
-        stem = f.name.replace(".html.gz", "").replace(".html", "")
-        if name in stem:
-            matches.append(f)
 
+def _fixtures_matching(name: str) -> list[Path]:
+    """List fixture files in FIXTURES_DIR whose stem contains *name*."""
+    return [
+        f
+        for f in sorted(FIXTURES_DIR.iterdir())
+        if f.name != "clean" and not f.is_dir() and name in _fixture_stem(f)
+    ]
+
+
+def _load_fixture_by_substring(name: str, name_or_path: str) -> tuple[str, str]:
+    """Load a fixture by unique substring match, or exit with a diagnostic."""
+    matches = _fixtures_matching(name)
     if len(matches) == 1:
-        f = matches[0]
-        stem = f.name.replace(".html.gz", "").replace(".html", "")
-        if f.name.endswith(".gz"):
-            with gzip.open(f, "rt", encoding="utf-8") as fh:
-                return stem, fh.read()
-        return stem, f.read_text(encoding="utf-8")
+        match = matches[0]
+        return _fixture_stem(match), _read_fixture_html(match)
     if len(matches) > 1:
         names = [m.name for m in matches]
         print(
@@ -75,6 +86,21 @@ def _load_fixture(name_or_path: str) -> tuple[str, str]:
     print(f"Fixture not found: {name_or_path}", file=sys.stderr)
     print("Available fixtures (use 'list' command):", file=sys.stderr)
     sys.exit(1)
+
+
+def _load_fixture(name_or_path: str) -> tuple[str, str]:
+    """Load a fixture by name or path, handling .html and .html.gz transparently.
+
+    Tries, in order: a direct filesystem path, an exact fixture name match,
+    then a unique substring match against fixture names.
+
+    Returns (display_name, html_content).
+    """
+    return (
+        _load_fixture_by_path(name_or_path)
+        or _load_fixture_by_name(name_or_path.lower())
+        or _load_fixture_by_substring(name_or_path.lower(), name_or_path)
+    )
 
 
 def _strip_style_attrs(html: str) -> str:
@@ -168,7 +194,7 @@ def cmd_search(args: argparse.Namespace) -> None:
     print(f"{len(matches)} matches for /{pattern}/ in {name}:")
     print()
 
-    for i, m in enumerate(matches[:20]):
+    for i, m in enumerate(matches[:_MAX_SEARCH_MATCHES_SHOWN]):
         start = max(0, m.start() - context_chars)
         end = min(len(html), m.end() + context_chars)
         context = html[start:end]
@@ -180,8 +206,8 @@ def cmd_search(args: argparse.Namespace) -> None:
         print(f"    ...{context}...")
         print()
 
-    if len(matches) > 20:
-        print(f"  (showing 20 of {len(matches)} matches)")
+    if len(matches) > _MAX_SEARCH_MATCHES_SHOWN:
+        print(f"  (showing {_MAX_SEARCH_MATCHES_SHOWN} of {len(matches)} matches)")
 
 
 def cmd_context(args: argparse.Namespace) -> None:
@@ -209,7 +235,7 @@ def cmd_context(args: argparse.Namespace) -> None:
     print(f"{len(positions)} occurrences of '{text}' in {name}:")
     print()
 
-    for i, pos in enumerate(positions[:15]):
+    for i, pos in enumerate(positions[:_MAX_CONTEXT_OCCURRENCES_SHOWN]):
         start_ctx = max(0, pos - context_chars)
         end_ctx = min(len(html), pos + len(text) + context_chars)
         context = html[start_ctx:end_ctx]
@@ -226,8 +252,11 @@ def cmd_context(args: argparse.Namespace) -> None:
         print(f"    ...{before}>>>{match}<<<{after}...")
         print()
 
-    if len(positions) > 15:
-        print(f"  (showing 15 of {len(positions)} occurrences)")
+    if len(positions) > _MAX_CONTEXT_OCCURRENCES_SHOWN:
+        print(
+            f"  (showing {_MAX_CONTEXT_OCCURRENCES_SHOWN} of "
+            f"{len(positions)} occurrences)"
+        )
 
 
 def cmd_structure(args: argparse.Namespace) -> None:

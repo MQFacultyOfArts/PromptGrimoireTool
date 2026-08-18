@@ -71,11 +71,18 @@ load-test-data = "promptgrimoire.cli_loadtest:load_test_data"
 # follows the other: that one delays *failing the build* on a known fix, this one
 # delays *adopting* any new release at all. Change one without the other freely.
 exclude-newer = "14 days"
-# Deliberate exception approved 2026-08-16: NiceGUI 3.16.0 fixes an
-# unauthenticated disconnected-client memory leak and color-input XSS on
-# production paths. Bound the exception immediately after that release so it
-# cannot admit a later NiceGUI build accidentally.
-exclude-newer-package = { nicegui = "2026-08-12T15:18:33Z" }
+# Deliberate exceptions, each bounded immediately after the approved release
+# so it cannot admit a later build accidentally.
+# - nicegui (approved 2026-08-16): 3.16.0 fixes an unauthenticated
+#   disconnected-client memory leak and color-input XSS on production paths.
+# - ty / ruff / complexipy (approved 2026-08-17, operator ruling: 3-day gate
+#   acceptable for the lint/type toolchain being refactored around).
+exclude-newer-package = { nicegui = "2026-08-12T15:18:33Z", ty = "2026-08-14T21:35:43Z", ruff = "2026-08-13T15:17:14Z", complexipy = "2026-08-12T22:19:40Z" }
+# SQLModel caps sqlalchemy at <2.1; overridden for tstring()/PEP 750 per
+# ADR 0005 (docs/decisions/0005-sqlalchemy-21-beta-override.md). Exact pin so
+# no later beta is admitted silently. Delete when 2.1 is GA and SQLModel
+# lifts its cap.
+override-dependencies = ["sqlalchemy==2.1.0b3"]
 
 [build-system]
 requires = ["hatchling"]
@@ -109,8 +116,6 @@ select = [
     "RUF",    # Ruff-specific
 ]
 ignore = [
-    "PLR0913",  # Too many arguments
-    "PLR2004",  # Magic value comparison
     "S404",     # subprocess import (CLI tooling uses subprocess intentionally)
     "S603",     # subprocess call without shell check (controlled args in CLI)
     "S607",     # partial executable path (uv, playwright, etc.)
@@ -118,6 +123,8 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**/*.py" = [
+    "PLR2004",  # Expected-value literals in assertions; naming them invites tautology tests
+    "PLR0913",  # Test factories/fixtures legitimately take many optional arguments
     "PLC0415",  # Allow imports inside test functions (needed for mocking)
     "S101",     # Assertions are the primary test mechanism
     "S105",     # Hardcoded test tokens/passwords are intentional in test fixtures
@@ -128,6 +135,12 @@ ignore = [
 ]
 "src/promptgrimoire/export/pandoc.py" = [
     "S101",     # Assert after proc.communicate() — returncode guaranteed non-None
+]
+"src/promptgrimoire/export/unicode_latex.py" = [
+    "PLR2004",  # Unicode block boundaries: the hex codepoint literal IS the clearest form
+]
+"src/promptgrimoire/word_count.py" = [
+    "PLR2004",  # Unicode block boundaries, as above
 ]
 "src/promptgrimoire/pages/auth.py" = [
     "S101",     # Type-narrowing asserts after _validate_token guarantees
@@ -259,6 +272,9 @@ known-first-party = ["promptgrimoire"]
 quote-style = "double"
 indent-style = "space"
 docstring-code-format = true
+# Ruff 0.16 formats fenced code blocks in markdown. Our docs hold deliberate
+# fragments (plan excerpts, elided examples) that it rewrites incorrectly.
+exclude = ["*.md"]
 
 [tool.pytest.ini_options]
 # Run tests in this order: unit first (fast, async), integration, then E2E
@@ -297,7 +313,12 @@ filterwarnings = [
 deprecated = "ignore"
 
 [tool.ty.src]
-exclude = ["alembic/"]
+exclude = [
+    "alembic/",
+    # uvx-run standalone script; python-docx is supplied by its uvx invocation
+    # and is deliberately not a project dependency.
+    "scripts/extract_anthropic_console_to_json.py",
+]
 
 [tool.vulture]
 paths = ["src/promptgrimoire"]
@@ -315,6 +336,7 @@ exclude = ["*/migrations/*"]
 [dependency-groups]
 dev = [
     "pre-commit>=4.5.1",
+    "ty==0.0.72",  # exact pin: pre-1.0, diagnostic set changes per release; bump deliberately
     "psycopg[binary]>=3.2",
     "pylatexenc>=2.10",
     "pymupdf>=1.26.7",
@@ -327,7 +349,7 @@ dev = [
     "pytest-subtests>=0.15.0",
     "pytest-xdist[psutil]>=3.8.0",
     "ast-grep-cli>=0.40.5",
-    "ruff>=0.15.5",
+    "ruff==0.16.3",  # exact pin: lint/format behaviour changes per release; bump via ADR 0003 ritual
     "pytest-randomly>=4.0.1",
     "py-spy>=0.4.1",
     "junitparser>=4.0.2",
@@ -335,7 +357,7 @@ dev = [
     "Pillow>=12.3.0",  # Security floor: image parsing and allocation fixes
     "mkdocs-material>=9.7",
     "vulture>=2.14",
-    "complexipy>=5.2.0",
+    "complexipy==7.0.1",  # exact pin: scoring changes per release; bump via ADR 0003 ritual
     "mkdocs-glightbox>=0.5.2",
     "pip-audit>=2.10.0",
     "types-openpyxl>=3.1.5.20250919",

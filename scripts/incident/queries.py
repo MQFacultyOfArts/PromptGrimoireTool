@@ -132,10 +132,9 @@ def _normalise_bound(ts: str) -> str:
 
 
 def _dict_factory(
-    cursor: object,  # sqlite3.Cursor
+    cursor: sqlite3.Cursor,
     row: tuple,
 ) -> dict:
     """sqlite3 row_factory that returns dicts keyed by column name."""
-    # cursor.description is available on sqlite3.Cursor
-    description = cursor.description  # type: ignore[union-attr]
+    description = cursor.description
     return {col[0]: row[idx] for idx, col in enumerate(description)}

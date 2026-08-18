@@ -9,6 +9,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
+from sqlalchemy import tstring
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlmodel import col, select
 
@@ -142,10 +143,13 @@ async def _find_or_create_user_with_session(
         created_at=datetime.now(UTC),
     )
     stmt = stmt.on_conflict_do_nothing(index_elements=["email"])
-    result = await session.execute(stmt)
+    # session.exec(), not .execute() -- the deprecated .execute() stub
+    # declares Result[Any] with no .rowcount; .exec() resolves an Insert
+    # statement to CursorResult[Any], which has it.
+    result = await session.exec(stmt)
     await session.flush()
 
-    created = result.rowcount == 1  # type: ignore[union-attr]  -- CursorResult always has rowcount
+    created = result.rowcount == 1
 
     user_result = await session.exec(select(User).where(User.email == normalized_email))
     user = user_result.one()
@@ -294,11 +298,30 @@ async def list_users(*, include_inactive: bool = False) -> list[User]:
         List of User objects ordered by email.
     """
     async with get_session() as session:
-        query = select(User).order_by("email")
-        if not include_inactive:
-            query = query.where(User.last_login != None)  # noqa: E711
-        result = await session.exec(query)
-        return list(result.all())
+        if include_inactive:
+            result = await session.execute(
+                tstring(
+                    t"""
+                    SELECT id, email, display_name, stytch_member_id, is_admin,
+                           is_banned, banned_at, student_id, created_at, last_login
+                    FROM "user"
+                    ORDER BY email
+                    """
+                )
+            )
+        else:
+            result = await session.execute(
+                tstring(
+                    t"""
+                    SELECT id, email, display_name, stytch_member_id, is_admin,
+                           is_banned, banned_at, student_id, created_at, last_login
+                    FROM "user"
+                    WHERE last_login IS NOT NULL
+                    ORDER BY email
+                    """
+                )
+            )
+        return [User(**row._mapping) for row in result.all()]
 
 
 async def list_all_users() -> list[User]:
@@ -308,8 +331,17 @@ async def list_all_users() -> list[User]:
         List of User objects ordered by email.
     """
     async with get_session() as session:
-        result = await session.exec(select(User).order_by("email"))
-        return list(result.all())
+        result = await session.execute(
+            tstring(
+                t"""
+                SELECT id, email, display_name, stytch_member_id, is_admin,
+                       is_banned, banned_at, student_id, created_at, last_login
+                FROM "user"
+                ORDER BY email
+                """
+            )
+        )
+        return [User(**row._mapping) for row in result.all()]
 
 
 async def upsert_user_on_login(

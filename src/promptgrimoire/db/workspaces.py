@@ -12,8 +12,7 @@ from typing import TYPE_CHECKING, Any, Literal
 from uuid import UUID
 
 import structlog
-from sqlalchemy import exists, func, text
-from sqlalchemy import select as sa_select
+from sqlalchemy import exists, func, text, tstring
 from sqlmodel import select
 
 from promptgrimoire.db.engine import get_session
@@ -23,9 +22,7 @@ from promptgrimoire.db.models import (
     Activity,
     Course,
     CourseEnrollment,
-    CourseRoleRef,
     ExportJob,
-    Permission,
     Tag,
     TagGroup,
     User,
@@ -57,16 +54,21 @@ async def get_user_workspace_for_activity(
     button and show "Resume" instead).
     """
     async with get_session() as session:
-        result = await session.exec(
-            select(Workspace)
-            .join(ACLEntry, ACLEntry.workspace_id == Workspace.id)  # type: ignore[arg-type]  -- SQLAlchemy == returns ColumnElement, not bool
-            .where(
-                Workspace.activity_id == activity_id,
-                ACLEntry.user_id == user_id,
-                ACLEntry.permission == "owner",
+        row = (
+            await session.execute(
+                tstring(
+                    t"""
+                    SELECT w.* FROM workspace w
+                    JOIN acl_entry a ON a.workspace_id = w.id
+                    WHERE w.activity_id = {activity_id}
+                      AND a.user_id = {user_id}
+                      AND a.permission = 'owner'
+                    LIMIT 1
+                    """
+                )
             )
-        )
-        return result.first()
+        ).first()
+        return Workspace.model_validate(row, from_attributes=True) if row else None
 
 
 async def has_student_workspaces(
@@ -268,38 +270,70 @@ class AnnotationContext:
     """
 
 
+@dataclass(frozen=True)
+class _HydratedRowEntities:
+    """Pre-fetched rows from a single joined query.
+
+    resolve_annotation_context's mega-join hydrates the explicit ACL
+    entry, Course, and Activity for a workspace in one round trip.
+    Threading them through as one object (rather than three positional
+    parameters) lets ``_resolve_effective_permission`` /
+    ``_resolve_enrollment_permission`` skip the ``session.get()`` calls a
+    naive port of the query would still make, while staying within the
+    PLR0913 argument-count limit (ADR 0007).
+
+    All fields are optional and independently nullable -- None always
+    falls back to a fresh lookup. When a field is not None, the caller
+    must guarantee ``course.id`` equals the course_id being resolved and
+    ``activity.id`` equals ``workspace.activity_id``;
+    resolve_annotation_context's join guarantees this by construction
+    (see its docstring's comment on the mega-join).
+    """
+
+    explicit: ACLEntry | None = None
+    course: Course | None = None
+    activity: Activity | None = None
+
+
 async def _resolve_enrollment_permission(
     session: AsyncSession,
     workspace: Workspace,
     course_id: UUID,
     user_id: UUID,
+    joined: _HydratedRowEntities | None = None,
 ) -> str | None:
     """Derive permission from course enrollment for a single user.
 
     Returns the derived permission string or None if the user has no
     enrollment-based access. Extracted from resolve_annotation_context
     to keep branch/statement counts within linter limits.
+
+    ``joined.course``/``joined.activity``, when the caller already holds
+    hydrated instances, are used instead of a fresh ``session.get()``.
+    See ``_HydratedRowEntities`` for the identity contract.
     """
-    enrollment_result = await session.exec(
-        select(CourseEnrollment.role, CourseRoleRef.is_staff)
-        .join(
-            CourseRoleRef,
-            CourseEnrollment.role == CourseRoleRef.name,  # type: ignore[arg-type] -- SQLAlchemy column comparison
+    enrollment = (
+        await session.execute(
+            tstring(
+                t"""
+                SELECT ce.role, cr.is_staff
+                FROM course_enrollment ce
+                JOIN course_role cr ON cr.name = ce.role
+                WHERE ce.course_id = {course_id} AND ce.user_id = {user_id}
+                """
+            )
         )
-        .where(
-            CourseEnrollment.course_id == course_id,
-            CourseEnrollment.user_id == user_id,
-        )
-    )
-    enrollment = enrollment_result.one_or_none()
+    ).first()
     if enrollment is None:
         return None
 
-    _enrollment_role, is_staff = enrollment
+    is_staff = enrollment.is_staff
     if not is_staff and not workspace.shared_with_class:
         return None
 
-    course = await session.get(Course, course_id)
+    course = joined.course if joined else None
+    if course is None:
+        course = await session.get(Course, course_id)
     if course is None:
         return None
 
@@ -309,10 +343,11 @@ async def _resolve_enrollment_permission(
     if not workspace.shared_with_class:
         return None
 
-    # Activity override for allow_sharing (identity map absorbs re-fetch)
+    activity = joined.activity if joined else None
     activity_override = None
     if workspace.activity_id is not None:
-        activity = await session.get(Activity, workspace.activity_id)
+        if activity is None:
+            activity = await session.get(Activity, workspace.activity_id)
         if activity is not None:
             activity_override = activity.allow_sharing
     allow_sharing = resolve_tristate(activity_override, course.default_allow_sharing)
@@ -324,7 +359,7 @@ async def _resolve_effective_permission(
     workspace: Workspace,
     placement: PlacementContext,
     user_id: UUID,
-    explicit: ACLEntry | None,
+    joined: _HydratedRowEntities,
 ) -> str | None:
     """Resolve the effective permission for a user on a workspace.
 
@@ -333,7 +368,13 @@ async def _resolve_effective_permission(
     permission level. Returns None if no access. Extracted from
     resolve_annotation_context to keep branch/statement counts within
     linter limits.
+
+    ``joined`` bundles the explicit ACL entry with the caller's already-
+    hydrated Course/Activity instances (see ``_HydratedRowEntities``) so
+    permission resolution never re-fetches rows resolve_annotation_context
+    already holds in memory.
     """
+    explicit = joined.explicit
     if explicit is not None and explicit.permission == "owner":
         return "owner"
 
@@ -345,17 +386,18 @@ async def _resolve_effective_permission(
     derived_permission: str | None = None
     if course_id is not None:
         derived_permission = await _resolve_enrollment_permission(
-            session, workspace, course_id, user_id
+            session, workspace, course_id, user_id, joined
         )
 
     # Highest wins
     if explicit and derived_permission:
-        level_result = await session.exec(
-            select(Permission.name, Permission.level).where(
-                Permission.name.in_([explicit.permission, derived_permission])  # type: ignore[unresolved-attribute]  -- Column has in_ at runtime
+        names = [explicit.permission, derived_permission]
+        level_rows = (
+            await session.execute(
+                tstring(t"SELECT name, level FROM permission WHERE name = ANY({names})")
             )
-        )
-        levels = dict(level_result.all())
+        ).all()
+        levels = {row.name: row.level for row in level_rows}
         e_level = levels[explicit.permission]
         d_level = levels[derived_permission]
         return explicit.permission if e_level >= d_level else derived_permission
@@ -376,19 +418,25 @@ async def _resolve_privileged_user_ids(
     """
     priv_course_id = placement.course_id or workspace.course_id
     if priv_course_id is not None:
-        privileged_result = await session.execute(
-            select(CourseEnrollment.user_id)
-            .join(
-                CourseRoleRef,
-                CourseEnrollment.role == CourseRoleRef.name,  # type: ignore[arg-type] -- SQLAlchemy column comparison
+        privileged_ids = (
+            (
+                await session.execute(
+                    tstring(
+                        t"""
+                    SELECT ce.user_id AS id
+                    FROM course_enrollment ce
+                    JOIN course_role cr ON cr.name = ce.role
+                    WHERE ce.course_id = {priv_course_id} AND cr.is_staff = true
+                    UNION
+                    SELECT id FROM "user" WHERE is_admin = true
+                    """
+                    )
+                )
             )
-            .where(
-                CourseEnrollment.course_id == priv_course_id,
-                CourseRoleRef.is_staff == True,  # noqa: E712
-            )
-            .union(select(User.id).where(User.is_admin == True))  # noqa: E712
+            .scalars()
+            .all()
         )
-        return frozenset(str(row[0]) for row in privileged_result.all())
+        return frozenset(str(uid) for uid in privileged_ids)
 
     admin_result = await session.exec(
         select(User.id).where(User.is_admin == True)  # noqa: E712
@@ -440,55 +488,75 @@ async def resolve_annotation_context(
         # unique per (workspace, user); activity/week join on primary keys;
         # course joins on the activity chain's course or, for course-placed
         # workspaces, the workspace's own course.
-        template_exists = exists(
-            select(Activity.id).where(Activity.template_workspace_id == workspace_id)
-        )
-        ws_result = await session.execute(
-            sa_select(
-                Workspace,
-                template_exists.label("is_template"),
-                ACLEntry,
-                Activity,
-                Week,
-                Course,
+        #
+        # Workspace's own columns come back unprefixed (`w.*`) so
+        # Workspace.model_validate() hydrates it directly -- this keeps
+        # crdt_state as real bytes. The other three joined tables are
+        # scalar-only (no bytea columns), so `to_jsonb(...)` avoids the
+        # column-name collisions a flat multi-table SELECT would hit,
+        # without paying for a manual per-column alias list.
+        ws_row = (
+            await session.execute(
+                tstring(
+                    t"""
+                    SELECT w.*,
+                           EXISTS(
+                               SELECT 1 FROM activity
+                               WHERE activity.template_workspace_id = w.id
+                           ) AS is_template,
+                           to_jsonb(acl.*) AS acl_json,
+                           to_jsonb(a.*) AS activity_json,
+                           to_jsonb(wk.*) AS week_json,
+                           to_jsonb(c.*) AS course_json
+                    FROM workspace w
+                    LEFT JOIN acl_entry acl
+                        ON acl.workspace_id = w.id AND acl.user_id = {user_id}
+                    LEFT JOIN activity a ON a.id = w.activity_id
+                    LEFT JOIN week wk ON wk.id = a.week_id
+                    LEFT JOIN course c ON c.id = COALESCE(wk.course_id, w.course_id)
+                    WHERE w.id = {workspace_id}
+                    """
+                )
             )
-            .outerjoin(
-                ACLEntry,
-                (ACLEntry.workspace_id == Workspace.id)  # type: ignore[arg-type]  -- Column == returns ColumnElement
-                & (ACLEntry.user_id == user_id),
-            )
-            .outerjoin(
-                Activity,
-                Activity.id == Workspace.activity_id,  # type: ignore[arg-type]  -- Column == returns ColumnElement
-            )
-            .outerjoin(
-                Week,
-                Week.id == Activity.week_id,  # type: ignore[arg-type]  -- Column == returns ColumnElement
-            )
-            .outerjoin(
-                Course,
-                Course.id  # type: ignore[arg-type]  -- Column == returns ColumnElement
-                == func.coalesce(Week.course_id, Workspace.course_id),
-            )
-            .where(Workspace.id == workspace_id)  # type: ignore[arg-type]  -- Column == returns ColumnElement
-        )
-        ws_row = ws_result.first()
+        ).first()
         if ws_row is None:
             return None
 
-        workspace, is_template, explicit_acl, activity, week, course = ws_row
+        workspace = Workspace.model_validate(ws_row, from_attributes=True)
+        is_template = ws_row.is_template
+        explicit_acl = (
+            ACLEntry.model_validate(ws_row.acl_json) if ws_row.acl_json else None
+        )
+        activity = (
+            Activity.model_validate(ws_row.activity_json)
+            if ws_row.activity_json
+            else None
+        )
+        week = Week.model_validate(ws_row.week_json) if ws_row.week_json else None
+        course = (
+            Course.model_validate(ws_row.course_json) if ws_row.course_json else None
+        )
 
         # 2. Hierarchy resolution from the joined rows
         placement = _placement_from_joined_rows(
             workspace, activity, week, course, is_template=is_template
         )
 
-        # 3. Permission resolution (ACL pre-fetched by the query above)
+        # 3. Permission resolution. ACL, Course, and Activity were all
+        # hydrated by the query above -- threading them through avoids the
+        # session.get() re-fetches a naive per-field port of this query
+        # would still make on the staff/peer permission paths.
         if is_admin:
             permission: str | None = "owner"
         else:
             permission = await _resolve_effective_permission(
-                session, workspace, placement, user_id, explicit_acl
+                session,
+                workspace,
+                placement,
+                user_id,
+                _HydratedRowEntities(
+                    explicit=explicit_acl, course=course, activity=activity
+                ),
             )
 
         # 4. Privileged user IDs (staff + admins)
@@ -497,19 +565,27 @@ async def resolve_annotation_context(
         )
 
         # 5. Tags and tag groups
-        tags_result = await session.exec(
-            select(Tag)
-            .where(Tag.workspace_id == workspace_id)
-            .order_by(Tag.order_index)  # type: ignore[arg-type]  -- Column expression valid at runtime
-        )
-        tags = list(tags_result.all())
+        tag_rows = (
+            await session.execute(
+                tstring(
+                    t"SELECT * FROM tag WHERE workspace_id = {workspace_id}"
+                    t" ORDER BY order_index"
+                )
+            )
+        ).all()
+        tags = [Tag.model_validate(row, from_attributes=True) for row in tag_rows]
 
-        groups_result = await session.exec(
-            select(TagGroup)
-            .where(TagGroup.workspace_id == workspace_id)
-            .order_by(TagGroup.order_index)  # type: ignore[arg-type]  -- Column expression valid at runtime
-        )
-        tag_groups = list(groups_result.all())
+        group_rows = (
+            await session.execute(
+                tstring(
+                    t"SELECT * FROM tag_group WHERE workspace_id = {workspace_id}"
+                    t" ORDER BY order_index"
+                )
+            )
+        ).all()
+        tag_groups = [
+            TagGroup.model_validate(row, from_attributes=True) for row in group_rows
+        ]
 
         # 6. Active export job for the header, riding the same session so
         # the page render does not spend a separate pool checkout on it.
@@ -548,15 +624,22 @@ async def get_workspace_export_metadata(
             return None
 
         # Resolve owner display name via ACL -> User join
-        owner_result = await session.exec(
-            select(User.display_name)
-            .join(ACLEntry, ACLEntry.user_id == User.id)  # type: ignore[arg-type]  -- SQLAlchemy == returns ColumnElement, not bool
-            .where(
-                ACLEntry.workspace_id == workspace_id,
-                ACLEntry.permission == "owner",
+        owner_display_name = (
+            (
+                await session.execute(
+                    tstring(
+                        t"""
+                        SELECT u.display_name
+                        FROM "user" u
+                        JOIN acl_entry a ON a.user_id = u.id
+                        WHERE a.workspace_id = {workspace_id} AND a.permission = 'owner'
+                        """
+                    )
+                )
             )
+            .scalars()
+            .first()
         )
-        owner_display_name: str | None = owner_result.first()
 
         # Resolve placement using private helpers (same session)
         if workspace.activity_id is not None:
@@ -638,17 +721,27 @@ async def _resolve_activity_placement(
 
     Falls back to loose placement if any link in the chain is missing.
     """
-    result = await session.exec(
-        select(Activity, Week, Course)
-        .join(Week, Activity.week_id == Week.id)  # type: ignore[arg-type]  -- Column == returns ColumnElement
-        .join(Course, Week.course_id == Course.id)  # type: ignore[arg-type]  -- Column == returns ColumnElement
-        .where(Activity.id == activity_id)
-    )
-    row = result.first()
+    row = (
+        await session.execute(
+            tstring(
+                t"""
+                SELECT to_jsonb(a.*) AS activity_json,
+                       to_jsonb(wk.*) AS week_json,
+                       to_jsonb(c.*) AS course_json
+                FROM activity a
+                JOIN week wk ON wk.id = a.week_id
+                JOIN course c ON c.id = wk.course_id
+                WHERE a.id = {activity_id}
+                """
+            )
+        )
+    ).first()
     if row is None:
         return PlacementContext(placement_type="loose")
 
-    activity, week, course = row
+    activity = Activity.model_validate(row.activity_json)
+    week = Week.model_validate(row.week_json)
+    course = Course.model_validate(row.course_json)
     return _activity_placement(activity, week, course)
 
 
@@ -915,12 +1008,18 @@ async def list_workspaces_for_activity(
         List of Workspaces ordered by created_at.
     """
     async with get_session() as session:
-        result = await session.exec(
-            select(Workspace)
-            .where(Workspace.activity_id == activity_id)
-            .order_by(Workspace.created_at)  # type: ignore[arg-type]  # TODO(2026-Q2): Revisit when SQLModel updates type stubs
-        )
-        return list(result.all())
+        rows = (
+            await session.execute(
+                tstring(
+                    t"""
+                    SELECT * FROM workspace
+                    WHERE activity_id = {activity_id}
+                    ORDER BY created_at
+                    """
+                )
+            )
+        ).all()
+        return [Workspace.model_validate(row, from_attributes=True) for row in rows]
 
 
 async def list_loose_workspaces_for_course(
@@ -940,13 +1039,18 @@ async def list_loose_workspaces_for_course(
         List of loose Workspaces ordered by created_at.
     """
     async with get_session() as session:
-        result = await session.exec(
-            select(Workspace)
-            .where(Workspace.course_id == course_id)
-            .where(Workspace.activity_id == None)  # noqa: E711
-            .order_by(Workspace.created_at)  # type: ignore[arg-type]  # TODO(2026-Q2): Revisit when SQLModel updates type stubs
-        )
-        return list(result.all())
+        rows = (
+            await session.execute(
+                tstring(
+                    t"""
+                    SELECT * FROM workspace
+                    WHERE course_id = {course_id} AND activity_id IS NULL
+                    ORDER BY created_at
+                    """
+                )
+            )
+        ).all()
+        return [Workspace.model_validate(row, from_attributes=True) for row in rows]
 
 
 def _remap_uuid_str(raw: str, id_map: dict[UUID, UUID] | None) -> str:
@@ -1195,17 +1299,22 @@ async def clone_workspace_from_activity(
         )
 
         # Idempotency check: return existing workspace if already cloned
-        existing = await session.exec(
-            select(Workspace)
-            .join(ACLEntry, ACLEntry.workspace_id == Workspace.id)  # type: ignore[arg-type]  -- SQLAlchemy == returns ColumnElement, not bool
-            .where(
-                Workspace.activity_id == activity_id,
-                ACLEntry.user_id == user_id,
-                ACLEntry.permission == "owner",
+        existing_row = (
+            await session.execute(
+                tstring(
+                    t"""
+                    SELECT w.* FROM workspace w
+                    JOIN acl_entry a ON a.workspace_id = w.id
+                    WHERE w.activity_id = {activity_id}
+                      AND a.user_id = {user_id}
+                      AND a.permission = 'owner'
+                    LIMIT 1
+                    """
+                )
             )
-        )
-        found = existing.first()
-        if found is not None:
+        ).first()
+        if existing_row is not None:
+            found = Workspace.model_validate(existing_row, from_attributes=True)
             return found, {}
 
         activity = await session.get(Activity, activity_id)

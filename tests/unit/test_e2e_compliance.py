@@ -31,6 +31,13 @@ ALLOWED_JS_FILES = {
     # to emit synthetic selection events spanning block boundaries.
     # CSS.highlights introspection requires evaluate() (no Playwright API).
     "test_text_selection.py",
+    # Selection-capture regression tests (#502): the race under test is a
+    # server-side task-ordering hazard (tag-apply processed before its
+    # selection_made).  No behavioural driver can force that ordering
+    # deterministically, so evaluate() suppresses selection_made delivery
+    # as the reproducible limiting case.  CSS.highlights offset readback
+    # also requires evaluate() (no Playwright API).
+    "test_selection_capture_502.py",
     # Integration test for full CSS Highlight API flow: uses evaluate()
     # to locate text node bounding rects for mouse selection and to
     # introspect CSS.highlights entries (no Playwright API for either).

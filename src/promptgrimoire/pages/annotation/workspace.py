@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import json
 import time
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 from urllib.parse import urlencode
 from uuid import UUID
 
@@ -18,6 +18,7 @@ import structlog
 from nicegui import app, ui
 
 from promptgrimoire.auth import is_privileged_user
+from promptgrimoire.config import get_settings
 from promptgrimoire.db.acl import (
     grant_permission,
 )
@@ -35,7 +36,10 @@ from promptgrimoire.pages.annotation.broadcast import (
     _replay_existing_cursors,
     _setup_client_sync,
 )
-from promptgrimoire.pages.annotation.css import _build_tag_toolbar
+from promptgrimoire.pages.annotation.css import (
+    DocumentRenderCallbacks,
+    _build_tag_toolbar,
+)
 from promptgrimoire.pages.annotation.header import (
     _wrap_refresh_with_stale_download_clear,
     inject_copy_protection,
@@ -56,7 +60,6 @@ from promptgrimoire.pages.annotation.tag_quick_create import open_quick_create
 if TYPE_CHECKING:
     from nicegui import Client
 
-    from promptgrimoire.pages.annotation import PermissionLevel
 
 logger = structlog.get_logger()
 
@@ -132,15 +135,18 @@ def _create_tag_callbacks(
             )
             state.toolbar_container.clear()
 
-            async def _tag_click(key: str) -> None:
-                await _add_highlight(state, key)
+            async def _tag_click(key: str, selection: dict[str, Any] | None) -> None:
+                await _add_highlight(state, key, selection)
 
             _build_tag_toolbar(
                 state.tag_info_list or [],
                 _tag_click,
-                on_add_click=(on_add_tag if can_create_tags else None),
-                on_manage_click=on_manage_tags,
-                footer=state.toolbar_container,
+                state,
+                DocumentRenderCallbacks(
+                    on_add_click=(on_add_tag if can_create_tags else None),
+                    on_manage_click=on_manage_tags,
+                    footer=state.toolbar_container,
+                ),
             )
 
     state.refresh_toolbar = _rebuild_toolbar
@@ -255,7 +261,7 @@ async def _resolve_db_context(
     return None if client._deleted else (context, documents, first_doc)
 
 
-def _log_page_load_profile(
+def _log_page_load_profile(  # noqa: PLR0913, PLR0917 -- flat signature pinned by test_diagnostics positional-call guard; param-object migration: tracker ledger 8
     workspace_id: UUID,
     t_total: float,
     t_db: float,
@@ -295,6 +301,18 @@ def _log_page_load_profile(
         total_ui_ms=phases["page_total_ui_ms"],
         total_ms=phases["page_total_ms"],
     )
+
+
+def _mark_page_ready(title: str | None, documents: list[Any]) -> None:
+    """Update the skeleton title and signal readiness in one browser op.
+
+    Snapshot mode: the bootstrap appends the annotation-ready marker only
+    after the bundle mounts — readiness must follow the bundle, not the
+    skeleton.  Empty workspaces have no bundle, so they mark ready here.
+    """
+    _update_page_title(title)
+    if not (get_settings().snapshot.enabled and documents):
+        ui.element("div").props('data-testid="annotation-ready" style="display:none"')
 
 
 async def _load_workspace_content(
@@ -337,7 +355,7 @@ async def _load_workspace_content(
             workspace_id=workspace_id,
             user_name=_get_current_username(),
             user_id=auth_user.get("user_id"),
-            effective_permission=cast("PermissionLevel", context.permission),
+            effective_permission=context.permission,
             is_anonymous=ctx.anonymous_sharing,
             viewer_is_privileged=privileged,
             privileged_user_ids=context.privileged_user_ids,
@@ -407,12 +425,7 @@ async def _load_workspace_content(
             if protect:
                 inject_copy_protection()
 
-            # Update the generic skeleton title and signal readiness in one
-            # browser operation so observers cannot see completion first.
-            _update_page_title(context.workspace.title)
-            ui.element("div").props(
-                'data-testid="annotation-ready" style="display:none"'
-            )
+            _mark_page_ready(context.workspace.title, documents)
 
             _t_done = time.monotonic()
             _log_page_load_profile(

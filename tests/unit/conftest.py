@@ -201,6 +201,7 @@ def make_workspace_document():
 
     def _make(
         workspace_id: UUID | None = None,
+        *,
         type: str = "source",
         content: str = "",
         source_type: str = "text",

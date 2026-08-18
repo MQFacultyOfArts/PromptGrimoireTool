@@ -200,6 +200,23 @@ class IdleConfig(BaseModel):
     enabled: bool = True
 
 
+class SnapshotConfig(BaseModel):
+    """Initial annotation snapshot delivery (standalone service).
+
+    See docs/design-notes/2026-08-16-initial-snapshot-delivery.md.  When
+    enabled, the annotation page delivers the initial document/highlight/
+    sidebar bundle from the standalone snapshot service instead of the
+    NiceGUI element tree.  ``base_url`` is what the browser fetches from;
+    ``port`` is where the service binds; ``allow_origin`` is the CORS
+    origin granted to the bundle endpoint (the NiceGUI app's origin).
+    """
+
+    enabled: bool = False
+    base_url: str = "http://localhost:8210"
+    port: int = 8210
+    allow_origin: str = "http://localhost:8080"
+
+
 # ---------------------------------------------------------------------------
 # Branch detection for per-worktree database isolation
 # ---------------------------------------------------------------------------
@@ -237,6 +254,12 @@ def get_current_branch() -> str | None:
     return _current_branch()
 
 
+# Cap on the sanitised branch-name suffix appended to the database name;
+# PostgreSQL identifiers max out at 63 bytes, so this leaves room for the
+# base database name alongside the suffix.
+_MAX_BRANCH_SUFFIX_LENGTH = 40
+
+
 def _branch_db_suffix(branch: str | None) -> str:
     """Derive a database name suffix from the branch name.
 
@@ -253,9 +276,10 @@ def _branch_db_suffix(branch: str | None) -> str:
     if not sanitised:
         return ""
 
-    if len(sanitised) > 40:
+    if len(sanitised) > _MAX_BRANCH_SUFFIX_LENGTH:
         h = hashlib.sha256(branch.encode()).hexdigest()[:8]
-        sanitised = f"{sanitised[:31]}_{h}"
+        truncate_at = _MAX_BRANCH_SUFFIX_LENGTH - len(h) - 1
+        sanitised = f"{sanitised[:truncate_at]}_{h}"
 
     return sanitised
 
@@ -336,6 +360,7 @@ class Settings(BaseSettings):
     help: HelpConfig = HelpConfig()
     admission: AdmissionConfig = AdmissionConfig()
     idle: IdleConfig = IdleConfig()
+    snapshot: SnapshotConfig = SnapshotConfig()
 
     @model_validator(mode="after")
     def _apply_branch_db_suffix(self) -> Settings:

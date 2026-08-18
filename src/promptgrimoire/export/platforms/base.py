@@ -48,6 +48,10 @@ _CHROME_ID_PATTERNS = [
 # Pattern for thinking time indicators
 _THINKING_TIME_PATTERN = re.compile(r"^\d+s$")
 
+# Images at or below this pixel size in either dimension are treated as
+# chrome (icons, avatars) rather than content and removed.
+_SMALL_ICON_MAX_PX = 32
+
 
 def _remove_chrome_by_patterns(tree: LexborHTMLParser) -> None:
     """Remove elements matching chrome class and ID patterns."""
@@ -67,7 +71,9 @@ def _remove_chrome_images(tree: LexborHTMLParser) -> None:
         width = attrs.get("width", "")
         height = attrs.get("height", "")
         try:
-            if (width and int(width) < 32) or (height and int(height) < 32):
+            if (width and int(width) < _SMALL_ICON_MAX_PX) or (
+                height and int(height) < _SMALL_ICON_MAX_PX
+            ):
                 img.decompose()
                 continue
         except ValueError:

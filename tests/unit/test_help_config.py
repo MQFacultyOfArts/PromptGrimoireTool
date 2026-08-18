@@ -8,6 +8,8 @@ Verifies:
 
 from __future__ import annotations
 
+from typing import Any, cast
+
 import pytest
 from pydantic import ValidationError
 
@@ -133,4 +135,4 @@ class TestHelpConfigAlgoliaValidation:
     def test_invalid_backend_raises_validation_error(self) -> None:
         """Invalid help_backend value raises ValidationError."""
         with pytest.raises(ValidationError, match="help_backend"):
-            HelpConfig(help_backend="invalid")  # type: ignore[arg-type]
+            HelpConfig(help_backend=cast("Any", "invalid"))

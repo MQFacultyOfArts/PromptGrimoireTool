@@ -24,7 +24,7 @@ _JS_PATH = (
 class AnnotationSidebar(ui.element, component=_JS_PATH):
     """Custom Vue component wrapper for annotation sidebar."""
 
-    def __init__(
+    def __init__(  # noqa: PLR0913 -- param-object migration: tracker ledger 8
         self,
         items: list[dict[str, Any]] | None = None,
         *,
@@ -64,11 +64,12 @@ class AnnotationSidebar(ui.element, component=_JS_PATH):
         self._props["items"] = items
         self.update()
 
-    def refresh_items(
+    def refresh_items(  # noqa: PLR0913 -- param-object migration: tracker ledger 8
         self,
         highlights: list[dict[str, Any]],
         tag_info_map: dict[str, TagInfo],
         tag_colours: dict[str, str],
+        *,
         user_id: str | None,
         viewer_is_privileged: bool,
         privileged_user_ids: frozenset[str],

@@ -63,16 +63,21 @@ def _get_owner_display_name(
 
 def _render_owner_group(
     owner_rows: list[NavigatorRow],
-    user_id: UUID,
-    is_privileged: bool,
+    page_state: PageState,
     *,
     snippets: dict[UUID, str] | None = None,
-    page_state: PageState | None = None,
     show_header: bool = True,
 ) -> None:
-    """Render an owner group: header, placed entries, then loose entries."""
+    """Render an owner group: header, placed entries, then loose entries.
+
+    ``user_id``/``is_privileged`` are read from ``page_state`` rather than
+    taken as separate parameters -- every caller already threads the same
+    ``page_state`` through, so passing them again would only duplicate it.
+    """
     if show_header:
-        display_name = _get_owner_display_name(owner_rows[0], user_id, is_privileged)
+        display_name = _get_owner_display_name(
+            owner_rows[0], page_state["user_id"], page_state["is_privileged"]
+        )
         ui.label(display_name).classes(
             "text-sm font-semibold mt-3 mb-1 ml-2 text-gray-600"
         )
@@ -96,14 +101,16 @@ def _render_owner_group(
 
 async def _render_shared_in_unit(
     shared_in_unit_rows: list[NavigatorRow],
-    enrolled_course_ids: list[UUID],
     course_cache: dict[UUID, Course],
-    user_id: UUID,
-    is_privileged: bool,
     snippets: dict[UUID, str] | None,
-    page_state: PageState | None = None,
+    page_state: PageState,
 ) -> None:
-    """Render shared_in_unit sections grouped by course and owner."""
+    """Render shared_in_unit sections grouped by course and owner.
+
+    ``enrolled_course_ids`` is read from ``page_state``; see
+    ``_render_owner_group`` for why.
+    """
+    enrolled_course_ids = page_state["enrolled_course_ids"]
     by_course = group_shared_in_unit_by_course(shared_in_unit_rows)
     for course_id in enrolled_course_ids:
         course_rows = by_course.get(course_id, [])
@@ -115,24 +122,22 @@ async def _render_shared_in_unit(
         ).props('data-testid="section-header-shared-in-unit"')
 
         for _owner_id, owner_rows in group_by_owner(course_rows).items():
-            _render_owner_group(
-                owner_rows,
-                user_id,
-                is_privileged,
-                snippets=snippets,
-                page_state=page_state,
-            )
+            _render_owner_group(owner_rows, page_state, snippets=snippets)
 
 
 async def _render_simple_section(
     section_key: str,
     section_rows: list[NavigatorRow],
-    user_id: UUID,
-    is_privileged: bool,
     snippets: dict[UUID, str] | None,
-    page_state: PageState | None = None,
+    page_state: PageState,
 ) -> None:
-    """Render a non-shared_in_unit section."""
+    """Render a non-shared_in_unit section.
+
+    ``user_id``/``is_privileged`` are read from ``page_state``; see
+    ``_render_owner_group`` for why.
+    """
+    user_id = page_state["user_id"]
+    is_privileged = page_state["is_privileged"]
     display_name = SECTION_DISPLAY_NAMES.get(section_key, section_key)
     testid = f"section-header-{section_key.replace('_', '-')}"
     ui.label(display_name).classes(
@@ -170,16 +175,19 @@ async def _populate_course_cache(
 
 async def render_sections(
     rows: list[NavigatorRow],
-    user_id: UUID,
-    is_privileged: bool,
-    enrolled_course_ids: list[UUID],
+    page_state: PageState,
+    *,
     snippets: dict[UUID, str] | None = None,
-    page_state: PageState | None = None,
 ) -> None:
     """Render all navigator sections from the given rows.
 
     Groups rows by section and renders them in fixed order.
     Empty sections produce no output (AC1.7).
+
+    ``user_id``/``is_privileged``/``enrolled_course_ids`` are read from
+    ``page_state`` -- every caller already builds ``page_state`` from these
+    same values, so taking them as separate parameters would only duplicate
+    what ``page_state`` carries.
     """
     grouped = group_rows_by_section(rows)
     shared_rows = grouped.get("shared_in_unit", [])
@@ -189,24 +197,13 @@ async def render_sections(
         if section_key == "shared_in_unit":
             if shared_rows:
                 await _render_shared_in_unit(
-                    shared_rows,
-                    enrolled_course_ids,
-                    course_cache,
-                    user_id,
-                    is_privileged,
-                    snippets,
-                    page_state=page_state,
+                    shared_rows, course_cache, snippets, page_state
                 )
         else:
             section_rows = grouped.get(section_key, [])
             if section_rows:
                 await _render_simple_section(
-                    section_key,
-                    section_rows,
-                    user_id,
-                    is_privileged,
-                    snippets,
-                    page_state=page_state,
+                    section_key, section_rows, snippets, page_state
                 )
 
 
@@ -369,9 +366,6 @@ def _append_simple_section(
 async def append_new_rows(
     new_rows: list[NavigatorRow],
     *,
-    user_id: UUID,
-    is_privileged: bool,
-    enrolled_course_ids: list[UUID],
     page_state: PageState,
     sections_container: ui.column,
 ) -> None:
@@ -379,7 +373,13 @@ async def append_new_rows(
 
     Scroll position is preserved because existing DOM is never
     destroyed — new elements are appended at the bottom.
+
+    ``user_id``/``is_privileged``/``enrolled_course_ids`` are read from
+    ``page_state``; see ``render_sections`` for why.
     """
+    user_id = page_state["user_id"]
+    is_privileged = page_state["is_privileged"]
+    enrolled_course_ids = page_state["enrolled_course_ids"]
     grouped = group_rows_by_section(new_rows)
 
     with sections_container:

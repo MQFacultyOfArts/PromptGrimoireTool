@@ -11,6 +11,13 @@ import json
 import sys
 from pathlib import Path
 
+# Tool-result content longer than this is elided for readability.
+_TOOL_RESULT_TRUNCATE_CHARS = 500
+# argv layouts: script alone is invalid; script+input is stdout;
+# script+input+output writes a file.
+_MIN_ARGV_WITH_INPUT = 2
+_MIN_ARGV_WITH_OUTPUT = 3
+
 
 def _format_tool_use(tool_name: str, tool_input: dict) -> str:
     """Format a tool use block compactly."""
@@ -52,8 +59,8 @@ def _format_block(block: dict) -> str | None:
             )
         case "tool_result":
             content = block.get("content", "")
-            if isinstance(content, str) and len(content) > 500:
-                content = content[:500] + "\n... (truncated)"
+            if isinstance(content, str) and len(content) > _TOOL_RESULT_TRUNCATE_CHARS:
+                content = content[:_TOOL_RESULT_TRUNCATE_CHARS] + "\n... (truncated)"
             if content:
                 return f"```\n{content}\n```"
     return None
@@ -65,54 +72,66 @@ def extract_text_content(content_list: list) -> str:
     return "\n\n".join(p for p in parts if p)
 
 
+def _parse_jsonl_line(raw_line: str) -> dict | None:
+    """Parse one JSONL line into a record dict; None if blank or invalid JSON."""
+    stripped = raw_line.strip()
+    if not stripped:
+        return None
+    try:
+        return json.loads(stripped)
+    except json.JSONDecodeError:
+        return None
+
+
+def _record_to_markdown_section(record: dict) -> str | None:
+    """Render one parsed transcript record as a markdown section.
+
+    Returns None for records that aren't a renderable user/assistant turn
+    (progress records, file-history-snapshot, empty or non-text content).
+    """
+    record_type = record.get("type")
+    if record_type not in ("user", "assistant"):
+        return None
+
+    message = record.get("message", {})
+    role = message.get("role", record_type)
+    content = message.get("content", [])
+
+    if isinstance(content, str):
+        text = content
+    elif isinstance(content, list):
+        text = extract_text_content(content)
+    else:
+        return None
+
+    if not text.strip():
+        return None
+
+    if role == "user":
+        return f"## User\n\n{text}\n"
+    if role == "assistant":
+        return f"## Assistant\n\n{text}\n"
+    return None
+
+
 def convert_jsonl_to_md(jsonl_path: Path) -> str:
     """Convert JSONL transcript to markdown."""
-    lines = []
-    lines.append(f"# Conversation: {jsonl_path.stem}\n")
+    lines = [f"# Conversation: {jsonl_path.stem}\n"]
 
     with jsonl_path.open() as f:
         for raw_line in f:
-            stripped = raw_line.strip()
-            if not stripped:
+            record = _parse_jsonl_line(raw_line)
+            if record is None:
                 continue
-
-            try:
-                record = json.loads(stripped)
-            except json.JSONDecodeError:
-                continue
-
-            record_type = record.get("type")
-            message = record.get("message", {})
-
-            # Skip non-message records (progress, file-history-snapshot, etc.)
-            if record_type not in ("user", "assistant"):
-                continue
-
-            role = message.get("role", record_type)
-            content = message.get("content", [])
-
-            # Handle string content (simple user messages)
-            if isinstance(content, str):
-                text = content
-            elif isinstance(content, list):
-                text = extract_text_content(content)
-            else:
-                continue
-
-            if not text.strip():
-                continue
-
-            # Format as markdown
-            if role == "user":
-                lines.append(f"## User\n\n{text}\n")
-            elif role == "assistant":
-                lines.append(f"## Assistant\n\n{text}\n")
+            section = _record_to_markdown_section(record)
+            if section is not None:
+                lines.append(section)
 
     return "\n".join(lines)
 
 
 def main():
-    if len(sys.argv) < 2:
+    if len(sys.argv) < _MIN_ARGV_WITH_INPUT:
         print(__doc__, file=sys.stderr)
         sys.exit(1)
 
@@ -123,7 +142,7 @@ def main():
 
     md_content = convert_jsonl_to_md(input_path)
 
-    if len(sys.argv) >= 3:
+    if len(sys.argv) >= _MIN_ARGV_WITH_OUTPUT:
         output_path = Path(sys.argv[2])
         output_path.write_text(md_content)
         print(f"Written to {output_path}", file=sys.stderr)

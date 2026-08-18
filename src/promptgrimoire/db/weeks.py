@@ -9,7 +9,8 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
-from sqlmodel import or_, select
+from sqlalchemy import tstring
+from sqlmodel import select
 
 if TYPE_CHECKING:
     from uuid import UUID
@@ -73,10 +74,18 @@ async def list_weeks(course_id: UUID) -> list[Week]:
         List of Week objects ordered by week_number.
     """
     async with get_session() as session:
-        result = await session.exec(
-            select(Week).where(Week.course_id == course_id).order_by("week_number")
+        result = await session.execute(
+            tstring(
+                t"""
+                SELECT id, course_id, week_number, title, is_published,
+                       visible_from, created_at
+                FROM week
+                WHERE course_id = {course_id}
+                ORDER BY week_number
+                """
+            )
         )
-        return list(result.all())
+        return [Week(**row._mapping) for row in result.all()]
 
 
 async def publish_week(week_id: UUID) -> bool:
@@ -320,26 +329,35 @@ async def get_visible_weeks(
         # Instructors and above see all weeks
         staff_roles = await get_staff_roles(session=session)
         if enrollment.role in staff_roles:
-            result = await session.exec(
-                select(Week).where(Week.course_id == course_id).order_by("week_number")
+            result = await session.execute(
+                tstring(
+                    t"""
+                    SELECT id, course_id, week_number, title, is_published,
+                           visible_from, created_at
+                    FROM week
+                    WHERE course_id = {course_id}
+                    ORDER BY week_number
+                    """
+                )
             )
-            return list(result.all())
+            return [Week(**row._mapping) for row in result.all()]
 
         # Students see published weeks where visible_from has passed
         now = datetime.now(UTC)
-        result = await session.exec(
-            select(Week)
-            .where(Week.course_id == course_id)
-            .where(Week.is_published == True)  # noqa: E712
-            .where(
-                or_(
-                    Week.visible_from == None,  # noqa: E711
-                    Week.visible_from <= now,  # type: ignore[operator]  # or_ handles None
-                )
+        result = await session.execute(
+            tstring(
+                t"""
+                SELECT id, course_id, week_number, title, is_published,
+                       visible_from, created_at
+                FROM week
+                WHERE course_id = {course_id}
+                  AND is_published = true
+                  AND (visible_from IS NULL OR visible_from <= {now})
+                ORDER BY week_number
+                """
             )
-            .order_by("week_number")
         )
-        return list(result.all())
+        return [Week(**row._mapping) for row in result.all()]
 
 
 async def can_access_week(

@@ -237,6 +237,7 @@ def pdf_exporter() -> Callable[..., Coroutine[Any, Any, PdfExportResult]]:
         html: str,
         highlights: list[dict[str, Any]],
         test_name: str,
+        *,
         tag_colours: dict[str, str] | None = None,
         general_notes: str = "",
         acceptance_criteria: str = "",

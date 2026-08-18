@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING
 
 import sqlalchemy as sa
 import structlog
+from sqlalchemy import tstring
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import col, select
 
@@ -41,16 +42,21 @@ async def create_export_job(
     is the real guard; the application check provides a friendly error.
     """
     async with get_session() as session:
-        # Application-level check (friendly error, not race-proof)
-        existing = (
-            await session.exec(
-                select(ExportJob).where(
-                    ExportJob.user_id == user_id,
-                    ExportJob.status.in_(["queued", "running"]),  # type: ignore[union-attr]  -- Column has .in_()
-                )
+        # Application-level check (friendly error, not race-proof). Raw SQL,
+        # not ORM select().where(Model.field.in_(...)) -- only existence is
+        # needed, and ty cannot type a bare .in_() call on a Model column
+        # descriptor (astral-sh/ty#3421).
+        active_statuses = ["queued", "running"]
+        existing = await session.execute(
+            tstring(
+                t"""
+                SELECT 1 FROM export_job
+                WHERE user_id = {user_id} AND status = ANY({active_statuses})
+                LIMIT 1
+                """
             )
-        ).first()
-        if existing:
+        )
+        if existing.first() is not None:
             raise BusinessLogicError("A PDF export is already in progress")
 
         job = ExportJob(

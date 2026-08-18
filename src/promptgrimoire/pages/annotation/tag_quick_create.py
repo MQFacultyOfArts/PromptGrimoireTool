@@ -8,6 +8,7 @@ and ``_refresh_tag_state`` from ``tag_management_save`` (leaf module).
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 from uuid import UUID
 
@@ -82,13 +83,20 @@ def _build_colour_picker(
     return swatch_buttons, color_el
 
 
+@dataclass(frozen=True, slots=True)
+class _SavedSelection:
+    """A captured text-selection range to restore before highlighting it."""
+
+    start: int
+    end: int
+
+
 async def _quick_create_save(
     state: PageState,
     tag_name: str,
     selected_color: list[str],
     group_select: ui.select,
-    saved_start: int | None,
-    saved_end: int | None,
+    saved_selection: _SavedSelection | None,
 ) -> bool:
     """Validate, create tag, optionally add highlight. Return True on success."""
     if not tag_name or not tag_name.strip():
@@ -115,14 +123,19 @@ async def _quick_create_save(
     await _refresh_tag_state(state, skip_card_rebuild=True)
 
     tag_id = getattr(new_tag, "id", None)
-    if saved_start is not None and saved_end is not None and tag_id is not None:
+    if saved_selection is not None and tag_id is not None:
         from promptgrimoire.pages.annotation.highlights import (  # noqa: PLC0415
             _add_highlight,
         )
 
-        state.selection_start = saved_start
-        state.selection_end = saved_end
-        await _add_highlight(state, str(tag_id))
+        await _add_highlight(
+            state,
+            str(tag_id),
+            {
+                "start_char": saved_selection.start,
+                "end_char": saved_selection.end,
+            },
+        )
 
     return True
 
@@ -190,6 +203,12 @@ async def open_quick_create(state: PageState) -> None:
                 on_click=dialog.close,
             ).props('flat data-testid="quick-create-cancel-btn"')
 
+            saved_selection = (
+                _SavedSelection(start=saved_start, end=saved_end)
+                if saved_start is not None and saved_end is not None
+                else None
+            )
+
             async def _save(text: str) -> None:
                 create_btn.disable()
                 create_btn.props("loading")
@@ -199,8 +218,7 @@ async def open_quick_create(state: PageState) -> None:
                         text,
                         selected_color,
                         group_select,
-                        saved_start,
-                        saved_end,
+                        saved_selection,
                     )
                     if not ok:
                         return

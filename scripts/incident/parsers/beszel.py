@@ -26,6 +26,7 @@ from pathlib import Path
 import httpx
 
 _BESZEL_ENV_FILE = Path.home() / ".config" / "beszel" / "env"
+_PAGE_SIZE = 200
 
 
 def _parse_env_file(path: Path) -> dict[str, str]:
@@ -76,7 +77,7 @@ def _authenticate(client: httpx.Client, hub_url: str) -> str:
         f"{hub_url}/api/collections/_superusers/auth-with-password",
         json={"identity": email, "password": password},
     )
-    if resp.status_code != 200:
+    if resp.status_code != httpx.codes.OK:
         print(
             f"Error: Beszel auth failed (HTTP {resp.status_code}). "
             "Check BESZEL_EMAIL/BESZEL_PASSWORD.",
@@ -84,6 +85,67 @@ def _authenticate(client: httpx.Client, hub_url: str) -> str:
         )
         raise SystemExit(1)
     return resp.json()["token"]
+
+
+def _at(seq: list | None, index: int) -> float | None:
+    """Return ``seq[index]`` if present, else ``None``."""
+    return seq[index] if seq and len(seq) > index else None
+
+
+def _stats_from_record(record: dict) -> dict:
+    """Normalise one PocketBase ``system_stats`` record into a flat metrics dict."""
+    stats = record.get("stats", {})
+    la = stats.get("la", [None, None, None])
+    # b = [sent, recv] bandwidth in bytes/s
+    bandwidth = stats.get("b", [None, None])
+    return {
+        "ts_utc": record["created"],
+        "cpu": stats.get("cpu"),
+        "mem_used": stats.get("mu"),
+        "mem_percent": stats.get("mp"),
+        "net_sent": _at(bandwidth, 0),
+        "net_recv": _at(bandwidth, 1),
+        "disk_read": stats.get("dr"),
+        "disk_write": stats.get("dw"),
+        "load_1": _at(la, 0),
+        "load_5": _at(la, 1),
+        "load_15": _at(la, 2),
+    }
+
+
+def _fetch_all_pages(
+    client: httpx.Client,
+    hub_url: str,
+    collection: str,
+    pb_filter: str,
+    headers: dict[str, str],
+) -> list[dict]:
+    """Fetch and normalise every page of records matching ``pb_filter``."""
+    results: list[dict] = []
+    page = 1
+
+    while True:
+        resp = client.get(
+            f"{hub_url}/api/collections/{collection}/records",
+            params={
+                "filter": pb_filter,
+                "page": page,
+                "perPage": _PAGE_SIZE,
+                "sort": "created",
+            },
+            headers=headers,
+        )
+        resp.raise_for_status()
+        body = resp.json()
+
+        results.extend(_stats_from_record(record) for record in body.get("items", []))
+
+        total_pages = body.get("totalPages", 1)
+        if page >= total_pages:
+            break
+        page += 1
+
+    return results
 
 
 def fetch_beszel_metrics(
@@ -119,53 +181,12 @@ def fetch_beszel_metrics(
         On connection, auth, or HTTP errors (exit code 1, clear message).
     """
     pb_filter = f'created >= "{start_utc}" && created <= "{end_utc}"'
-    results: list[dict] = []
-    page = 1
 
     try:
         with httpx.Client() as client:
             token = _authenticate(client, hub_url)
             headers = {"Authorization": f"Bearer {token}"}
-
-            while True:
-                resp = client.get(
-                    f"{hub_url}/api/collections/{collection}/records",
-                    params={
-                        "filter": pb_filter,
-                        "page": page,
-                        "perPage": 200,
-                        "sort": "created",
-                    },
-                    headers=headers,
-                )
-                resp.raise_for_status()
-                body = resp.json()
-
-                for record in body.get("items", []):
-                    stats = record.get("stats", {})
-                    la = stats.get("la", [None, None, None])
-                    # b = [sent, recv] bandwidth in bytes/s
-                    bandwidth = stats.get("b", [None, None])
-                    results.append(
-                        {
-                            "ts_utc": record["created"],
-                            "cpu": stats.get("cpu"),
-                            "mem_used": stats.get("mu"),
-                            "mem_percent": stats.get("mp"),
-                            "net_sent": bandwidth[0] if bandwidth else None,
-                            "net_recv": bandwidth[1] if bandwidth else None,
-                            "disk_read": stats.get("dr"),
-                            "disk_write": stats.get("dw"),
-                            "load_1": la[0] if la else None,
-                            "load_5": la[1] if len(la) > 1 else None,
-                            "load_15": la[2] if len(la) > 2 else None,
-                        }
-                    )
-
-                total_pages = body.get("totalPages", 1)
-                if page >= total_pages:
-                    break
-                page += 1
+            return _fetch_all_pages(client, hub_url, collection, pb_filter, headers)
 
     except httpx.ConnectError:
         print(
@@ -181,5 +202,3 @@ def fetch_beszel_metrics(
             file=sys.stderr,
         )
         raise SystemExit(1) from None
-
-    return results

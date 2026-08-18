@@ -316,7 +316,7 @@ def _build_span_tag(
     return open_tag, close_tag
 
 
-def _insert_spans_into_html(
+def _insert_spans_into_html(  # noqa: PLR0913, PLR0917 -- caller passes positionally; param-object migration: tracker ledger 8
     html: str,
     regions: list[_HlRegion],
     text_nodes: list[TextNodeInfo],

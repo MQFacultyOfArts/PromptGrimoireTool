@@ -93,7 +93,7 @@ def _run_retry_node(node_id: str) -> subprocess.CompletedProcess[str]:
     )
 
 
-def _record_retry_result(
+def _record_retry_result(  # noqa: PLR0913 -- all-kw-only classification helper; param-object migration: tracker ledger 8
     *,
     index: int,
     total: int,
@@ -180,7 +180,7 @@ def _retry_e2e_tests_in_isolation(
     return 1
 
 
-async def retry_failed_files_in_isolation(
+async def retry_failed_files_in_isolation(  # noqa: PLR0913 -- cross-file callback contract pinned by test_retry_forwards_browser_to_run_worker_for_lane; param-object migration: tracker ledger 8
     lane: LaneSpec,
     worker: Callable[..., Awaitable[WorkerResult]],
     *,

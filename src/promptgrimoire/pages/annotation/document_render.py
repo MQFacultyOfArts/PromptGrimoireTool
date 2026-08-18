@@ -17,6 +17,7 @@ from nicegui import ui
 from promptgrimoire.pages.annotation.content_form import _render_add_content_form
 from promptgrimoire.pages.annotation.css import _build_tag_toolbar
 from promptgrimoire.pages.annotation.document import (
+    DocumentRenderCallbacks,
     _render_document_with_highlights,
 )
 from promptgrimoire.pages.annotation.highlights import _add_highlight
@@ -65,7 +66,7 @@ def render_content_form_outside_refreshable(
         return wrapper
 
 
-async def render_document_container(
+async def render_document_container(  # noqa: PLR0913 -- param-object migration: tracker ledger 8
     state: PageState,
     doc: Any,
     crdt_doc: Any,
@@ -80,9 +81,11 @@ async def render_document_container(
         state,
         doc,
         crdt_doc,
-        on_add_click=on_add_tag,
-        on_manage_click=on_manage_tags,
-        footer=footer,
+        DocumentRenderCallbacks(
+            on_add_click=on_add_tag,
+            on_manage_click=on_manage_tags,
+            footer=footer,
+        ),
     )
     logger.debug("[RENDER] document rendered")
 
@@ -112,13 +115,16 @@ def render_empty_template_toolbar(
     """
     logger.debug("[RENDER] no documents, showing toolbar + add content form")
 
-    async def handle_tag_click(tag_key: str) -> None:
-        await _add_highlight(state, tag_key)
+    async def handle_tag_click(tag_key: str, selection: dict[str, Any] | None) -> None:
+        await _add_highlight(state, tag_key, selection)
 
     state.toolbar_container = _build_tag_toolbar(
         state.tag_info_list or [],
         handle_tag_click,
-        on_add_click=(on_add_tag if can_create_tags else None),
-        on_manage_click=on_manage_tags,
-        footer=footer,
+        state,
+        DocumentRenderCallbacks(
+            on_add_click=(on_add_tag if can_create_tags else None),
+            on_manage_click=on_manage_tags,
+            footer=footer,
+        ),
     )

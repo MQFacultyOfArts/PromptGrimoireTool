@@ -32,7 +32,10 @@ from promptgrimoire.pages.annotation.pdf_export import (
     apply_export_recovery,
 )
 from promptgrimoire.pages.annotation.placement import show_placement_dialog
-from promptgrimoire.pages.annotation.sharing import render_sharing_controls
+from promptgrimoire.pages.annotation.sharing import (
+    SharingUiFlags,
+    render_sharing_controls,
+)
 
 logger = structlog.get_logger()
 
@@ -314,7 +317,7 @@ def _render_placement_chip(
     return placement_chip
 
 
-async def render_workspace_header(
+async def render_workspace_header(  # noqa: PLR0913 -- param-object migration: tracker ledger 8
     state: PageState,
     workspace_id: UUID,
     protect: bool = False,
@@ -413,9 +416,11 @@ async def render_workspace_header(
         # Sharing controls (Phase 5)
         render_sharing_controls(
             workspace_id=workspace_id,
-            allow_sharing=allow_sharing,
-            shared_with_class=shared_with_class,
-            can_manage_sharing=can_manage_sharing,
-            viewer_is_privileged=state.viewer_is_privileged,
             grantor_id=user_id,
+            flags=SharingUiFlags(
+                allow_sharing=allow_sharing,
+                shared_with_class=shared_with_class,
+                can_manage_sharing=can_manage_sharing,
+                viewer_is_privileged=state.viewer_is_privileged,
+            ),
         )

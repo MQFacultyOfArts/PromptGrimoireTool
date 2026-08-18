@@ -514,7 +514,7 @@ def test_run_serial_playwright_e2e_selects_only_playwright_path(
     patch_serial_playwright_infra: None,  # noqa: ARG001 - fixture side effects
 ) -> None:
     """Serial Playwright lane uses `tests/e2e` path boundary, never NiceGUI marker."""
-    from promptgrimoire.cli.e2e import _run_serial_playwright_e2e
+    from promptgrimoire.cli.e2e import PlaywrightRunOptions, _run_serial_playwright_e2e
 
     captured: dict[str, Any] = {}
 
@@ -536,7 +536,7 @@ def test_run_serial_playwright_e2e_selects_only_playwright_path(
     try:
         exit_code = _run_serial_playwright_e2e(
             ["-k", "test_annotation_nav_home_navigates_to_navigator"],
-            use_pyspy=False,
+            PlaywrightRunOptions(use_pyspy=False),
         )
     finally:
         os.environ.pop("E2E_BASE_URL", None)
@@ -554,7 +554,7 @@ def test_shared_playwright_marks_concurrent_workers(
     patch_serial_playwright_infra: None,  # noqa: ARG001 - fixture side effects
 ) -> None:
     """Concurrent workers must not run the destructive global cleanup fixture."""
-    from promptgrimoire.cli.e2e import _run_shared_playwright_e2e
+    from promptgrimoire.cli.e2e import PlaywrightRunOptions, _run_shared_playwright_e2e
 
     observed: list[str | None] = []
 
@@ -564,7 +564,9 @@ def test_shared_playwright_marks_concurrent_workers(
 
     monkeypatch.setattr("promptgrimoire.cli.e2e._run_pytest", _fake_run_pytest)
 
-    _run_shared_playwright_e2e([], use_pyspy=False, worker_count=4)
+    _run_shared_playwright_e2e(
+        [], PlaywrightRunOptions(use_pyspy=False, worker_count=4)
+    )
 
     assert observed == ["1"]
     assert "E2E_SHARED_SERVER" not in os.environ
@@ -574,7 +576,7 @@ def test_parallel_playwright_reserves_cpu_for_shared_services(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Four available CPUs yield two clients, leaving capacity for shared I/O."""
-    from promptgrimoire.cli.e2e import run_playwright_lane
+    from promptgrimoire.cli.e2e import PlaywrightRunOptions, run_playwright_lane
 
     captured: dict[str, int] = {}
 
@@ -589,16 +591,12 @@ def test_parallel_playwright_reserves_cpu_for_shared_services(
 
     def _capture_worker_count(
         _args: list[str],
-        *,
-        use_pyspy: bool,
-        worker_count: int,
-        fail_fast: bool,
-        browser: str | None,
+        options: PlaywrightRunOptions,
     ) -> int:
-        assert use_pyspy is False
-        assert fail_fast is False
-        assert browser == "chromium"
-        captured["worker_count"] = worker_count
+        assert options.use_pyspy is False
+        assert options.fail_fast is False
+        assert options.browser == "chromium"
+        captured["worker_count"] = options.worker_count
         return 0
 
     monkeypatch.setattr(
@@ -860,7 +858,7 @@ def test_run_slow_lanes_runs_all_lanes_then_latexmk(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Slow lane runs all standard lanes first, then latexmk-specific lanes."""
-    from promptgrimoire.cli.e2e import run_slow_lanes
+    from promptgrimoire.cli.e2e import PlaywrightRunOptions, run_slow_lanes
     from promptgrimoire.cli.e2e._lanes import LaneResult
 
     captured: dict[str, object] = {}
@@ -871,17 +869,13 @@ def test_run_slow_lanes_runs_all_lanes_then_latexmk(
 
     def _fake_playwright(
         extra_args: list[str],
-        *,
-        use_pyspy: bool,
-        marker_expr: str,
-        test_timeout: int | None = None,
-        log_file: Path | None = None,
+        options: PlaywrightRunOptions,
     ) -> int:
         captured["playwright_args"] = extra_args
-        captured["playwright_use_pyspy"] = use_pyspy
-        captured["playwright_test_timeout"] = test_timeout
-        captured["playwright_marker_expr"] = marker_expr
-        captured["playwright_log_file"] = log_file
+        captured["playwright_use_pyspy"] = options.use_pyspy
+        captured["playwright_test_timeout"] = options.test_timeout
+        captured["playwright_marker_expr"] = options.marker_expr
+        captured["playwright_log_file"] = options.log_file
         captured["e2e_skip_latexmk"] = os.environ["E2E_SKIP_LATEXMK"]
         return 0
 
@@ -1221,7 +1215,7 @@ def test_serial_playwright_includes_browser_flag(
     patch_serial_playwright_infra: None,  # noqa: ARG001 - fixture side effects
 ) -> None:
     """Serial mode inserts --browser into default_args when specified."""
-    from promptgrimoire.cli.e2e import _run_serial_playwright_e2e
+    from promptgrimoire.cli.e2e import PlaywrightRunOptions, _run_serial_playwright_e2e
 
     captured: dict[str, Any] = {}
 
@@ -1239,7 +1233,9 @@ def test_serial_playwright_includes_browser_flag(
     monkeypatch.setattr("promptgrimoire.cli.e2e._run_pytest", _fake_run_pytest)
 
     try:
-        _run_serial_playwright_e2e([], use_pyspy=False, browser="firefox")
+        _run_serial_playwright_e2e(
+            [], PlaywrightRunOptions(use_pyspy=False, browser="firefox")
+        )
     finally:
         os.environ.pop("E2E_BASE_URL", None)
 
@@ -1253,7 +1249,7 @@ def test_serial_playwright_omits_browser_flag_by_default(
     patch_serial_playwright_infra: None,  # noqa: ARG001 - fixture side effects
 ) -> None:
     """Serial mode without browser param produces no --browser flag."""
-    from promptgrimoire.cli.e2e import _run_serial_playwright_e2e
+    from promptgrimoire.cli.e2e import PlaywrightRunOptions, _run_serial_playwright_e2e
 
     captured: dict[str, Any] = {}
 
@@ -1271,7 +1267,7 @@ def test_serial_playwright_omits_browser_flag_by_default(
     monkeypatch.setattr("promptgrimoire.cli.e2e._run_pytest", _fake_run_pytest)
 
     try:
-        _run_serial_playwright_e2e([], use_pyspy=False)
+        _run_serial_playwright_e2e([], PlaywrightRunOptions(use_pyspy=False))
     finally:
         os.environ.pop("E2E_BASE_URL", None)
 

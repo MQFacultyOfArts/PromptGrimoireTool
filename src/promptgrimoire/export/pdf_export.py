@@ -407,16 +407,23 @@ def _build_word_count_badge(
     return r"\noindent\textit{" + label + "}\n" + r"\vspace{1em}" + "\n"
 
 
-async def generate_tex_only(
+# PLR0913 (too many arguments): html_content/highlights/tag_colours/output_dir
+# plus independent, orthogonal export knobs (content, notes, word-count
+# limits, destination), all already keyword-only (PLR0917 satisfied below)
+# and consumed as kwargs by every call site. Splitting into a param object
+# would require updating call sites in cli/export.py, cli/testing.py,
+# pages/highlight_api_demo.py and export/worker.py plus ~18 test modules --
+# out of scope for this cleanup pass.
+async def generate_tex_only(  # noqa: PLR0913
     html_content: str,
     highlights: list[dict[str, Any]],
     tag_colours: dict[str, str],
     output_dir: Path,
+    *,
     general_notes: str = "",
     notes_latex: str = "",
     word_to_legal_para: dict[int, int | None] | None = None,
     filename: str = "annotated_document",
-    *,
     word_count: int | None = None,
     word_minimum: int | None = None,
     word_limit: int | None = None,
@@ -484,17 +491,21 @@ async def generate_tex_only(
     return tex_path
 
 
-async def export_annotation_pdf(
+# PLR0913: same rationale as generate_tex_only above -- independent,
+# orthogonal export knobs, already keyword-only, consumed as kwargs by
+# every call site (see the comment there for the external callers a
+# param-object split would need to touch).
+async def export_annotation_pdf(  # noqa: PLR0913
     html_content: str,
     highlights: list[dict[str, Any]],
     tag_colours: dict[str, str],
+    *,
     general_notes: str = "",
     notes_latex: str = "",
     word_to_legal_para: dict[int, int | None] | None = None,
     output_dir: Path | None = None,
     user_id: str | None = None,
     filename: str = "annotated_document",
-    *,
     workspace_id: str | None = None,
     word_count: int | None = None,
     word_minimum: int | None = None,

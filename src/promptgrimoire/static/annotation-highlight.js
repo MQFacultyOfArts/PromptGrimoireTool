@@ -400,6 +400,12 @@ function setupAnnotationSelection(containerId, emitCallback, menuId) {
                 menu.style.top = topPos + 'px';
                 menu.style.left = endRect.left + 'px';
             }
+            // Client-side selection capture (#502): tag-apply triggers
+            // read this synchronously in their js_handler so the apply
+            // event carries the offsets instead of racing the separate
+            // selection_made socket event.  Cleared alongside
+            // selection_cleared and after each successful apply.
+            window._annotSel = {start_char: startChar, end_char: endChar};
             emitCallback({start_char: startChar, end_char: endChar});
         }
         // Clear stored range after consumption to prevent stale

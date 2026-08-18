@@ -351,6 +351,7 @@ def _assert_instructor_perspective(
 
 def _assert_owner_perspective(
     browser: Browser,
+    *,
     app_server: str,
     workspace_id: str,
     student_owner_email: str,
@@ -439,6 +440,7 @@ def _assert_owner_perspective(
 
 def _assert_commenter_perspective(
     browser: Browser,
+    *,
     app_server: str,
     workspace_id: str,
     student_commenter_email: str,
@@ -629,17 +631,17 @@ class TestAnonymousSharing:
         )
         _assert_owner_perspective(
             browser,
-            app_server,
-            workspace_id,
-            owner_email,
-            labels,
-            subtests,
+            app_server=app_server,
+            workspace_id=workspace_id,
+            student_owner_email=owner_email,
+            labels=labels,
+            subtests=subtests,
         )
         _assert_commenter_perspective(
             browser,
-            app_server,
-            workspace_id,
-            commenter_email,
-            labels,
-            subtests,
+            app_server=app_server,
+            workspace_id=workspace_id,
+            student_commenter_email=commenter_email,
+            labels=labels,
+            subtests=subtests,
         )

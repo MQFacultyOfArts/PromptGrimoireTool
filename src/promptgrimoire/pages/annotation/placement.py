@@ -64,6 +64,60 @@ def _reset_select(
         selected[key] = None
 
 
+async def _on_cascade_course_change(
+    e: events.ValueChangeEventArguments,
+    week_select: ui.select,
+    activity_select: ui.select,
+    selected: dict[str, UUID | None],
+) -> None:
+    """Repopulate the Week select when the Course select changes."""
+    _reset_select(week_select, selected, "course", "week", "activity")
+    _reset_select(activity_select, selected)
+    if e.value:
+        try:
+            cid = UUID(e.value)
+            selected["course"] = cid
+            weeks = await list_weeks(cid)
+            week_select.options = {
+                str(w.id): f"Week {w.week_number}: {w.title}" for w in weeks
+            }
+            week_select.update()
+            if weeks:
+                week_select.enable()
+        except Exception as exc:
+            logger.exception("course_select_failed", operation="on_course_change")
+            ui.notify(str(exc), type="negative")
+
+
+async def _on_cascade_week_change(
+    e: events.ValueChangeEventArguments,
+    activity_select: ui.select,
+    selected: dict[str, UUID | None],
+) -> None:
+    """Repopulate the Activity select when the Week select changes."""
+    _reset_select(activity_select, selected, "week", "activity")
+    if e.value:
+        try:
+            wid = UUID(e.value)
+            selected["week"] = wid
+            activities = await list_activities_for_week(wid)
+            activity_select.options = {str(a.id): a.title for a in activities}
+            activity_select.update()
+            if activities:
+                activity_select.enable()
+        except Exception as exc:
+            logger.exception("week_select_failed", operation="on_week_change")
+            ui.notify(str(exc), type="negative")
+
+
+def _on_cascade_activity_change(
+    e: events.ValueChangeEventArguments,
+    selected: dict[str, UUID | None],
+) -> None:
+    """Record the selected Activity id."""
+    selected["activity"] = UUID(e.value) if e.value else None
+
+
 def _build_activity_cascade(
     course_options: dict[str, str],
     selected: dict[str, UUID | None],
@@ -96,47 +150,13 @@ def _build_activity_cascade(
     _add_option_testids(week_select, "placement-week-opt")
     _add_option_testids(activity_select, "placement-activity-opt")
 
-    async def on_course_change(e: events.ValueChangeEventArguments) -> None:
-        _reset_select(week_select, selected, "course", "week", "activity")
-        _reset_select(activity_select, selected)
-        if e.value:
-            try:
-                cid = UUID(e.value)
-                selected["course"] = cid
-                weeks = await list_weeks(cid)
-                week_select.options = {
-                    str(w.id): f"Week {w.week_number}: {w.title}" for w in weeks
-                }
-                week_select.update()
-                if weeks:
-                    week_select.enable()
-            except Exception as exc:
-                logger.exception("course_select_failed", operation="on_course_change")
-                ui.notify(str(exc), type="negative")
-
-    course_select.on_value_change(on_course_change)
-
-    async def on_week_change(e: events.ValueChangeEventArguments) -> None:
-        _reset_select(activity_select, selected, "week", "activity")
-        if e.value:
-            try:
-                wid = UUID(e.value)
-                selected["week"] = wid
-                activities = await list_activities_for_week(wid)
-                activity_select.options = {str(a.id): a.title for a in activities}
-                activity_select.update()
-                if activities:
-                    activity_select.enable()
-            except Exception as exc:
-                logger.exception("week_select_failed", operation="on_week_change")
-                ui.notify(str(exc), type="negative")
-
-    week_select.on_value_change(on_week_change)
-
-    def on_activity_change(e: events.ValueChangeEventArguments) -> None:
-        selected["activity"] = UUID(e.value) if e.value else None
-
-    activity_select.on_value_change(on_activity_change)
+    course_select.on_value_change(
+        lambda e: _on_cascade_course_change(e, week_select, activity_select, selected)
+    )
+    week_select.on_value_change(
+        lambda e: _on_cascade_week_change(e, activity_select, selected)
+    )
+    activity_select.on_value_change(lambda e: _on_cascade_activity_change(e, selected))
 
 
 def _build_course_only_select(

@@ -296,8 +296,11 @@ class TestCascadeDeleteUser:
         # for DELETE — session.exec is SELECT-only.  The SQLModel
         # DeprecationWarning is suppressed globally in pyproject.toml.
         async with get_session() as session:
-            # ty: SQLModel column comparison returns expression, not bool
-            stmt = delete(User).where(User.id == user_id)  # type: ignore[arg-type]
+            # ty cannot type ``User.id == user_id`` inside delete().where()
+            # (Model.field descriptor, astral-sh/ty#3421); use the plain
+            # Core Column instead.
+            user_table = User.metadata.tables[User.__tablename__]
+            stmt = delete(User).where(user_table.c.id == user_id)
             await session.execute(stmt)
 
         # Verify ACL entries for this user are gone
@@ -350,3 +353,85 @@ class TestDuplicateConstraint:
                 )
                 session.add(dup)
                 await session.flush()
+
+
+class TestGetPrivilegedUserIdsForWorkspace:
+    """Tests for get_privileged_user_ids_for_workspace().
+
+    Resolves the workspace's course context (via Activity -> Week -> Course,
+    or a direct Workspace.course_id), then returns the string-form User.id
+    of enrolled staff plus org-level admins.
+    """
+
+    @pytest.mark.asyncio
+    async def test_includes_enrolled_staff_and_org_admin(self) -> None:
+        """Staff enrolled in the workspace's course, and admins, are included."""
+        from promptgrimoire.db.acl import get_privileged_user_ids_for_workspace
+        from promptgrimoire.db.activities import create_activity
+        from promptgrimoire.db.courses import create_course, enroll_user
+        from promptgrimoire.db.users import create_user
+        from promptgrimoire.db.weeks import create_week
+        from promptgrimoire.db.workspaces import clone_workspace_from_activity
+
+        tag = uuid4().hex[:8]
+        course = await create_course(
+            code=f"PRIV-{tag[:6]}",
+            name="Privileged Lookup Test",
+            semester="2026-S1",
+        )
+        week = await create_week(course_id=course.id, week_number=1, title="Week 1")
+        activity = await create_activity(week_id=week.id, title="Privileged Activity")
+
+        instructor = await create_user(
+            email=f"priv-instr-{tag}@test.local",
+            display_name=f"Priv Instr {tag}",
+        )
+        await enroll_user(course.id, instructor.id, role="instructor")
+
+        student = await create_user(
+            email=f"priv-owner-{tag}@test.local",
+            display_name=f"Priv Owner {tag}",
+        )
+        await enroll_user(course.id, student.id, role="student")
+
+        admin = await create_user(
+            email=f"priv-admin-{tag}@test.local",
+            display_name=f"Priv Admin {tag}",
+            is_admin=True,
+        )
+
+        ws, _doc_map = await clone_workspace_from_activity(activity.id, student.id)
+
+        privileged_ids = await get_privileged_user_ids_for_workspace(ws.id)
+
+        assert str(instructor.id) in privileged_ids
+        assert str(admin.id) in privileged_ids
+        assert str(student.id) not in privileged_ids
+
+    @pytest.mark.asyncio
+    async def test_loose_workspace_returns_admins_only(self) -> None:
+        """A workspace with no course/activity placement still surfaces admins."""
+        from promptgrimoire.db.acl import get_privileged_user_ids_for_workspace
+        from promptgrimoire.db.users import create_user
+        from promptgrimoire.db.workspaces import create_workspace
+
+        tag = uuid4().hex[:8]
+        admin = await create_user(
+            email=f"priv-loose-admin-{tag}@test.local",
+            display_name=f"Priv Loose Admin {tag}",
+            is_admin=True,
+        )
+        workspace = await create_workspace()
+
+        privileged_ids = await get_privileged_user_ids_for_workspace(workspace.id)
+
+        assert str(admin.id) in privileged_ids
+
+    @pytest.mark.asyncio
+    async def test_nonexistent_workspace_returns_empty(self) -> None:
+        """Unknown workspace id returns an empty frozenset, not an error."""
+        from promptgrimoire.db.acl import get_privileged_user_ids_for_workspace
+
+        privileged_ids = await get_privileged_user_ids_for_workspace(uuid4())
+
+        assert privileged_ids == frozenset()

@@ -16,6 +16,7 @@ from uuid import uuid4
 
 import pytest
 import pytest_asyncio
+import structlog
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 
@@ -26,6 +27,20 @@ from promptgrimoire.export.pdf import (
     get_latexmk_path,
     set_latexmk_short_circuit,
 )
+
+
+@pytest.fixture(autouse=True)
+def _isolate_structlog_contextvars() -> Generator[None]:
+    """Clear structlog contextvars after every test.
+
+    Production code binds context (e.g. broadcast.py binds workspace_id)
+    and relies on the per-request clear in pages/registry.py. Tests have no
+    such request boundary, so a bound value leaks into whichever test runs
+    next on the same xdist worker — surfaced 2026-08-17 when pytest-randomly
+    ordered a broadcast test before TestNullContextFields.
+    """
+    yield
+    structlog.contextvars.clear_contextvars()
 
 
 def pytest_configure(config: pytest.Config) -> None:
@@ -300,8 +315,11 @@ async def db_canary(db_schema_guard: None) -> AsyncIterator[str]:  # noqa: ARG00
     )
 
     async with cleanup_factory() as session:
-        # ty doesn't understand SQLModel column comparison returns expression, not bool
-        await session.execute(delete(User).where(User.email == canary_email))  # type: ignore[arg-type]
+        # ty cannot type ``User.email == canary_email`` inside
+        # delete().where() (Model.field descriptor, astral-sh/ty#3421);
+        # use the plain Core Column instead.
+        user_table = User.metadata.tables[User.__tablename__]
+        await session.execute(delete(User).where(user_table.c.email == canary_email))
         await session.commit()
 
     await cleanup_engine.dispose()

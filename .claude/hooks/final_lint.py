@@ -14,6 +14,10 @@ import os
 import subprocess
 import sys
 
+# `git status --porcelain` lines are "XY filename": 2 status chars, a space,
+# then at least 1 filename char. Shorter lines are not valid entries.
+_MIN_PORCELAIN_LINE_LENGTH = 4
+
 
 def get_modified_python_files() -> list[str]:
     """Get list of modified .py files from git status."""
@@ -29,7 +33,7 @@ def get_modified_python_files() -> list[str]:
 
     files = []
     for line in result.stdout.splitlines():
-        if len(line) < 4:
+        if len(line) < _MIN_PORCELAIN_LINE_LENGTH:
             continue
         # Format: "XY filename" where X=index, Y=worktree
         status = line[:2]
@@ -98,7 +102,7 @@ def main() -> int:
 
     # Step 4: ty check on all modified files
     result = subprocess.run(
-        ["uvx", "ty", "check", *files],
+        ["uv", "run", "--quiet", "ty", "check", *files],
         capture_output=True,
         text=True,
         cwd=project_dir,

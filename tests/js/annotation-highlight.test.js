@@ -10,6 +10,7 @@ describe('annotation-highlight.js', () => {
     delete window._highlightsReady;
     delete window._annotSelectionBound;
     delete window._annotSelectionBoundFor;
+    delete window._annotSel;
     delete window._lastAnnotSelRange;
     delete window._positionCardsMap;
     delete window._activeDocContainerId;
@@ -495,6 +496,31 @@ describe('annotation-highlight.js', () => {
 
       container.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
       expect(emitCallback).toHaveBeenCalledWith({ start_char: 0, end_char: 5 });
+    });
+
+    test('writes window._annotSel for click-time capture (#502)', () => {
+      const { container, textNodes } = domWithNodes('<p id="test-container">Hello World</p>');
+      document.body.appendChild(container);
+
+      setupAnnotationSelection('test-container', vi.fn());
+
+      const selection = {
+        isCollapsed: false,
+        rangeCount: 1,
+        getRangeAt: () => ({
+          startContainer: textNodes[0].node,
+          startOffset: 0,
+          endContainer: textNodes[0].node,
+          endOffset: 5,
+          getBoundingClientRect: () => ({ bottom: 0, left: 0, right: 0 })
+        })
+      };
+      vi.stubGlobal('getSelection', () => selection);
+
+      container.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+      // Tag-apply triggers read this synchronously in their js_handler
+      // so the apply event carries the offsets (#502).
+      expect(window._annotSel).toEqual({ start_char: 0, end_char: 5 });
     });
 
     test('ignores collapsed selection', () => {

@@ -1,0 +1,47 @@
+[Unit]
+Description=PromptGrimoire Snapshot Delivery Service
+After=network-online.target postgresql.service pgbouncer.service promptgrimoire.service
+Wants=network-online.target
+Requires=postgresql.service
+PartOf=promptgrimoire.service
+
+[Service]
+Type=notify
+# uv run forks a child process; sd_notify comes from the Python child, not uv.
+# NotifyAccess=all lets systemd accept READY from any PID in the cgroup.
+NotifyAccess=all
+User=promptgrimoire
+Group=promptgrimoire
+WorkingDirectory=/opt/promptgrimoire
+EnvironmentFile=/opt/promptgrimoire/.env
+Environment=PATH=/home/promptgrimoire/.local/bin:/usr/local/bin:/usr/bin:/bin
+Environment=HOME=/home/promptgrimoire
+
+ExecStart=/home/promptgrimoire/.local/bin/uv run --locked --no-sync python -m promptgrimoire.snapshot_service
+
+# No WatchdogSec: the service sends READY/STOPPING only, not periodic
+# WATCHDOG heartbeats (unlike the export worker's poll loop). Setting a
+# watchdog here would restart a healthy service.
+Restart=always
+RestartSec=5
+
+# Shutdown: uvicorn drains in-flight requests on SIGTERM, then the DB
+# engine is disposed. TimeoutStopSec gives headroom for that teardown.
+TimeoutStopSec=30
+KillSignal=SIGTERM
+
+# Resource controls: interactive-latency service (it serves page loads),
+# so normal CPU/IO scheduling — do NOT copy the worker's Nice/idle IO.
+MemoryMax=1G
+MemoryHigh=768M
+OOMScoreAdjust=400
+
+# Security hardening
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/opt/promptgrimoire/logs /opt/promptgrimoire/.venv /home/promptgrimoire/.cache/uv /tmp
+PrivateTmp=true
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

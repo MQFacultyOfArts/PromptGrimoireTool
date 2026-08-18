@@ -9,15 +9,16 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
-from sqlmodel import select
+from sqlalchemy import tstring
 
 from promptgrimoire.db.engine import get_session
 from promptgrimoire.db.exceptions import DeletionBlockedError
-from promptgrimoire.db.models import Activity, Week, Workspace
+from promptgrimoire.db.models import Activity, Workspace
 from promptgrimoire.db.weeks import purge_activity
 from promptgrimoire.db.workspaces import has_student_workspaces
 
 if TYPE_CHECKING:
+    from types import EllipsisType
     from uuid import UUID
 
 
@@ -122,17 +123,18 @@ def _apply_sentinel_fields(model: Activity, **fields: object) -> None:
             setattr(model, attr, value)
 
 
-async def update_activity(
+async def update_activity(  # noqa: PLR0913 -- param-object migration: tracker ledger 8
     activity_id: UUID,
+    *,
     title: str | None = None,
-    description: str | None = ...,  # type: ignore[assignment]  -- Ellipsis sentinel distinguishes "not provided" from explicit None (clear description)
-    copy_protection: bool | None = ...,  # type: ignore[assignment]  -- Ellipsis sentinel distinguishes "not provided" from explicit None (reset to inherit)
-    allow_sharing: bool | None = ...,  # type: ignore[assignment]  -- Ellipsis sentinel distinguishes "not provided" from explicit None (reset to inherit)
-    anonymous_sharing: bool | None = ...,  # type: ignore[assignment]  -- Ellipsis sentinel distinguishes "not provided" from explicit None (reset to inherit)
-    allow_tag_creation: bool | None = ...,  # type: ignore[assignment]  -- Ellipsis sentinel distinguishes "not provided" from explicit None (reset to inherit)
-    word_minimum: int | None = ...,  # type: ignore[assignment]  -- Ellipsis sentinel distinguishes "not provided" from explicit None (clear minimum)
-    word_limit: int | None = ...,  # type: ignore[assignment]  -- Ellipsis sentinel distinguishes "not provided" from explicit None (clear limit)
-    word_limit_enforcement: bool | None = ...,  # type: ignore[assignment]  -- Ellipsis sentinel distinguishes "not provided" from explicit None (reset to inherit)
+    description: str | EllipsisType | None = ...,
+    copy_protection: bool | EllipsisType | None = ...,
+    allow_sharing: bool | EllipsisType | None = ...,
+    anonymous_sharing: bool | EllipsisType | None = ...,
+    allow_tag_creation: bool | EllipsisType | None = ...,
+    word_minimum: int | EllipsisType | None = ...,
+    word_limit: int | EllipsisType | None = ...,
+    word_limit_enforcement: bool | EllipsisType | None = ...,
 ) -> Activity | None:
     """Update activity details.
 
@@ -217,12 +219,20 @@ async def delete_activity(
 async def list_activities_for_week(week_id: UUID) -> list[Activity]:
     """List all activities for a week, ordered by created_at."""
     async with get_session() as session:
-        result = await session.exec(
-            select(Activity)
-            .where(Activity.week_id == week_id)
-            .order_by(Activity.created_at)  # type: ignore[arg-type]  -- SQLModel order_by() stubs don't accept Column expressions
+        result = await session.execute(
+            tstring(
+                t"""
+                SELECT id, week_id, type, template_workspace_id, title,
+                       description, copy_protection, allow_sharing,
+                       anonymous_sharing, allow_tag_creation, word_minimum,
+                       word_limit, word_limit_enforcement, created_at, updated_at
+                FROM activity
+                WHERE week_id = {week_id}
+                ORDER BY created_at
+                """
+            )
         )
-        return list(result.all())
+        return [Activity(**row._mapping) for row in result.all()]
 
 
 async def list_activities_for_course(course_id: UUID) -> list[Activity]:
@@ -231,10 +241,19 @@ async def list_activities_for_course(course_id: UUID) -> list[Activity]:
     Returns activities across all weeks, ordered by week number then created_at.
     """
     async with get_session() as session:
-        result = await session.exec(
-            select(Activity)
-            .join(Week, Activity.week_id == Week.id)  # type: ignore[arg-type]  -- SQLAlchemy == returns ColumnElement, not bool
-            .where(Week.course_id == course_id)
-            .order_by(Week.week_number, Activity.created_at)  # type: ignore[arg-type]  -- SQLModel order_by() stubs don't accept Column expressions
+        result = await session.execute(
+            tstring(
+                t"""
+                SELECT a.id, a.week_id, a.type, a.template_workspace_id, a.title,
+                       a.description, a.copy_protection, a.allow_sharing,
+                       a.anonymous_sharing, a.allow_tag_creation, a.word_minimum,
+                       a.word_limit, a.word_limit_enforcement, a.created_at,
+                       a.updated_at
+                FROM activity a
+                JOIN week w ON w.id = a.week_id
+                WHERE w.course_id = {course_id}
+                ORDER BY w.week_number, a.created_at
+                """
+            )
         )
-        return list(result.all())
+        return [Activity(**row._mapping) for row in result.all()]

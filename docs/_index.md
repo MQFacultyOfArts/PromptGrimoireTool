@@ -21,6 +21,7 @@ library references during development.
 - [Context Diagram (Level 0)](architecture/dfd/0-context-diagram.md)
 - [[1] Learning Workspace — Level 1 Decomposition](architecture/dfd/1-level-1-decomposition.md)
 - [[5] Annotate Texts — Level 2 Decomposition](architecture/dfd/5-annotate-texts.md)
+- [Raw SQL convention](architecture/raw-sql-convention.md)
 
 ## asyncpg
 
@@ -48,10 +49,15 @@ library references during development.
 - [0001 — Shelve the wargame feature, retain its tables](decisions/0001-shelve-wargame-retain-tables.md)
 - [0002 — Expunge BrowserStack rather than keep it quarantined](decisions/0002-expunge-browserstack.md)
 - [0003 — Upgrade dependencies one package at a time, transitives included](decisions/0003-controlled-dependency-upgrades.md)
+- [0004 — Raw SQL is the convention for query-shaped reads](decisions/0004-raw-sql-for-reads.md)
+- [0005 — Run SQLAlchemy 2.1.0b3 under SQLModel via a bounded uv override](decisions/0005-sqlalchemy-21-beta-override.md)
+- [0006 — Lint/type toolchain versions live in uv.lock and nowhere else](decisions/0006-toolchain-single-sourced-in-uv-lock.md)
+- [0007 — Enforce the Pylint refactor rules; ignores must be scoped and argued](decisions/0007-plr-rules-enforced.md)
 - [Architecture Decision Register](decisions/adr-register.md)
 
 ## design-notes
 
+- [Initial annotation snapshot delivery from a separate process](design-notes/2026-08-16-initial-snapshot-delivery.md)
 - [Large-document loading and annotation performance](design-notes/2026-08-16-large-document-performance.md)
 - [Design Notes: Bottom-Anchored Tag Bar](design-notes/bottom-tag-bar.md)
 

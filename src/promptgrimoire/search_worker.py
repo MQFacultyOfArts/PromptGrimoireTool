@@ -69,10 +69,18 @@ async def process_dirty_workspaces(batch_size: int = 500) -> int:
                 ),
                 {"ws_ids": ws_ids},
             )
+            # Attribute access by label, not tag_row[0]/[1]/[2] -- SQLModel's
+            # AsyncSession.execute() stub declares Result[Any], which ty
+            # resolves as a length-1 Row TypeVarTuple. See
+            # docs/architecture/raw-sql-convention.md.
             for tag_row in tag_result.fetchall():
-                tag_map[str(tag_row[0])][str(tag_row[1])] = tag_row[2]
+                tag_map[str(tag_row.workspace_id)][str(tag_row.id)] = tag_row.name
 
-    for workspace_id, crdt_state, ws_title, activity_title in rows:
+    for row in rows:
+        workspace_id = row.id
+        crdt_state = row.crdt_state
+        ws_title = row.ws_title
+        activity_title = row.activity_title
         try:
             tag_names = tag_map.get(str(workspace_id), {})
 

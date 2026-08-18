@@ -20,6 +20,7 @@ import pytest
 from promptgrimoire.docs.guide import Guide
 
 if TYPE_CHECKING:
+    from collections.abc import Generator
     from pathlib import Path
 
 _CAPTURE_PATCH = "promptgrimoire.docs.guide.capture_screenshot"
@@ -35,7 +36,7 @@ class TestGuideContextManager:
     """Tests for the Guide context manager."""
 
     @pytest.fixture(autouse=True)
-    def _mock_thumbnail(self) -> None:  # type: ignore[override]
+    def _mock_thumbnail(self) -> Generator[None]:
         """Auto-mock generate_thumbnail for all tests."""
         with patch(_THUMBNAIL_PATCH):
             yield

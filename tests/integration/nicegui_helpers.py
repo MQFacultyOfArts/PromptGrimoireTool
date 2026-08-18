@@ -18,7 +18,7 @@ import asyncio
 import inspect
 import re
 import time
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, cast, overload
 
 from nicegui import ElementFilter
 
@@ -35,6 +35,21 @@ if TYPE_CHECKING:
 # ---------------------------------------------------------------------------
 
 
+# Overloads so an async condition binds T through Awaitable[T]: with the
+# plain `T | Awaitable[T]` union, type checkers unify T with the coroutine
+# itself and callers get a Coroutine back instead of the awaited type.
+@overload
+async def wait_for[T](
+    condition: Callable[[], Awaitable[T]],
+    timeout: float = 5.0,
+    interval: float = 0.05,
+) -> T: ...
+@overload
+async def wait_for[T](
+    condition: Callable[[], T],
+    timeout: float = 5.0,
+    interval: float = 0.05,
+) -> T: ...
 async def wait_for[T](
     condition: Callable[[], T | Awaitable[T]],
     timeout: float = 5.0,
@@ -266,13 +281,48 @@ def _click_testid(user: User, testid: str) -> None:
             continue
         # Switches/checkboxes need the toggled value as args
         if isinstance(el, (ui.checkbox, ui.switch)):
-            args: bool | None = not cast("ValueElement", el).value
+            args: bool | dict[str, str] | str | None = not cast(
+                "ValueElement", el
+            ).value
         else:
-            args = None
+            # Value-capture triggers (ui_helpers.on_submit_with_value[s])
+            # carry a js_handler the simulated User cannot run.  Their
+            # simulation hook names the captured inputs; emit what the
+            # browser-side capture would — current field values as strings.
+            args = _simulated_capture_args(el)
         event_arguments = events.GenericEventArguments(
             sender=el, client=el.client, args=args
         )
         events.handle_event(listener.handler, event_arguments)
+
+
+def _simulated_capture_args(el: Element) -> dict[str, str | int] | str | None:
+    """Build the args a value-capture js_handler would emit for *el*.
+
+    Returns None for elements without the capture hook (plain buttons),
+    matching NiceGUI's UserInteraction.click() behaviour.
+    """
+
+    def dom_str(value: object) -> str:
+        return "" if value is None else str(value)
+
+    capture = getattr(el, "_value_capture_inputs", None)
+    if isinstance(capture, dict):
+        return {key: dom_str(inp.value) for key, inp in capture.items()}
+    if capture is not None:
+        return dom_str(capture.value)
+
+    # Selection-capture triggers (ui_helpers.on_click_with_selection):
+    # in the User harness the browser-side window._annotSel mirrors the
+    # server-side selection state, so emit that (or None when empty).
+    sel_state = getattr(el, "_value_capture_selection", None)
+    if sel_state is not None:
+        start = sel_state.selection_start
+        end = sel_state.selection_end
+        if start is None or end is None:
+            return None
+        return {"start_char": start, "end_char": end}
+    return None
 
 
 def _set_input_value(user: User, testid: str, value: str) -> None:

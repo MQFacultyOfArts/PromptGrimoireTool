@@ -27,8 +27,12 @@ from promptgrimoire.pages.registry import page_route
 
 if TYPE_CHECKING:
     from nicegui import Client
+    from nicegui.events import GenericEventArguments
 
 logger = structlog.get_logger()
+
+# An empty Yjs doc encodes to exactly 2 bytes; anything larger has content.
+_EMPTY_YDOC_UPDATE_BYTES = 2
 # Serve the Milkdown bundle from static files
 _BUNDLE_DIR = Path(__file__).parent.parent / "static" / "milkdown" / "dist"
 app.add_static_files("/milkdown", str(_BUNDLE_DIR))
@@ -160,9 +164,9 @@ async def milkdown_spike_page() -> None:
     client.on_disconnect(on_disconnect)
 
     # Handle Yjs updates from this client
-    def on_yjs_update(e: object) -> None:
+    def on_yjs_update(e: GenericEventArguments) -> None:
         """Receive a Yjs update from the JS client, apply to server doc, broadcast."""
-        b64_update: str = e.args["update"]  # type: ignore[union-attr]
+        b64_update: str = e.args["update"]
         raw = base64.b64decode(b64_update)
         doc.apply_update(raw)
         _broadcast_to_others(_SPIKE_DOC_ID, client_id, b64_update)
@@ -213,8 +217,7 @@ async def milkdown_spike_page() -> None:
         # Server doc has accumulated state from prior clients — send to new joiner
         full_state = bytes(doc.get_update())
         b64_state = base64.b64encode(full_state).decode("ascii")
-        if len(full_state) > 2:
-            # >2 bytes means the doc has real content (empty doc is 2 bytes)
+        if len(full_state) > _EMPTY_YDOC_UPDATE_BYTES:
             client.run_javascript(f"window._applyRemoteUpdate('{b64_state}')")
             logger.debug(
                 "FULL_STATE_SYNC doc_id=%s to_client=%s bytes=%d",

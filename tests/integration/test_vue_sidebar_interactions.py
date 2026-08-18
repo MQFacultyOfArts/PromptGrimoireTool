@@ -315,10 +315,11 @@ def test_para_ref_edit_in_template() -> None:
 
 
 def test_para_ref_readonly_for_viewer() -> None:
-    """Vue template gates para_ref click-to-edit behind permissions.can_annotate.
+    """Vue template gates para_ref click-to-edit behind can_annotate.
 
-    Structural check: the template uses v-if="permissions.can_annotate" on the
-    clickable para-ref-label and shows a non-clickable span for viewers.
+    Structural check: the template gates the clickable para-ref-label on
+    effectivePermissions.can_annotate (the computed merging the prop with
+    snapshot-bundle permissions) and shows a non-clickable span for viewers.
     """
     from pathlib import Path
 
@@ -332,10 +333,11 @@ def test_para_ref_readonly_for_viewer() -> None:
     js_source = js_path.read_text()
 
     # Clickable label gated on can_annotate
-    assert "!paraRefEditMode.get(item.id) && permissions.can_annotate" in js_source, (
-        "Clickable para-ref-label not gated on permissions.can_annotate"
-    )
+    assert (
+        "!paraRefEditMode.get(item.id) && effectivePermissions.can_annotate"
+        in js_source
+    ), "Clickable para-ref-label not gated on effectivePermissions.can_annotate"
     # Read-only label for viewers
-    assert "!permissions.can_annotate && item.para_ref" in js_source, (
+    assert "!effectivePermissions.can_annotate && item.para_ref" in js_source, (
         "Read-only para-ref-label not shown for viewers"
     )

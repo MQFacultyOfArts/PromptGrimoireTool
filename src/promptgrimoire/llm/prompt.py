@@ -3,19 +3,12 @@
 from __future__ import annotations
 
 import re
-from typing import TYPE_CHECKING, Literal, TypedDict
+from typing import TYPE_CHECKING, Literal
 
 if TYPE_CHECKING:
     from anthropic.types import MessageParam
 
     from promptgrimoire.models import Character, LorebookEntry, Turn
-
-
-class MessageDict(TypedDict):
-    """Message format compatible with Claude API."""
-
-    role: Literal["user", "assistant"]
-    content: str
 
 
 def estimate_tokens(text: str) -> int:
@@ -130,11 +123,10 @@ def build_messages(turns: list[Turn]) -> list[MessageParam]:
     Returns:
         List of message dicts with 'role' and 'content' keys.
     """
-    messages: list[MessageDict] = []
+    messages: list[MessageParam] = []
 
     for turn in turns:
         role: Literal["user", "assistant"] = "user" if turn.is_user else "assistant"
         messages.append({"role": role, "content": turn.content})
 
-    # Cast to MessageParam for type compatibility with Anthropic SDK
-    return messages  # type: ignore[return-value]
+    return messages

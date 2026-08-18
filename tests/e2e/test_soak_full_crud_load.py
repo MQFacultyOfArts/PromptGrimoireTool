@@ -89,12 +89,10 @@ SOAK_RATE_MULT = float(os.environ.get("E2E_SOAK_RATE_MULT", "5"))
 SOAK_MINUTES = float(os.environ.get("E2E_SOAK_MINUTES", "15"))
 SOAK_ARRIVAL_SPREAD_S = float(os.environ.get("E2E_SOAK_ARRIVAL_SPREAD_S", "300"))
 SOAK_ACTION_TIMEOUT_MS = int(os.environ.get("E2E_SOAK_ACTION_TIMEOUT_MS", "30000"))
-SOAK_RETRY_TIMEOUT_MS = int(os.environ.get("E2E_SOAK_RETRY_TIMEOUT_MS", "5000"))
 SOAK_DIAG_SAMPLE_SECONDS = float(os.environ.get("E2E_SOAK_DIAG_SAMPLE_SECONDS", "10"))
 
 ACTIONS_PER_MIN = OBSERVED_ACTIONS_PER_MIN * SOAK_RATE_MULT
 MAX_CONSECUTIVE_ACTION_FAILURES = 3
-HIGHLIGHT_ATTEMPTS = 3
 SEED_HIGHLIGHTS = 3
 # A student must complete at least half its paced budget or the probe
 # is not measuring what it claims.
@@ -147,7 +145,6 @@ class ActionResult:
 
     action: str = ""
     elapsed_ms: int = -1
-    retries: int = 0
     error: str | None = None
     degraded: bool = False
 
@@ -239,42 +236,35 @@ def _wait_card_count(page: Page, expected: int, *, timeout: int) -> None:
     )
 
 
-def _do_highlight_create(page: Page, state: StudentState, result: ActionResult) -> None:
-    """Create one highlight, re-selecting on silent no-op (as cram)."""
-    from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
+def _do_highlight_create(
+    page: Page, state: StudentState, _result: ActionResult
+) -> None:
+    """Create one highlight: single attempt, failure recorded as-is.
 
+    No retry-on-no-op: a silent no-op or a slow round trip IS the
+    measurement. The failure rate per step is the deliverable.
+    """
     from tests.e2e.highlight_tools import (
         create_highlight_with_tag,
         scroll_to_char,
     )
 
-    needles = state.plan_needles(HIGHLIGHT_ATTEMPTS * 4)
-    for attempt in range(HIGHLIGHT_ATTEMPTS):
-        # Re-read the actual DOM count so a late-landing previous retry
-        # cannot skew the expectation (self-healing baseline).
-        before = _card_count(page)
-        start, end = _resolve_next_range(page, needles)
-        scroll_to_char(page, start)
-        create_highlight_with_tag(
-            page,
-            start,
-            end,
-            state.rng.randrange(CASE_BRIEF_TAG_COUNT),
-        )
-        last = attempt == HIGHLIGHT_ATTEMPTS - 1
-        try:
-            _wait_card_count(
-                page,
-                before + 1,
-                timeout=SOAK_ACTION_TIMEOUT_MS if last else SOAK_RETRY_TIMEOUT_MS,
-            )
-        except PlaywrightTimeoutError:
-            result.retries += 1
-            if last:
-                raise
-            continue
-        state.highlight_count = before + 1
-        return
+    # The needle pool only absorbs fixture-parsing misses (walker
+    # whitespace collapsing) -- not system retries.
+    needles = state.plan_needles(8)
+    # Re-read the actual DOM count so a late-landing earlier action
+    # cannot skew the expectation (self-healing baseline).
+    before = _card_count(page)
+    start, end = _resolve_next_range(page, needles)
+    scroll_to_char(page, start)
+    create_highlight_with_tag(
+        page,
+        start,
+        end,
+        state.rng.randrange(CASE_BRIEF_TAG_COUNT),
+    )
+    _wait_card_count(page, before + 1, timeout=SOAK_ACTION_TIMEOUT_MS)
+    state.highlight_count = before + 1
 
 
 def _do_comment_add(page: Page, state: StudentState, _result: ActionResult) -> None:
@@ -356,11 +346,11 @@ def _do_tag_create(page: Page, state: StudentState, _result: ActionResult) -> No
     state.tags_created += 1
 
 
-def _do_organise_drag(page: Page, state: StudentState, result: ActionResult) -> None:
-    """Drag a card between tag columns on the Organise tab (retag).
+def _do_organise_drag(page: Page, state: StudentState, _result: ActionResult) -> None:
+    """Drag a card between tag columns: single attempt, no retry.
 
-    Drops bounce (~1%) when a rebuild lands mid-drag; a real student
-    re-drags, so bounced drops are retried before giving up.
+    A bounced drop (rebuild landing mid-drag) is recorded as a failure
+    -- the bounce rate per step is part of the measurement.
     """
     page.get_by_test_id("tab-organise").click()
     columns = page.locator("[data-testid='tag-column']")
@@ -390,44 +380,36 @@ def _do_organise_drag(page: Page, state: StudentState, result: ActionResult) -> 
     )
 
     try:
-        for attempt in range(HIGHLIGHT_ATTEMPTS):
-            # Cards drag directly onto the target column's sortable
-            # container (the pattern test_tag_sync.py uses); no handle.
-            card = (
-                columns.nth(source_idx).locator("[data-testid='organise-card']").first
+        # Cards drag directly onto the target column's sortable
+        # container (the pattern test_tag_sync.py uses); no handle.
+        card = columns.nth(source_idx).locator("[data-testid='organise-card']").first
+        card.drag_to(target_col.locator(".nicegui-sortable").first)
+        try:
+            # Success = the source column lost the card. Where it
+            # landed is secondary: any completed drop is a real
+            # retag round trip.
+            page.wait_for_function(
+                "([colIdx, n]) => {"
+                "  const cols = document.querySelectorAll("
+                "    '[data-testid=\"tag-column\"]');"
+                "  if (!cols[colIdx]) return false;"
+                "  return cols[colIdx].querySelectorAll("
+                "    '[data-testid=\"organise-card\"]').length < n;"
+                "}",
+                arg=[source_idx, source_before],
+                timeout=SOAK_ACTION_TIMEOUT_MS,
             )
-            card.drag_to(target_col.locator(".nicegui-sortable").first)
-            last = attempt == HIGHLIGHT_ATTEMPTS - 1
-            try:
-                # Success = the source column lost the card. Where it
-                # landed is secondary: any completed drop is a real
-                # retag round trip.
-                page.wait_for_function(
-                    "([colIdx, n]) => {"
-                    "  const cols = document.querySelectorAll("
-                    "    '[data-testid=\"tag-column\"]');"
-                    "  if (!cols[colIdx]) return false;"
-                    "  return cols[colIdx].querySelectorAll("
-                    "    '[data-testid=\"organise-card\"]').length < n;"
-                    "}",
-                    arg=[source_idx, source_before],
-                    timeout=SOAK_ACTION_TIMEOUT_MS if last else SOAK_RETRY_TIMEOUT_MS,
-                )
-                return
-            except PlaywrightTimeoutError:
-                result.retries += 1
-                if last:
-                    counts = [
-                        columns.nth(i).locator("[data-testid='organise-card']").count()
-                        for i in range(n_columns)
-                    ]
-                    msg = (
-                        f"drag produced no column change after "
-                        f"{HIGHLIGHT_ATTEMPTS} attempts: "
-                        f"source_idx={source_idx} (had {source_before}), "
-                        f"target_idx={target_idx}, column counts now {counts}"
-                    )
-                    raise RuntimeError(msg) from None
+        except PlaywrightTimeoutError:
+            counts = [
+                columns.nth(i).locator("[data-testid='organise-card']").count()
+                for i in range(n_columns)
+            ]
+            msg = (
+                f"drag produced no column change: "
+                f"source_idx={source_idx} (had {source_before}), "
+                f"target_idx={target_idx}, column counts now {counts}"
+            )
+            raise RuntimeError(msg) from None
     finally:
         _back_to_source(page)
 
@@ -626,7 +608,6 @@ def _print_summary(
         ]
         print(f"{action_name:<17} n={len(ok):<5} {_percentiles(ok)}")
 
-    total_retries = sum(a.retries for o in observations for a in o.actions)
     degraded = [
         (o.email, a.action) for o in observations for a in o.actions if a.degraded
     ]
@@ -636,7 +617,6 @@ def _print_summary(
         for a in o.actions
         if a.error is not None and not a.degraded
     ]
-    print(f"no-op retries:  {total_retries}")
     print(f"degraded (browser-side, nonfatal): {len(degraded)}")
     print(f"action failures (fatal): {len(failures)}")
     for email, action, error in failures[:20]:

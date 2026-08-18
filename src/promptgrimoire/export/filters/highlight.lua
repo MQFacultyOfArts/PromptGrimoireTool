@@ -28,6 +28,74 @@ local function light_to_dark(name)
   return (string.gsub(name, "%-light$", "-dark"))
 end
 
+local annotated_code_counter = 0
+
+--- Return a generated verbatim environment name absent from the code text.
+--- A content-derived collision check prevents a literal \end{...} in user code
+--- from terminating the environment and becoming executable LaTeX.
+--- @param text string  code block contents
+--- @return string  safe environment name
+local function next_code_environment(text)
+  while true do
+    annotated_code_counter = annotated_code_counter + 1
+    local name = "PGAnnotatedCode" .. annotated_code_counter
+    if not string.find(text, "\\end{" .. name .. "}", 1, true) then
+      return name
+    end
+  end
+end
+
+--- Validate and normalise a comma-separated list of positive line numbers.
+--- @param value string|nil  generated block attribute
+--- @return string|nil  safe LaTeX option value
+local function code_highlight_lines(value)
+  if value == nil or value == "" then return nil end
+  local result = {}
+  for line in string.gmatch(value, "[^,]+") do
+    if not string.match(line, "^%d+$") then return nil end
+    table.insert(result, line)
+  end
+  if #result == 0 then return nil end
+  return table.concat(result, ",")
+end
+
+--- CodeBlock callback: retain annotations that Pandoc's HTML reader would drop.
+--- Python promotes descendant span metadata onto the <pre> element.  Annotated
+--- blocks use fvextra for line-level selection highlighting; ordinary blocks
+--- retain Pandoc's native writer path unchanged.
+function CodeBlock(el)
+  if FORMAT ~= "latex" then return el end
+
+  local lines = code_highlight_lines(el.attributes["pg-code-lines"])
+  local annots = el.attributes["pg-code-annots"] or ""
+  if lines == nil and annots == "" then return el end
+
+  local colour = el.attributes["pg-code-color"] or "FancyVerbHighlightColor"
+  if not string.match(colour, "^[%w%-]+$") then
+    colour = "FancyVerbHighlightColor"
+  end
+
+  local options = {"breaklines=true", "breakanywhere=true"}
+  if lines ~= nil then
+    table.insert(options, "highlightlines={" .. lines .. "}")
+    table.insert(options, "highlightcolor=" .. colour)
+  end
+
+  local environment = next_code_environment(el.text)
+  local latex =
+    "\\DefineVerbatimEnvironment{" .. environment .. "}{Verbatim}{" ..
+    table.concat(options, ",") .. "}\n" ..
+    "\\begin{" .. environment .. "}\n" ..
+    el.text .. "\n" ..
+    "\\end{" .. environment .. "}\n"
+
+  if annots ~= "" then
+    latex = latex .. "\\noindent " .. annots .. "\n"
+  end
+
+  return pandoc.RawBlock("latex", latex)
+end
+
 --- Build underline open/close RawInline pairs based on highlight count.
 --- Returns two lists: opens (outermost first) and closes (innermost first).
 --- @param colors_list table  list of light colour names

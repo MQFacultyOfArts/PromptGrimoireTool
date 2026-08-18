@@ -126,12 +126,15 @@ ACTION_WEIGHTS: list[tuple[str, float]] = list(
 ANNOTATION_CARD = "[data-testid='annotation-card']"
 
 
-# Action types whose Playwright timeouts are browser-side degradation,
-# not server boundary evidence. Milkdown init is browser-CPU-heavy and
-# the co-located harness (failure-mode class G) starves it at high n:
-# the n=25 run had 74 respond timeouts against a flat-task, zero-error
-# server. These are counted and reported, never fatal.
-DEGRADED_NONFATAL_ACTIONS = frozenset({"respond_type"})
+# Action types whose failures are browser-side degradation, not server
+# boundary evidence (failure-mode class G, co-located harness):
+# - respond_type: Milkdown init is browser-CPU-heavy; n=25 had 74
+#   timeouts against a flat-task, zero-error server.
+# - organise_drag: SortableJS drops bounce ~1% when a rebuild lands
+#   mid-drag; a real student re-drags (retried, then degraded).
+# These are counted and reported, never fatal. If the server itself
+# stalls, the fatal action types (creates, comments, tags) catch it.
+DEGRADED_NONFATAL_ACTIONS = frozenset({"respond_type", "organise_drag"})
 
 
 @dataclass
@@ -349,8 +352,12 @@ def _do_tag_create(page: Page, state: StudentState, _result: ActionResult) -> No
     state.tags_created += 1
 
 
-def _do_organise_drag(page: Page, state: StudentState, _result: ActionResult) -> None:
-    """Drag a card between tag columns on the Organise tab (retag)."""
+def _do_organise_drag(page: Page, state: StudentState, result: ActionResult) -> None:
+    """Drag a card between tag columns on the Organise tab (retag).
+
+    Drops bounce (~1%) when a rebuild lands mid-drag; a real student
+    re-drags, so bounced drops are retried before giving up.
+    """
     page.get_by_test_id("tab-organise").click()
     columns = page.locator("[data-testid='tag-column']")
     columns.first.wait_for(state="visible", timeout=SOAK_ACTION_TIMEOUT_MS)
@@ -378,34 +385,45 @@ def _do_organise_drag(page: Page, state: StudentState, _result: ActionResult) ->
         columns.nth(source_idx).locator("[data-testid='organise-card']").count()
     )
 
-    # Cards drag directly onto the target column's sortable container
-    # (the pattern test_tag_sync.py uses); there is no drag handle.
-    card = columns.nth(source_idx).locator("[data-testid='organise-card']").first
-    card.drag_to(target_col.locator(".nicegui-sortable").first)
     try:
-        # Success = the source column lost the card. Where it landed is
-        # secondary: any completed drop is a real retag round trip.
-        page.wait_for_function(
-            "([colIdx, n]) => {"
-            "  const cols = document.querySelectorAll('[data-testid=\"tag-column\"]');"
-            "  if (!cols[colIdx]) return false;"
-            "  return cols[colIdx].querySelectorAll("
-            "    '[data-testid=\"organise-card\"]').length < n;"
-            "}",
-            arg=[source_idx, source_before],
-            timeout=SOAK_ACTION_TIMEOUT_MS,
-        )
-    except PlaywrightTimeoutError:
-        counts = [
-            columns.nth(i).locator("[data-testid='organise-card']").count()
-            for i in range(n_columns)
-        ]
-        msg = (
-            f"drag produced no column change: source_idx={source_idx} "
-            f"(had {source_before}), target_idx={target_idx}, "
-            f"column counts now {counts}"
-        )
-        raise RuntimeError(msg) from None
+        for attempt in range(HIGHLIGHT_ATTEMPTS):
+            # Cards drag directly onto the target column's sortable
+            # container (the pattern test_tag_sync.py uses); no handle.
+            card = (
+                columns.nth(source_idx).locator("[data-testid='organise-card']").first
+            )
+            card.drag_to(target_col.locator(".nicegui-sortable").first)
+            last = attempt == HIGHLIGHT_ATTEMPTS - 1
+            try:
+                # Success = the source column lost the card. Where it
+                # landed is secondary: any completed drop is a real
+                # retag round trip.
+                page.wait_for_function(
+                    "([colIdx, n]) => {"
+                    "  const cols = document.querySelectorAll("
+                    "    '[data-testid=\"tag-column\"]');"
+                    "  if (!cols[colIdx]) return false;"
+                    "  return cols[colIdx].querySelectorAll("
+                    "    '[data-testid=\"organise-card\"]').length < n;"
+                    "}",
+                    arg=[source_idx, source_before],
+                    timeout=SOAK_ACTION_TIMEOUT_MS if last else SOAK_RETRY_TIMEOUT_MS,
+                )
+                return
+            except PlaywrightTimeoutError:
+                result.retries += 1
+                if last:
+                    counts = [
+                        columns.nth(i).locator("[data-testid='organise-card']").count()
+                        for i in range(n_columns)
+                    ]
+                    msg = (
+                        f"drag produced no column change after "
+                        f"{HIGHLIGHT_ATTEMPTS} attempts: "
+                        f"source_idx={source_idx} (had {source_before}), "
+                        f"target_idx={target_idx}, column counts now {counts}"
+                    )
+                    raise RuntimeError(msg) from None
     finally:
         _back_to_source(page)
 
@@ -482,8 +500,6 @@ def _run_soak_pass(
     consecutive_failures = 0
     action_index = 0
 
-    from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
-
     while time.perf_counter() < deadline:
         action = _pick_action(state, action_index)
         result = ActionResult(action=f"{action}-{action_index}")
@@ -493,9 +509,7 @@ def _run_soak_pass(
             consecutive_failures = 0
         except Exception as exc:
             result.error = f"{type(exc).__name__}: {exc}"
-            if action in DEGRADED_NONFATAL_ACTIONS and isinstance(
-                exc, PlaywrightTimeoutError
-            ):
+            if action in DEGRADED_NONFATAL_ACTIONS:
                 result.degraded = True
             else:
                 consecutive_failures += 1

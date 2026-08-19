@@ -29,11 +29,19 @@ async function loadAnnotationSnapshot(cfg) {
   var container = document.getElementById(cfg.containerId);
   if (!container) return false;
 
+  // Tab switches destroy the panel DOM (Quasar default); the
+  // re-rendered skeleton carries the SAME bundle URL, whose token
+  // (TTL 60s) has usually expired by then.  The bundle already
+  // reached this client once, so repeat mounts come from cache and
+  // never touch the network.
+  window.__snapshotBundleCache = window.__snapshotBundleCache || {};
+  var cache = window.__snapshotBundleCache;
+  var bundle = cache[cfg.url];
+
   // One silent retry covers a service restart blip or a dropped
   // connection without the student ever seeing an error.
   var retryDelay = cfg.retryDelayMs === undefined ? 1500 : cfg.retryDelayMs;
-  var bundle;
-  try {
+  if (!bundle) try {
     try {
       bundle = await fetchSnapshotBundle(cfg.url);
     } catch (firstErr) {
@@ -41,6 +49,7 @@ async function loadAnnotationSnapshot(cfg) {
       await new Promise(function (resolve) { setTimeout(resolve, retryDelay); });
       bundle = await fetchSnapshotBundle(cfg.url);
     }
+    cache[cfg.url] = bundle;
   } catch (err) {
     console.error('snapshot bundle load failed', err);
     container.dataset.snapshotState = 'error';

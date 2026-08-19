@@ -483,6 +483,19 @@ async def _diagnostics():
         "nicegui_clients": len(Client.instances),
     }}
 
+
+@app.post("/api/test/persist-crdt")
+async def _persist_crdt():
+    from promptgrimoire.crdt.persistence import get_persistence_manager
+
+    manager = get_persistence_manager()
+    dirty_before = len(manager._workspace_dirty)
+    await manager.persist_all_dirty_workspaces()
+    return {{
+        "dirty_before": dirty_before,
+        "dirty_after": len(manager._workspace_dirty),
+    }}
+
 ui.run(
     port=port, reload=False, show=False,
     storage_secret='{TEST_STORAGE_SECRET}',

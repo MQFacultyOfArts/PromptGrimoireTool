@@ -450,6 +450,20 @@ async def _diagnostics():
     }
 
 
+@app.post("/api/test/persist-crdt")
+async def _persist_crdt():
+    """Provide an exact persistence barrier for E2E durability assertions."""
+    from promptgrimoire.crdt.persistence import get_persistence_manager
+
+    manager = get_persistence_manager()
+    dirty_before = len(manager._workspace_dirty)
+    await manager.persist_all_dirty_workspaces()
+    return {
+        "dirty_before": dirty_before,
+        "dirty_after": len(manager._workspace_dirty),
+    }
+
+
 _QUALNAME_TAIL_SEGMENTS = 2
 
 

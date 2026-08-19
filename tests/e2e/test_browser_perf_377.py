@@ -18,23 +18,36 @@ import json
 import os
 import re
 import time
+import urllib.request
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 from uuid import uuid4
 
 import pytest
 from playwright.sync_api import ConsoleMessage, expect
+from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 
 from promptgrimoire.config import get_settings
 from promptgrimoire.docs.helpers import select_chars
 from tests.e2e.card_helpers import PABAI_WORKSPACE_ID, ensure_pabai_workspace
-from tests.e2e.db_fixtures import grant_acl
+from tests.e2e.db_fixtures import _get_sync_engine, grant_acl
 
 if TYPE_CHECKING:
     from collections.abc import Generator
 
     from playwright.sync_api import Browser, Page
 _MAX_LOAD_AVG = 10.0  # 1-min load average ceiling for perf tests
+_RESPOND_VISITS = (
+    int(os.environ["E2E_RESPOND_MOUNT_VISITS"])
+    if "E2E_RESPOND_MOUNT_VISITS" in os.environ
+    else 5
+)
+_RESPOND_TIMEOUT_MS = (
+    int(os.environ["E2E_RESPOND_MOUNT_TIMEOUT_MS"])
+    if "E2E_RESPOND_MOUNT_TIMEOUT_MS" in os.environ
+    else 30_000
+)
 
 # structlog events we want to capture
 _SERVER_TIMING_EVENTS = frozenset(
@@ -46,6 +59,146 @@ _SERVER_TIMING_EVENTS = frozenset(
         "resolve_step",
     }
 )
+
+
+@dataclass
+class RespondMountObservation:
+    """Browser-visible boundaries for one Respond-tab visit."""
+
+    visit: int
+    click_to_container_ms: int = -1
+    container_to_editor_ms: int = -1
+    click_to_editor_ms: int = -1
+    acknowledged_marker: str | None = None
+    error: str | None = None
+
+
+def _measure_respond_visit(
+    page: Page, visit: int, marker: str
+) -> RespondMountObservation:
+    """Measure tab delivery separately from Milkdown becoming interactive."""
+    observation = RespondMountObservation(visit=visit)
+    started = time.perf_counter()
+    page.get_by_test_id("tab-respond").click()
+
+    container = page.get_by_test_id("milkdown-editor-container")
+    try:
+        container.wait_for(state="visible", timeout=_RESPOND_TIMEOUT_MS)
+        container_ready = time.perf_counter()
+        observation.click_to_container_ms = round((container_ready - started) * 1000)
+
+        editor = container.locator("[contenteditable]").first
+        editor.wait_for(state="visible", timeout=_RESPOND_TIMEOUT_MS)
+        editor_ready = time.perf_counter()
+        observation.container_to_editor_ms = round(
+            (editor_ready - container_ready) * 1000
+        )
+        observation.click_to_editor_ms = round((editor_ready - started) * 1000)
+        editor.click()
+        page.keyboard.press("Control+End")
+        page.keyboard.press("Enter")
+        page.keyboard.type(marker)
+        expect(editor).to_contain_text(marker, timeout=_RESPOND_TIMEOUT_MS)
+        observation.acknowledged_marker = marker
+    except PlaywrightTimeoutError as exc:
+        observation.error = f"{type(exc).__name__}: {exc}"
+
+    return observation
+
+
+def _write_respond_mount_evidence(
+    observations: list[RespondMountObservation],
+    persisted_audit: dict[str, object],
+) -> None:
+    """Print raw evidence and optionally persist it for cross-leg comparison."""
+    payload = {
+        "visits": [asdict(observation) for observation in observations],
+        "persisted_audit": persisted_audit,
+    }
+    print("\n=== Respond mount boundaries (Pabai, single browser) ===")
+    print(json.dumps(payload, indent=2))
+
+    raw_path = (
+        os.environ["E2E_RESPOND_MOUNT_DIAG_PATH"]  # noqa: SIM401 - env guard
+        if "E2E_RESPOND_MOUNT_DIAG_PATH" in os.environ
+        else None
+    )
+    if raw_path:
+        path = Path(raw_path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+
+def _force_crdt_persistence(app_server: str) -> dict[str, int]:
+    """Cross the managed test server's explicit persistence barrier."""
+    request = urllib.request.Request(
+        f"{app_server}/api/test/persist-crdt", data=b"", method="POST"
+    )
+    with urllib.request.urlopen(request, timeout=30) as response:
+        payload: dict[str, int] = json.loads(response.read().decode())
+    assert payload["dirty_after"] == 0
+    return payload
+
+
+def _load_persisted_respond_state(workspace_id: str) -> tuple[str, str]:
+    """Read PostgreSQL bytes and hydrate a document outside the live registry."""
+    from sqlalchemy import text
+
+    from promptgrimoire.crdt.annotation_doc import AnnotationDocument
+
+    engine = _get_sync_engine()
+    try:
+        with engine.connect() as connection:
+            crdt_state = connection.execute(
+                text(
+                    "SELECT crdt_state FROM workspace "
+                    "WHERE id = CAST(:workspace_id AS uuid)"
+                ),
+                {"workspace_id": workspace_id},
+            ).scalar_one()
+    finally:
+        engine.dispose()
+    assert crdt_state is not None
+    persisted = AnnotationDocument("respond-perf-fresh-db-hydration")
+    persisted.apply_update(crdt_state)
+    return str(persisted.response_draft), persisted.get_response_draft_markdown()
+
+
+def _audit_persisted_markers(
+    observations: list[RespondMountObservation],
+    browser_text: str,
+    fragment: str,
+    markdown: str,
+    barrier: dict[str, int],
+) -> dict[str, object]:
+    """Assert acknowledged edits are durable, unique, and ordered."""
+    markers = [
+        observation.acknowledged_marker
+        for observation in observations
+        if observation.acknowledged_marker is not None
+    ]
+    assert markers, "No Respond edit reached the browser acknowledgement boundary"
+
+    for marker in markers:
+        assert fragment.count(marker) == 1, (
+            f"Persisted response fragment did not contain {marker!r} exactly once"
+        )
+        assert markdown.count(marker) == 1, (
+            f"Persisted markdown mirror did not contain {marker!r} exactly once"
+        )
+
+    browser_order = sorted(markers, key=browser_text.index)
+    fragment_order = sorted(markers, key=fragment.index)
+    markdown_order = sorted(markers, key=markdown.index)
+    return {
+        "acknowledged_markers": markers,
+        "browser_order": browser_order,
+        "fragment_order": fragment_order,
+        "markdown_order": markdown_order,
+        "fragment_matches_browser": fragment_order == browser_order,
+        "markdown_matches_browser": markdown_order == browser_order,
+        "persistence_barrier": barrier,
+    }
 
 
 def _check_system_load() -> None:
@@ -333,6 +486,51 @@ class TestBrowserPerf377:
         server_phases = {e.get("phase") or e.get("step") for e in server_entries}
         assert "ui_html" in server_phases, (
             f"H2: ui_html timing not captured. Got: {server_phases}"
+        )
+
+    def test_respond_mount_boundaries(
+        self, pabai_page: Page, app_server: str, server_log: ServerLogReader
+    ) -> None:
+        """Split Respond tab delivery from browser-side Milkdown readiness.
+
+        This is an evidence probe, not a latency gate. Revisit timeouts are
+        retained in the output so the degradation remains measurable.
+        """
+        page = pabai_page
+        ws_url = f"{app_server}/annotation?workspace_id={PABAI_WORKSPACE_ID}"
+        page.goto("about:blank")
+        page.goto(ws_url, wait_until="networkidle")
+        page.get_by_test_id("doc-container").wait_for(state="visible", timeout=60_000)
+
+        observations: list[RespondMountObservation] = []
+        run_id = uuid4().hex[:8]
+        server_log.checkpoint()
+        for visit in range(1, _RESPOND_VISITS + 1):
+            marker = f"respond-probe-{run_id}-{visit:04d}"
+            observations.append(_measure_respond_visit(page, visit, marker))
+            if visit < _RESPOND_VISITS:
+                page.get_by_test_id("tab-source-1").click()
+                page.get_by_test_id("doc-container").wait_for(
+                    state="visible", timeout=_RESPOND_TIMEOUT_MS
+                )
+
+        browser_text = (
+            page.get_by_test_id("milkdown-editor-container")
+            .locator("[contenteditable]")
+            .first.inner_text()
+        )
+        barrier = _force_crdt_persistence(app_server)
+        fragment, markdown = _load_persisted_respond_state(PABAI_WORKSPACE_ID)
+        persisted_audit = _audit_persisted_markers(
+            observations, browser_text, fragment, markdown, barrier
+        )
+        _write_respond_mount_evidence(observations, persisted_audit)
+        _print_server_timings(server_log.read_since(), "Respond mount probe")
+
+        assert persisted_audit["fragment_matches_browser"] is True
+        assert persisted_audit["markdown_matches_browser"] is True
+        assert any(item.click_to_container_ms >= 0 for item in observations), (
+            "Respond container never appeared; mount split was not observed"
         )
 
     def test_tag_apply_timings(

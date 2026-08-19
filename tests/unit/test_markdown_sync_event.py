@@ -185,6 +185,38 @@ class TestOnYjsUpdateMardownSync:
         md_arg = mock_wc.call_args[0][0]
         assert md_arg == "Five words are right here"
 
+    @pytest.mark.asyncio
+    async def test_apply_broadcast_mirror_and_dirty_stages_are_ordered(self) -> None:
+        """An acknowledged edit crosses each server stage in causal order."""
+        crdt_doc = _make_crdt_doc()
+        handler, broadcast, _ = _capture_on_yjs_handler(crdt_doc)
+        marker = "[respond-stage:0001]"
+        stages: list[str] = []
+
+        def observe_broadcast(*_args: object) -> None:
+            assert "hello" in str(crdt_doc.response_draft)
+            assert str(crdt_doc.response_draft_markdown) == ""
+            stages.append("broadcast")
+
+        mock_pm = MagicMock()
+
+        def observe_dirty(*_args: object, **_kwargs: object) -> None:
+            assert "hello" in str(crdt_doc.response_draft)
+            assert str(crdt_doc.response_draft_markdown) == marker
+            stages.append("dirty")
+
+        broadcast.side_effect = observe_broadcast
+        mock_pm.mark_dirty_workspace.side_effect = observe_dirty
+        event = SimpleNamespace(args={"update": _make_yjs_update(), "markdown": marker})
+
+        with patch(
+            "promptgrimoire.pages.annotation.respond.get_persistence_manager",
+            return_value=mock_pm,
+        ):
+            await handler(event)
+
+        assert stages == ["broadcast", "dirty"]
+
 
 class TestOnYjsUpdateNoRunJavascript:
     """AC3.2: on_yjs_update does NOT call run_javascript (no JS round-trip)."""

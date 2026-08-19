@@ -802,13 +802,19 @@ async def _build_tab_panels(  # noqa: PLR0913 -- param-object migration: tracker
                     footer=footer,
                 )
 
-        with ui.tab_panel("Organise") as organise_panel:
-            state.organise_panel = organise_panel
-            ui.label("Organise tab content will appear here.").classes("text-gray-400")
+        with ui.tab_panel("Organise"), ui.keep_alive():
+            state.organise_panel = ui.column().classes("w-full")
+            with state.organise_panel:
+                ui.label("Organise tab content will appear here.").classes(
+                    "text-gray-400"
+                )
 
-        with ui.tab_panel("Respond") as respond_panel:
-            state.respond_panel = respond_panel
-            ui.label("Respond tab content will appear here.").classes("text-gray-400")
+        with ui.tab_panel("Respond"), ui.keep_alive():
+            state.respond_panel = ui.column().classes("w-full")
+            with state.respond_panel:
+                ui.label("Respond tab content will appear here.").classes(
+                    "text-gray-400"
+                )
 
     logger.debug("[RENDER] tab panels built, workspace=%s", workspace_id)
 

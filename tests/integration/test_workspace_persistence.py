@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from uuid import uuid4
 
+import pycrdt
 import pytest
 
 from promptgrimoire.config import get_settings
@@ -104,6 +105,46 @@ class TestWorkspacePersistence:
         assert len(highlights) == 2
         assert any(h["id"] == hl1_id for h in highlights)
         assert any(h["id"] == hl2_id for h in highlights)
+
+    @pytest.mark.asyncio
+    async def test_workspace_persist_preserves_ordered_response_draft(self) -> None:
+        """Fresh DB hydration preserves both Respond CRDT representations."""
+        from promptgrimoire.crdt.annotation_doc import AnnotationDocument
+        from promptgrimoire.crdt.persistence import get_persistence_manager
+        from promptgrimoire.db.workspaces import create_workspace, get_workspace
+
+        workspace = await create_workspace()
+        doc = AnnotationDocument(f"ws-{workspace.id}")
+        markers = [f"[respond-persist:{index:04d}]" for index in range(1, 4)]
+        markdown_field = doc.response_draft_markdown
+
+        with doc.doc.transaction():
+            for marker in markers:
+                doc.response_draft.children.append(pycrdt.XmlText(marker))
+                markdown_field += marker
+
+        pm = get_persistence_manager()
+        pm.register_document(doc)
+        pm.mark_dirty_workspace(workspace.id, doc.doc_id, last_editor="test-client")
+        await pm.force_persist_workspace(workspace.id)
+
+        loaded_workspace = await get_workspace(workspace.id)
+        assert loaded_workspace is not None
+        assert loaded_workspace.crdt_state is not None
+        loaded_doc = AnnotationDocument("fresh-db-hydration")
+        loaded_doc.apply_update(loaded_workspace.crdt_state)
+
+        fragment = str(loaded_doc.response_draft)
+        markdown = loaded_doc.get_response_draft_markdown()
+        for marker in markers:
+            assert fragment.count(marker) == 1
+            assert markdown.count(marker) == 1
+        assert [fragment.index(marker) for marker in markers] == sorted(
+            fragment.index(marker) for marker in markers
+        )
+        assert [markdown.index(marker) for marker in markers] == sorted(
+            markdown.index(marker) for marker in markers
+        )
 
 
 class TestWorkspaceLoading:

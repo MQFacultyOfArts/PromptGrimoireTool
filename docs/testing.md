@@ -71,6 +71,26 @@ It accepts:
 - `E2E_CRAM_DIAG_SAMPLE_SECONDS` for the diagnostics sampling interval; and
 - `E2E_CRAM_DIAG_PATH` for the JSON evidence path.
 
+The single-browser Respond mount probe
+(`test_browser_perf_377.py::TestBrowserPerf377::test_respond_mount_boundaries`)
+separates tab delivery from Milkdown readiness across repeated visits. Each
+successful visit types and visibly acknowledges a sequenced marker. The probe
+then crosses the managed server's explicit persistence barrier, reads
+`workspace.crdt_state` directly from PostgreSQL, hydrates a fresh CRDT document,
+and verifies every acknowledged marker appears exactly once, in the same order
+as the final browser-visible document, in both the
+Milkdown fragment and markdown mirror. It accepts:
+
+- `E2E_RESPOND_MOUNT_VISITS` for the number of Source/Respond cycles
+  (default 5);
+- `E2E_RESPOND_MOUNT_TIMEOUT_MS` for each observed boundary (default 30000);
+  and
+- `E2E_RESPOND_MOUNT_DIAG_PATH` for the JSON evidence path.
+
+The probe records timeouts as evidence and only fails when the Respond
+container never appears, because it is an attribution probe rather than a
+latency release gate.
+
 Comparative performance claims require alternating or interleaved arms (ABBA
 at minimum), per-leg results, and within-arm spread. Report server-side and
 browser-side boundaries separately; browser timings from co-located load

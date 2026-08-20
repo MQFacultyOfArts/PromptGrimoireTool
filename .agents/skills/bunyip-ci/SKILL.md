@@ -19,20 +19,23 @@ The focused lane supplies the prepared image and PostgreSQL. Do not replace a
 focused run with an entire regular lane; run the regular lane once after the
 focused test is restored.
 
-## Track completion
+## Submit and await completion
 
-1. Run the wrapper in the foreground from the checkout being tested. If the
-   execution tool returns a session identifier, keep polling that same session.
+1. Launch the wrapper once from the checkout being tested in a background
+   terminal that emits a completion event. Keep that terminal attached to the
+   wrapper; do not detach the wrapper into an unobservable shell process.
 2. Treat `waiting for the bunyip heavy-work queue` as queued, not stalled. Do
    not submit a duplicate.
-3. Capture the printed lane, revision, artifact directory, start time, and
-   resource limits.
-4. Consider the lane finished only when the wrapper exits. A test summary is
-   not completion: artifact handling, container cleanup, and interrupted
-   staging restoration happen afterward.
-5. Record the wrapper exit status and its final `PASS` or `FAIL` line. On an
-   interrupted run, also verify the wrapper completed its cleanup/restoration
-   path before reporting done.
+3. Do not poll the terminal, processes, logs, note files, or lock while the run
+   is active. Await the terminal's completion notification and send no lane-by-
+   lane progress narration unless the user explicitly asks for it.
+4. Consider the lane finished only when the attached wrapper exits. A test
+   summary is not completion: artifact handling, container cleanup, and
+   interrupted staging restoration happen afterward.
+5. After notification, read the terminal result once and record the lane,
+   revision, artifact directory, start/end times, wrapper exit status, and its
+   final `PASS` or `FAIL` line. On an interrupted run, also verify the wrapper
+   completed its cleanup/restoration path before reporting done.
 
 ## Diagnose failure
 

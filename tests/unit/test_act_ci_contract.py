@@ -1,0 +1,59 @@
+"""Repository contracts for running GitHub workflows through act."""
+
+from pathlib import Path
+
+import yaml
+
+
+def test_act_runner_matches_ci_contract() -> None:
+    """Keep act's image, event, database, and cache behaviour CI-compatible."""
+    dockerfile = Path("Dockerfile.act").read_text()
+    act_workflow_text = Path(".github/workflows/act-ci.yml").read_text()
+    runbook = Path("docs/ci-runners.md").read_text()
+    workflows = [
+        yaml.safe_load(Path(path).read_text())
+        for path in (
+            ".github/workflows/ci.yml",
+            ".github/workflows/act-ci.yml",
+            ".github/workflows/nightly-e2e-slow.yml",
+        )
+    ]
+
+    assert "postgresql-client" in dockerfile
+    assert "psql --version" in dockerfile
+    assert "COPY --from=ghcr.io/astral-sh/uv:" in dockerfile
+    assert "workflow_dispatch" in workflows[1][True]
+    assert "pull_request" not in workflows[1][True]
+    assert "browser: [chromium, firefox]" in act_workflow_text
+    assert "postgres:17" not in "\n".join(
+        Path(path).read_text()
+        for path in (
+            ".github/workflows/ci.yml",
+            ".github/workflows/act-ci.yml",
+            ".github/workflows/nightly-e2e-slow.yml",
+        )
+    )
+    assert "cache-local-path" not in act_workflow_text
+    assert all(
+        flag in runbook
+        for flag in ("--env-file", "--secret-file", "--input-file", "--var-file")
+    )
+    assert "actions/upload-artifact@v4" in act_workflow_text
+    assert "actions/upload-artifact@v6" not in act_workflow_text
+    assert "actions/upload-artifact@v7" not in act_workflow_text
+
+    service_ports = [
+        port
+        for workflow in workflows
+        for job in workflow["jobs"].values()
+        for service in job.get("services", {}).values()
+        for port in service.get("ports", [])
+    ]
+    act_service_ports = [
+        port
+        for job in workflows[1]["jobs"].values()
+        for service in job.get("services", {}).values()
+        for port in service.get("ports", [])
+    ]
+    assert all(str(port).startswith("127.0.0.1:") for port in service_ports)
+    assert len(act_service_ports) == len(set(act_service_ports))

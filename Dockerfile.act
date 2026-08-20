@@ -4,7 +4,7 @@
 # font cache so act runs don't pay the cold-start penalty.
 #
 # Build:  docker build -t grimoire-act-runner -f Dockerfile.act .
-# Use:    gh act pull_request -W .github/workflows/act-ci.yml -j test-all \
+# Use:    gh act workflow_dispatch -W .github/workflows/act-ci.yml -j test-all \
 #           -P ubuntu-latest=grimoire-act-runner
 #
 # Or add to .actrc:  -P ubuntu-latest=grimoire-act-runner
@@ -13,6 +13,7 @@ FROM catthehacker/ubuntu:act-latest
 
 # System packages (matches ci.yml Install system dependencies step)
 RUN apt-get update && apt-get install -y \
+    postgresql-client \
     mecab libmecab-dev \
     pandoc \
     poppler-utils \
@@ -25,6 +26,9 @@ RUN apt-get update && apt-get install -y \
     fonts-sil-galatia fonts-sil-sophia-nubian fonts-sil-nuosusil \
     fonts-sil-taiheritagepro \
     && rm -rf /var/lib/apt/lists/*
+
+# ci.yml quietens its service through psql before checkout; prove the image can.
+RUN psql --version
 
 # TinyTeX + LaTeX packages (mirrors scripts/setup_latex.py)
 # Install TinyTeX
@@ -63,3 +67,7 @@ RUN printf '%s\n' \
     '\end{document}' > /tmp/warmup.tex \
     && lualatex -interaction=nonstopmode -halt-on-error -output-directory=/tmp /tmp/warmup.tex \
     && rm -f /tmp/warmup.*
+
+# The same image serves branch staging as well as act jobs.
+COPY --from=ghcr.io/astral-sh/uv:0.12.5 /uv /uvx /bin/
+RUN uv --version

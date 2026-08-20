@@ -33,6 +33,54 @@ from promptgrimoire.logging_config import setup_logging
 
 setup_logging()
 
+# --- GC pause recorder ---
+# Convicts or acquits gen-2 GC for the sub-second event-loop stalls seen
+# at n=200 (spike magnitude tracked RSS growth; uninstrumented until now).
+# The callback runs synchronously around every collection, so it must
+# stay tiny. Drained by /api/test/diagnostics each poll.
+import gc
+import time as _time
+
+# No lock: the callback fires on whichever thread triggers collection and
+# the endpoint drains on the loop thread; a torn read misreports one
+# sample of diagnostics, which is acceptable for this instrument.
+_GC_NOTABLE_PAUSE_MS = 50.0
+
+_gc_state: dict[str, Any] = {
+    "start_ns": 0,
+    "pause_max_ms": [0.0, 0.0, 0.0],
+    "pauses_over_50ms": 0,
+    "count": [0, 0, 0],
+}
+
+
+def _gc_callback(phase: str, info: dict[str, Any]) -> None:
+    if phase == "start":
+        _gc_state["start_ns"] = _time.perf_counter_ns()
+        return
+    gen = info.get("generation", 0)
+    dur_ms = (_time.perf_counter_ns() - _gc_state["start_ns"]) / 1e6
+    _gc_state["count"][gen] += 1
+    _gc_state["pause_max_ms"][gen] = max(_gc_state["pause_max_ms"][gen], dur_ms)
+    if dur_ms > _GC_NOTABLE_PAUSE_MS:
+        _gc_state["pauses_over_50ms"] += 1
+
+
+gc.callbacks.append(_gc_callback)
+
+
+def _drain_gc_stats() -> dict[str, Any]:
+    out = {
+        "pause_max_ms": [round(v, 1) for v in _gc_state["pause_max_ms"]],
+        "pauses_over_50ms": _gc_state["pauses_over_50ms"],
+        "count": list(_gc_state["count"]),
+    }
+    _gc_state["pause_max_ms"] = [0.0, 0.0, 0.0]
+    _gc_state["pauses_over_50ms"] = 0
+    _gc_state["count"] = [0, 0, 0]
+    return out
+
+
 # --- Event loop watchdog (runs on a separate thread) ---
 import asyncio
 import structlog
@@ -447,6 +495,7 @@ async def _diagnostics():
         "asyncio_tasks": len(all_tasks),
         "asyncio_task_names": _task_summary(all_tasks),
         "load_metrics": drain_load_metrics(),
+        "gc": _drain_gc_stats(),
     }
 
 

@@ -51,9 +51,11 @@ def test_act_runner_matches_ci_contract() -> None:
     ]
     act_service_ports = [
         port
-        for job in workflows[1]["jobs"].values()
+        for workflow in workflows[1:]
+        for job in workflow["jobs"].values()
         for service in job.get("services", {}).values()
         for port in service.get("ports", [])
     ]
     assert all(str(port).startswith("127.0.0.1:") for port in service_ports)
     assert len(act_service_ports) == len(set(act_service_ports))
+    assert all(str(port).split(":")[1] != "5432" for port in act_service_ports)

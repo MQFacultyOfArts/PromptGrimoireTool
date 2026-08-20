@@ -26,15 +26,15 @@ jobs:
           --health-timeout 5s
           --health-retries 5
         ports:
-          - "127.0.0.1:5432:5432"
+          - "127.0.0.1:5436:5432"
     env:
-      DEV__TEST_DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/promptgrimoire_test
+      DEV__TEST_DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5436/promptgrimoire_test
       OSFONTDIR: /usr/share/fonts:/usr/share/texmf/fonts
     steps:
       - name: Quieten Postgres logs
         run: |
           export PGPASSWORD=postgres
-          psql -h localhost -U postgres -d promptgrimoire_test \
+          psql -h localhost -p 5436 -U postgres -d promptgrimoire_test \
             -c "ALTER SYSTEM SET log_checkpoints = off" \
             -c "ALTER SYSTEM SET log_min_messages = warning" \
             -c "SELECT pg_reload_conf()"

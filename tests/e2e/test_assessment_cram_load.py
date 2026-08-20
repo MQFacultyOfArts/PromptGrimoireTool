@@ -45,7 +45,7 @@ from uuid import uuid4
 
 import pytest
 
-from promptgrimoire.config import get_settings
+from promptgrimoire.config import get_current_branch, get_settings
 from tests.e2e.assessment_fixtures import (
     CASE_BRIEF_TAG_COUNT,
     NARAYAN_FIXTURE,
@@ -55,9 +55,16 @@ from tests.e2e.assessment_fixtures import (
     provision_clone_for_email,
     restore_template_binding,
 )
+from tests.e2e.perf_reporting import (
+    build_run_meta,
+    collect_server_page_load,
+    print_server_page_load,
+    utc_now,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
+    from datetime import datetime
 
     from playwright.sync_api import Page
 
@@ -404,15 +411,44 @@ def _print_summary(
         )
 
 
+def _cram_run_meta(started: datetime, ended: datetime) -> dict:
+    """Describe this run's configuration for the diag JSON.
+
+    Provenance used to rest on the output filename, so a run JSON could
+    not say which snapshot flag or pool mode produced it.
+    """
+    return build_run_meta(
+        probe="assessment_cram",
+        env=os.environ,
+        started=started,
+        ended=ended,
+        knobs={
+            "sessions": N_CRAM_SESSIONS,
+            "highlights_per_student": N_CRAM_HIGHLIGHTS,
+            "comments_per_student": N_CRAM_COMMENTS,
+            "think_ms": CRAM_THINK_MS,
+            "action_timeout_ms": CRAM_ACTION_TIMEOUT_MS,
+            "retry_timeout_ms": CRAM_RETRY_TIMEOUT_MS,
+            "diag_sample_seconds": CRAM_DIAG_SAMPLE_SECONDS,
+        },
+        snapshot_enabled=get_settings().snapshot.enabled,
+        branch=get_current_branch(),
+    )
+
+
 def _maybe_write_diag(
     observations: list[CramObservation],
     diag_samples: list[dict],
+    run_meta: dict,
+    server_page_load: dict,
 ) -> None:
     """Optionally persist full evidence for manual analysis."""
     raw_path = os.environ.get("E2E_CRAM_DIAG_PATH")
     if not raw_path:
         return
     payload = {
+        "run_meta": run_meta,
+        "server_page_load": server_page_load,
         "sessions": N_CRAM_SESSIONS,
         "highlights_per_student": N_CRAM_HIGHLIGHTS,
         "comments_per_student": N_CRAM_COMMENTS,
@@ -447,6 +483,7 @@ class TestAssessmentCramLoad:
         narayan_activity_template: str,
     ) -> None:
         """Find whether n concurrent working students stay within bounds."""
+        run_started = utc_now()
         observations: list[CramObservation] = []
         for _ in range(N_CRAM_SESSIONS):
             email = f"cram-{uuid4().hex[:8]}@test.example.edu.au"
@@ -508,8 +545,24 @@ class TestAssessmentCramLoad:
                 thread.join(timeout=300)
 
         sample_diag()
+        run_ended = utc_now()
         _print_summary(observations, diag_samples)
-        _maybe_write_diag(observations, diag_samples)
+
+        # Browser-observed latency above includes Playwright and the
+        # co-located browser's own CPU contention (failure-mode class G);
+        # the server's page_load_profile is the production-magnitude
+        # number, so both are reported side by side.
+        server_page_load = collect_server_page_load(
+            window_start=run_started,
+            window_end=run_ended,
+        )
+        print_server_page_load(server_page_load)
+        _maybe_write_diag(
+            observations,
+            diag_samples,
+            _cram_run_meta(run_started, run_ended),
+            server_page_load,
+        )
 
         load_errors = [o.error for o in observations if o.error]
         action_failures = [
@@ -519,17 +572,20 @@ class TestAssessmentCramLoad:
             if a.error is not None
         ]
         if load_errors or action_failures:
-            pytest.fail(
-                "\n".join(
-                    [
-                        f"Cram probe boundary hit at n={N_CRAM_SESSIONS}:",
-                        *load_errors,
-                        *action_failures,
-                    ]
-                )
-            )
+            print(f"\ncram failures at n={N_CRAM_SESSIONS} (reported, not fatal):")
+            for line in (*load_errors, *action_failures):
+                print(f"  {line}")
 
-        assert all(o.annotation_loaded for o in observations)
-        expected_actions = N_CRAM_HIGHLIGHTS + N_CRAM_COMMENTS
-        total_ok = sum(1 for o in observations for a in o.actions if a.error is None)
-        assert total_ok == N_CRAM_SESSIONS * expected_actions
+        # Gate mirrors the soak probe: individual failures are data, the
+        # run fails only on systemic collapse. A student counts as failed
+        # if their page never loaded or any of their actions errored.
+        failed_students = {
+            o.email
+            for o in observations
+            if o.error or not o.annotation_loaded or any(a.error for a in o.actions)
+        }
+        max_failed = max(3, N_CRAM_SESSIONS // 10)
+        assert len(failed_students) <= max_failed, (
+            f"Cram collapse: {len(failed_students)} of {N_CRAM_SESSIONS} students"
+            f" failed (gate {max_failed}): {sorted(failed_students)}"
+        )

@@ -9,6 +9,20 @@ Use the operator-installed wrapper as the only entry point. The wrapper owns
 the kernel `flock`; never acquire a second lock or infer availability from a
 note, timestamp, PID, port, process name, or lock-file existence.
 
+## Shared-host affordances
+
+- A durable interruptible staging service may remain healthy while the heavy
+  lock is free. Its container, listener, and health endpoint do not mean act or
+  another heavy workload is running.
+- The wrapper acquires the shared flock before stopping staging, then restores
+  staging during cleanup before releasing the flock. Loud preemption and
+  restoration messages are expected.
+- Perf uses the same flock for each atomic leg and releases it between legs.
+  CI waits for a running leg; it never kills one. Do not dispatch a second
+  workload or invent another lock.
+- Only successful `flock` acquisition establishes exclusive use. Durable
+  services and retained caches or artifacts are outside that ownership signal.
+
 For focused red/green work, pass the repository command as an argument vector:
 
 ```bash

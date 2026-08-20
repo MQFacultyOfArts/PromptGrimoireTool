@@ -41,14 +41,30 @@ from contextlib import suppress
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 import pytest
 
-from promptgrimoire.config import get_settings
+from promptgrimoire.config import get_current_branch, get_settings
+from tests.e2e.assessment_fixtures import (
+    CASE_BRIEF_TAG_COUNT,
+    NARAYAN_FIXTURE,
+    create_template_activity,
+    ensure_fixture_workspace,
+    fixture_document_words,
+    provision_clone_for_email,
+    restore_template_binding,
+)
+from tests.e2e.perf_reporting import (
+    build_run_meta,
+    collect_server_page_load,
+    print_server_page_load,
+    utc_now,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
+    from datetime import datetime
 
     from playwright.sync_api import Page
 
@@ -63,12 +79,6 @@ pytestmark = [
         reason="DEV__TEST_DATABASE_URL not configured",
     ),
 ]
-
-NARAYAN_WORKSPACE_ID = "c7cf540f-53df-407e-b043-cc6f6e30cf5b"
-NARAYAN_FIXTURE_JSON = (
-    Path(__file__).parent.parent / "fixtures" / "narayan_workspace.json"
-)
-CASE_BRIEF_TAG_COUNT = 10
 
 N_CRAM_SESSIONS = int(os.environ.get("E2E_CRAM_SESSIONS", "25"))
 N_CRAM_HIGHLIGHTS = int(os.environ.get("E2E_CRAM_HIGHLIGHTS", "10"))
@@ -110,122 +120,6 @@ def _fetch_json(url: str) -> dict:
     """Fetch JSON from a localhost E2E helper endpoint."""
     with urllib.request.urlopen(url, timeout=30) as resp:
         return json.loads(resp.read().decode())
-
-
-def _ensure_narayan_workspace() -> str:
-    """Rehydrate the Narayan assessment template into the test DB.
-
-    The rehydrate script deletes then re-inserts, so calling this
-    unconditionally is safe. Returns the workspace ID.
-    """
-    if not NARAYAN_FIXTURE_JSON.exists():
-        pytest.skip(
-            f"Workspace JSON not found at {NARAYAN_FIXTURE_JSON}. "
-            "Extract from prod with scripts/extract_workspace.py first."
-        )
-
-    from scripts.rehydrate_workspace import rehydrate
-
-    db_url = get_settings().database.url
-    if not db_url:
-        msg = "DATABASE__URL not configured"
-        raise RuntimeError(msg)
-    result = rehydrate(NARAYAN_FIXTURE_JSON, db_url)
-    assert result["workspace_id"] == NARAYAN_WORKSPACE_ID
-    return NARAYAN_WORKSPACE_ID
-
-
-async def _create_narayan_template_activity() -> tuple[str, str]:
-    """Create an Activity whose template workspace is the Narayan fixture."""
-    from promptgrimoire.db.activities import create_activity
-    from promptgrimoire.db.courses import create_course
-    from promptgrimoire.db.engine import get_session
-    from promptgrimoire.db.models import Activity, Workspace
-    from promptgrimoire.db.weeks import create_week, publish_week
-
-    suffix = uuid4().hex[:8]
-    course = await create_course(
-        code=f"CR{suffix[:6].upper()}",
-        name="Assessment Cram Probe",
-        semester="2026-S2",
-    )
-    week = await create_week(course_id=course.id, week_number=5, title="Week 5")
-    await publish_week(week.id)
-    activity = await create_activity(week_id=week.id, title=f"Cram Load {suffix}")
-
-    async with get_session() as session:
-        db_activity = await session.get(Activity, activity.id)
-        assert db_activity is not None
-        old_template_id = str(db_activity.template_workspace_id)
-        db_activity.template_workspace_id = UUID(NARAYAN_WORKSPACE_ID)
-        session.add(db_activity)
-
-        old_template = await session.get(Workspace, UUID(old_template_id))
-        if old_template is not None:
-            old_template.activity_id = None
-            session.add(old_template)
-
-        narayan = await session.get(Workspace, UUID(NARAYAN_WORKSPACE_ID))
-        assert narayan is not None
-        narayan.activity_id = activity.id
-        session.add(narayan)
-
-    return str(activity.id), old_template_id
-
-
-async def _restore_narayan_template_binding(
-    activity_id: str,
-    old_template_id: str,
-) -> None:
-    """Restore the Narayan fixture to loose-workspace state after the probe."""
-    from promptgrimoire.db.engine import get_session
-    from promptgrimoire.db.models import Activity, Workspace
-
-    async with get_session() as session:
-        activity = await session.get(Activity, UUID(activity_id))
-        if activity is not None:
-            activity.template_workspace_id = UUID(old_template_id)
-            session.add(activity)
-
-        narayan = await session.get(Workspace, UUID(NARAYAN_WORKSPACE_ID))
-        if narayan is not None:
-            narayan.activity_id = None
-            session.add(narayan)
-
-        old_template = await session.get(Workspace, UUID(old_template_id))
-        if old_template is not None:
-            old_template.activity_id = UUID(activity_id)
-            session.add(old_template)
-
-
-async def _provision_clone_for_email(activity_id: str, email: str) -> str:
-    """Create or reuse a user, then clone the assessment template for them."""
-    from promptgrimoire.db.users import find_or_create_user
-    from promptgrimoire.db.workspaces import clone_workspace_from_activity
-
-    user, _ = await find_or_create_user(email, display_name=email.split("@", 1)[0])
-    clone, _ = await clone_workspace_from_activity(UUID(activity_id), user.id)
-    return str(clone.id)
-
-
-def _fixture_document_words() -> list[str]:
-    """Extract the assessment document's words from the fixture JSON.
-
-    The browser's text walker collapses whitespace, so a needle built
-    from single-space-joined words matches what ``find_text_range``
-    searches. Reading the fixture (rather than the browser) keeps the
-    probe file free of page.evaluate.
-    """
-    from selectolax.lexbor import LexborHTMLParser
-
-    data = json.loads(NARAYAN_FIXTURE_JSON.read_text(encoding="utf-8"))
-    html = data["documents"][0]["content"]
-    words = LexborHTMLParser(html).text(separator=" ").split()
-    min_words_needed = 200
-    if len(words) < min_words_needed:
-        msg = f"fixture document too short ({len(words)} words)"
-        raise RuntimeError(msg)
-    return words
 
 
 def _plan_highlight_needles(
@@ -336,7 +230,7 @@ def _run_annotation_pass(
     from tests.e2e.card_helpers import add_comment_to_highlight
 
     pass_start = time.perf_counter()
-    words = _fixture_document_words()
+    words = fixture_document_words(NARAYAN_FIXTURE)
     # Extra candidates cover needles the walker's whitespace collapsing
     # renders unfindable (e.g. words joined across a <br>).
     # 4x pool: retries and unfindable needles both consume candidates.
@@ -517,15 +411,44 @@ def _print_summary(
         )
 
 
+def _cram_run_meta(started: datetime, ended: datetime) -> dict:
+    """Describe this run's configuration for the diag JSON.
+
+    Provenance used to rest on the output filename, so a run JSON could
+    not say which snapshot flag or pool mode produced it.
+    """
+    return build_run_meta(
+        probe="assessment_cram",
+        env=os.environ,
+        started=started,
+        ended=ended,
+        knobs={
+            "sessions": N_CRAM_SESSIONS,
+            "highlights_per_student": N_CRAM_HIGHLIGHTS,
+            "comments_per_student": N_CRAM_COMMENTS,
+            "think_ms": CRAM_THINK_MS,
+            "action_timeout_ms": CRAM_ACTION_TIMEOUT_MS,
+            "retry_timeout_ms": CRAM_RETRY_TIMEOUT_MS,
+            "diag_sample_seconds": CRAM_DIAG_SAMPLE_SECONDS,
+        },
+        snapshot_enabled=get_settings().snapshot.enabled,
+        branch=get_current_branch(),
+    )
+
+
 def _maybe_write_diag(
     observations: list[CramObservation],
     diag_samples: list[dict],
+    run_meta: dict,
+    server_page_load: dict,
 ) -> None:
     """Optionally persist full evidence for manual analysis."""
     raw_path = os.environ.get("E2E_CRAM_DIAG_PATH")
     if not raw_path:
         return
     payload = {
+        "run_meta": run_meta,
+        "server_page_load": server_page_load,
         "sessions": N_CRAM_SESSIONS,
         "highlights_per_student": N_CRAM_HIGHLIGHTS,
         "comments_per_student": N_CRAM_COMMENTS,
@@ -539,12 +462,16 @@ def _maybe_write_diag(
 @pytest.fixture(scope="module")
 def narayan_activity_template() -> Iterator[str]:
     """Create a temporary activity using the Narayan fixture as template."""
-    _ensure_narayan_workspace()
-    activity_id, old_template_id = asyncio.run(_create_narayan_template_activity())
+    ensure_fixture_workspace(NARAYAN_FIXTURE)
+    activity_id, old_template_id = asyncio.run(
+        create_template_activity(NARAYAN_FIXTURE, course_name="Assessment Cram Probe")
+    )
     try:
         yield activity_id
     finally:
-        asyncio.run(_restore_narayan_template_binding(activity_id, old_template_id))
+        asyncio.run(
+            restore_template_binding(NARAYAN_FIXTURE, activity_id, old_template_id)
+        )
 
 
 class TestAssessmentCramLoad:
@@ -556,11 +483,12 @@ class TestAssessmentCramLoad:
         narayan_activity_template: str,
     ) -> None:
         """Find whether n concurrent working students stay within bounds."""
+        run_started = utc_now()
         observations: list[CramObservation] = []
         for _ in range(N_CRAM_SESSIONS):
             email = f"cram-{uuid4().hex[:8]}@test.example.edu.au"
             workspace_id = asyncio.run(
-                _provision_clone_for_email(narayan_activity_template, email)
+                provision_clone_for_email(narayan_activity_template, email)
             )
             observations.append(CramObservation(email=email, workspace_id=workspace_id))
 
@@ -617,8 +545,24 @@ class TestAssessmentCramLoad:
                 thread.join(timeout=300)
 
         sample_diag()
+        run_ended = utc_now()
         _print_summary(observations, diag_samples)
-        _maybe_write_diag(observations, diag_samples)
+
+        # Browser-observed latency above includes Playwright and the
+        # co-located browser's own CPU contention (failure-mode class G);
+        # the server's page_load_profile is the production-magnitude
+        # number, so both are reported side by side.
+        server_page_load = collect_server_page_load(
+            window_start=run_started,
+            window_end=run_ended,
+        )
+        print_server_page_load(server_page_load)
+        _maybe_write_diag(
+            observations,
+            diag_samples,
+            _cram_run_meta(run_started, run_ended),
+            server_page_load,
+        )
 
         load_errors = [o.error for o in observations if o.error]
         action_failures = [
@@ -628,17 +572,20 @@ class TestAssessmentCramLoad:
             if a.error is not None
         ]
         if load_errors or action_failures:
-            pytest.fail(
-                "\n".join(
-                    [
-                        f"Cram probe boundary hit at n={N_CRAM_SESSIONS}:",
-                        *load_errors,
-                        *action_failures,
-                    ]
-                )
-            )
+            print(f"\ncram failures at n={N_CRAM_SESSIONS} (reported, not fatal):")
+            for line in (*load_errors, *action_failures):
+                print(f"  {line}")
 
-        assert all(o.annotation_loaded for o in observations)
-        expected_actions = N_CRAM_HIGHLIGHTS + N_CRAM_COMMENTS
-        total_ok = sum(1 for o in observations for a in o.actions if a.error is None)
-        assert total_ok == N_CRAM_SESSIONS * expected_actions
+        # Gate mirrors the soak probe: individual failures are data, the
+        # run fails only on systemic collapse. A student counts as failed
+        # if their page never loaded or any of their actions errored.
+        failed_students = {
+            o.email
+            for o in observations
+            if o.error or not o.annotation_loaded or any(a.error for a in o.actions)
+        }
+        max_failed = max(3, N_CRAM_SESSIONS // 10)
+        assert len(failed_students) <= max_failed, (
+            f"Cram collapse: {len(failed_students)} of {N_CRAM_SESSIONS} students"
+            f" failed (gate {max_failed}): {sorted(failed_students)}"
+        )

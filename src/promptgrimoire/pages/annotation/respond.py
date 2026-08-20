@@ -430,7 +430,7 @@ def _build_reference_panel(
                 _build_reference_card_html(hl, "#999999", "Untagged", state, on_locate)
                 card_count += 1
 
-    logger.info(
+    logger.debug(
         "respond_card_build",
         elapsed_ms=round((time.monotonic() - _t0) * 1000, 1),
         card_count=card_count,

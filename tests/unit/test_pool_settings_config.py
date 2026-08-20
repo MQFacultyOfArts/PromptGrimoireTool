@@ -226,9 +226,20 @@ class TestInitDbReadsPoolConfig:
             _state.session_factory = original_factory
 
     @pytest.mark.asyncio
-    async def test_init_db_logs_pool_config(self) -> None:
-        """init_db logs pool_size and max_overflow on startup."""
+    async def test_init_db_logs_pool_config(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """init_db logs pool sizing and the reason that chose QueuePool."""
         from promptgrimoire.db.engine import _state
+
+        # Pin the pool-mode precedence to "default": none of the
+        # env overrides may leak in from the lane environment.
+        for var in (
+            "_PROMPTGRIMOIRE_WORKER_NULLPOOL",
+            "_PROMPTGRIMOIRE_POOL_FIDELITY",
+            "_PROMPTGRIMOIRE_USE_NULL_POOL",
+        ):
+            monkeypatch.delenv(var, raising=False)
 
         original_engine = _state.engine
         original_factory = _state.session_factory
@@ -257,8 +268,10 @@ class TestInitDbReadsPoolConfig:
                 mock_logger.info.assert_any_call(
                     "db_pool_mode",
                     mode="QueuePool",
+                    reason="default",
                     pool_size=42,
                     max_overflow=7,
+                    pool_pre_ping=True,
                 )
         finally:
             _state.engine = None

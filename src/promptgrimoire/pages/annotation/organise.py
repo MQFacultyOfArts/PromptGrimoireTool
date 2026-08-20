@@ -391,7 +391,7 @@ def render_organise_tab(  # noqa: PLR0913 -- param-object migration: tracker led
             )
             card_count += len(untagged_highlights)
 
-    logger.info(
+    logger.debug(
         "organise_card_build",
         elapsed_ms=round((time.monotonic() - _t0) * 1000, 1),
         card_count=card_count,

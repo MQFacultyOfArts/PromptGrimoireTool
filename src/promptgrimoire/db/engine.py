@@ -176,6 +176,51 @@ def _is_test_environment() -> bool:
     return os.environ.get("_PROMPTGRIMOIRE_USE_NULL_POOL") == "1"
 
 
+def _pool_fidelity_requested() -> bool:
+    """Detect an explicit request for production-shaped connection pooling.
+
+    Returns True when _PROMPTGRIMOIRE_POOL_FIDELITY=1 is set.  The perf
+    lane sets it (``grimoire e2e perf --queue-pool``) so a load run
+    measures QueuePool against PgBouncer rather than the test harness's
+    forced NullPool, which opens one PostgreSQL connection per request
+    and hits ``max_connections`` at high session counts.
+    """
+    return os.environ.get("_PROMPTGRIMOIRE_POOL_FIDELITY") == "1"
+
+
+def _resolve_pool_mode(*, config_null_pool: bool) -> tuple[bool, str]:
+    """Decide NullPool vs QueuePool and name the deciding input.
+
+    Precedence, highest first:
+
+    1. ``_PROMPTGRIMOIRE_WORKER_NULLPOOL=1`` -- the standalone export
+       worker always gets NullPool ("worker_override").
+    2. ``DATABASE__USE_NULL_POOL`` -- an operator's deployment decision
+       outranks the harness escape hatch ("config").
+    3. ``_PROMPTGRIMOIRE_POOL_FIDELITY=1`` -- opts out of the test
+       forcing below, and only that ("pool_fidelity").
+    4. ``_PROMPTGRIMOIRE_USE_NULL_POOL=1`` -- the test harness ("test").
+    5. Otherwise QueuePool with the configured sizing ("default").
+
+    Args:
+        config_null_pool: ``settings.database.use_null_pool``.
+
+    Returns:
+        ``(use_null_pool, reason)`` -- the reason always names the input
+        that decided the returned mode, so a run's pool choice is
+        auditable from one log line.
+    """
+    if os.environ.get("_PROMPTGRIMOIRE_WORKER_NULLPOOL") == "1":
+        return True, "worker_override"
+    if config_null_pool:
+        return True, "config"
+    if _pool_fidelity_requested():
+        return False, "pool_fidelity"
+    if _is_test_environment():
+        return True, "test"
+    return False, "default"
+
+
 async def init_db() -> None:
     """Initialize database engine and session factory.
 
@@ -188,15 +233,18 @@ async def init_db() -> None:
     per request and closes it immediately, avoiding asyncpg connection-
     state leakage between tests under pytest-xdist parallel execution.
     See: asyncpg#784, SQLAlchemy#10226.
+
+    A perf run opts back into production-shaped pooling with
+    ``_PROMPTGRIMOIRE_POOL_FIDELITY=1``; see ``_resolve_pool_mode`` for
+    the full precedence.  The chosen mode is logged once as
+    ``db_pool_mode`` with the reason that decided it.
     """
     if _state.engine is not None:
         return
 
     settings = get_settings()
-    use_null_pool = (
-        _is_test_environment()
-        or settings.database.use_null_pool
-        or os.environ.get("_PROMPTGRIMOIRE_WORKER_NULLPOOL") == "1"
+    use_null_pool, pool_reason = _resolve_pool_mode(
+        config_null_pool=settings.database.use_null_pool
     )
 
     pool_kwargs: dict[str, object] = {
@@ -209,13 +257,7 @@ async def init_db() -> None:
 
     if use_null_pool:
         pool_kwargs["poolclass"] = NullPool
-        if _is_test_environment():
-            reason = "test"
-        elif os.environ.get("_PROMPTGRIMOIRE_WORKER_NULLPOOL") == "1":
-            reason = "worker_override"
-        else:
-            reason = "config"
-        logger.info("db_pool_mode", mode="NullPool", reason=reason)
+        logger.info("db_pool_mode", mode="NullPool", reason=pool_reason)
     else:
         db_config = settings.database
         pool_kwargs |= {
@@ -227,8 +269,10 @@ async def init_db() -> None:
         logger.info(
             "db_pool_mode",
             mode="QueuePool",
+            reason=pool_reason,
             pool_size=db_config.pool_size,
             max_overflow=db_config.max_overflow,
+            pool_pre_ping=db_config.pool_pre_ping,
         )
 
     _state.engine = create_async_engine(get_database_url(), **pool_kwargs)

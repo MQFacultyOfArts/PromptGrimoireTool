@@ -91,6 +91,34 @@ The probe records timeouts as evidence and only fails when the Respond
 container never appears, because it is an attribution probe rather than a
 latency release gate.
 
+The full-CRUD soak probe (`test_soak_full_crud_load.py`) spreads student
+arrivals over a window and then paces a weighted action mix for a fixed
+duration — the "realistic term-time load" shape, as opposed to the cram's
+single wave. It accepts `E2E_SOAK_SESSIONS`, `E2E_SOAK_MINUTES`,
+`E2E_SOAK_RATE_MULT` (multiplier over the observed 0.65 actions/min
+baseline), `E2E_SOAK_ARRIVAL_SPREAD_S`, `E2E_SOAK_WEIGHTS` (action-mix
+override), `E2E_SOAK_ACTION_TIMEOUT_MS`, `E2E_SOAK_DIAG_SAMPLE_SECONDS`
+and `E2E_SOAK_DIAG_PATH`.
+
+The thundering-herd probe (`test_thundering_herd.py`) puts every student
+on their own clone of the heavyweight Pabai workspace (190 annotation
+cards), synchronises arrival behind a double barrier, then runs
+free-running reload/organise/locate/respond churn — the "everyone opens
+the annotated judgment at once" shape. It accepts `E2E_HERD_SESSIONS`,
+`E2E_HERD_CYCLES`, `E2E_HERD_LOCATES`, `E2E_HERD_THINK_MS`,
+`E2E_HERD_SYNC_RELOADS`, `E2E_HERD_LOAD_TIMEOUT_MS`,
+`E2E_HERD_ACTION_TIMEOUT_MS`, `E2E_HERD_BARRIER_TIMEOUT_S`,
+`E2E_HERD_WATCH_SECONDS`, `E2E_HERD_DIAG_SAMPLE_SECONDS` and
+`E2E_HERD_DIAG_PATH`.
+
+All three probes write run provenance (`run_meta`) and the server-side
+`page_load_profile` percentiles (`server_page_load`, parsed from the
+server's own log with coverage checks) into their diagnostic JSONs via
+`tests/e2e/perf_reporting.py`. A perf run that needs production-shaped
+pooling passes `--queue-pool` to `grimoire e2e perf`; verify the leg by
+`server_page_load.pool_mode.reason == "pool_fidelity"` in the JSON, not
+by the environment you think you set.
+
 Comparative performance claims require alternating or interleaved arms (ABBA
 at minimum), per-leg results, and within-arm spread. Report server-side and
 browser-side boundaries separately; browser timings from co-located load

@@ -274,6 +274,10 @@ _ALLOWED_TEST_OS_ENVIRON_GET = {
     _TESTS_DIR / "e2e" / "test_independent_workspace_load.py",
     # Cram probe E2E_CRAM_* knobs are runner flags, not app config
     _TESTS_DIR / "e2e" / "test_assessment_cram_load.py",
+    # Soak probe E2E_SOAK_* knobs are runner flags, not app config
+    _TESTS_DIR / "e2e" / "test_soak_full_crud_load.py",
+    # Herd probe E2E_HERD_* knobs are runner flags, not app config
+    _TESTS_DIR / "e2e" / "test_thundering_herd.py",
     # Snapshot E2E reads SNAPSHOT__ENABLED (runner flag gating the file)
     # and E2E_BASE_URL (set by the test runner) pre-launch, not app config
     _TESTS_DIR / "e2e" / "test_snapshot_delivery.py",

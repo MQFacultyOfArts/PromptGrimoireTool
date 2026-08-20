@@ -39,14 +39,65 @@ def test_perf_queue_pool_removes_test_nullpool_override(
     from promptgrimoire.cli.e2e import _configure_perf_server
 
     monkeypatch.setenv("_PROMPTGRIMOIRE_USE_NULL_POOL", "1")
+    # Seeded through monkeypatch so its teardown removes what
+    # _configure_perf_server writes; a leaked "1" would flip later tests
+    # in this worker from NullPool to QueuePool.
+    monkeypatch.setenv("_PROMPTGRIMOIRE_POOL_FIDELITY", "0")
     monkeypatch.setenv(
         "E2E_PERF_DATABASE_URL", "postgresql+asyncpg://localhost:6432/test"
     )
     _configure_perf_server(queue_pool=True)
     assert "_PROMPTGRIMOIRE_USE_NULL_POOL" not in os.environ
+    assert os.environ["_PROMPTGRIMOIRE_POOL_FIDELITY"] == "1"
     assert os.environ["DATABASE__URL"] == os.environ["E2E_PERF_DATABASE_URL"]
     assert os.environ["E2E_RECONNECT_TIMEOUT"] == "15"
     assert os.environ["E2E_INSTRUMENT_OUTBOX"] == "1"
+
+
+def test_perf_queue_pool_scopes_fidelity_to_the_measured_server(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The harness keeps NullPool; only the managed server gets QueuePool.
+
+    ``_run_pytest`` calls ``_pre_test_db_cleanup()`` a second time, which
+    restores ``_PROMPTGRIMOIRE_USE_NULL_POOL=1`` and the direct database URL
+    for the pytest process.  The perf command must clear the fidelity flag
+    for that subprocess, or the harness's own fixtures would silently move
+    off NullPool.
+    """
+    from promptgrimoire.cli import e2e
+
+    # Seeded through monkeypatch so teardown removes whatever the command
+    # writes to the real process environment.
+    for leaked in (
+        "_PROMPTGRIMOIRE_POOL_FIDELITY",
+        "E2E_BASE_URL",
+        "E2E_RECONNECT_TIMEOUT",
+        "E2E_INSTRUMENT_OUTBOX",
+    ):
+        monkeypatch.setenv(leaked, "0")
+    captured: dict[str, Any] = {}
+
+    monkeypatch.setattr(e2e, "_configure_test_run_resources", lambda: None)
+    monkeypatch.setattr(e2e, "_wait_for_idle_perf_host", lambda: None)
+    monkeypatch.setattr(e2e, "_pre_test_db_cleanup", lambda: None)
+    monkeypatch.setattr(e2e, "_allocate_ports", lambda _count: [4321])
+    monkeypatch.setattr(e2e, "_start_e2e_server", lambda _port: "server")
+    monkeypatch.setattr(e2e, "_stop_e2e_server", lambda _process: None)
+
+    def fake_run_pytest(**kwargs: Any) -> int:
+        captured.update(kwargs)
+        return 0
+
+    monkeypatch.setattr(e2e, "_run_pytest", fake_run_pytest)
+
+    result = CliRunner().invoke(e2e.e2e_app, ["perf", "--queue-pool"])
+
+    assert result.exit_code == 0, result.output
+    # Server side: started while the flag was on.
+    assert os.environ["_PROMPTGRIMOIRE_POOL_FIDELITY"] == "1"
+    # Harness side: explicitly turned back off for the pytest subprocess.
+    assert captured["extra_env"]["_PROMPTGRIMOIRE_POOL_FIDELITY"] == "0"
 
 
 def test_e2e_server_can_use_dedicated_cpus(monkeypatch: pytest.MonkeyPatch) -> None:

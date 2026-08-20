@@ -175,13 +175,22 @@ def setup_logging() -> None:
             structlog.processors.JSONRenderer(),
         ],
     )
+    # Rotation is tunable via the LOGGING__ settings because high-n perf
+    # runs out-write the default retention, rotating away the startup
+    # db_pool_mode line and the head of the page_load_profile stream
+    # that the perf harness's provenance capture depends on.
     file_handler = RotatingFileHandler(
         log_file,
-        maxBytes=10 * 1024 * 1024,
-        backupCount=5,
+        maxBytes=settings.logging.max_bytes,
+        backupCount=settings.logging.backup_count,
         encoding="utf-8",
     )
-    file_handler.setLevel(logging.DEBUG)
+    # INFO by default; DEBUG is the inspection exception, opted into
+    # per run via LOGGING__FILE_LEVEL (see LoggingConfig).
+    file_level = logging.getLevelNamesMapping().get(
+        settings.logging.file_level.upper(), logging.INFO
+    )
+    file_handler.setLevel(file_level)
     file_handler.setFormatter(file_formatter)
 
     # Set file permissions to 0o644

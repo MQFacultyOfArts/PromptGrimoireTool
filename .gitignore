@@ -111,3 +111,8 @@ codex-prompts/
 
 # Local durable notes (session state, preferences) — not for sharing
 .notes/
+
+# Raw perf-run telemetry JSONs — stay on the run machine, regenerable
+# in kind via the perf probes. The handful committed before this rule
+# remain tracked (gitignore does not untrack).
+perf-data/

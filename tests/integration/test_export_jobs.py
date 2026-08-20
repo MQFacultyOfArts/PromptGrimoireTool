@@ -390,6 +390,32 @@ class TestCleanupExpiredJobs:
         assert not export_dir.exists()
 
     @pytest.mark.asyncio
+    async def test_never_deletes_system_temp_directory(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A malformed root-level PDF path must not make cleanup remove /tmp."""
+        import tempfile
+        from pathlib import Path
+
+        from promptgrimoire.db import export_jobs
+
+        deleted: list[Path] = []
+        monkeypatch.setattr(export_jobs.shutil, "rmtree", deleted.append)
+
+        user_id, workspace_id = await _create_user_and_workspace()
+        job = await export_jobs.create_export_job(
+            user_id, workspace_id, {"format": "pdf"}
+        )
+        tmpdir = Path(tempfile.gettempdir())
+        await export_jobs.complete_job(
+            job.id, f"tok-{uuid4().hex[:8]}", str(tmpdir / "root-level.pdf")
+        )
+
+        await export_jobs.cleanup_expired_jobs(datetime.now(UTC) + timedelta(hours=1))
+
+        assert tmpdir not in deleted
+
+    @pytest.mark.asyncio
     async def test_deletes_failed_jobs(self) -> None:
         """Failed jobs older than cutoff are deleted."""
         from promptgrimoire.db.export_jobs import (

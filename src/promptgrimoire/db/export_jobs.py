@@ -251,7 +251,7 @@ async def cleanup_expired_jobs(cutoff: datetime) -> int:
         for job in jobs:
             if job.pdf_path:
                 parent = Path(job.pdf_path).parent
-                if parent.is_relative_to(tmpdir):
+                if parent != tmpdir and parent.is_relative_to(tmpdir):
                     disk_dirs.append((str(job.id), parent))
                 else:
                     logger.warning(

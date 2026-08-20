@@ -9,7 +9,11 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-from promptgrimoire.docs.helpers import select_chars, wait_for_text_walker
+from promptgrimoire.docs.helpers import (
+    select_chars,
+    wait_for_scroll_settled,
+    wait_for_text_walker,
+)
 
 if TYPE_CHECKING:
     from playwright.sync_api import Page
@@ -287,7 +291,10 @@ def scroll_to_char(page: Page, char_offset: int) -> None:
         }""",
         char_offset,
     )
-    page.wait_for_function("new Promise(r => requestAnimationFrame(r))")
+    # scrollToCharOffset animates (behavior: 'smooth', ~300-500ms). A single
+    # frame is not enough: the animation outliving this wait is the
+    # scroll-during-drag race behind the #562 whiffs.
+    wait_for_scroll_settled(page)
 
 
 def wait_for_css_highlight(page: Page, *, timeout: int = 5000) -> None:

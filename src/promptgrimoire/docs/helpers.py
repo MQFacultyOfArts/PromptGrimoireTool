@@ -118,6 +118,27 @@ def wait_for_text_walker(page: Page, *, timeout: int = 15000) -> None:
         raise type(exc)(msg) from None
 
 
+def wait_for_scroll_settled(page: Page, *, timeout: int = 5000) -> None:
+    """Wait until the viewport scroll position is stable across two frames.
+
+    A smooth scroll (the app's ``scrollToCharOffset`` uses
+    ``behavior: 'smooth'``) landing between ``mouse.down()`` and
+    ``mouse.up()`` collapses the selection on every pointer move — the
+    scroll-during-drag race behind the #562 whiffs.  Any helper that
+    reads coordinates or drags after a possible scroll must settle
+    first.  Each poll spans two animation frames, so an in-flight
+    animation keeps resolving false until it stops.
+    """
+    page.wait_for_function(
+        """() => new Promise(resolve => {
+            const x0 = window.scrollX, y0 = window.scrollY;
+            requestAnimationFrame(() => requestAnimationFrame(() =>
+                resolve(window.scrollX === x0 && window.scrollY === y0)));
+        })""",
+        timeout=timeout,
+    )
+
+
 def select_chars(page: Page, start_char: int, end_char: int) -> None:
     """Select a character range using mouse events.
 
@@ -192,6 +213,12 @@ def select_chars(page: Page, start_char: int, end_char: int) -> None:
         }""",
         [start_char, end_char],
     )
+
+    # Settle any scroll still animating (our instant scroll aborts most
+    # smooth scrolls, but an earlier scrollToCharOffset with a different
+    # target can outlive it) BEFORE re-reading coordinates: a viewport
+    # shift mid-drag collapses the selection on every move (#562).
+    wait_for_scroll_settled(page)
 
     # Re-query coordinates after scroll (positions change)
     coords = page.evaluate(

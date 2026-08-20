@@ -42,7 +42,7 @@ Configured via `APP__LOG_DIR` (default: `logs/`). Files are isolated per instanc
 | Production (main/master) | `{log_dir}/promptgrimoire.jsonl` |
 | Branch (e.g. `feature-foo`) | `{log_dir}/promptgrimoire-feature-foo.jsonl` |
 
-**Rotation:** 10 MB max size, 5 backup files. File permissions: `0644` (readable by SSH users without sudo).
+**Rotation:** 10 MB max size, 5 backup files by default; tunable via `LOGGING__MAX_BYTES` and `LOGGING__BACKUP_COUNT` (high-n perf runs need a larger budget or the startup lines rotate away). File permissions: `0644` (readable by SSH users without sudo).
 
 ## Querying with jq
 
@@ -71,7 +71,7 @@ jq -s 'group_by(.level) | map({level: .[0].level, count: length})' logs/promptgr
 
 ## Per-Module Log Levels
 
-Each module sets an explicit log level appropriate to its role. The root logger is DEBUG (file handler captures everything); the console handler is INFO.
+Each module sets an explicit log level appropriate to its role. The file handler defaults to INFO; set `LOGGING__FILE_LEVEL=DEBUG` to capture debug output to file for a single run. The console handler is INFO.
 
 | Module category | Default level | Rationale |
 |----------------|---------------|-----------|

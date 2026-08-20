@@ -137,7 +137,7 @@ class AnnotationSidebar(ui.element, component=_JS_PATH):
         )
 
         _elapsed = round((time.monotonic() - _t0) * 1000, 1)
-        logger.info(
+        logger.debug(
             "vue_sidebar_refresh",
             trigger="refresh_from_state",
             elapsed_ms=_elapsed,

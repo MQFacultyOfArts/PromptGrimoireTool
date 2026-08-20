@@ -200,6 +200,22 @@ class IdleConfig(BaseModel):
     enabled: bool = True
 
 
+class LoggingConfig(BaseModel):
+    """Session file logging knobs (env prefix ``LOGGING__``).
+
+    ``file_level`` is INFO by default: DEBUG-to-file ran ~170 lines/s
+    under class load, shrinking the rotation window to minutes of
+    history.  DEBUG is the inspection exception, opted into per run.
+    Rotation is tunable because high-n perf runs out-write the default
+    budget and rotate away the startup lines that per-run pool
+    verification parses.
+    """
+
+    file_level: str = "INFO"
+    max_bytes: int = 10_485_760
+    backup_count: int = 5
+
+
 class SnapshotConfig(BaseModel):
     """Initial annotation snapshot delivery (standalone service).
 
@@ -350,6 +366,7 @@ class Settings(BaseSettings):
     stytch: StytchConfig = StytchConfig()
     database: DatabaseConfig = DatabaseConfig()
     llm: LlmConfig = LlmConfig()
+    logging: LoggingConfig = LoggingConfig()
     app: AppConfig = AppConfig()
     alerting: AlertingConfig = AlertingConfig()
     admin: AdminConfig = AdminConfig()

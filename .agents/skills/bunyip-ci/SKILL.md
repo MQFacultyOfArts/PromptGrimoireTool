@@ -9,6 +9,16 @@ Use the operator-installed wrapper as the only entry point. The wrapper owns
 the kernel `flock`; never acquire a second lock or infer availability from a
 note, timestamp, PID, port, process name, or lock-file existence.
 
+For focused red/green work, pass the repository command as an argument vector:
+
+```bash
+run-tests.sh focused -- uv run grimoire test run path/to/test.py::test_name
+```
+
+The focused lane supplies the prepared image and PostgreSQL. Do not replace a
+focused run with an entire regular lane; run the regular lane once after the
+focused test is restored.
+
 ## Track completion
 
 1. Run the wrapper in the foreground from the checkout being tested. If the

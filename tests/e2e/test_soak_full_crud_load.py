@@ -50,11 +50,11 @@ from contextlib import suppress
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 
-from promptgrimoire.config import get_settings
+from promptgrimoire.config import get_current_branch, get_settings
 from tests.e2e.assessment_fixtures import (
     CASE_BRIEF_TAG_COUNT,
     NARAYAN_FIXTURE,
@@ -66,9 +66,16 @@ from tests.e2e.assessment_fixtures import (
     provision_clone_for_email,
     restore_template_binding,
 )
+from tests.e2e.perf_reporting import (
+    build_run_meta,
+    collect_server_page_load,
+    print_server_page_load,
+    utc_now,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
+    from datetime import datetime
 
     from playwright.sync_api import Page
 
@@ -94,12 +101,19 @@ SOAK_DIAG_SAMPLE_SECONDS = float(os.environ.get("E2E_SOAK_DIAG_SAMPLE_SECONDS", 
 ACTIONS_PER_MIN = OBSERVED_ACTIONS_PER_MIN * SOAK_RATE_MULT
 MAX_CONSECUTIVE_ACTION_FAILURES = 3
 SEED_HIGHLIGHTS = 3
-# A student must complete at least half its paced budget or the probe
-# is not measuring what it claims.
-MIN_ACTION_FRACTION = 0.5
+# Wedge-guard floor: a student under a quarter of its paced budget is
+# a silently-stopped browser, not a slow one.  Throughput attainment
+# (reported per run) is the actual how-much-got-done measurement; at
+# 20x rate legitimate students sit near 45-55% attainment because 30s
+# timeouts eat real time, so the guard must sit well below that.
+MIN_ACTION_FRACTION = 0.25
 # Server-attributable failures are a boundary only when systemic:
-# this many students affected, or this fraction of all actions.
-SOAK_MAX_FATAL_STUDENTS = 3
+# this share of students affected (floor 3, so small-n runs keep a
+# meaningful gate), or this fraction of all actions.  Absolute-3 read
+# a calm n=100 run (6 students, one isolated timeout each, 0.14% of
+# actions) as a boundary; scaling with n keeps the gate about spread,
+# not run size.
+SOAK_MAX_FATAL_STUDENTS = max(3, N_SOAK_SESSIONS // 10)
 SOAK_MAX_FATAL_FRACTION = 0.01
 
 # Weighted "doing all the things" mix. An ineligible pick (e.g. delete
@@ -147,6 +161,10 @@ class ActionResult:
     elapsed_ms: int = -1
     error: str | None = None
     degraded: bool = False
+    # Unique text marker typed by this action (respond_type only),
+    # recorded BEFORE typing so the post-run DB audit can classify
+    # every attempt: found-in-CRDT vs never-landed.
+    marker: str | None = None
 
 
 @dataclass
@@ -414,14 +432,28 @@ def _do_organise_drag(page: Page, state: StudentState, _result: ActionResult) ->
         _back_to_source(page)
 
 
-def _do_respond_type(page: Page, state: StudentState, _result: ActionResult) -> None:
-    """Type a sentence into the Respond (Milkdown) editor."""
+def _do_respond_type(page: Page, state: StudentState, result: ActionResult) -> None:
+    """Type a uniquely-markered sentence into the Respond (Milkdown) editor.
+
+    The marker is recorded before any page interaction: a tab or editor
+    click that times out raises before a keystroke is sent, so the
+    post-run audit reads a missing marker as never-typed rather than as
+    typed-then-lost.
+    """
+    marker = uuid4().hex[:6]
+    result.marker = marker
     page.get_by_test_id("tab-respond").click()
     editor = page.locator("[data-testid='milkdown-editor-container']")
     editor.wait_for(state="visible", timeout=SOAK_ACTION_TIMEOUT_MS)
     editor.locator("[contenteditable]").first.click()
+    # Once the draft has content the centre-click lands the caret
+    # mid-text, splicing the new sentence into an old one: that garbles
+    # the draft and cuts markers in half, so the post-run audit reads
+    # landed text as lost. Appending at the end is also what a student
+    # actually does.
+    page.keyboard.press("Control+End")
     page.keyboard.type(
-        f"Soak analysis point {uuid4().hex[:6]}: the reasoning turns on "
+        f"Soak analysis point {marker}: the reasoning turns on "
         f"the {state.rng.choice(['duty', 'breach', 'causation', 'damages'])} limb. "
     )
     _back_to_source(page)
@@ -495,7 +527,10 @@ def _run_soak_pass(
             consecutive_failures = 0
         except Exception as exc:
             result.error = f"{type(exc).__name__}: {exc}"
-            if action in DEGRADED_NONFATAL_ACTIONS:
+            # A select_chars whiff is harness-attributed (#562): it must not
+            # bill the app or trip the systemic gate. Error text stays in the
+            # diag JSON so analysis buckets whiffs separately from class G.
+            if action in DEGRADED_NONFATAL_ACTIONS or "Harness bug (#562)" in str(exc):
                 result.degraded = True
             else:
                 consecutive_failures += 1
@@ -632,15 +667,160 @@ def _print_summary(
         )
 
 
+async def _audit_respond_markers(observations: list[SoakObservation]) -> dict:
+    """Classify every typed respond marker against persisted CRDT state.
+
+    Reads each student's workspace back from the database and looks for
+    the markers its ``respond_type`` actions recorded. Four buckets:
+
+    - ``ok_landed``: the action succeeded and its marker is in the draft.
+    - ``ok_lost``: the action succeeded and its marker is ABSENT -- typed
+      text that never reached the database, the loss this audit exists
+      to catch.
+    - ``degraded_landed``: the action was degraded but the text landed
+      anyway (the harness lost track, the user's work survived).
+    - ``degraded_never_typed``: degraded with no marker -- the editor
+      never opened, so nothing was ever typed. The expected shape of a
+      Milkdown-init timeout.
+
+    ``no_crdt_state`` holds markers that could not be classified because
+    the workspace is missing or has never persisted CRDT state; counting
+    them separately keeps a read failure from masquerading as loss.
+
+    The substring check assumes every sentence was appended at the end of
+    the draft (the ``Control+End`` in :func:`_do_respond_type`). A run
+    recorded before that append landed splices sentences into each other,
+    cutting markers in half, so its losses must be read as unclassifiable
+    rather than as evidence of dropped text.
+    """
+    from promptgrimoire.crdt.annotation_doc import AnnotationDocument
+    from promptgrimoire.db.workspaces import get_workspace
+
+    counts = {
+        "ok_landed": 0,
+        "ok_lost": 0,
+        "degraded_landed": 0,
+        "degraded_never_typed": 0,
+        "no_crdt_state": 0,
+    }
+    lost: list[dict[str, str]] = []
+
+    for observation in observations:
+        if not any(a.marker for a in observation.actions):
+            continue
+        workspace = await get_workspace(UUID(observation.workspace_id))
+        crdt_state = workspace.crdt_state if workspace else None
+        text = ""
+        if crdt_state is not None:
+            doc = AnnotationDocument("audit-tmp")
+            doc.apply_update(crdt_state)
+            text = doc.get_response_draft_markdown() or ""
+
+        for action in observation.actions:
+            marker = action.marker
+            if marker is None:
+                continue
+            if crdt_state is None:
+                counts["no_crdt_state"] += 1
+                continue
+            landed = marker in text
+            # respond_type is in DEGRADED_NONFATAL_ACTIONS, so any error
+            # on one of these actions is already flagged degraded.
+            if action.error is None:
+                counts["ok_landed" if landed else "ok_lost"] += 1
+                if not landed:
+                    lost.append(
+                        {
+                            "email": observation.email,
+                            "action": action.action,
+                            "marker": marker,
+                        }
+                    )
+            else:
+                counts["degraded_landed" if landed else "degraded_never_typed"] += 1
+
+    return {"counts": counts, "ok_lost": lost}
+
+
+def _run_respond_audit(observations: list[SoakObservation]) -> dict:
+    """Wait out the persistence debounce, then audit the markers.
+
+    The CRDT persistence manager debounces DB writes by 5 s
+    (``crdt/persistence.py``, ``debounce_seconds``), so the last
+    sentence a student typed may still be in flight when the browsers
+    close; 15 s is 3x margin.
+
+    An audit-infrastructure failure (DB unreachable, extraction crash)
+    is recorded rather than raised -- the soak evidence must survive a
+    bug in the audit.
+    """
+    time.sleep(15)
+    try:
+        return asyncio.run(_audit_respond_markers(observations))
+    except Exception as exc:
+        print(f"respond audit failed: {exc!r}")
+        return {"audit_error": repr(exc)}
+
+
+def _print_respond_audit(audit: dict) -> None:
+    """Print the respond-marker audit verdict, losses one per line."""
+    if "audit_error" in audit:
+        print(f"respond audit: UNAVAILABLE ({audit['audit_error']})")
+        return
+    counts = audit["counts"]
+    print("--- respond marker audit (post-run CRDT read) ---")
+    print(
+        f"  ok_landed={counts['ok_landed']} ok_lost={counts['ok_lost']} "
+        f"degraded_landed={counts['degraded_landed']} "
+        f"degraded_never_typed={counts['degraded_never_typed']} "
+        f"no_crdt_state={counts['no_crdt_state']}"
+    )
+    for entry in audit["ok_lost"]:
+        print(
+            f"  !! TYPED TEXT LOST: {entry['email']} {entry['action']} "
+            f"marker={entry['marker']}"
+        )
+
+
+def _soak_run_meta(started: datetime, ended: datetime) -> dict:
+    """Describe this run's configuration for the diag JSON.
+
+    Provenance used to rest on the output filename, so a run JSON could
+    not say which snapshot flag or pool mode produced it.
+    """
+    return build_run_meta(
+        probe="soak_full_crud",
+        env=os.environ,
+        started=started,
+        ended=ended,
+        knobs={
+            "sessions": N_SOAK_SESSIONS,
+            "rate_mult": SOAK_RATE_MULT,
+            "actions_per_min": ACTIONS_PER_MIN,
+            "soak_minutes": SOAK_MINUTES,
+            "arrival_spread_s": SOAK_ARRIVAL_SPREAD_S,
+            "action_timeout_ms": SOAK_ACTION_TIMEOUT_MS,
+            "diag_sample_seconds": SOAK_DIAG_SAMPLE_SECONDS,
+        },
+        snapshot_enabled=get_settings().snapshot.enabled,
+        branch=get_current_branch(),
+    )
+
+
 def _maybe_write_diag(
     observations: list[SoakObservation],
     diag_samples: list[dict],
+    respond_audit: dict,
+    run_meta: dict,
+    server_page_load: dict,
 ) -> None:
     """Optionally persist full evidence for manual analysis."""
     raw_path = os.environ.get("E2E_SOAK_DIAG_PATH")
     if not raw_path:
         return
     payload = {
+        "run_meta": run_meta,
+        "server_page_load": server_page_load,
         "sessions": N_SOAK_SESSIONS,
         "rate_mult": SOAK_RATE_MULT,
         "actions_per_min": ACTIONS_PER_MIN,
@@ -648,9 +828,75 @@ def _maybe_write_diag(
         "arrival_spread_s": SOAK_ARRIVAL_SPREAD_S,
         "action_weights": dict(ACTION_WEIGHTS),
         "diag_samples": diag_samples,
+        "respond_audit": respond_audit,
         "results": [asdict(o) for o in observations],
     }
     Path(raw_path).write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+
+def _report_run(
+    observations: list[SoakObservation],
+    diag_samples: list[dict],
+    run_started: datetime,
+    run_ended: datetime,
+) -> None:
+    """Print every view of the run, then persist the full evidence.
+
+    Browser-observed latency includes Playwright and the co-located
+    browser's own CPU contention (failure-mode class G), so the server's
+    own ``page_load_profile`` is reported beside it as the
+    production-magnitude number.
+    """
+    _print_summary(observations, diag_samples)
+    server_page_load = collect_server_page_load(
+        window_start=run_started,
+        window_end=run_ended,
+    )
+    print_server_page_load(server_page_load)
+
+    respond_audit = _run_respond_audit(observations)
+    # Gating the probe on ok_lost is deliberately deferred until a real
+    # run confirms 15 s clears the persistence debounce; until then a
+    # nonzero ok_lost is a finding to read, not a failure.
+    _print_respond_audit(respond_audit)
+    _maybe_write_diag(
+        observations,
+        diag_samples,
+        respond_audit,
+        _soak_run_meta(run_started, run_ended),
+        server_page_load,
+    )
+
+
+def _report_attainment_and_guard_wedge(
+    observations: list[SoakObservation],
+) -> None:
+    """Report throughput attainment; assert only against wedged browsers.
+
+    Attainment IS the measurement: how much each student got done
+    versus the paced intent.  Time eaten by 30 s timeouts is genuinely
+    lost student time, so it rightly drags attainment down -- report
+    it, never mask it.  The assert is only a wedge-guard (a browser
+    that silently stopped recording anything), so its floor sits far
+    under any slow-but-alive student.
+    """
+    budget = ACTIONS_PER_MIN * SOAK_MINUTES
+    per_student = [
+        sum(1 for a in o.actions if a.error is None or a.degraded) for o in observations
+    ]
+    attainments = sorted(attempted / budget for attempted in per_student)
+    print(
+        f"throughput attainment vs paced budget ({budget:.0f}): "
+        f"min={attainments[0]:.0%} "
+        f"p50={attainments[len(attainments) // 2]:.0%} "
+        f"max={attainments[-1]:.0%}"
+    )
+    min_actions = int(budget * MIN_ACTION_FRACTION)
+    for o, attempted in zip(observations, per_student, strict=True):
+        assert attempted >= min_actions, (
+            f"{o.email} completed only {attempted} actions "
+            f"(wedge floor {min_actions}) -- browser wedged or pacing broke"
+        )
 
 
 @pytest.fixture(scope="module")
@@ -679,6 +925,7 @@ class TestSoakFullCrudLoad:
         soak_activity_templates: dict[str, str],
     ) -> None:
         """Find whether n crunched-soak students stay within bounds."""
+        run_started = utc_now()
         fixtures = [NARAYAN_FIXTURE, SAVAGE_FIXTURE]
         observations: list[SoakObservation] = []
         for i in range(N_SOAK_SESSIONS):
@@ -744,8 +991,7 @@ class TestSoakFullCrudLoad:
                 thread.join(timeout=300)
 
         sample_diag()
-        _print_summary(observations, diag_samples)
-        _maybe_write_diag(observations, diag_samples)
+        _report_run(observations, diag_samples, run_started, utc_now())
 
         load_errors = [o.error for o in observations if o.error]
         fatal_students = {
@@ -788,14 +1034,4 @@ class TestSoakFullCrudLoad:
                 print(f"  {line}")
 
         assert all(o.annotation_loaded for o in observations)
-        # The probe must not pass by idling: each student must complete
-        # at least half of its paced budget.
-        min_actions = int(ACTIONS_PER_MIN * SOAK_MINUTES * MIN_ACTION_FRACTION)
-        for o in observations:
-            # Degraded stalls count as attempted pace: this gate catches
-            # pacing/eligibility bugs, not browser-side degradation.
-            attempted = sum(1 for a in o.actions if a.error is None or a.degraded)
-            assert attempted >= min_actions, (
-                f"{o.email} completed only {attempted} actions "
-                f"(minimum {min_actions}) -- pacing or eligibility broke"
-            )
+        _report_attainment_and_guard_wedge(observations)

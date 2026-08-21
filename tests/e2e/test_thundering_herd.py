@@ -75,6 +75,12 @@ from uuid import uuid4
 
 import pytest
 
+from promptgrimoire.cli.perf.results import (
+    MeasuredVerdict,
+    measured_verdict,
+    should_fail_pytest_for_verdict,
+    write_result_envelope,
+)
 from promptgrimoire.config import get_current_branch, get_settings
 from tests.e2e.assessment_fixtures import (
     AssessmentFixture,
@@ -564,8 +570,9 @@ def _maybe_write_diag(
     diag_samples: list[dict],
     run_meta: dict,
     server_page_load: dict,
+    verdict: MeasuredVerdict,
 ) -> None:
-    """Optionally persist full evidence for manual analysis."""
+    """Optionally persist one atomic verdict-bearing result envelope."""
     raw_path = os.environ.get("E2E_HERD_DIAG_PATH")
     if not raw_path:
         return
@@ -580,10 +587,64 @@ def _maybe_write_diag(
         "diag_samples": diag_samples,
         "results": [asdict(o) for o in observations],
     }
-    Path(raw_path).write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    write_result_envelope(Path(raw_path), verdict=verdict, probe_payload=payload)
 
 
-def _report_failures_and_gate(observations: list[HerdObservation]) -> None:
+def _herd_verdict(observations: list[HerdObservation]) -> MeasuredVerdict:
+    """Classify the existing cohort boundary before persisting its evidence."""
+    load_failures = sum(
+        1
+        for observation in observations
+        if observation.error or not observation.annotation_loaded
+    ) + sum(
+        1 for observation in observations for cycle in observation.cycles if cycle.error
+    )
+    fatal_actions = sum(
+        1
+        for observation, _cycle, action in _all_actions(observations)
+        if action.error is not None and not action.degraded
+    )
+    degraded_actions = sum(
+        1
+        for _observation, _cycle, action in _all_actions(observations)
+        if action.error is not None and action.degraded
+    )
+    failed_students = {
+        observation.email
+        for observation in observations
+        if observation.error
+        or not observation.annotation_loaded
+        or any(cycle.error for cycle in observation.cycles)
+        or any(
+            action.error and not action.degraded
+            for cycle in observation.cycles
+            for action in cycle.actions
+        )
+    }
+    max_failed = max(3, N_HERD_SESSIONS // 10)
+    collapse_reasons = (
+        (
+            (
+                f"{len(failed_students)} of {N_HERD_SESSIONS} students failed "
+                f"the cohort gate {max_failed}"
+            ),
+        )
+        if len(failed_students) > max_failed
+        else ()
+    )
+    return measured_verdict(
+        load_failure_count=load_failures,
+        fatal_action_failure_count=fatal_actions,
+        degraded_action_count=degraded_actions,
+        collapse_reasons=collapse_reasons,
+    )
+
+
+def _report_failures_and_gate(
+    observations: list[HerdObservation],
+    *,
+    enforce_gate: bool = True,
+) -> None:
     """Print every failure, then assert only against systemic collapse.
 
     A student counts as failed if their first load never completed, any
@@ -617,6 +678,8 @@ def _report_failures_and_gate(observations: list[HerdObservation]) -> None:
         or any(a.error and not a.degraded for c in o.cycles for a in c.actions)
     }
     max_failed = max(3, N_HERD_SESSIONS // 10)
+    if not enforce_gate:
+        return
     assert len(failed_students) <= max_failed, (
         f"Herd collapse: {len(failed_students)} of {N_HERD_SESSIONS} students"
         f" failed (gate {max_failed}): {sorted(failed_students)}"
@@ -749,11 +812,16 @@ class TestThunderingHerd:
             window_end=run_ended,
         )
         print_server_page_load(server_page_load)
+        verdict = _herd_verdict(observations)
         _maybe_write_diag(
             observations,
             diag_samples,
             _herd_run_meta(run_started, run_ended),
             server_page_load,
+            verdict,
         )
 
-        _report_failures_and_gate(observations)
+        _report_failures_and_gate(
+            observations,
+            enforce_gate=should_fail_pytest_for_verdict(verdict.classification),
+        )

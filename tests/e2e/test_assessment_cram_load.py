@@ -45,6 +45,13 @@ from uuid import uuid4
 
 import pytest
 
+from promptgrimoire.cli.perf.results import (
+    MeasuredVerdict,
+    PerfClassification,
+    measured_verdict,
+    should_fail_pytest_for_verdict,
+    write_result_envelope,
+)
 from promptgrimoire.config import get_current_branch, get_settings
 from tests.e2e.assessment_fixtures import (
     CASE_BRIEF_TAG_COUNT,
@@ -114,6 +121,64 @@ class CramObservation:
     pass_elapsed_ms: int = -1
     actions: list[ActionResult] = field(default_factory=list)
     error: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class CramGate:
+    """Derived cohort boundary and its complete supporting failures."""
+
+    load_errors: tuple[str, ...]
+    action_failures: tuple[str, ...]
+    failed_students: frozenset[str]
+    max_failed: int
+    verdict: MeasuredVerdict
+
+
+def _cram_gate(observations: list[CramObservation]) -> CramGate:
+    """Classify one cram cohort after every student has finished."""
+    load_errors = tuple(o.error for o in observations if o.error is not None)
+    action_failures = tuple(
+        f"{observation.email} {action.action}: {action.error}"
+        for observation in observations
+        for action in observation.actions
+        if action.error is not None
+    )
+    failed_students = frozenset(
+        observation.email
+        for observation in observations
+        if observation.error
+        or not observation.annotation_loaded
+        or any(action.error for action in observation.actions)
+    )
+    max_failed = max(3, N_CRAM_SESSIONS // 10)
+    collapse_reasons = (
+        (
+            f"{len(failed_students)} of {N_CRAM_SESSIONS} students failed "
+            f"the cohort gate {max_failed}",
+        )
+        if len(failed_students) > max_failed
+        else ()
+    )
+    verdict = measured_verdict(
+        load_failure_count=(
+            len(load_errors)
+            + sum(
+                1
+                for observation in observations
+                if not observation.annotation_loaded and not observation.error
+            )
+        ),
+        fatal_action_failure_count=len(action_failures),
+        degraded_action_count=0,
+        collapse_reasons=collapse_reasons,
+    )
+    return CramGate(
+        load_errors=load_errors,
+        action_failures=action_failures,
+        failed_students=failed_students,
+        max_failed=max_failed,
+        verdict=verdict,
+    )
 
 
 def _fetch_json(url: str) -> dict:
@@ -441,8 +506,9 @@ def _maybe_write_diag(
     diag_samples: list[dict],
     run_meta: dict,
     server_page_load: dict,
+    verdict: MeasuredVerdict,
 ) -> None:
-    """Optionally persist full evidence for manual analysis."""
+    """Optionally persist one atomic verdict-bearing result envelope."""
     raw_path = os.environ.get("E2E_CRAM_DIAG_PATH")
     if not raw_path:
         return
@@ -456,7 +522,7 @@ def _maybe_write_diag(
         "diag_samples": diag_samples,
         "results": [asdict(o) for o in observations],
     }
-    Path(raw_path).write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    write_result_envelope(Path(raw_path), verdict=verdict, probe_payload=payload)
 
 
 @pytest.fixture(scope="module")
@@ -557,35 +623,30 @@ class TestAssessmentCramLoad:
             window_end=run_ended,
         )
         print_server_page_load(server_page_load)
+        gate = _cram_gate(observations)
         _maybe_write_diag(
             observations,
             diag_samples,
             _cram_run_meta(run_started, run_ended),
             server_page_load,
+            gate.verdict,
         )
 
-        load_errors = [o.error for o in observations if o.error]
-        action_failures = [
-            f"{o.email} {a.action}: {a.error}"
-            for o in observations
-            for a in o.actions
-            if a.error is not None
-        ]
-        if load_errors or action_failures:
+        if gate.load_errors or gate.action_failures:
             print(f"\ncram failures at n={N_CRAM_SESSIONS} (reported, not fatal):")
-            for line in (*load_errors, *action_failures):
+            for line in (*gate.load_errors, *gate.action_failures):
                 print(f"  {line}")
 
         # Gate mirrors the soak probe: individual failures are data, the
         # run fails only on systemic collapse. A student counts as failed
         # if their page never loaded or any of their actions errored.
-        failed_students = {
-            o.email
-            for o in observations
-            if o.error or not o.annotation_loaded or any(a.error for a in o.actions)
-        }
-        max_failed = max(3, N_CRAM_SESSIONS // 10)
-        assert len(failed_students) <= max_failed, (
-            f"Cram collapse: {len(failed_students)} of {N_CRAM_SESSIONS} students"
-            f" failed (gate {max_failed}): {sorted(failed_students)}"
+        if (
+            gate.verdict.classification is PerfClassification.COLLAPSE
+            and not should_fail_pytest_for_verdict(gate.verdict.classification)
+        ):
+            return
+        assert len(gate.failed_students) <= gate.max_failed, (
+            f"Cram collapse: {len(gate.failed_students)} of {N_CRAM_SESSIONS} "
+            f"students failed (gate {gate.max_failed}): "
+            f"{sorted(gate.failed_students)}"
         )

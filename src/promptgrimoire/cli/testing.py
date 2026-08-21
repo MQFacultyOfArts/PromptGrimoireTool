@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import signal
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -10,6 +11,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+import structlog
 import typer
 import typer.core
 from rich.panel import Panel
@@ -29,6 +31,7 @@ from promptgrimoire.cli._shared import (
     _RESULT_KW_RE,
     _SEPARATOR_RE,
     _XDIST_ITEMS_RE,
+    PreparedTestDatabase,
     _build_test_header,
     _configure_test_run_resources,
     _pre_test_db_cleanup,
@@ -41,6 +44,16 @@ if TYPE_CHECKING:
 
     import click
     from rich.progress import TaskID
+
+logger = structlog.get_logger()
+
+
+@dataclass(frozen=True, slots=True)
+class PytestEnvironment:
+    """Optional child variables plus an already-prepared database context."""
+
+    variables: dict[str, str]
+    prepared_database: PreparedTestDatabase | None = None
 
 
 def _looks_like_test_path(arg: str) -> bool:
@@ -359,7 +372,7 @@ def _run_pytest(
     log_path: Path,
     default_args: list[str],
     extra_args: list[str] | None = None,
-    extra_env: dict[str, str] | None = None,
+    extra_env: dict[str, str] | PytestEnvironment | None = None,
 ) -> int:
     """Run pytest with Rich formatting and logging.
 
@@ -367,7 +380,12 @@ def _run_pytest(
     pydantic-settings environment loading, which must not happen at
     module-import time (breaks test isolation and import-guard tests).
     """
-    _pre_test_db_cleanup()
+    if isinstance(extra_env, PytestEnvironment):
+        prepared_database = extra_env.prepared_database or _pre_test_db_cleanup()
+        environment_variables = extra_env.variables
+    else:
+        prepared_database = _pre_test_db_cleanup()
+        environment_variables = extra_env or {}
 
     from promptgrimoire.config import get_current_branch, get_settings
 
@@ -403,8 +421,9 @@ def _run_pytest(
 
         harness_env = {
             **os.environ,
+            **prepared_database.harness_env(),
             "GRIMOIRE_TEST_HARNESS": "1",
-            **(extra_env or {}),
+            **environment_variables,
         }
         process = subprocess.Popen(
             all_args,
@@ -413,12 +432,18 @@ def _run_pytest(
             text=True,
             bufsize=1,
             env=harness_env,
+            start_new_session=True,
         )
 
-        if interactive:
-            exit_code = _stream_with_progress(process, log_file)
-        else:
-            exit_code = _stream_plain(process, log_file)
+        try:
+            if interactive:
+                exit_code = _stream_with_progress(process, log_file)
+            else:
+                exit_code = _stream_plain(process, log_file)
+        except KeyboardInterrupt, SystemExit:
+            logger.warning("pytest_subprocess_interrupted", pid=process.pid)
+            _terminate_pytest_process(process)
+            raise
 
         end_time = datetime.now()
         duration = end_time - start_time
@@ -436,6 +461,25 @@ Exit code: {exit_code}
         _print_footer(exit_code, duration, log_path)
 
     return exit_code
+
+
+def _terminate_pytest_process(process: subprocess.Popen[str]) -> None:
+    """Stop an interrupted pytest child, escalating only after a bounded wait."""
+    try:
+        os.killpg(process.pid, signal.SIGTERM)
+    except ProcessLookupError:
+        logger.warning("pytest_subprocess_already_exited", pid=process.pid)
+        return
+    try:
+        process.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        logger.warning("pytest_subprocess_terminate_timed_out", pid=process.pid)
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            logger.warning("pytest_subprocess_exited_before_kill", pid=process.pid)
+            return
+        process.wait(timeout=5)
 
 
 def _print_footer(exit_code: int, duration: object, log_path: Path) -> None:

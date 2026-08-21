@@ -13,16 +13,65 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
+from uuid import uuid4
 
 from rich.console import Console
 from rich.text import Text
 
+from promptgrimoire.cli.perf.models import database_name_from_url
+
 if TYPE_CHECKING:
+    from collections.abc import Callable, Iterator
     from datetime import datetime
 
 console = Console()
 
 _TEST_RESOURCE_POLICY_ENV = "_PROMPTGRIMOIRE_TEST_RESOURCES_CONFIGURED"
+
+
+@dataclass(frozen=True, slots=True)
+class PreparedTestDatabase:
+    """Database state prepared once for a test subprocess.
+
+    Keeping this state explicit lets a caller start a measured server after
+    preparation without making the shared pytest launcher destructively
+    prepare the database a second time.
+    """
+
+    test_database_url: str | None
+    database_name: str | None
+    clone_source_url: str | None
+    preparation_id: str
+
+    @classmethod
+    def from_urls(
+        cls,
+        *,
+        test_database_url: str,
+        clone_source_url: str,
+        preparation_id: str | None = None,
+    ) -> PreparedTestDatabase:
+        """Build a prepared context with a parsed database identity."""
+        return cls(
+            test_database_url=test_database_url,
+            database_name=database_name_from_url(test_database_url),
+            clone_source_url=clone_source_url,
+            preparation_id=preparation_id or uuid4().hex,
+        )
+
+    def harness_env(self) -> dict[str, str]:
+        """Return the database environment required by the test subprocess."""
+        if self.test_database_url is None:
+            return {"_PROMPTGRIMOIRE_DATABASE_PREPARATION_ID": self.preparation_id}
+
+        env = {
+            "DATABASE__URL": self.test_database_url,
+            "_PROMPTGRIMOIRE_USE_NULL_POOL": "1",
+        }
+        if self.clone_source_url is not None:
+            env["_CLONE_TEST_SOURCE_URL"] = self.clone_source_url
+        env["_PROMPTGRIMOIRE_DATABASE_PREPARATION_ID"] = self.preparation_id
+        return env
 
 
 @dataclass
@@ -45,25 +94,70 @@ def _lock_test_run_fd(fd: int, *, blocking: bool) -> None:
     fcntl.flock(fd, operation)
 
 
-def _acquire_test_run_slot() -> None:
+def _test_run_lock_path() -> Path:
+    """Return the shared resource lock path, with a testable override."""
+    if override := os.environ.get("GRIMOIRE_TEST_LOCK_PATH"):
+        return Path(override)
+    return Path(tempfile.gettempdir()) / f"promptgrimoire-test-run-{os.getuid()}.lock"
+
+
+def _short_turnstile_path() -> Path:
+    """Return the lock that lets already-queued short work cross first."""
+    if override := os.environ.get("GRIMOIRE_TEST_SHORT_TURNSTILE_PATH"):
+        return Path(override)
+    return Path(tempfile.gettempdir()) / (
+        f"promptgrimoire-test-short-turn-{os.getuid()}.lock"
+    )
+
+
+def _open_lock(path: Path) -> int:
+    """Open one user-owned lock file without following a symlink."""
+    return os.open(path, os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
+
+
+def _acquire_test_run_slot(
+    *,
+    on_queued: Callable[[], None] | None = None,
+) -> None:
     """Serialise top-level PromptGrimoire test commands across worktrees."""
     if _test_run_lock.fd is not None:
         return
 
-    lock_path = Path(tempfile.gettempdir()) / (
-        f"promptgrimoire-test-run-{os.getuid()}.lock"
-    )
-    fd = os.open(
-        lock_path,
-        os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW,
-        0o600,
-    )
+    fd = _open_lock(_test_run_lock_path())
     try:
         _lock_test_run_fd(fd, blocking=False)
     except BlockingIOError:
-        console.print("[yellow]Another PromptGrimoire test run is active; queued...[/]")
-        _lock_test_run_fd(fd, blocking=True)
+        turnstile_fd = _open_lock(_short_turnstile_path())
+        try:
+            _lock_test_run_fd(turnstile_fd, blocking=True)
+            if on_queued is not None:
+                on_queued()
+            console.print(
+                "[yellow]Another PromptGrimoire test run is active; queued...[/]"
+            )
+            _lock_test_run_fd(fd, blocking=True)
+        finally:
+            os.close(turnstile_fd)
     _test_run_lock.fd = fd
+
+
+@contextlib.contextmanager
+def _campaign_test_run_slot() -> Iterator[None]:
+    """Hold the shared slot for one leg, yielding to queued short work first."""
+    turnstile_fd = _open_lock(_short_turnstile_path())
+    resource_fd: int | None = None
+    try:
+        _lock_test_run_fd(turnstile_fd, blocking=True)
+        resource_fd = _open_lock(_test_run_lock_path())
+        _lock_test_run_fd(resource_fd, blocking=True)
+    finally:
+        os.close(turnstile_fd)
+
+    try:
+        yield
+    finally:
+        if resource_fd is not None:
+            os.close(resource_fd)
 
 
 def _wait_for_idle_test_host() -> None:
@@ -177,8 +271,8 @@ def _build_clone_source_url(test_database_url: str, clone_source_name: str) -> s
     return f"{prefix}/{clone_source_name}{query}"
 
 
-def _pre_test_db_cleanup() -> None:
-    """Run Alembic migrations and truncate all tables before tests.
+def _pre_test_db_cleanup() -> PreparedTestDatabase:
+    """Prepare and describe the database state for one test subprocess.
 
     This runs once in the CLI process before pytest is spawned,
     avoiding deadlocks when xdist workers try to truncate simultaneously.
@@ -191,7 +285,12 @@ def _pre_test_db_cleanup() -> None:
 
     test_database_url = get_settings().dev.test_database_url
     if not test_database_url:
-        return  # No test database configured — skip
+        return PreparedTestDatabase(
+            test_database_url=None,
+            database_name=None,
+            clone_source_url=None,
+            preparation_id=uuid4().hex,
+        )
 
     # Auto-create the branch-specific database if it doesn't exist
     ensure_database_exists(test_database_url)
@@ -263,6 +362,10 @@ def _pre_test_db_cleanup() -> None:
 
     clone_database(test_database_url, clone_source_name)
     os.environ["_CLONE_TEST_SOURCE_URL"] = clone_source_url
+    return PreparedTestDatabase.from_urls(
+        test_database_url=test_database_url,
+        clone_source_url=clone_source_url,
+    )
 
 
 def _build_test_header(

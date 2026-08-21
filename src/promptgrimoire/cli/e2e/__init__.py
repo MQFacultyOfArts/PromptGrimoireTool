@@ -36,7 +36,7 @@ from promptgrimoire.cli.e2e._server import (
     _stop_pyspy,
 )
 from promptgrimoire.cli.e2e._workers import _allocate_ports as _allocate_ports
-from promptgrimoire.cli.testing import _run_pytest
+from promptgrimoire.cli.testing import PytestEnvironment, _run_pytest
 
 if TYPE_CHECKING:
     import subprocess
@@ -109,28 +109,6 @@ def _wait_for_idle_perf_host() -> None:
             f"quiet sample(s) at ≤{limit:.1f}. Waiting 15s...[/]"
         )
         time.sleep(15)
-
-
-def _check_remote_perf_server(url: str) -> None:
-    """Fail fast if the external perf server is not answering.
-
-    Split-rig runs point at a server on another machine; a typo'd URL or
-    a server that never started must die here, not as 150 browser
-    timeouts twenty minutes later.
-    """
-    import urllib.error
-    import urllib.request
-    from http import HTTPStatus
-
-    health = url.rstrip("/") + "/healthz"
-    try:
-        with urllib.request.urlopen(health, timeout=10) as resp:  # noqa: S310
-            if resp.status != HTTPStatus.OK:  # pragma: no cover - remote
-                console.print(f"[red]{health} answered {resp.status}[/]")
-                sys.exit(1)
-    except (urllib.error.URLError, OSError) as exc:
-        console.print(f"[red]External perf server unreachable: {health}: {exc}[/]")
-        sys.exit(1)
 
 
 def _configure_perf_server(*, queue_pool: bool) -> None:
@@ -706,30 +684,24 @@ def perf(
 
         sys.exit(_run_collect_only(default_args=default_args, extra_args=args))
 
+    if os.environ.get("E2E_PERF_SERVER_URL"):
+        console.print(
+            "[red]The already-running external perf server is unsafe: database "
+            "preparation must finish before the target starts. Use the managed "
+            "external target contract instead.[/]"
+        )
+        raise typer.Exit(code=2)
+
     from promptgrimoire.config import get_settings
 
     _wait_for_idle_perf_host()
     get_settings()
-    _pre_test_db_cleanup()
-
-    # Split-rig mode: E2E_PERF_SERVER_URL points browsers at a server on
-    # another machine (its pooling/env is configured there, e.g. by
-    # boxen/bunyip/perf-rig/run-perf-server.sh). The harness side keeps
-    # its own DB access via DEV__TEST_DATABASE_URL / E2E_PERF_DATABASE_URL
-    # pointing at that machine. The local host-load gate above still
-    # applies: it now guards the browser farm, not the server.
-    remote_url = os.environ.get("E2E_PERF_SERVER_URL")
-    if remote_url:
-        _check_remote_perf_server(remote_url)
-        url = remote_url
-        server_process = None
-        console.print(f"[green]Using external perf server at {url}[/]")
-    else:
-        _configure_perf_server(queue_pool=queue_pool)
-        port = _allocate_ports(1)[0]
-        url = f"http://localhost:{port}"
-        server_process = _start_e2e_server(port)
-        console.print(f"[green]Server ready at {url}[/]")
+    prepared_database = _pre_test_db_cleanup()
+    _configure_perf_server(queue_pool=queue_pool)
+    port = _allocate_ports(1)[0]
+    url = f"http://localhost:{port}"
+    server_process = _start_e2e_server(port)
+    console.print(f"[green]Server ready at {url}[/]")
 
     os.environ["E2E_BASE_URL"] = url
     args = _prepend_pytest_flags(args, exit_first=exit_first, failed_first=False)
@@ -740,16 +712,16 @@ def perf(
             log_path=Path("test-perf.log"),
             default_args=default_args,
             extra_args=args,
-            # Production-shaped pooling is for the measured server only.
-            # _run_pytest calls _pre_test_db_cleanup() again, which restores
-            # _PROMPTGRIMOIRE_USE_NULL_POOL=1 and the direct database URL for
-            # the harness; clearing the fidelity flag here keeps the harness's
-            # own fixtures on NullPool, as they were before --queue-pool.
-            extra_env={"_PROMPTGRIMOIRE_POOL_FIDELITY": "0"},
+            # Production-shaped pooling is for the measured server only. The
+            # prepared context prevents a second destructive preparation and
+            # keeps the harness's own fixtures on direct NullPool connections.
+            extra_env=PytestEnvironment(
+                variables={"_PROMPTGRIMOIRE_POOL_FIDELITY": "0"},
+                prepared_database=prepared_database,
+            ),
         )
     finally:
-        if server_process is not None:
-            _stop_e2e_server(server_process)
+        _stop_e2e_server(server_process)
     sys.exit(exit_code)
 
 

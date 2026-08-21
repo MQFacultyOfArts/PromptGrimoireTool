@@ -124,6 +124,63 @@ at minimum), per-leg results, and within-arm spread. Report server-side and
 browser-side boundaries separately; browser timings from co-located load
 generators are not production client latency measurements.
 
+### Durable performance campaigns
+
+`uv run grimoire perf` operates complete, resumable campaigns across arbitrary
+session levels, repetitions, and controlled arm order. Supported probes are
+`soak_full_crud`, `assessment_cram`, and `thundering_herd`. A definition may use
+a level sweep plus an arm pattern, or an exact irregular leg list. For example:
+
+```json
+{
+  "campaign_id": "capacity-abba",
+  "probe": "soak_full_crud",
+  "target": "external",
+  "parameter_name": "sessions",
+  "levels": [25, 50, 75],
+  "arms": [
+    {"name": "A", "source_identity": "FULL_SHA_A"},
+    {"name": "B", "source_identity": "FULL_SHA_B"}
+  ],
+  "arm_pattern": ["A", "B", "B", "A"],
+  "repetitions": 2,
+  "stop_policy": "complete_schedule"
+}
+```
+
+Commands:
+
+```bash
+uv run grimoire perf plan campaign.json
+uv run grimoire perf run campaign.json
+uv run grimoire perf status output/perf-campaigns/capacity-abba
+uv run grimoire perf pause output/perf-campaigns/capacity-abba
+uv run grimoire perf resume output/perf-campaigns/capacity-abba
+uv run grimoire perf summary output/perf-campaigns/capacity-abba
+```
+
+`campaign.json` stores the immutable resolved schedule. Each retry gets a new
+attempt directory; `legs/*.json` publishes completion only after the probe
+envelope and every manifest hash validate. Resume revalidates those hashes and
+reruns the first invalid or incomplete leg. Raw JSON existence never means a
+pass. Terminal classifications are `pass`, `pass_with_degradation`, `collapse`,
+`invalid_evidence`, and `infrastructure_failure`. SIGINT or SIGTERM unwinds the
+active target and pytest process tree, records `interrupted`, and exits 130;
+resume then allocates a new attempt for that incomplete leg.
+
+Each campaign leg is the maximum non-preemptible unit. The local shared test
+slot and any external target lease are released after every leg. A short
+`grimoire test` or `grimoire e2e` command already waiting at that boundary gets
+the slot before the campaign reacquires it. `perf pause` requests a pause after
+the active leg has stopped and retained evidence; it does not invalidate a live
+measurement.
+
+Local campaigns require `E2E_PERF_DIRECT_DATABASE_URL` and
+`E2E_PERF_DATABASE_URL` to name the same database over direct and pooled
+transports. External campaigns additionally require
+`E2E_PERF_TARGET_ADAPTER`. The adapter protocol and public/private ownership
+boundary are specified in [External Performance Target Adapter Protocol](perf-target-adapter.md).
+
 ### JavaScript in E2E Tests
 
 Use Playwright's native APIs for user interactions (clicks, typing, drag). `page.evaluate()` is acceptable for:
@@ -298,6 +355,7 @@ class TestCreateWorkspace:
 
     @pytest.mark.asyncio
     async def test_creates_workspace(self) -> None: ...
+
 
 class TestGetWorkspace:
     """Tests for get_workspace."""

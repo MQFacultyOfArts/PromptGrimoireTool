@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import json
 import math
+import os
 from collections import Counter
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -382,6 +383,8 @@ def collect_server_page_load(
     searched -- an unreadable log must be visible as a gap in the
     evidence rather than as an absence of slow page loads.
     """
+    if override := os.environ.get("E2E_SERVER_STDOUT_LOG"):
+        server_stdout_log = Path(override)
     base, resolved_by = find_server_jsonl(server_stdout_log)
     if base is None:
         return {

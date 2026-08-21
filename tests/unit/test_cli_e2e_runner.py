@@ -3,12 +3,46 @@
 from __future__ import annotations
 
 import asyncio
+import multiprocessing
 import os
+import signal
 from pathlib import Path
 from typing import Any
 
 import pytest
 from typer.testing import CliRunner
+
+
+def _campaign_lock_worker(
+    lock_path: str,
+    turnstile_path: str,
+    connection: Any,
+) -> None:
+    """Hold two campaign legs while exposing their exact lock boundaries."""
+    from promptgrimoire.cli._shared import _campaign_test_run_slot
+
+    os.environ["GRIMOIRE_TEST_LOCK_PATH"] = lock_path
+    os.environ["GRIMOIRE_TEST_SHORT_TURNSTILE_PATH"] = turnstile_path
+    with _campaign_test_run_slot():
+        connection.send("leg-1-acquired")
+        assert connection.recv() == "release-leg-1"
+    with _campaign_test_run_slot():
+        connection.send("leg-2-acquired")
+
+
+def _short_lock_worker(
+    lock_path: str,
+    turnstile_path: str,
+    connection: Any,
+) -> None:
+    """Queue ordinary short work and hold its acquired slot until released."""
+    from promptgrimoire.cli._shared import _acquire_test_run_slot
+
+    os.environ["GRIMOIRE_TEST_LOCK_PATH"] = lock_path
+    os.environ["GRIMOIRE_TEST_SHORT_TURNSTILE_PATH"] = turnstile_path
+    _acquire_test_run_slot(on_queued=lambda: connection.send("short-queued"))
+    connection.send("short-acquired")
+    assert connection.recv() == "release-short"
 
 
 def test_perf_host_load_guard_waits_until_quiet(
@@ -57,13 +91,11 @@ def test_perf_queue_pool_removes_test_nullpool_override(
 def test_perf_queue_pool_scopes_fidelity_to_the_measured_server(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The harness keeps NullPool; only the managed server gets QueuePool.
+    """Perf prepares once, then starts the server before measuring it.
 
-    ``_run_pytest`` calls ``_pre_test_db_cleanup()`` a second time, which
-    restores ``_PROMPTGRIMOIRE_USE_NULL_POOL=1`` and the direct database URL
-    for the pytest process.  The perf command must clear the fidelity flag
-    for that subprocess, or the harness's own fixtures would silently move
-    off NullPool.
+    The prepared database context is passed through to ``_run_pytest`` so the
+    test launcher cannot repeat destructive preparation after the measured
+    server has connected.
     """
     from promptgrimoire.cli import e2e
 
@@ -77,15 +109,26 @@ def test_perf_queue_pool_scopes_fidelity_to_the_measured_server(
     ):
         monkeypatch.setenv(leaked, "0")
     captured: dict[str, Any] = {}
+    events: list[str] = []
+    prepared_database = object()
 
     monkeypatch.setattr(e2e, "_configure_test_run_resources", lambda: None)
     monkeypatch.setattr(e2e, "_wait_for_idle_perf_host", lambda: None)
-    monkeypatch.setattr(e2e, "_pre_test_db_cleanup", lambda: None)
+    monkeypatch.setattr(
+        e2e,
+        "_pre_test_db_cleanup",
+        lambda: events.append("prepare") or prepared_database,
+    )
     monkeypatch.setattr(e2e, "_allocate_ports", lambda _count: [4321])
-    monkeypatch.setattr(e2e, "_start_e2e_server", lambda _port: "server")
+    monkeypatch.setattr(
+        e2e,
+        "_start_e2e_server",
+        lambda _port: events.append("start") or "server",
+    )
     monkeypatch.setattr(e2e, "_stop_e2e_server", lambda _process: None)
 
     def fake_run_pytest(**kwargs: Any) -> int:
+        events.append("measure")
         captured.update(kwargs)
         return 0
 
@@ -94,10 +137,129 @@ def test_perf_queue_pool_scopes_fidelity_to_the_measured_server(
     result = CliRunner().invoke(e2e.e2e_app, ["perf", "--queue-pool"])
 
     assert result.exit_code == 0, result.output
+    assert events == ["prepare", "start", "measure"]
+    environment = captured["extra_env"]
+    assert isinstance(environment, e2e.PytestEnvironment)
+    assert environment.prepared_database is prepared_database
     # Server side: started while the flag was on.
     assert os.environ["_PROMPTGRIMOIRE_POOL_FIDELITY"] == "1"
     # Harness side: explicitly turned back off for the pytest subprocess.
-    assert captured["extra_env"]["_PROMPTGRIMOIRE_POOL_FIDELITY"] == "0"
+    assert environment.variables["_PROMPTGRIMOIRE_POOL_FIDELITY"] == "0"
+
+
+def test_perf_rejects_an_already_running_external_server_before_preparation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Legacy split mode cannot connect a server before destructive setup."""
+    from promptgrimoire.cli import e2e
+
+    prepared: list[bool] = []
+    monkeypatch.setenv("E2E_PERF_SERVER_URL", "http://bunyip.invalid:8080")
+    monkeypatch.setattr(e2e, "_configure_test_run_resources", lambda: None)
+    monkeypatch.setattr(e2e, "_wait_for_idle_perf_host", lambda: None)
+    monkeypatch.setattr(
+        e2e,
+        "_pre_test_db_cleanup",
+        lambda: prepared.append(True),
+    )
+
+    result = CliRunner().invoke(e2e.e2e_app, ["perf"])
+
+    assert result.exit_code != 0
+    assert "already-running external perf server is unsafe" in result.output
+    assert prepared == []
+
+
+def test_pytest_child_is_terminated_when_the_campaign_unwinds(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """SIGTERM cleanup cannot leave the browser-side pytest process running."""
+    from promptgrimoire.cli._shared import PreparedTestDatabase
+    from promptgrimoire.cli.testing import PytestEnvironment, _run_pytest
+
+    events: list[str] = []
+
+    class FakeProcess:
+        pid = 321
+        stdout = object()
+
+        def terminate(self) -> None:
+            events.append("terminate")
+
+        def wait(self, *, timeout: float | None = None) -> int:
+            events.append(f"wait:{timeout}")
+            return -15
+
+        def kill(self) -> None:
+            events.append("kill")
+
+    process = FakeProcess()
+    popen_kwargs: dict[str, object] = {}
+
+    def fake_popen(*_args: object, **kwargs: object) -> FakeProcess:
+        popen_kwargs.update(kwargs)
+        return process
+
+    monkeypatch.setattr(
+        "promptgrimoire.cli.testing.subprocess.Popen",
+        fake_popen,
+    )
+    monkeypatch.setattr(
+        "promptgrimoire.cli.testing.os.killpg",
+        lambda pid, signum: events.append(
+            f"killpg:{pid}:{signal.Signals(signum).name}"
+        ),
+    )
+    monkeypatch.setattr(
+        "promptgrimoire.cli.testing._stream_plain",
+        lambda *_args: (_ for _ in ()).throw(KeyboardInterrupt),
+    )
+    monkeypatch.setattr("promptgrimoire.cli.testing.sys.stdout.isatty", lambda: False)
+    prepared = PreparedTestDatabase(
+        test_database_url=None,
+        database_name=None,
+        clone_source_url=None,
+        preparation_id="prep-interrupt",
+    )
+
+    with pytest.raises(KeyboardInterrupt):
+        _run_pytest(
+            title="Interrupted pytest child",
+            log_path=tmp_path / "pytest.log",
+            default_args=[],
+            extra_env=PytestEnvironment({}, prepared),
+        )
+
+    assert popen_kwargs["start_new_session"] is True
+    assert events == ["killpg:321:SIGTERM", "wait:5"]
+
+
+def test_server_stop_waits_for_exit_after_escalating_to_kill() -> None:
+    """A killed managed server is reaped before lifecycle cleanup returns."""
+    import subprocess
+
+    from promptgrimoire.cli.e2e._server import _stop_e2e_server
+
+    events: list[str] = []
+
+    class FakeProcess:
+        def terminate(self) -> None:
+            events.append("terminate")
+
+        def wait(self, timeout: float | None = None) -> int:
+            events.append(f"wait:{timeout}")
+            if events.count(f"wait:{timeout}") == 1:
+                assert timeout is not None
+                raise subprocess.TimeoutExpired("server", timeout)
+            return -9
+
+        def kill(self) -> None:
+            events.append("kill")
+
+    _stop_e2e_server(FakeProcess())
+
+    assert events == ["terminate", "wait:5", "kill", "wait:5"]
 
 
 def test_e2e_server_can_use_dedicated_cpus(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -158,12 +320,14 @@ def test_test_run_queue_waits_for_the_current_owner(
 
     monkeypatch.setattr(_shared._test_run_lock, "fd", None)
     monkeypatch.setattr(_shared.os, "open", lambda *_args: 42)
+    monkeypatch.setattr(_shared.os, "close", lambda _fd: None)
     monkeypatch.setattr(_shared, "_lock_test_run_fd", _fake_lock)
 
     _shared._acquire_test_run_slot()
 
     assert calls == [
         (42, False),
+        (42, True),
         (42, True),
     ]
     assert _shared._test_run_lock.fd == 42
@@ -192,6 +356,41 @@ def test_test_run_slot_holds_the_native_host_lock(
         os.close(contender_fd)
         os.close(held_fd)
         _shared._test_run_lock.fd = None
+
+
+def test_queued_short_work_acquires_between_campaign_legs(tmp_path: Path) -> None:
+    """A campaign yields its slot to short work already waiting at leg end."""
+    context = multiprocessing.get_context("spawn")
+    campaign_parent, campaign_child = context.Pipe()
+    short_parent, short_child = context.Pipe()
+    lock_path = str(tmp_path / "test-run.lock")
+    turnstile_path = str(tmp_path / "short-turnstile.lock")
+    campaign = context.Process(
+        target=_campaign_lock_worker,
+        args=(lock_path, turnstile_path, campaign_child),
+    )
+    short = context.Process(
+        target=_short_lock_worker,
+        args=(lock_path, turnstile_path, short_child),
+    )
+
+    campaign.start()
+    assert campaign_parent.poll(5)
+    assert campaign_parent.recv() == "leg-1-acquired"
+    short.start()
+    assert short_parent.poll(5)
+    assert short_parent.recv() == "short-queued"
+    campaign_parent.send("release-leg-1")
+    assert short_parent.poll(5)
+    assert short_parent.recv() == "short-acquired"
+    short_parent.send("release-short")
+    assert campaign_parent.poll(5)
+    assert campaign_parent.recv() == "leg-2-acquired"
+
+    campaign.join(timeout=5)
+    short.join(timeout=5)
+    assert campaign.exitcode == 0
+    assert short.exitcode == 0
 
 
 def test_test_run_queue_waits_for_host_load_to_settle(

@@ -54,6 +54,13 @@ from uuid import UUID, uuid4
 
 import pytest
 
+from promptgrimoire.cli.perf.results import (
+    MeasuredVerdict,
+    PerfClassification,
+    measured_verdict,
+    should_fail_pytest_for_verdict,
+    write_result_envelope,
+)
 from promptgrimoire.config import get_current_branch, get_settings
 from tests.e2e.assessment_fixtures import (
     CASE_BRIEF_TAG_COUNT,
@@ -180,6 +187,76 @@ class SoakObservation:
     pass_elapsed_ms: int = -1
     actions: list[ActionResult] = field(default_factory=list)
     error: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class SoakGate:
+    """Derived soak boundary and its complete supporting failures."""
+
+    load_errors: tuple[str, ...]
+    fatal_students: frozenset[str]
+    action_failures: tuple[str, ...]
+    total_actions: int
+    systemic: bool
+    verdict: MeasuredVerdict
+
+
+def _soak_gate(observations: list[SoakObservation]) -> SoakGate:
+    """Classify one soak cohort after every student has finished."""
+    load_errors = tuple(o.error for o in observations if o.error is not None)
+    fatal_students = frozenset(
+        observation.email
+        for observation in observations
+        for action in observation.actions
+        if action.error is not None and not action.degraded
+    )
+    action_failures = tuple(
+        f"{observation.email} {action.action}: {action.error}"
+        for observation in observations
+        for action in observation.actions
+        if action.error is not None and not action.degraded
+    )
+    total_actions = sum(len(observation.actions) for observation in observations)
+    systemic = len(fatal_students) >= SOAK_MAX_FATAL_STUDENTS or len(
+        action_failures
+    ) > max(1, int(total_actions * SOAK_MAX_FATAL_FRACTION))
+    unloaded_students = [
+        observation.email
+        for observation in observations
+        if not observation.annotation_loaded
+    ]
+    wedge_failures = _wedge_failures(observations)
+    degraded_actions = sum(
+        1
+        for observation in observations
+        for action in observation.actions
+        if action.error is not None and action.degraded
+    )
+    collapse_reasons: list[str] = []
+    if load_errors:
+        collapse_reasons.append(f"{len(load_errors)} session load failure(s)")
+    if action_failures and systemic:
+        collapse_reasons.append(f"{len(action_failures)} systemic action failure(s)")
+    if unloaded_students:
+        collapse_reasons.append(
+            f"{len(unloaded_students)} annotation load boundary failure(s)"
+        )
+    if wedge_failures:
+        collapse_reasons.append(f"{len(wedge_failures)} browser wedge(s)")
+    verdict = measured_verdict(
+        load_failure_count=len(load_errors),
+        fatal_action_failure_count=len(action_failures),
+        degraded_action_count=degraded_actions,
+        collapse_reasons=tuple(collapse_reasons),
+    )
+    return SoakGate(
+        load_errors=load_errors,
+        fatal_students=fatal_students,
+        action_failures=action_failures,
+        total_actions=total_actions,
+        systemic=systemic,
+        verdict=verdict,
+    )
 
 
 class StudentState:
@@ -813,8 +890,10 @@ def _maybe_write_diag(
     respond_audit: dict,
     run_meta: dict,
     server_page_load: dict,
+    *,
+    verdict: MeasuredVerdict,
 ) -> None:
-    """Optionally persist full evidence for manual analysis."""
+    """Optionally persist one atomic verdict-bearing result envelope."""
     raw_path = os.environ.get("E2E_SOAK_DIAG_PATH")
     if not raw_path:
         return
@@ -831,7 +910,7 @@ def _maybe_write_diag(
         "respond_audit": respond_audit,
         "results": [asdict(o) for o in observations],
     }
-    Path(raw_path).write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    write_result_envelope(Path(raw_path), verdict=verdict, probe_payload=payload)
 
 
 def _report_run(
@@ -839,6 +918,7 @@ def _report_run(
     diag_samples: list[dict],
     run_started: datetime,
     run_ended: datetime,
+    verdict: MeasuredVerdict,
 ) -> None:
     """Print every view of the run, then persist the full evidence.
 
@@ -865,7 +945,29 @@ def _report_run(
         respond_audit,
         _soak_run_meta(run_started, run_ended),
         server_page_load,
+        verdict=verdict,
     )
+
+
+def _wedge_failures(observations: list[SoakObservation]) -> list[str]:
+    """Return browsers that failed the positive minimum-work boundary."""
+    budget = ACTIONS_PER_MIN * SOAK_MINUTES
+    min_actions = int(budget * MIN_ACTION_FRACTION)
+    return [
+        (
+            f"{observation.email} completed only {attempted} actions "
+            f"(wedge floor {min_actions}) -- browser wedged or pacing broke"
+        )
+        for observation in observations
+        if (
+            attempted := sum(
+                1
+                for action in observation.actions
+                if action.error is None or action.degraded
+            )
+        )
+        < min_actions
+    ]
 
 
 def _report_attainment_and_guard_wedge(
@@ -991,46 +1093,35 @@ class TestSoakFullCrudLoad:
                 thread.join(timeout=300)
 
         sample_diag()
-        _report_run(observations, diag_samples, run_started, utc_now())
+        run_ended = utc_now()
 
-        load_errors = [o.error for o in observations if o.error]
-        fatal_students = {
-            o.email
-            for o in observations
-            for a in o.actions
-            if a.error is not None and not a.degraded
-        }
-        action_failures = [
-            f"{o.email} {a.action}: {a.error}"
-            for o in observations
-            for a in o.actions
-            if a.error is not None and not a.degraded
-        ]
-        total_actions = sum(len(o.actions) for o in observations)
-        # A real server knee explodes across students (cram n=100
-        # evidence); isolated tail events at ~0.1% are co-located-client
-        # glitches (the 2026-08-18 n=25 runs each produced exactly one,
-        # bracketed by 170 ms successes from the same client). Boundary
-        # = systemic: several students hit, or a material failure rate.
-        systemic = len(fatal_students) >= SOAK_MAX_FATAL_STUDENTS or len(
-            action_failures
-        ) > max(1, int(total_actions * SOAK_MAX_FATAL_FRACTION))
-        if load_errors or (action_failures and systemic):
-            pytest.fail(
-                "\n".join(
-                    [
-                        f"Soak probe boundary hit at n={N_SOAK_SESSIONS}:",
-                        *load_errors,
-                        *action_failures,
-                    ]
+        gate = _soak_gate(observations)
+        _report_run(
+            observations,
+            diag_samples,
+            run_started,
+            run_ended,
+            gate.verdict,
+        )
+        if gate.verdict.classification is PerfClassification.COLLAPSE:
+            if should_fail_pytest_for_verdict(gate.verdict.classification):
+                pytest.fail(
+                    "\n".join(
+                        [
+                            f"Soak probe boundary hit at n={N_SOAK_SESSIONS}:",
+                            *gate.load_errors,
+                            *gate.action_failures,
+                        ]
+                    )
                 )
-            )
-        if action_failures:
+            return
+        if gate.action_failures:
             print(
-                f"isolated tail failures (non-systemic, {len(action_failures)}"
-                f"/{total_actions} actions, {len(fatal_students)} student(s)):"
+                "isolated tail failures (non-systemic, "
+                f"{len(gate.action_failures)}/{gate.total_actions} actions, "
+                f"{len(gate.fatal_students)} student(s)):"
             )
-            for line in action_failures:
+            for line in gate.action_failures:
                 print(f"  {line}")
 
         assert all(o.annotation_loaded for o in observations)

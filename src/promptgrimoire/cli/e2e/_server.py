@@ -11,10 +11,21 @@ import sys
 import time
 from datetime import datetime
 from pathlib import Path
+from typing import Protocol
 
 from promptgrimoire.cli._shared import console
 
 _SERVER_SCRIPT_PATH = Path(__file__).parent / "_server_script.py"
+
+
+class _ManagedServerProcess(Protocol):
+    """Process operations required by graceful E2E server shutdown."""
+
+    def terminate(self) -> None: ...
+
+    def wait(self, timeout: float | None = None) -> int: ...
+
+    def kill(self) -> None: ...
 
 
 def _server_command(port: int) -> list[str]:
@@ -25,7 +36,11 @@ def _server_command(port: int) -> list[str]:
     return command
 
 
-def _start_e2e_server(port: int) -> subprocess.Popen[bytes]:
+def _start_e2e_server(
+    port: int,
+    *,
+    log_path: Path = Path("test-e2e-server.log"),
+) -> subprocess.Popen[bytes]:
     """Start a NiceGUI server subprocess for E2E tests.
 
     Returns the Popen handle. Blocks until the server accepts connections
@@ -36,7 +51,8 @@ def _start_e2e_server(port: int) -> subprocess.Popen[bytes]:
     }
 
     console.print(f"[blue]Starting NiceGUI server on port {port}...[/]")
-    server_log = Path("test-e2e-server.log")
+    server_log = log_path
+    server_log.parent.mkdir(parents=True, exist_ok=True)
     server_log_fh = server_log.open("w")
     process = subprocess.Popen(
         _server_command(port),
@@ -66,7 +82,7 @@ def _start_e2e_server(port: int) -> subprocess.Popen[bytes]:
     sys.exit(1)
 
 
-def _stop_e2e_server(process: subprocess.Popen[bytes]) -> None:
+def _stop_e2e_server(process: _ManagedServerProcess) -> None:
     """Terminate a server subprocess gracefully."""
     console.print("[dim]Stopping server...[/]")
     process.terminate()
@@ -74,6 +90,7 @@ def _stop_e2e_server(process: subprocess.Popen[bytes]) -> None:
         process.wait(timeout=5)
     except subprocess.TimeoutExpired:
         process.kill()
+        process.wait(timeout=5)
 
 
 def _check_ptrace_scope() -> None:

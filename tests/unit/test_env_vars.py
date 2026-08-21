@@ -247,6 +247,11 @@ _ALLOWED_OS_ENVIRON = {
     _SRC_DIR / "cli" / "e2e" / "_server.py",
     # Standalone subprocess script — sets env for isolated NiceGUI server
     _SRC_DIR / "cli" / "e2e" / "_server_script.py",
+    # Perf coordinator reads ephemeral runner/attempt inputs, not app config
+    _SRC_DIR / "cli" / "perf" / "cli.py",
+    _SRC_DIR / "cli" / "perf" / "external.py",
+    _SRC_DIR / "cli" / "perf" / "local.py",
+    _SRC_DIR / "cli" / "perf" / "results.py",
     # Test-harness guard: suppresses Discord alerts during test runs
     _SRC_DIR / "logging_discord.py",
     # systemd NOTIFY_SOCKET — runtime socket path, not app config
@@ -272,6 +277,8 @@ _ALLOWED_TEST_OS_ENVIRON_GET = {
     _TESTS_DIR / "e2e" / "test_pdf_export_filename.py",
     # Perf probe tuning/output paths are runner flags, not app config
     _TESTS_DIR / "e2e" / "test_independent_workspace_load.py",
+    # Perf reporting reads the per-attempt server log path from the runner
+    _TESTS_DIR / "e2e" / "perf_reporting.py",
     # Cram probe E2E_CRAM_* knobs are runner flags, not app config
     _TESTS_DIR / "e2e" / "test_assessment_cram_load.py",
     # Soak probe E2E_SOAK_* knobs are runner flags, not app config

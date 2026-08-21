@@ -7,6 +7,7 @@ from promptgrimoire.cli.docs import docs_app
 from promptgrimoire.cli.e2e import e2e_app
 from promptgrimoire.cli.export import export_app
 from promptgrimoire.cli.migrate import migrate_app
+from promptgrimoire.cli.perf.cli import perf_app
 from promptgrimoire.cli.seed import seed_app
 from promptgrimoire.cli.testing import test_app
 
@@ -18,3 +19,4 @@ app.add_typer(seed_app, name="seed")
 app.add_typer(export_app, name="export")
 app.add_typer(docs_app, name="docs")
 app.add_typer(migrate_app, name="migrate")
+app.add_typer(perf_app, name="perf")

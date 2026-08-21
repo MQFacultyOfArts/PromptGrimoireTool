@@ -5,6 +5,7 @@ Usage: python _server_script.py <port>
 """
 
 import os
+import subprocess
 import sys
 from pathlib import Path
 from typing import Any
@@ -32,6 +33,30 @@ port = int(sys.argv[1])
 from promptgrimoire.logging_config import setup_logging
 
 setup_logging()
+
+import structlog
+
+_attestation_logger = structlog.get_logger("e2e.attestation")
+
+
+def _full_source_identity() -> str:
+    """Return the full commit observed by the measured server process."""
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+    except OSError, subprocess.CalledProcessError:
+        _attestation_logger.exception("perf_source_identity_unavailable")
+        return "unknown"
+    return result.stdout.strip()
+
+
+_SOURCE_IDENTITY = _full_source_identity()
+_BOOT_ID = os.environ.get("E2E_PERF_BOOT_ID", "unmanaged")
+_PREPARATION_ID = os.environ.get("_PROMPTGRIMOIRE_DATABASE_PREPARATION_ID", "unmanaged")
 
 # --- GC pause recorder ---
 # Convicts or acquits gen-2 GC for the sub-second event-loop stalls seen
@@ -464,6 +489,7 @@ async def _diagnostics():
         _state,
         log_pool_and_pg_stats,
     )
+    from sqlalchemy import text
     from promptgrimoire.pages.annotation import (
         _workspace_presence,
         _workspace_registry,
@@ -477,7 +503,31 @@ async def _diagnostics():
 
     mem = _collect_memory()
     all_tasks = asyncio.all_tasks()
+    database_name = None
+    database_query_ok = False
+    if _state.engine is not None:
+        try:
+            async with _state.engine.connect() as connection:
+                result = await connection.execute(text("SELECT current_database()"))
+                database_name = result.scalar_one()
+            database_query_ok = True
+        except Exception:
+            _attestation_logger.exception("perf_database_attestation_failed")
+    pool_mode_reason = (
+        "pool_fidelity"
+        if os.environ.get("_PROMPTGRIMOIRE_POOL_FIDELITY") == "1"
+        else "test_null_pool"
+        if os.environ.get("_PROMPTGRIMOIRE_USE_NULL_POOL") == "1"
+        else "configured_queue_pool"
+    )
     return {
+        "boot_id": _BOOT_ID,
+        "pid": os.getpid(),
+        "source_identity": _SOURCE_IDENTITY,
+        "database_name": database_name,
+        "database_query_ok": database_query_ok,
+        "preparation_id": _PREPARATION_ID,
+        "pool_mode_reason": pool_mode_reason,
         "pool": (_pool_status(pool) if pool else "no engine"),
         "engine_id": id(_state.engine),
         "engine_is_none": _state.engine is None,

@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import signal
 import subprocess
 from contextlib import nullcontext
 from datetime import UTC, datetime, timedelta
@@ -118,6 +119,47 @@ def test_external_adapter_process_does_not_inherit_public_database_context(
 
     assert not set(public_only).intersection(environment)
     assert environment["BUNYIP_PRIVATE_PROFILE"] == "perf-rig"
+
+
+def test_default_adapter_timeout_terminates_the_process_group(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A transport timeout cannot leave ssh and its remote lease orphaned."""
+    from promptgrimoire.cli.perf.targets import _default_run
+
+    class TimedOutProcess:
+        pid = 4321
+        returncode = -signal.SIGTERM
+
+        def __init__(self) -> None:
+            self.communicate_calls: list[float | None] = []
+
+        def communicate(self, timeout: float | None = None) -> tuple[str, str]:
+            self.communicate_calls.append(timeout)
+            if len(self.communicate_calls) == 1:
+                raise subprocess.TimeoutExpired(["adapter"], timeout or 0)
+            return "", ""
+
+    process = TimedOutProcess()
+
+    def popen(argv: list[str], **kwargs: object) -> TimedOutProcess:
+        assert argv == ["/private/adapter", "start"]
+        assert kwargs["start_new_session"] is True
+        return process
+
+    terminated: list[tuple[int, signal.Signals]] = []
+    monkeypatch.setattr(subprocess, "Popen", popen)
+    monkeypatch.setattr(
+        os,
+        "killpg",
+        lambda pid, sig: terminated.append((pid, sig)),
+    )
+
+    with pytest.raises(subprocess.TimeoutExpired):
+        _default_run(["/private/adapter", "start"])
+
+    assert process.communicate_calls == [2700, 10]
+    assert terminated == [(process.pid, signal.SIGTERM)]
 
 
 def test_external_start_uses_exact_argv_and_validates_identity(tmp_path: Path) -> None:

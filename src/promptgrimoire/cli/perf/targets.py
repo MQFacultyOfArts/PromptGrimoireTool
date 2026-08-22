@@ -5,7 +5,9 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import signal
 import subprocess
+from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
@@ -22,6 +24,8 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
 ADAPTER_SCHEMA_VERSION = 1
+_ADAPTER_TIMEOUT_SECONDS = 2700
+_ADAPTER_TERMINATION_GRACE_SECONDS = 10
 _SECRET_KEY_PARTS = ("password", "secret", "token", "credential", "database_url")
 _PUBLIC_HARNESS_ENV_KEYS = frozenset(
     {
@@ -61,14 +65,34 @@ def _adapter_environment() -> dict[str, str]:
 
 
 def _default_run(argv: list[str]) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
+    process = subprocess.Popen(
         argv,
-        capture_output=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
         text=True,
-        check=False,
-        timeout=120,
         env=_adapter_environment(),
+        start_new_session=True,
     )
+    try:
+        stdout, stderr = process.communicate(timeout=_ADAPTER_TIMEOUT_SECONDS)
+    except subprocess.TimeoutExpired as exc:
+        with suppress(ProcessLookupError):
+            os.killpg(process.pid, signal.SIGTERM)
+        try:
+            stdout, stderr = process.communicate(
+                timeout=_ADAPTER_TERMINATION_GRACE_SECONDS
+            )
+        except subprocess.TimeoutExpired:
+            with suppress(ProcessLookupError):
+                os.killpg(process.pid, signal.SIGKILL)
+            stdout, stderr = process.communicate()
+        raise subprocess.TimeoutExpired(
+            argv,
+            _ADAPTER_TIMEOUT_SECONDS,
+            output=stdout,
+            stderr=stderr,
+        ) from exc
+    return subprocess.CompletedProcess(argv, process.returncode, stdout, stderr)
 
 
 def _contains_secret(value: object, *, key: str = "") -> bool:

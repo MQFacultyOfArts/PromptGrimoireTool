@@ -109,3 +109,51 @@ def test_perf_run_reports_process_interruption_with_exit_130(
 
     assert result.exit_code == 130
     assert "cli-abba: interrupted" in result.output
+
+
+def test_perf_run_does_not_render_exception_locals(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Operational failures retain a traceback without exposing CLI secrets."""
+    import structlog
+
+    from promptgrimoire.cli import app
+
+    definition = tmp_path / "definition.json"
+    output = tmp_path / "campaigns"
+    _write_definition(definition)
+    synthetic_password = "synthetic-perf-password-that-must-not-be-rendered"
+
+    def fail_with_sensitive_local(_store: object) -> str:
+        database_password = synthetic_password
+        try:
+            raise RuntimeError("synthetic database failure")
+        except RuntimeError:
+            structlog.get_logger().exception("synthetic_perf_failure")
+        assert database_password
+        return "infrastructure_failure"
+
+    monkeypatch.setattr(
+        "promptgrimoire.cli.perf.cli._run_store",
+        fail_with_sensitive_local,
+    )
+    original_config = structlog.get_config()
+    originally_configured = structlog.is_configured()
+    structlog.reset_defaults()
+    try:
+        result = CliRunner().invoke(
+            app,
+            ["perf", "run", str(definition), "--output-root", str(output)],
+        )
+    finally:
+        if originally_configured:
+            structlog.configure(**original_config)
+        else:
+            structlog.reset_defaults()
+
+    assert result.exit_code == 1
+    assert "synthetic_perf_failure" in result.output
+    assert "RuntimeError" in result.output
+    assert "synthetic database failure" in result.output
+    assert synthetic_password not in result.output

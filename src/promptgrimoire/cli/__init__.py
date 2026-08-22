@@ -1,5 +1,6 @@
 """PromptGrimoire CLI — unified development tools."""
 
+import structlog
 import typer
 
 from promptgrimoire.cli.admin import admin_app
@@ -11,7 +12,23 @@ from promptgrimoire.cli.perf.cli import perf_app
 from promptgrimoire.cli.seed import seed_app
 from promptgrimoire.cli.testing import test_app
 
-app = typer.Typer(name="grimoire", help="PromptGrimoire development tools.")
+
+def _disable_default_exception_locals() -> None:
+    """Keep standalone CLI tracebacks without rendering frame-local secrets."""
+    if structlog.is_configured():
+        return
+    for processor in structlog.get_config()["processors"]:
+        if isinstance(processor, structlog.dev.ConsoleRenderer):
+            processor.exception_formatter = structlog.dev.RichTracebackFormatter(
+                show_locals=False,
+            )
+
+
+app = typer.Typer(
+    name="grimoire",
+    help="PromptGrimoire development tools.",
+    callback=_disable_default_exception_locals,
+)
 app.add_typer(test_app, name="test")
 app.add_typer(e2e_app, name="e2e")
 app.add_typer(admin_app, name="admin")

@@ -103,8 +103,32 @@ def test_terminal_publication_requires_the_executor_validation_record(
         )
 
 
+@pytest.mark.parametrize(
+    ("target_updates", "server_updates", "expected_error"),
+    [
+        ({}, {"server_pid": 999}, "pid"),
+        (
+            {"source_identity": "b" * 40},
+            {"server_commit": "bbbbbbb"},
+            "target source",
+        ),
+        ({}, {"server_commit": "bbbbbbb"}, "server commit"),
+        ({}, {"server_commit": ""}, "server commit"),
+        ({}, {"pool_reason": "wrong_pool_mode"}, "pool reason"),
+    ],
+    ids=(
+        "pid",
+        "target-source",
+        "server-commit",
+        "empty-server-commit",
+        "pool-reason",
+    ),
+)
 def test_terminal_publication_rechecks_target_and_server_provenance(
     tmp_path: Path,
+    target_updates: dict[str, object],
+    server_updates: dict[str, object],
+    expected_error: str,
 ) -> None:
     """A self-consistent verdict cannot cite profiles from another process."""
     from promptgrimoire.cli.perf.results import PerfClassification
@@ -128,6 +152,7 @@ def test_terminal_publication_rechecks_target_and_server_provenance(
             "source_identity": "a" * 40,
             "database_query_ok": True,
             "pool_mode_reason": "pool_fidelity",
+            **target_updates,
         },
     )
     write_json_atomic(
@@ -140,15 +165,16 @@ def test_terminal_publication_rechecks_target_and_server_provenance(
             "server_evidence": {
                 "profile_count": 1,
                 "window_start_covered": True,
-                "server_pid": 999,
+                "server_pid": 321,
                 "server_commit": "aaaaaaa",
                 "pool_reason": "pool_fidelity",
                 "paths": ["server.jsonl"],
+                **server_updates,
             },
         },
     )
 
-    with pytest.raises(CampaignStateError, match="pid"):
+    with pytest.raises(CampaignStateError, match=expected_error):
         store.finalise_leg(
             schedule,
             leg,

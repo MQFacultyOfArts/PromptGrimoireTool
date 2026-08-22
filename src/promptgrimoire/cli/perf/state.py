@@ -21,6 +21,7 @@ from promptgrimoire.cli.perf.results import (
 
 logger = structlog.get_logger()
 STATE_SCHEMA_VERSION = 1
+_MINIMUM_GIT_IDENTITY_LENGTH = 7
 _MEASURED_CLASSIFICATIONS = frozenset(
     {
         PerfClassification.PASS,
@@ -102,6 +103,8 @@ def _read_object(path: Path) -> dict[str, Any]:
 def _validate_executor_record(
     attempt_path: Path,
     classification: PerfClassification,
+    *,
+    source_identity: str,
 ) -> None:
     """Require the executor's evidence decision before terminal publication."""
     validation = _read_object(attempt_path / "validation.json")
@@ -113,6 +116,25 @@ def _validate_executor_record(
         raise CampaignStateError("validation record contains evidence failures")
     if validation.get("pytest_exit_code") != 0:
         raise CampaignStateError("validation record has no successful pytest exit")
+    server_evidence = validation.get("server_evidence")
+    if server_evidence is None:
+        return
+    if not isinstance(server_evidence, dict):
+        raise CampaignStateError("validation server evidence is not an object")
+    target = _read_object(attempt_path / "target-start.json")
+    if target.get("source_identity") != source_identity:
+        raise CampaignStateError("target source identity mismatch")
+    if server_evidence.get("server_pid") != target.get("pid"):
+        raise CampaignStateError("server pid differs from the attested target")
+    server_commit = server_evidence.get("server_commit")
+    if (
+        not isinstance(server_commit, str)
+        or len(server_commit) < _MINIMUM_GIT_IDENTITY_LENGTH
+        or not source_identity.startswith(server_commit)
+    ):
+        raise CampaignStateError("server commit differs from the attested target")
+    if server_evidence.get("pool_reason") != target.get("pool_mode_reason"):
+        raise CampaignStateError("server pool reason differs from the attested target")
 
 
 class CampaignStore:
@@ -264,7 +286,11 @@ class CampaignStore:
             raise CampaignStateError("probe result has no run_meta object")
         if run_meta.get("probe") != schedule.definition.probe:
             raise CampaignStateError("probe result does not match the campaign probe")
-        _validate_executor_record(attempt.path, classification)
+        _validate_executor_record(
+            attempt.path,
+            classification,
+            source_identity=source_identity,
+        )
 
         self.record_transition(attempt, "terminal", detail=classification.value)
         entries: list[dict[str, object]] = []
@@ -372,7 +398,11 @@ class CampaignStore:
             schedule.definition.probe
         ):
             raise CampaignStateError("probe identity no longer matches")
-        _validate_executor_record(attempt_path, classification)
+        _validate_executor_record(
+            attempt_path,
+            classification,
+            source_identity=leg.source_identity,
+        )
 
     def _is_leg_valid(self, schedule: CampaignSchedule, leg: ResolvedLeg) -> bool:
         try:

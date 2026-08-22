@@ -877,6 +877,10 @@ def test_attested_local_leg_prepares_once_and_stops_before_publication(
 
     def start_server(_port: int, *, log_path: Path) -> FakeProcess:
         events.append("start")
+        assert (
+            os.environ.get("_PROMPTGRIMOIRE_DATABASE_PREPARATION_ID")
+            == prepared.preparation_id
+        )
         log_path.parent.mkdir(parents=True, exist_ok=True)
         log_path.write_text("server started\n", encoding="utf-8")
         return process

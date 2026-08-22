@@ -272,6 +272,9 @@ class LocalLegExecutor:
                 raise LocalPerfInfrastructureError(
                     "no performance database was prepared"
                 )
+            os.environ["_PROMPTGRIMOIRE_DATABASE_PREPARATION_ID"] = (
+                prepared.preparation_id
+            )
             verify_database_identity(
                 direct_url=prepared.test_database_url,
                 pooled_url=pooled_url,

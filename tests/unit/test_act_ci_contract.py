@@ -59,3 +59,22 @@ def test_act_runner_matches_ci_contract() -> None:
     assert all(str(port).startswith("127.0.0.1:") for port in service_ports)
     assert len(act_service_ports) == len(set(act_service_ports))
     assert all(str(port).split(":")[1] != "5432" for port in act_service_ports)
+
+
+def test_nightly_summary_and_artifacts_are_durable_on_success() -> None:
+    """A green nightly publishes exact logs and uses the tested summary renderer."""
+    workflow = yaml.safe_load(
+        Path(".github/workflows/nightly-e2e-slow.yml").read_text()
+    )
+    steps = workflow["jobs"]["e2e-slow"]["steps"]
+    summary = next(step for step in steps if step.get("name") == "Write job summary")
+    upload = next(
+        step for step in steps if step.get("name") == "Upload nightly slow artifacts"
+    )
+
+    assert summary["if"] == "always()"
+    assert summary["run"] == (
+        'scripts/nightly-summary.sh "${{ steps.run-tests.outcome }}"'
+    )
+    assert upload["if"] == "always()"
+    assert upload["with"]["if-no-files-found"] == "error"

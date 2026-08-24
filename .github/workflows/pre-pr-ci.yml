@@ -1,0 +1,284 @@
+name: Pre-PR Isolated CI
+run-name: pre-pr-isolated ${{ inputs.request_id }} @ ${{ inputs.sha }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: Exact pushed commit SHA to test
+        required: true
+        type: string
+      request_id:
+        description: Unpredictable one-run runner label
+        required: true
+        type: string
+
+permissions: {}
+
+concurrency:
+  group: pre-pr-isolated
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      statuses: write
+    steps:
+      - name: Check out the trusted workflow helpers
+        uses: actions/checkout@v6.0.2
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+
+      - name: Validate trusted default-branch dispatch and exact commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REQUESTED_SHA: ${{ inputs.sha }}
+          REQUEST_ID: ${{ inputs.request_id }}
+        run: |
+          test "$GITHUB_REF" = "refs/heads/${{ github.event.repository.default_branch }}"
+          scripts/pre-pr-status.sh validate-request
+
+      - name: Mark the exact commit pending
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REQUESTED_SHA: ${{ inputs.sha }}
+          REQUEST_ID: ${{ inputs.request_id }}
+          STATUS_TARGET_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: scripts/pre-pr-status.sh set pending
+
+  isolated-ci:
+    needs: prepare
+    runs-on:
+      - self-hosted
+      - Linux
+      - X64
+      - pre-pr-isolated
+      - ${{ inputs.request_id }}
+    timeout-minutes: 180
+    permissions:
+      contents: read
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_DB: promptgrimoire_test
+          POSTGRES_PASSWORD: postgres
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - "127.0.0.1:5432:5432"
+    env:
+      DEV__TEST_DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/promptgrimoire_test
+      OSFONTDIR: /usr/share/fonts:/usr/share/texmf/fonts
+    steps:
+      - name: Check out the exact requested commit
+        uses: actions/checkout@v6.0.2
+        with:
+          ref: ${{ inputs.sha }}
+          persist-credentials: false
+
+      - name: Verify exact checkout
+        env:
+          REQUESTED_SHA: ${{ inputs.sha }}
+        run: |
+          actual=$(git rev-parse HEAD)
+          test "${actual,,}" = "${REQUESTED_SHA,,}"
+
+      - name: Record request metadata
+        env:
+          REQUESTED_SHA: ${{ inputs.sha }}
+          REQUEST_ID: ${{ inputs.request_id }}
+        run: |
+          mkdir -p output/pre-pr-ci
+          jq -n \
+            --arg requested_sha "$REQUESTED_SHA" \
+            --arg actual_sha "$(git rev-parse HEAD)" \
+            --arg request_id "$REQUEST_ID" \
+            --arg run_id "$GITHUB_RUN_ID" \
+            '{schema_version:1,requested_sha:$requested_sha,actual_sha:$actual_sha,request_id:$request_id,run_id:$run_id}' \
+            >output/pre-pr-ci/request.json
+
+      - name: Cache apt packages
+        uses: actions/cache@v4
+        with:
+          path: ~/apt-cache
+          key: apt-pre-pr-${{ runner.os }}-${{ hashFiles('.github/workflows/pre-pr-ci.yml', 'uv.lock') }}
+
+      - name: Install system dependencies
+        run: |
+          if [ -d ~/apt-cache ]; then
+            sudo cp -r ~/apt-cache/*.deb /var/cache/apt/archives/ 2>/dev/null || true
+          fi
+          sudo apt-get update -y
+          sudo apt-get install -y \
+            bats \
+            postgresql-client \
+            mecab libmecab-dev \
+            pandoc \
+            poppler-utils \
+            fontconfig \
+            fonts-noto --install-recommends \
+            fonts-texgyre \
+            fonts-sil-gentiumplus fonts-sil-charis fonts-sil-doulos \
+            fonts-sil-scheherazade fonts-sil-ezra fonts-sil-annapurna \
+            fonts-sil-abyssinica fonts-sil-padauk fonts-sil-mondulkiri \
+            fonts-sil-galatia fonts-sil-sophia-nubian fonts-sil-nuosusil \
+            fonts-sil-taiheritagepro
+          mkdir -p ~/apt-cache
+          cp /var/cache/apt/archives/*.deb ~/apt-cache/ 2>/dev/null || true
+
+      - name: Quieten Postgres logs
+        run: |
+          export PGPASSWORD=postgres
+          psql -h localhost -U postgres -d promptgrimoire_test \
+            -c "ALTER SYSTEM SET log_checkpoints = off" \
+            -c "ALTER SYSTEM SET log_min_messages = warning" \
+            -c "SELECT pg_reload_conf()"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7.3.1
+        with:
+          version: "latest"
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Set up Python
+        run: uv python install 3.14
+
+      - name: Install dependencies
+        run: uv sync --locked --all-groups
+
+      - name: Install JS test dependencies
+        run: npm ci
+
+      - name: Cache TinyTeX
+        uses: actions/cache@v4
+        with:
+          path: ~/.TinyTeX
+          key: tinytex-pre-pr-${{ runner.os }}-${{ hashFiles('scripts/setup_latex.py') }}
+
+      - name: Install TinyTeX and LaTeX packages
+        run: |
+          echo "$HOME/.TinyTeX/bin/x86_64-linux" >> "$GITHUB_PATH"
+          export PATH="$HOME/.TinyTeX/bin/x86_64-linux:$PATH"
+          uv run python scripts/setup_latex.py
+          luaotfload-tool --update --force
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-pre-pr-${{ runner.os }}-${{ hashFiles('uv.lock') }}
+
+      - name: Install Playwright browsers
+        run: uv run playwright install --with-deps chromium firefox
+
+      - name: Run ruff lint
+        run: uv run ruff check .
+
+      - name: Run ruff format check
+        run: uv run ruff format --check .
+
+      - name: Run vulture
+        run: uv run vulture
+
+      - name: Run pip-audit
+        run: |
+          uv run pip-audit -f json -o /tmp/audit.json || true
+          python3 <<'AUDIT_GATE'
+          import json
+          import sys
+          import urllib.request
+          from datetime import datetime, timedelta, timezone
+
+          grace_days = 14
+          cutoff = datetime.now(timezone.utc) - timedelta(days=grace_days)
+          with open("/tmp/audit.json") as audit_file:
+              data = json.load(audit_file)
+
+          actionable = []
+          for dependency in data.get("dependencies", []):
+              for vulnerability in dependency.get("vulns", []):
+                  fixes = vulnerability.get("fix_versions", [])
+                  if not fixes:
+                      continue
+                  package = dependency["name"]
+                  fix_version = fixes[0]
+                  try:
+                      url = f"https://pypi.org/pypi/{package}/{fix_version}/json"
+                      response = urllib.request.urlopen(url, timeout=10)
+                      release = json.loads(response.read())
+                      uploaded = release["urls"][0]["upload_time_iso_8601"]
+                      if datetime.fromisoformat(uploaded) > cutoff:
+                          continue
+                  except Exception as error:
+                      print(f"PyPI release lookup failed for {package}: {error}")
+                  actionable.append(
+                      f"{package} {vulnerability['id']} (fix: {', '.join(fixes)})"
+                  )
+
+          if actionable:
+              print(f"Vulnerabilities with fixes older than {grace_days} days:")
+              for item in actionable:
+                  print(f"  {item}")
+              sys.exit(1)
+          print("pip-audit: no actionable vulnerabilities")
+          AUDIT_GATE
+
+      - name: Run ty type check
+        run: uv run ty check
+
+      - name: Run the canonical slow suite
+        run: uv run grimoire e2e slow
+
+      - name: Run the ordinary Firefox lane
+        run: uv run grimoire e2e run --browser firefox
+
+      - name: Upload isolated CI evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pre-pr-isolated-${{ inputs.request_id }}
+          path: |
+            output/pre-pr-ci/**
+            output/test_output/e2e/**
+            test-*.log
+          if-no-files-found: error
+          retention-days: 7
+
+  finalize:
+    needs: [prepare, isolated-ci]
+    if: ${{ always() && needs.prepare.result == 'success' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      statuses: write
+    steps:
+      - name: Check out the trusted workflow helpers
+        uses: actions/checkout@v6.0.2
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+
+      - name: Stamp the exact commit with the terminal result
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REQUESTED_SHA: ${{ inputs.sha }}
+          REQUEST_ID: ${{ inputs.request_id }}
+          STATUS_TARGET_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          JOB_RESULT: ${{ needs.isolated-ci.result }}
+        run: |
+          case "$JOB_RESULT" in
+            success) FINAL_STATE=success ;;
+            failure) FINAL_STATE=failure ;;
+            cancelled|skipped) FINAL_STATE=error ;;
+            *) FINAL_STATE=error ;;
+          esac
+          scripts/pre-pr-status.sh set "$FINAL_STATE"

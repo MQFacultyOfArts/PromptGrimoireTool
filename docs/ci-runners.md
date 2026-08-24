@@ -32,6 +32,30 @@ PDF validation. `.github/workflows/act-ci.yml` is a local diagnostic copy of
 the three regular test jobs plus quality; it does not claim eight-lane
 coverage. Both local workflows use PostgreSQL 16, matching GitHub.
 
+## Exact-SHA pre-PR route
+
+`.github/workflows/pre-pr-ci.yml` is a separate manual route for running the
+complete pre-PR campaign on an isolated one-job self-hosted runner. It is
+`workflow_dispatch`-only and must remain on the repository's default branch.
+Ordinary pushes and pull requests, including forks, continue to use
+GitHub-hosted runners through `ci.yml`.
+
+The trusted submitter supplies a full pushed commit SHA and an unpredictable
+request identifier. A GitHub-hosted preparation job validates that GitHub
+resolves the exact SHA and creates the dedicated `ci/pre-pr-isolated` pending
+status. The isolated job requires both its static labels and the unique request
+identifier, checks out that exact SHA without persisting checkout credentials,
+and receives only `contents: read`. A GitHub-hosted finalizer writes success,
+failure, or error to the same exact SHA.
+
+The isolated job runs the quality gates, the canonical `e2e slow` suite, and
+the ordinary Firefox E2E lane. It always uploads request metadata and available
+test evidence. The self-hosted executor is an operational boundary: it must be
+one-job/disposable, have no repository secrets or persistent GitHub credential,
+and be destroyed before its host releases the shared heavy-work lease. Its
+machine-specific provisioning, submission command, network policy, and
+evidence locations belong only in the private operator runbook.
+
 ## Provision a clean box
 
 Allow at least 30 GB free for Docker images, action caches, browser downloads,

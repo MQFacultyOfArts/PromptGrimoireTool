@@ -37,12 +37,18 @@ focused test is restored.
 
 1. Launch the wrapper once from the checkout being tested in a background
    terminal that emits a completion event. Keep that terminal attached to the
-   wrapper; do not detach the wrapper into an unobservable shell process.
+   wrapper; do not detach the wrapper into an unobservable shell process. Retain
+   every monitor handle until the wrapper exits. Yield the agent turn only when
+   the runtime guarantees that its completion event survives the yield.
 2. Treat `waiting for the bunyip heavy-work queue` as queued, not stalled. Do
    not submit a duplicate.
-3. Do not poll the terminal, processes, logs, note files, or lock while the run
-   is active. Await the terminal's completion notification and send no lane-by-
-   lane progress narration unless the user explicitly asks for it.
+3. Do not poll processes, logs, note files, or the lock while the run is active.
+   Await only the attached monitor, using its longest supported wait. If it
+   yields without an exit status, wait again on the same handle. Wrapper state
+   transitions such as queued, started, staging preemption, and restoration are
+   authoritative and may be reported once. Individual test output is non-final:
+   do not interpret, summarize, quote, or narrate it unless the user explicitly
+   asks for progress. An empty wait is not a state change and needs no update.
 4. Consider the lane finished only when the attached wrapper exits. A test
    summary is not completion: artifact handling, container cleanup, and
    interrupted staging restoration happen afterward.

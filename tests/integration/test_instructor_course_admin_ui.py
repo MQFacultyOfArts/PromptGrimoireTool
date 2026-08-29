@@ -497,6 +497,4 @@ class TestEnrollStudent:
         from nicegui import ui
 
         table = nicegui_user.find(ui.table).elements.pop()
-        assert any(row["email"] == student_email for row in table.rows), (
-            f"Expected {student_email} in table rows"
-        )
+        await wait_for(lambda: any(row["email"] == student_email for row in table.rows))

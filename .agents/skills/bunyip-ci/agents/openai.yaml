@@ -1,0 +1,4 @@
+interface:
+  display_name: "Bunyip CI"
+  short_description: "Run and diagnose queued bunyip CI lanes"
+  default_prompt: "Use $bunyip-ci to run the requested CI lane on bunyip and report its verified result."

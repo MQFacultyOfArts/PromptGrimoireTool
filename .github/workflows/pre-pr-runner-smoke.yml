@@ -1,0 +1,112 @@
+name: Pre-PR Runner Smoke
+run-name: pre-pr-runner-smoke ${{ inputs.request_id }} @ ${{ inputs.sha }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: Exact pushed commit SHA associated with this smoke test
+        required: true
+        type: string
+      request_id:
+        description: Unpredictable one-run runner label
+        required: true
+        type: string
+
+permissions: {}
+
+concurrency:
+  group: pre-pr-runner-smoke-${{ inputs.request_id }}
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Validate trusted dispatch inputs
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          GH_TOKEN: ${{ github.token }}
+          REQUESTED_SHA: ${{ inputs.sha }}
+          REQUEST_ID: ${{ inputs.request_id }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = "refs/heads/$DEFAULT_BRANCH"
+          [[ "$REQUESTED_SHA" =~ ^[0-9a-fA-F]{40}$ ]]
+          [[ "$REQUEST_ID" =~ ^prepr-[0-9a-f]{32}$ ]]
+          resolved=$(gh api \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2026-03-10" \
+            "/repos/$GITHUB_REPOSITORY/commits/$REQUESTED_SHA" \
+            --jq .sha)
+          test "${resolved,,}" = "${REQUESTED_SHA,,}"
+
+  smoke:
+    needs: prepare
+    runs-on:
+      - self-hosted
+      - Linux
+      - X64
+      - pre-pr-isolated
+      - ${{ inputs.request_id }}
+    timeout-minutes: 15
+    permissions: {}
+    steps:
+      - name: Attest runner
+        env:
+          REQUESTED_SHA: ${{ inputs.sha }}
+          REQUEST_ID: ${{ inputs.request_id }}
+          RUNNER_ARCH: ${{ runner.arch }}
+          RUNNER_NAME: ${{ runner.name }}
+          RUNNER_OS: ${{ runner.os }}
+        run: |
+          set -euo pipefail
+          started_utc=$(date -u +%FT%TZ)
+          dns_output=$(getent ahostsv4 github.com) || dns_output=""
+          dns_address=$(printf '%s\n' "$dns_output" | awk 'NR == 1 { print $1 }')
+          dns_ok=false
+          if [ -n "$dns_address" ]; then
+            dns_ok=true
+          fi
+          curl_exit=0
+          curl --fail --location --silent --show-error --output /dev/null \
+            https://github.com/ || curl_exit=$?
+          github_https_ok=false
+          if [ "$curl_exit" -eq 0 ]; then
+            github_https_ok=true
+          fi
+          ended_utc=$(date -u +%FT%TZ)
+          mkdir -p output/pre-pr-runner-smoke
+          jq -cn \
+            --arg request_id "$REQUEST_ID" \
+            --arg requested_sha "$REQUESTED_SHA" \
+            --arg runner_name "$RUNNER_NAME" \
+            --arg runner_os "$RUNNER_OS" \
+            --arg runner_arch "$RUNNER_ARCH" \
+            --arg dns_address "$dns_address" \
+            --arg started_utc "$started_utc" \
+            --arg ended_utc "$ended_utc" \
+            --argjson dns_ok "$dns_ok" \
+            --argjson github_https_ok "$github_https_ok" \
+            '{schema_version:1,request_id:$request_id,requested_sha:$requested_sha,
+              runner_name:$runner_name,runner_os:$runner_os,runner_arch:$runner_arch,
+              dns_ok:$dns_ok,github_https_ok:$github_https_ok,dns_address:$dns_address,
+              started_utc:$started_utc,ended_utc:$ended_utc}' \
+            >output/pre-pr-runner-smoke/attestation.json
+          jq -e \
+            --arg request_id "$REQUEST_ID" \
+            '.schema_version == 1 and .request_id == $request_id and
+             .runner_name == $request_id and .dns_ok == true and
+             .github_https_ok == true' \
+            output/pre-pr-runner-smoke/attestation.json >/dev/null
+
+      - name: Upload runner smoke evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pre-pr-runner-smoke-${{ inputs.request_id }}
+          path: output/pre-pr-runner-smoke/attestation.json
+          if-no-files-found: error
+          retention-days: 7

@@ -40,6 +40,13 @@ complete pre-PR campaign on an isolated one-job self-hosted runner. It is
 Ordinary pushes and pull requests, including forks, continue to use
 GitHub-hosted runners through `ci.yml`.
 
+Before the first complete campaign, `.github/workflows/pre-pr-runner-smoke.yml`
+provides a bounded transport check for the same disposable runner path. Its
+isolated job checks out no repository tree, starts no service, and receives no
+repository permission. It attests the unique runner identity, DNS, and GitHub
+HTTPS access in one small artifact, then exits. Like the full route, the smoke
+workflow must already exist on the default branch before it can be dispatched.
+
 The trusted submitter supplies a full pushed commit SHA and an unpredictable
 request identifier. A GitHub-hosted preparation job validates that GitHub
 resolves the exact SHA and creates the dedicated `ci/pre-pr-isolated` pending

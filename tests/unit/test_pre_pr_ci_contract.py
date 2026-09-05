@@ -15,6 +15,8 @@ SMOKE_WORKFLOW_PATH = Path(".github/workflows/pre-pr-runner-smoke.yml")
 REQUEST_ID = "prepr-0123456789abcdef0123456789abcdef"
 REQUESTED_SHA = "0123456789abcdef0123456789abcdef01234567"
 DNS_ADDRESS = "203.0.113.7"
+# https://v4.vitest.dev/guide/: Vitest 4 requires Node.js >= 20.
+VITEST_MINIMUM_NODE_MAJOR = 20
 
 
 def _workflow() -> dict[str | bool, Any]:
@@ -210,6 +212,26 @@ def test_pre_pr_workflow_validates_and_runs_the_exact_sha() -> None:
     assert "uv run ty check" in workflow_text
     assert "uv run grimoire e2e slow" in workflow_text
     assert "uv run grimoire e2e run --browser firefox" in workflow_text
+
+
+def test_pre_pr_isolated_job_sets_up_supported_node_before_npm_ci() -> None:
+    """The isolated JavaScript lane must install a supported Node first."""
+    isolated_steps = _workflow()["jobs"]["isolated-ci"]["steps"]
+    npm_ci_index = next(
+        index
+        for index, step in enumerate(isolated_steps)
+        if step.get("run") == "npm ci"
+    )
+    setup_node_steps = [
+        (index, step)
+        for index, step in enumerate(isolated_steps)
+        if str(step.get("uses", "")).startswith("actions/setup-node@")
+    ]
+
+    assert setup_node_steps, "isolated-ci must set up Node before npm ci"
+    setup_node_index, setup_node = setup_node_steps[0]
+    assert setup_node_index < npm_ci_index
+    assert int(setup_node["with"]["node-version"]) >= VITEST_MINIMUM_NODE_MAJOR
 
 
 def test_ordinary_pr_ci_remains_github_hosted() -> None:
